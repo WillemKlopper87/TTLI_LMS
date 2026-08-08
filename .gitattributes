@@ -1,0 +1,17 @@
+# LF in the working tree, not just in the object store.
+#
+# docs/source/extract.py --check reads its files with newline="\n" and compares
+# them against the export byte for byte. If Git checked these out as CRLF the
+# check would fail on every clone but pass on the machine that wrote them, which
+# is the worst possible failure mode for a fidelity assertion.
+* text=auto eol=lf
+
+*.json  text eol=lf
+*.md    text eol=lf
+*.py    text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.mp4   binary
+*.m4s   binary
