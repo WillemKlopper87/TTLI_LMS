@@ -1,0 +1,66 @@
+# Ports are deliberately non-default. Other projects on this machine already own
+# 5432/6379/9000/1025 — see README.md for the full reservation table.
+name: ttli
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ttli-postgres
+    environment:
+      POSTGRES_USER: ttli
+      POSTGRES_PASSWORD: ttli_local_dev
+      POSTGRES_DB: ttli
+    ports:
+      - "5452:5432"
+    volumes:
+      - ttli-postgres:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttli -d ttli"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: ttli-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6399:6379"
+    volumes:
+      - ttli-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    container_name: ttli-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ttli_dev
+      MINIO_ROOT_PASSWORD: ttli_local_dev
+    ports:
+      - "9140:9000"
+      - "9141:9001"
+    volumes:
+      - ttli-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: ttli-mailhog
+    ports:
+      - "1145:1025"
+      - "8145:8025"
+
+volumes:
+  ttli-postgres:
+  ttli-redis:
+  ttli-minio:

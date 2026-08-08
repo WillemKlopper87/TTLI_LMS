@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
+# Vendored and generated trees are not ours to validate.
+EXCLUDED = {".git", ".venv", "venv", "node_modules", "site-packages", ".mypy_cache", ".ruff_cache"}
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 STRIP_MARKUP = re.compile(r"`|\*\*|\*|~~")
@@ -29,7 +31,7 @@ def slug(heading: str) -> str:
 
 
 def main() -> int:
-    files = sorted(p for p in ROOT.rglob("*.md") if ".git" not in p.parts)
+    files = sorted(p for p in ROOT.rglob("*.md") if not EXCLUDED.intersection(p.parts))
     anchors = {
         p: {slug(m.group(1)) for m in HEADING.finditer(p.read_text(encoding="utf-8"))}
         for p in files

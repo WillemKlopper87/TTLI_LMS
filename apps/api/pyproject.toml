@@ -1,0 +1,42 @@
+[project]
+name = "ttli-api"
+version = "0.1.0"
+description = "TTLI executive training platform — API"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "ASYNC", "S", "DTZ", "RUF"]
+ignore = [
+  "B008",  # FastAPI depends on function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]        # asserts and test credentials
+"alembic/versions/*" = ["E501"]              # generated SQL is wide
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["argon2.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+# Function-scoped loop: asyncpg connections are bound to the loop that created
+# them, and a session-scoped loop leaks connections across tests.
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+  "integration: requires a live Postgres",
+]

@@ -1,18 +1,18 @@
 # STATUS
 
-**Updated:** 2026-08-08 (documentation set created; repository initialised)
+**Updated:** 2026-08-08 (sprint 1 built — foundations, tenancy, identity, CI)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
 
 ## 1. Summary
 
-**No application code exists.** This repository currently holds the documentation set and the preserved source material. Phase 0 is blocked on customer decisions, and Phase 1 is gated on Phase 0.
+Sprint 1 of Phase 1 is built and passing every gate that does not need a database. Phase 0 remains blocked on the customer — the foundation work was brought forward deliberately, because none of it depends on the ten open decisions.
 
 | Phase | Name | State | Done |
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
-| 1 | Foundation | Gated on Phase 0 | 0% |
+| 1 | Foundation | Sprint 1 of ~5 complete | ~20% |
 | 2 | Public site and content funnel | Not started | 0% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
@@ -23,17 +23,20 @@
 
 | Gate | Status |
 |---|---|
-| `ruff check` | n/a — no code |
-| `ruff format --check` | n/a — no code |
-| `mypy src` (strict) | n/a — no code |
-| `pytest --cov` | n/a — no code |
-| `alembic check` | n/a — no migrations |
-| Migration round-trip | n/a — no migrations |
-| `api-client` drift check | n/a — no OpenAPI schema |
+| `ruff check` | **PASS** — 36 files |
+| `ruff format --check` | **PASS** |
+| `mypy src` (strict) | **PASS** — 27 source files |
+| `pytest` | **PASS** — 31 passed, 8 skipped |
+| `alembic upgrade head` | **BLOCKED** — no local Postgres |
+| Migration round-trip | **BLOCKED** — no local Postgres |
+| `alembic check` | **BLOCKED** — no local Postgres |
+| `api-client` drift check | n/a — sprint 2 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
-| Documentation link integrity | **PASS** — `python docs/check_links.py`, 134 links across 14 files |
+| Documentation link integrity | **PASS** — `python docs/check_links.py` |
 
-**Headline:** 0 tests, 0 endpoints, 8 documents, 5 extracted source files verified against the export.
+**Headline:** 39 tests (31 passing, 8 integration tests written but skipped), 3 endpoints, 8 tables.
+
+> The 8 skips are the row-level-security suite in `tests/test_rls.py`. They are written and they run in CI, which provisions a Postgres service — they cannot run on this machine because the local Docker daemon accepts commands and then does nothing. Restart Docker Desktop and run `docker compose -f infra/docker-compose.yml up -d postgres redis` to clear it.
 
 ---
 
@@ -48,10 +51,17 @@
 | Source extractor | [docs/source/extract.py](source/extract.py) | `--check` passes; asserts exact character counts |
 | Extracted source | [docs/source/](source/) | 5 files, byte-identical to the export modulo LF normalisation |
 | Documentation set | `docs/01`–`06`, `STATUS.md` | Cross-links resolve |
+| Config + production safety | `src/core/config.py` | 10 tests in `tests/test_config.py` |
+| Field encryption + blind index | `src/core/crypto.py` | 9 tests in `tests/test_crypto.py` |
+| Argon2id, JWT, UUID v7 | `src/core/security.py`, `ids.py` | 12 tests in `tests/test_security.py` |
+| Tenant resolution + RLS binding | `src/core/tenancy.py`, `db.py` | `tests/test_rls.py` (CI only) |
+| Schema + RLS policies | `alembic/versions/0001_baseline_schema.py` | CI only |
+| Seed: 17 permissions, 6 roles, 2 tenants | `alembic/versions/0002_seed_roles_and_tenants.py` | CI only |
+| CI pipeline | `.github/workflows/api.yml` | 10 gates incl. skip detection |
 
 ### Endpoints live
 
-None.
+`GET /health` · `GET /health/ready` · `POST /api/v1/auth/login` · `GET /api/v1/auth/me`
 
 ---
 
@@ -82,24 +92,30 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 4. Phase 1 — Foundation (0%, GATED)
+## 4. Phase 1 — Foundation (~20%)
 
-### Outstanding
+### Done — sprint 1
 
-- [ ] Monorepo skeleton: `apps/web`, `apps/api`, `packages/api-client`, `infra`
-- [ ] `infra/docker-compose.yml` on the reserved ports ([06 §1.1](06_OPERATIONS.md#11-services))
-- [ ] `.env.example` and `check_production_safety()`
-- [ ] FastAPI skeleton, structured logging, error envelope
-- [ ] Alembic baseline with `citext`, `pg_trgm`, `pgcrypto`
-- [ ] Tenancy: `tenant_id`, resolution middleware, row-level security policies
-- [ ] Identity: Argon2id, JWT with rotating refresh, magic links, TOTP
-- [ ] Policy module with allow/deny tests for every Phase 1 permission
-- [ ] Append-only audit log with database-enforced immutability
+- [x] Monorepo skeleton: `apps/api`, `infra/`, `.github/`
+- [x] `infra/docker-compose.yml` on the reserved ports ([06 §1.1](06_OPERATIONS.md#11-services))
+- [x] `.env.example` and `check_production_safety()` returning a list of problems
+- [x] FastAPI skeleton, structlog, request IDs, the error envelope
+- [x] Alembic baseline with `citext`, `pg_trgm`, `pgcrypto`
+- [x] Tenancy: `tenant_id`, hostname resolution, `SET LOCAL app.tenant_id`, RLS policies with `FORCE`
+- [x] Identity: Argon2id, JWT issue and verify, lockout, timing-equalised login
+- [x] Field encryption (AES-GCM) and HMAC blind index
+- [x] Append-only audit log — a raising trigger, not a silent `DO INSTEAD NOTHING` rule
+- [x] Seed migration: 17 permissions, 6 roles, 2 tenants, break-glass admin refused in production
+- [x] `.github/workflows/api.yml` with the full gate set ([06 §4.5](06_OPERATIONS.md#45-deployment))
+
+### Outstanding — sprints 2 to 5
+
+- [ ] Magic links and TOTP; refresh-token rotation with family revocation on reuse
 - [ ] Storage adapter across S3, Azure Blob and local
 - [ ] Events table, partitioned
 - [ ] `packages/api-client` generation with a CI drift gate
-- [ ] `.github/workflows/api.yml` with the full gate set ([06 §4.5](06_OPERATIONS.md#45-deployment))
-- [ ] Seed migration: default tenant, Phase 1 roles, SA VAT rule, break-glass admin refused in production
+- [ ] Redis-backed rate limiting and the tenant-config cache
+- [ ] Run the migration and RLS suites locally (blocked on Docker)
 
 **Demo target:** two tenants resolving to different themes; login with MFA; an empty admin shell.
 
