@@ -36,7 +36,13 @@ Sprint 1 of Phase 1 is built and passing every gate that does not need a databas
 
 **Headline:** 39 tests (31 passing, 8 integration tests written but skipped), 3 endpoints, 8 tables.
 
-> The 8 skips are the row-level-security suite in `tests/test_rls.py`. They are written and they run in CI, which provisions a Postgres service — they cannot run on this machine because the local Docker daemon accepts commands and then does nothing. Restart Docker Desktop and run `docker compose -f infra/docker-compose.yml up -d postgres redis` to clear it.
+> The 8 skips are the row-level-security suite in `tests/test_rls.py`. They are written, and they run in CI, which provisions its own Postgres service. They cannot run on this machine because **Docker Desktop's Linux engine is not running** — the named pipe `//./pipe/dockerDesktopLinuxEngine` does not exist and `docker info` exits 1. Start Docker Desktop, wait for the whale icon to settle, then:
+>
+> ```bash
+> docker compose -f infra/docker-compose.yml up -d postgres redis
+> cd apps/api && ./.venv/Scripts/python.exe -m alembic upgrade head
+> ./.venv/Scripts/python.exe -m pytest
+> ```
 
 ---
 
