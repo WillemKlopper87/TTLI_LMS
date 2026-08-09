@@ -60,7 +60,11 @@ class AuditAction:
     LOGIN_FAILED = "auth.login.failed"
     LOGOUT = "auth.logout"
     TOKEN_REFRESHED = "auth.token.refreshed"  # noqa: S105 - an action name, not a credential
+    TOKEN_REUSE_DETECTED = "auth.token.reuse_detected"  # noqa: S105 - ditto
     PASSWORD_CHANGED = "auth.password.changed"  # noqa: S105 - an action name, not a credential
+    MFA_ENROLLED = "auth.mfa.enrolled"
+    MFA_VERIFIED = "auth.mfa.verified"
+    MFA_LOCKED = "auth.mfa.locked"
     AUTHZ_DENIED = "authz.denied"
     TENANT_CREATED = "tenant.created"
     ROLE_ASSIGNED = "rbac.role.assigned"

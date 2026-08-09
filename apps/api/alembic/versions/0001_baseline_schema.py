@@ -11,6 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
+from src.core.config import get_settings
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -22,6 +23,23 @@ depends_on: str | Sequence[str] | None = None
 TENANT_SCOPED = ("users", "role_assignments", "audit_events")
 
 APPEND_ONLY = ("audit_events",)
+
+ALL_TABLES = (
+    "tenants",
+    "tenant_domains",
+    "permissions",
+    "roles",
+    "role_permissions",
+    "users",
+    "role_assignments",
+    "audit_events",
+)
+
+# The role the application connects as (DATABASE_URL). It is not the table
+# owner and not a superuser, so FORCE ROW LEVEL SECURITY actually binds it —
+# unlike the migration connection (DATABASE_URL_SYNC), which is a superuser
+# and bypasses RLS unconditionally regardless of FORCE.
+APP_ROLE = "app_user"
 
 
 def upgrade() -> None:
@@ -257,6 +275,34 @@ def upgrade() -> None:
             """
         )
 
+    # --- Least-privileged application role ----------------------------------
+    #
+    # The migration connection (DATABASE_URL_SYNC) is a superuser, needed for
+    # DDL. A superuser bypasses RLS unconditionally, FORCE or not, so the
+    # running application must never connect as it — it connects as this role
+    # instead. Password comes from Settings so it is never a literal here in
+    # anything but the local/CI fallback.
+    app_password = (get_settings().app_db_password or "app_user_local_dev").replace("'", "''")
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '{APP_ROLE}') THEN
+                CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{app_password}';
+            END IF;
+        END
+        $$;
+        """
+    )
+    op.execute(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
+    for table in ALL_TABLES:
+        if table in APPEND_ONLY:
+            # No UPDATE/DELETE grant, on top of the trigger — belt and braces,
+            # and it matches the grant documented in 02_DATA_MODEL.md §1.5.
+            op.execute(f"GRANT SELECT, INSERT ON {table} TO {APP_ROLE}")
+        else:
+            op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO {APP_ROLE}")
+
 
 def downgrade() -> None:
     for table in TENANT_SCOPED:
@@ -276,3 +322,7 @@ def downgrade() -> None:
     op.drop_index("uq_tenant_domains_primary", table_name="tenant_domains")
     op.drop_table("tenant_domains")
     op.drop_table("tenants")
+
+    # Dropping the tables above already revokes every grant on them; the role
+    # itself would otherwise persist as an empty, unreferenced login.
+    op.execute(f"DROP ROLE IF EXISTS {APP_ROLE}")

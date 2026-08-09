@@ -195,6 +195,15 @@ def upgrade() -> None:
 def downgrade() -> None:
     conn = op.get_bind()
 
+    # audit_events accumulates rows well beyond the seed data — every login
+    # writes one — and its FK to tenants is RESTRICT, so those rows must go
+    # before DELETE FROM tenants below. The append-only trigger blocks a plain
+    # DELETE regardless of role privilege, so it is disabled for this one
+    # statement rather than routed around.
+    conn.execute(sa.text("ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only"))
+    conn.execute(sa.text("DELETE FROM audit_events"))
+    conn.execute(sa.text("ALTER TABLE audit_events ENABLE TRIGGER audit_events_append_only"))
+
     # Cleaning up across every tenant. Dropping FORCE lets the table owner
     # bypass the policy for the length of this migration; `row_security = off`
     # would not help, since it makes such queries error rather than bypass.

@@ -6,6 +6,7 @@ asyncpg. The URL comes from Settings so no connection string is committed.
 
 from __future__ import annotations
 
+import re
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -17,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.core.config import get_settings
 from src.models import Base
+
+_PARTITION_NAME = re.compile(r"^events_\d{4}_\d{2}$")
 
 config = context.config
 
@@ -31,8 +34,13 @@ def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-
     """Keep autogenerate away from things it did not create.
 
     The extensions are installed by postgres-init, not by a migration.
+    Monthly `events` partitions (events_2026_08, ...) are pure DDL managed by
+    migrations, not modelled individually — only the partitioned parent
+    `events` table is (src/models/event.py). Without this, autogenerate would
+    see each partition as an "extra" table absent from Base.metadata and
+    propose dropping it.
     """
-    if type_ == "table" and name in {"spatial_ref_sys"}:
+    if type_ == "table" and (name in {"spatial_ref_sys"} or _PARTITION_NAME.match(name)):
         return False
     return True
 

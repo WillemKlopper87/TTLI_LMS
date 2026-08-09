@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
@@ -52,6 +53,28 @@ def hash_token(raw: str) -> bytes:
     return hashlib.sha256(raw.encode("utf-8")).digest()
 
 
+def new_recovery_code() -> str:
+    """A human-typeable MFA recovery code. Shown once, stored only as a hash."""
+    raw = secrets.token_hex(5).upper()
+    return f"{raw[:5]}-{raw[5:]}"
+
+
+def new_totp_secret() -> str:
+    return pyotp.random_base32()
+
+
+def totp_provisioning_uri(*, secret: str, account_email: str, issuer: str) -> str:
+    return pyotp.TOTP(secret).provisioning_uri(name=account_email, issuer_name=issuer)
+
+
+def verify_totp(*, secret: str, code: str) -> bool:
+    """±1 step (30s) window, per 04_SECURITY_AND_COMPLIANCE.md §1.3."""
+    try:
+        return pyotp.TOTP(secret).verify(code, valid_window=1)
+    except Exception:
+        return False
+
+
 def issue_access_token(
     *,
     secret: str,
@@ -78,13 +101,43 @@ def decode_access_token(token: str, *, secret: str) -> dict[str, Any]:
     return decoded
 
 
+def issue_purpose_token(*, secret: str, purpose: str, claims: dict[str, Any], minutes: int) -> str:
+    """A short-lived JWT for a single intent — an MFA challenge or an MFA
+    enrolment in progress — never accepted as an access token because its
+    `purpose` does not match what decode_purpose_token requires.
+    """
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "purpose": purpose,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=minutes)).timestamp()),
+        **claims,
+    }
+    return jwt.encode(payload, secret, algorithm=ALGORITHM)
+
+
+def decode_purpose_token(token: str, *, secret: str, purpose: str) -> dict[str, Any]:
+    """Raises jwt.PyJWTError — including on a purpose mismatch, deliberately
+    the same exception type as an expired or malformed token."""
+    decoded: dict[str, Any] = jwt.decode(token, secret, algorithms=[ALGORITHM])
+    if decoded.get("purpose") != purpose:
+        raise jwt.InvalidTokenError("wrong token purpose")
+    return decoded
+
+
 __all__ = [
     "ALGORITHM",
     "decode_access_token",
+    "decode_purpose_token",
     "hash_password",
     "hash_token",
     "issue_access_token",
+    "issue_purpose_token",
     "needs_rehash",
+    "new_recovery_code",
     "new_token",
+    "new_totp_secret",
+    "totp_provisioning_uri",
     "verify_password",
+    "verify_totp",
 ]

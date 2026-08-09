@@ -15,19 +15,28 @@ from typing import Annotated
 
 import jwt
 from fastapi import Depends, Request
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
 from src.core.crypto import CryptoBox
 from src.core.db import get_sessionmaker, set_tenant
-from src.core.errors import Forbidden, TenantUnresolved, Unauthenticated
+from src.core.errors import AppError, Forbidden, TenantUnresolved, Unauthenticated
+from src.core.redis import get_redis
 from src.core.security import decode_access_token
-from src.core.tenancy import TenantContext, hostname_from_request, resolve_tenant
+from src.core.tenancy import TenantContext, get_or_resolve_tenant, hostname_from_request
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-async def get_tenant(request: Request, settings: SettingsDep) -> TenantContext:
+def get_redis_dep() -> Redis:
+    return get_redis()
+
+
+RedisDep = Annotated[Redis, Depends(get_redis_dep)]
+
+
+async def get_tenant(request: Request, settings: SettingsDep, redis: RedisDep) -> TenantContext:
     cached = getattr(request.state, "tenant", None)
     if isinstance(cached, TenantContext):
         return cached
@@ -35,7 +44,7 @@ async def get_tenant(request: Request, settings: SettingsDep) -> TenantContext:
     hostname = hostname_from_request(request)
     factory = get_sessionmaker()
     async with factory() as session, session.begin():
-        tenant = await resolve_tenant(session, hostname)
+        tenant = await get_or_resolve_tenant(session, redis, hostname)
 
     if tenant is None:
         raise TenantUnresolved(
@@ -50,11 +59,30 @@ TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 
 
 async def get_session(tenant: TenantDep) -> AsyncIterator[AsyncSession]:
-    """A session already bound to the resolved tenant."""
+    """A session already bound to the resolved tenant.
+
+    An AppError is a business decision the endpoint made deliberately — wrong
+    password, invalid MFA code — not a failure of the transaction itself.
+    Whatever it flushed before raising (a failed-attempt counter, a
+    LOGIN_FAILED audit row) still commits; only genuinely unexpected
+    exceptions roll back. A plain `async with session.begin():` cannot make
+    this distinction — it rolls back on every exception alike, which would
+    silently discard the very counters and audit rows lockout depends on.
+    """
     factory = get_sessionmaker()
-    async with factory() as session, session.begin():
+    async with factory() as session:
+        await session.begin()
         await set_tenant(session, tenant.id)
-        yield session
+        try:
+            yield session
+        except AppError:
+            await session.commit()
+            raise
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -108,11 +136,13 @@ __all__ = [
     "CryptoDep",
     "Principal",
     "PrincipalDep",
+    "RedisDep",
     "SessionDep",
     "SettingsDep",
     "TenantDep",
     "get_crypto",
     "get_principal",
+    "get_redis_dep",
     "get_session",
     "get_tenant",
 ]

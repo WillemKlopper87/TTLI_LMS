@@ -55,6 +55,12 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
 
     mfa_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     mfa_enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Separate from failed_login_count / locked_until: password and MFA
+    # verification have different documented thresholds (10/15min vs 6/15min).
+    mfa_failed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    mfa_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_login_count: Mapped[int] = mapped_column(

@@ -18,8 +18,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 os.environ.setdefault(
-    "DATABASE_URL", "postgresql+asyncpg://ttli:ttli_local_dev@localhost:5452/ttli"
+    "DATABASE_URL", "postgresql+asyncpg://app_user:app_user_local_dev@localhost:5452/ttli"
 )
+os.environ.setdefault(
+    "DATABASE_URL_SYNC", "postgresql+psycopg2://ttli:ttli_local_dev@localhost:5452/ttli"
+)
+os.environ.setdefault("APP_DB_PASSWORD", "app_user_local_dev")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-32-characters-long")
 os.environ.setdefault("FIELD_ENCRYPTION_KEY", base64.b64encode(b"F" * 32).decode())
 os.environ.setdefault("BLIND_INDEX_KEY", base64.b64encode(b"B" * 32).decode())

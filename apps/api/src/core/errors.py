@@ -54,6 +54,11 @@ class LessonLocked(AppError):
     code = "LESSON_LOCKED"
 
 
+class TooManyAttempts(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "TOO_MANY_ATTEMPTS"
+
+
 def _envelope(
     *, code: str, message: str, details: dict[str, Any], request: Request, status_code: int
 ) -> JSONResponse:
@@ -124,6 +129,7 @@ __all__ = [
     "LessonLocked",
     "NotFound",
     "TenantUnresolved",
+    "TooManyAttempts",
     "Unauthenticated",
     "app_error_handler",
     "http_error_handler",

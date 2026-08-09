@@ -2,7 +2,7 @@
 
 A multi-tenant platform for selling and delivering executive and leadership training in South Africa and internationally: storefront, Payfast/Netcash/EFT/purchase-order payments, an LMS with enforced completion rules, verifiable certificates and LinkedIn-shareable badges, live workshops through Microsoft Teams, an in-house CRM and billing spine, and anonymised AI insights — launched on infrastructure lean enough that hosting cost does not consume early revenue.
 
-**Status: documentation only. No application code exists.** Phase 0 is blocked on customer sign-off — see [docs/STATUS.md](docs/STATUS.md).
+**Status: Phase 0 blocked on customer sign-off; Phase 1 foundation in progress.** See [docs/STATUS.md](docs/STATUS.md) for build state.
 
 ---
 

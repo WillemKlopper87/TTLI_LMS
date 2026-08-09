@@ -91,6 +91,11 @@ async def test_cannot_insert_a_row_for_another_tenant(tenant_session_factory) ->
 
 
 async def test_audit_events_refuse_update(tenant_session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Two layers: app_user holds no UPDATE grant on audit_events at all, so
+    that is what a connection using the app's own credentials hits first. The
+    append_only trigger is the backstop for any connection that does have the
+    grant — the migration owner, say, running a manual fix.
+    """
     tenants = await _tenant_ids(tenant_session_factory)
 
     async with tenant_session_factory(tenants["demo"]) as s:
@@ -101,7 +106,7 @@ async def test_audit_events_refuse_update(tenant_session_factory) -> None:  # ty
             {"i": uuid.uuid4(), "t": tenants["demo"]},
         )
 
-    with pytest.raises(DBAPIError, match="append_only_violation"):
+    with pytest.raises(DBAPIError, match="permission denied"):
         async with tenant_session_factory(tenants["demo"]) as s:
             await s.execute(
                 sa.text("UPDATE audit_events SET action = 'tampered' WHERE action = 'test.probe'")
@@ -109,7 +114,9 @@ async def test_audit_events_refuse_update(tenant_session_factory) -> None:  # ty
 
 
 async def test_audit_events_refuse_delete(tenant_session_factory) -> None:  # type: ignore[no-untyped-def]
+    """See test_audit_events_refuse_update: the grant, not the trigger, is
+    what app_user's own connection hits."""
     tenants = await _tenant_ids(tenant_session_factory)
-    with pytest.raises(DBAPIError, match="append_only_violation"):
+    with pytest.raises(DBAPIError, match="permission denied"):
         async with tenant_session_factory(tenants["demo"]) as s:
             await s.execute(sa.text("DELETE FROM audit_events WHERE action = 'test.probe'"))

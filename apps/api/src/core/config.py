@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # --- Database ---
     database_url: str
     database_url_sync: str = ""
+    # Password for the non-superuser role the app connects as (DATABASE_URL).
+    # Migrations create the role and grant it; they still run as the superuser
+    # named in DATABASE_URL_SYNC, since DDL and role creation need that.
+    app_db_password: str = ""
 
     # --- Redis ---
     redis_url: str = "redis://localhost:6399/0"
@@ -37,6 +41,10 @@ class Settings(BaseSettings):
     # --- Auth ---
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+    magic_link_minutes: int = 15
+    mfa_pending_minutes: int = 5
+    mfa_enroll_minutes: int = 10
+    mfa_issuer_name: str = "TTLI"
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"
     break_glass_admin_password: str = ""
@@ -47,10 +55,12 @@ class Settings(BaseSettings):
 
     # --- Object storage ---
     storage_backend: Literal["local", "s3", "azure"] = "local"
+    storage_local_root: str = "var/storage"
     s3_endpoint_url: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_region: str = "af-south-1"
+    azure_storage_connection_string: str = ""
 
     # --- Email ---
     smtp_host: str = "localhost"
@@ -107,6 +117,10 @@ def check_production_safety(settings: Settings) -> list[str]:
         problems.append("FIELD_ENCRYPTION_KEY is not set")
     if not settings.blind_index_key:
         problems.append("BLIND_INDEX_KEY is not set")
+    if not settings.app_db_password:
+        problems.append("APP_DB_PASSWORD is not set")
+    if settings.app_db_password in {"app_user_local_dev", "app_user_ci"}:
+        problems.append("APP_DB_PASSWORD is a development credential")
     if settings.field_encryption_key == settings.blind_index_key:
         problems.append("FIELD_ENCRYPTION_KEY and BLIND_INDEX_KEY are the same value")
     if settings.storage_backend == "local":
@@ -119,6 +133,10 @@ def check_production_safety(settings: Settings) -> list[str]:
         problems.append("DATABASE_URL points at localhost")
     if "sslmode=disable" in settings.database_url:
         problems.append("DATABASE_URL disables TLS")
+    if "localhost" in settings.redis_url or "127.0.0.1" in settings.redis_url:
+        # Tenant resolution and login rate limiting both depend on Redis now
+        # (core/tenancy.py, services/rate_limit.py) — not just a cache.
+        problems.append("REDIS_URL points at localhost")
 
     return problems
 

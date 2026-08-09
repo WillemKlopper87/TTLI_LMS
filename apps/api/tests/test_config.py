@@ -22,6 +22,8 @@ def _settings(**overrides: object) -> Settings:
         "storage_backend": "s3",
         "s3_access_key": "AKIAREAL",
         "sentry_dsn": "https://key@sentry.io/1",
+        "app_db_password": "K9mP2xQ7vN4wZ8bR",
+        "redis_url": "redis://u:p@redis.internal:6379/0",
     }
     base.update(overrides)
     return Settings(**base)  # type: ignore[arg-type]
@@ -84,3 +86,18 @@ def test_every_problem_is_reported_at_once() -> None:
 def test_sync_url_is_derived_when_not_set() -> None:
     s = _settings(database_url_sync="")
     assert s.sync_database_url.startswith("postgresql+psycopg2://")
+
+
+def test_missing_app_db_password_in_production_is_refused() -> None:
+    problems = check_production_safety(_settings(app_db_password=""))
+    assert any("APP_DB_PASSWORD is not set" in p for p in problems)
+
+
+def test_development_app_db_password_is_refused() -> None:
+    problems = check_production_safety(_settings(app_db_password="app_user_local_dev"))
+    assert any("development credential" in p for p in problems)
+
+
+def test_localhost_redis_in_production_is_refused() -> None:
+    problems = check_production_safety(_settings(redis_url="redis://localhost:6399/0"))
+    assert any("REDIS_URL" in p for p in problems)

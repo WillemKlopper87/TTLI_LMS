@@ -1,8 +1,10 @@
 """Tenant resolution.
 
 The hostname is the first thing every request is judged on, so the lookup is
-cached in Redis in production. For now it is a direct query; the cache lands in
-sprint 2 alongside rate limiting, which needs Redis anyway.
+cached in Redis (get_or_resolve_tenant) rather than hitting Postgres on
+every request. A short TTL, not an invalidated-on-write cache: nothing in
+Phase 1 lets an admin edit tenant_domains yet, so bounded staleness is a
+simpler, sufficient trade for now — revisit once that exists.
 
 `X-Tenant-Host` is set by the web tier's BFF. Falling back to the Host header
 keeps direct API calls working in development.
@@ -10,14 +12,18 @@ keeps direct API calls working in development.
 
 from __future__ import annotations
 
+import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from src.models.tenant import Tenant, TenantDomain
+
+CACHE_TTL_SECONDS = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,4 +56,32 @@ async def resolve_tenant(session: AsyncSession, hostname: str) -> TenantContext 
     return TenantContext(id=row[0], slug=row[1], name=row[2], hostname=row[3])
 
 
-__all__ = ["TenantContext", "hostname_from_request", "resolve_tenant"]
+def _cache_key(hostname: str) -> str:
+    return f"tenant:host:{hostname}"
+
+
+async def get_or_resolve_tenant(
+    session: AsyncSession, redis: Redis, hostname: str, *, ttl_seconds: int = CACHE_TTL_SECONDS
+) -> TenantContext | None:
+    if not hostname:
+        return None
+
+    cached = await redis.get(_cache_key(hostname))
+    if cached is not None:
+        payload = json.loads(cached)
+        return TenantContext(**{**payload, "id": uuid.UUID(payload["id"])})
+
+    tenant = await resolve_tenant(session, hostname)
+    if tenant is not None:
+        payload = json.dumps(asdict(tenant), default=str)
+        await redis.set(_cache_key(hostname), payload, ex=ttl_seconds)
+    return tenant
+
+
+__all__ = [
+    "CACHE_TTL_SECONDS",
+    "TenantContext",
+    "get_or_resolve_tenant",
+    "hostname_from_request",
+    "resolve_tenant",
+]

@@ -38,8 +38,12 @@ jobs:
 
     env:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://ttli:ttli_ci@localhost:5452/ttli
+      # app_user, not ttli: ttli is the Postgres bootstrap superuser and
+      # superusers bypass RLS unconditionally. Migrations still run as ttli
+      # (DATABASE_URL_SYNC) — they need the superuser for DDL.
+      DATABASE_URL: postgresql+asyncpg://app_user:app_user_ci@localhost:5452/ttli
       DATABASE_URL_SYNC: postgresql+psycopg2://ttli:ttli_ci@localhost:5452/ttli
+      APP_DB_PASSWORD: app_user_ci
       REDIS_URL: redis://localhost:6399/0
       SECRET_KEY: ci-secret-key-at-least-thirty-two-characters
       FIELD_ENCRYPTION_KEY: RkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkY=

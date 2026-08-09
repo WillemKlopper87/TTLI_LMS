@@ -20,6 +20,7 @@ from src.core.errors import (
     validation_error_handler,
 )
 from src.core.logging import configure_logging, get_logger
+from src.core.redis import dispose_redis, init_redis
 from src.routers import auth, health
 
 log = get_logger(__name__)
@@ -41,9 +42,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     init_engine(settings)
+    init_redis(settings)
     log.info("api_started", environment=settings.environment)
     yield
     await dispose_engine()
+    await dispose_redis()
 
 
 def create_app() -> FastAPI:
