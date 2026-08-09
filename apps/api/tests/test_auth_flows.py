@@ -16,6 +16,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text as sa_text
 from src.core.db import dispose_engine, init_engine
+from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
 from src.services import identity
@@ -71,12 +72,14 @@ async def client(settings, database_url):  # type: ignore[no-untyped-def]
     # the simplest way to keep rate-limit counters and the tenant cache from
     # bleeding across test runs.
     await redis.flushdb()
+    await init_queue(settings)
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         c.headers["X-Tenant-Host"] = TENANT_HOST
         yield c
     await dispose_engine()
     await dispose_redis()
+    await dispose_queue()
 
 
 def _unique_email() -> str:
@@ -122,6 +125,25 @@ async def test_magic_link_consume_issues_tokens(
 async def test_magic_link_request_always_returns_204_for_unknown_address(client) -> None:  # type: ignore[no-untyped-def]
     resp = await client.post("/api/v1/auth/magic-link", json={"email": _unique_email()})
     assert resp.status_code == 204
+
+
+async def test_magic_link_request_enqueues_email_for_a_known_address(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The send itself happens on the worker (test_workers.py); here we only
+    prove the request path handed it off rather than sending inline."""
+    from src.core.queue import get_queue
+    from src.services.email import SEND_EMAIL_JOB
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    resp = await client.post("/api/v1/auth/magic-link", json={"email": email})
+    assert resp.status_code == 204
+
+    queued = await get_queue().queued_jobs()
+    assert any(j.function == SEND_EMAIL_JOB for j in queued)
 
 
 async def test_totp_enroll_and_login_challenge(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]

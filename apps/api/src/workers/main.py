@@ -10,8 +10,10 @@ process, which connects as the same least-privileged app_user as the API.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, ClassVar
 
+from arq import func
 from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy import text
@@ -19,6 +21,7 @@ from sqlalchemy import text
 from src.core.config import get_settings
 from src.core.db import dispose_engine, get_sessionmaker, init_engine
 from src.core.logging import configure_logging, get_logger
+from src.services.email import send_sync
 
 log = get_logger(__name__)
 
@@ -43,6 +46,15 @@ async def purge_expired_auth(ctx: dict[str, Any]) -> int:
     return int(purged)
 
 
+async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
+    """Raises on any SMTP failure so arq retries with backoff (max_tries
+    below) instead of the message being silently dropped — the one thing
+    services/email.py's old fire-and-forget swallow could never do."""
+    settings = get_settings()
+    await asyncio.to_thread(send_sync, settings, to=to, subject=subject, body=body)
+    log.info("email_sent", to_domain=to.rsplit("@", 1)[-1])
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(level=settings.log_level, pretty=settings.environment == "local")
@@ -55,7 +67,11 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Any]] = [extend_event_partitions, purge_expired_auth]
+    functions: ClassVar[list[Any]] = [
+        extend_event_partitions,
+        purge_expired_auth,
+        func(send_email_job, max_tries=5),
+    ]
     cron_jobs: ClassVar[list[Any]] = [
         # Partitions monthly on the 1st; 0004 bootstrapped ~13 months of
         # runway, so a missed run is survivable for a long time.
@@ -67,4 +83,4 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
 
 
-__all__ = ["WorkerSettings", "extend_event_partitions", "purge_expired_auth"]
+__all__ = ["WorkerSettings", "extend_event_partitions", "purge_expired_auth", "send_email_job"]

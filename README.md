@@ -76,13 +76,16 @@ cd apps/web && npm install && npm run dev # login + admin shell on :3010
 Visit http://localhost:3010 for the demo tenant; add `127.0.0.1 meridian.localhost`
 to your hosts file and visit http://meridian.localhost:3010 to see the second
 tenant's branding on the same code. The break-glass admin credentials are in
-your `.env`. The arq worker (maintenance jobs) runs with
-`arq src.workers.main.WorkerSettings` from `apps/api`.
+your `.env`. Magic links, password resets and other outbound mail are sent by
+the arq worker, not the request itself — run it with
+`arq src.workers.main.WorkerSettings` from `apps/api`, or those emails just
+sit queued in Redis. It also runs the partition-extension and expired-row
+maintenance jobs.
 
 Verification:
 
 ```bash
-cd apps/api && pytest                     # 82 tests; needs the compose stack up
+cd apps/api && pytest                     # 85 tests; needs the compose stack up
 python docs/source/extract.py --check     # verify the extracted source against the export
 python docs/check_links.py                # every doc link resolves
 ```

@@ -1,18 +1,18 @@
 # HANDOFF — for the next agent
 
 **Written:** 2026-08-08, end of the session that built Sprints 2–4 of Phase 1.
-**Updated:** 2026-08-09 — a follow-up session closed most of §3 and §4:
-work is committed (still no remote), the drift gate is wired, weaknesses
-1/2/3/4/6/8 are fixed with tests, and Sprint 5's worker + password reset are
-built (migration `0005`). Items below are struck through or marked ✅ where
-done; [STATUS.md](STATUS.md) carries the current numbers (81 tests, 12
-endpoints, 5 migrations; tenant themes followed as `0006`, and `apps/web`
-now exists — themed login with MFA, empty admin shell, BFF proxy — verified
-end-to-end against both tenants over HTTP). **Still genuinely open: push to
-a remote and get CI green (note: the CI workflow does not yet build
-`apps/web` — add a job when wiring the remote); weakness 7 (email via arq);
-the Next 15 `npm audit` findings, which only Next 16 fixes — a stack-decision
-change, not an `npm audit fix`.**
+**Updated:** 2026-08-09, twice — the second pass closed §4's last item too:
+work is committed (still no remote), the drift gate is wired, all eight
+ranked weaknesses are fixed with tests, and Sprint 5's worker + password
+reset + tenant themes + `apps/web` are all built. [STATUS.md](STATUS.md)
+carries the current numbers (85 tests, 13 endpoints, 6 migrations). Weakness
+7 closed last: `send_email` now enqueues a `send_email_job` (arq,
+`max_tries=5`, real delivery verified against Mailhog in both local dev and
+CI) instead of sending inline — see `src/core/queue.py`,
+`src/services/email.py`, `src/workers/main.py`. **Still genuinely open: push
+to a remote and get CI green (the workflow does not yet build `apps/web` —
+add a job when wiring the remote); the Next 15 `npm audit` findings, which
+only Next 16 fixes — a stack-decision change, not an `npm audit fix`.**
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
@@ -129,9 +129,17 @@ Ordered by risk. **1/2/3/4/6/8 fixed with tests on 2026-08-09; 5 and 7 remain.**
 6. ✅ **`sync_database_url` derivation footgun** — `alembic/env.py` now
    refuses to run migrations over an `app_user` connection, with the real
    reason in the error.
-7. ⬜ **Email failures are swallowed** (`services/email.py` logs and continues
-   — correct for enumeration safety on magic links, but there's no
-   retry/queue). The worker exists now; move sends onto arq.
+7. ✅ **Email failures are swallowed** — fixed by moving the actual send onto
+   the arq worker: `send_email` now only enqueues (`core/queue.py`,
+   `ArqRedis`), which still can't fail the request (an enqueue failure logs
+   and returns, same as before), but the send itself
+   (`workers/main.py:send_email_job`) runs with `max_tries=5` and *raises* on
+   an SMTP failure so arq actually retries instead of silently dropping it.
+   `test_send_email_job_delivers_via_smtp` verifies real delivery to Mailhog;
+   `test_magic_link_request_enqueues_email_for_a_known_address` verifies the
+   request path hands off rather than blocking. Mailhog is now a CI service
+   container too (it needs no launch args, unlike MinIO, so the GH Actions
+   `services:` block works for it directly).
 8. ✅ **Migration 0002** now reads pydantic Settings (which loads `.env`), so
    a plain-shell `alembic` run seeds identically to the app and CI.
 

@@ -36,6 +36,13 @@ jobs:
           --health-timeout 3s
           --health-retries 12
 
+      # No health-cmd: the image ships no CLI to probe with, and unlike
+      # MinIO it needs no launch args (docker inspect confirms CMD is just
+      # [MailHog]) so it starts serving as soon as the container is up.
+      mailhog:
+        image: mailhog/mailhog:latest
+        ports: ["1145:1025", "8145:8025"]
+
     env:
       ENVIRONMENT: local
       # app_user, not ttli: ttli is the Postgres bootstrap superuser and

@@ -27,7 +27,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 55 files |
 | `mypy src` (strict) | **PASS** — 39 source files |
-| `pytest` | **PASS** — 82 passed, **0 skipped** |
+| `pytest` | **PASS** — 85 passed, **0 skipped** |
 | `alembic upgrade head` | **PASS** — at `0006` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
@@ -36,7 +36,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 
-**Headline:** 82 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate.
+**Headline:** 85 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
 > CI itself has **never run** — the repository has no remote yet. Pushing it is the next agent's first task ([HANDOFF.md §1](HANDOFF.md)).
 
@@ -129,7 +129,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 - [ ] Push to a remote and get CI green for the first time
 - [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
 - [x] `apps/web` (Next.js 15, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
-- [ ] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7)
+- [x] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7): `send_email` enqueues a `send_email_job` (`max_tries=5`) instead of sending inline; the request path never blocks on or fails because of SMTP
 
 **Demo target — met, verified over HTTP:** `localhost:3010` renders TTLI Executive Institute in navy `#1B2A4A`; `meridian.localhost:3010` renders Meridian Holdings in green `#14532D` from the same build; login flows through the BFF, MFA challenge included; the admin shell shows the signed-in principal and permissions.
 
