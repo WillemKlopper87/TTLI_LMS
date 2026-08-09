@@ -54,32 +54,22 @@ export function LoginForm() {
     router.push("/admin");
   }
 
-  const inputClass =
-    "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2";
-  const buttonClass =
-    "w-full rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50";
-
   if (mfaToken) {
     return (
       <form onSubmit={submitMfa} className="space-y-4">
-        <p className="text-sm text-gray-600">
+        <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
           Enter the code from your authenticator app, or a recovery code.
         </p>
         <input
-          className={inputClass}
+          className="input"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="123456"
           autoFocus
           required
         />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={busy}
-          className={buttonClass}
-          style={{ backgroundColor: "var(--brand-primary)" }}
-        >
+        {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+        <button type="submit" disabled={busy} className="btn btn--primary btn--block">
           Verify
         </button>
       </form>
@@ -89,7 +79,7 @@ export function LoginForm() {
   return (
     <form onSubmit={submitLogin} className="space-y-4">
       <input
-        className={inputClass}
+        className="input"
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -97,20 +87,15 @@ export function LoginForm() {
         required
       />
       <input
-        className={inputClass}
+        className="input"
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Password"
         required
       />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={busy}
-        className={buttonClass}
-        style={{ backgroundColor: "var(--brand-primary)" }}
-      >
+      {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      <button type="submit" disabled={busy} className="btn btn--primary btn--block">
         Sign in
       </button>
     </form>

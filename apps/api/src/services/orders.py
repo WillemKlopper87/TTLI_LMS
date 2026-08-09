@@ -22,9 +22,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.crypto import CryptoBox
 from src.core.errors import AppError
 from src.core.ids import uuid7
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
+from src.models.user import User
 from src.services import entitlements, invoicing, ledger, tax
 
 
@@ -246,12 +248,60 @@ async def reject_eft(session: AsyncSession, *, order: Order, payment: Payment, r
     await session.flush()
 
 
+@dataclass(frozen=True, slots=True)
+class PendingPayment:
+    payment_id: uuid.UUID
+    order_id: uuid.UUID
+    buyer_email: str
+    amount: Decimal
+    currency: str
+    payment_reference: str | None
+    proof_uploaded: bool
+    created_at: datetime
+
+
+async def list_pending_eft_payments(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID, limit: int, offset: int
+) -> tuple[list[PendingPayment], int]:
+    """The finance queue (REQ-PAY-03): EFT payments whose order is
+    `eft_pending_approval` — proof uploaded, awaiting a human decision.
+    There is no automated approval path.
+    """
+    base = (
+        select(Payment, Order, User)
+        .join(Order, Order.id == Payment.order_id)
+        .join(User, User.id == Order.user_id)
+        .where(Order.tenant_id == tenant_id, Order.status == "eft_pending_approval")
+    )
+    total = len((await session.execute(base)).all())
+
+    rows = (
+        await session.execute(base.order_by(Payment.created_at.desc()).limit(limit).offset(offset))
+    ).all()
+    items = [
+        PendingPayment(
+            payment_id=payment.id,
+            order_id=order.id,
+            buyer_email=crypto.decrypt(user.email_encrypted),
+            amount=payment.amount,
+            currency=payment.currency,
+            payment_reference=order.payment_reference,
+            proof_uploaded=payment.proof_object_key is not None,
+            created_at=payment.created_at,
+        )
+        for payment, order, user in rows
+    ]
+    return items, total
+
+
 __all__ = [
     "OrderError",
     "OrderLineRequest",
+    "PendingPayment",
     "approve_eft",
     "checkout_eft",
     "create_order",
+    "list_pending_eft_payments",
     "reject_eft",
     "submit_proof",
 ]

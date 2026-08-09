@@ -26,10 +26,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Query, UploadFile, status
 from sqlalchemy import select
 
-from src.core.deps import PrincipalDep, SessionDep, SettingsDep, StorageDep
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
 from src.core.errors import AppError, Forbidden, NotFound
 from src.models.commerce import Order, OrderItem, Payment
 from src.schemas.commerce import (
@@ -38,8 +38,14 @@ from src.schemas.commerce import (
     InvoiceResponse,
     OrderItemResponse,
     OrderResponse,
+    PendingPaymentsPage,
+    PendingPaymentSummary,
+    PriceSummary,
+    ProductsPage,
+    ProductSummary,
     RejectPaymentRequest,
 )
+from src.services import catalogue
 from src.services import orders as orders_service
 from src.services.storage import Container
 
@@ -89,6 +95,32 @@ async def _order_response(session: SessionDep, order: Order) -> OrderResponse:
             )
             for item in items
         ],
+    )
+
+
+@router.get("/products", response_model=ProductsPage, summary="The public product catalogue")
+async def list_products(session: SessionDep, tenant: TenantDep) -> ProductsPage:
+    products = await catalogue.list_active_products(session, tenant_id=tenant.id)
+    return ProductsPage(
+        items=[
+            ProductSummary(
+                id=str(p.id),
+                slug=p.slug,
+                name=p.name,
+                description=p.description,
+                kind=p.kind,
+                prices=[
+                    PriceSummary(
+                        id=str(price.id),
+                        currency=price.currency,
+                        unit_amount=price.unit_amount,
+                        tax_behaviour=price.tax_behaviour,
+                    )
+                    for price in p.prices
+                ],
+            )
+            for p in products
+        ]
     )
 
 
@@ -173,6 +205,38 @@ async def upload_payment_proof(
     # — no scanning engine exists in this project yet. Tracked in
     # STATUS.md as a gap, not silently skipped.
     await orders_service.submit_proof(session, order=order, payment=payment, proof_object_key=key)
+
+
+@router.get("/payments", response_model=PendingPaymentsPage, summary="The finance approval queue")
+async def list_pending_payments(
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> PendingPaymentsPage:
+    principal.require("payment:approve")
+    items, total = await orders_service.list_pending_eft_payments(
+        session, crypto, tenant_id=principal.tenant_id, limit=limit, offset=offset
+    )
+    return PendingPaymentsPage(
+        items=[
+            PendingPaymentSummary(
+                payment_id=str(row.payment_id),
+                order_id=str(row.order_id),
+                buyer_email=row.buyer_email,
+                amount=row.amount,
+                currency=row.currency,
+                payment_reference=row.payment_reference,
+                proof_uploaded=row.proof_uploaded,
+                created_at=row.created_at,
+            )
+            for row in items
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/payments/{payment_id}/approve", response_model=InvoiceResponse)

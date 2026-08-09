@@ -65,6 +65,44 @@ class InvoiceResponse(BaseModel):
     grand_total: Decimal
 
 
+class PriceSummary(BaseModel):
+    id: str
+    currency: str
+    unit_amount: Decimal
+    tax_behaviour: str
+
+
+class ProductSummary(BaseModel):
+    id: str
+    slug: str
+    name: str
+    description: str | None
+    kind: str
+    prices: list[PriceSummary]
+
+
+class ProductsPage(BaseModel):
+    items: list[ProductSummary]
+
+
+class PendingPaymentSummary(BaseModel):
+    payment_id: str
+    order_id: str
+    buyer_email: str
+    amount: Decimal
+    currency: str
+    payment_reference: str | None
+    proof_uploaded: bool
+    created_at: datetime
+
+
+class PendingPaymentsPage(BaseModel):
+    items: list[PendingPaymentSummary]
+    total: int
+    limit: int
+    offset: int
+
+
 __all__ = [
     "CUSTOMER_TYPES",
     "CreateOrderRequest",
@@ -73,5 +111,10 @@ __all__ = [
     "OrderItemResponse",
     "OrderLine",
     "OrderResponse",
+    "PendingPaymentSummary",
+    "PendingPaymentsPage",
+    "PriceSummary",
+    "ProductSummary",
+    "ProductsPage",
     "RejectPaymentRequest",
 ]

@@ -7,11 +7,13 @@ export default function AdminOverview() {
 
   return (
     <>
-      <h1 className="text-xl font-semibold">Welcome</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Signed in as <span className="font-mono">{me.email}</span>
+      <h1 className="serif" style={{ fontSize: "1.5rem" }}>
+        Welcome
+      </h1>
+      <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+        Signed in as <span className="mono">{me.email}</span>
       </p>
-      <p className="mt-1 text-sm text-gray-600">
+      <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
         Permissions: {me.permissions.length > 0 ? me.permissions.join(", ") : "none"}
       </p>
     </>

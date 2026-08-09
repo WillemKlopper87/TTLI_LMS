@@ -27,6 +27,12 @@ interface LeadsPage {
 
 const PAGE_SIZE = 50;
 
+const STAGE_TAG: Record<string, string> = {
+  new: "tag--mute",
+  contacted: "tag--live",
+  qualified: "tag--done",
+};
+
 export default function LeadsScreen() {
   const [page, setPage] = useState<LeadsPage | null>(null);
   const [offset, setOffset] = useState(0);
@@ -55,16 +61,20 @@ export default function LeadsScreen() {
 
   if (error === "forbidden") {
     return (
-      <p className="text-sm text-gray-600">
+      <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
         Your account does not have permission to view leads.
       </p>
     );
   }
   if (error === "unknown") {
-    return <p className="text-sm text-gray-600">Leads could not be loaded. Try again shortly.</p>;
+    return (
+      <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+        Leads could not be loaded. Try again shortly.
+      </p>
+    );
   }
   if (page === null) {
-    return <p className="text-sm text-gray-500">Loading…</p>;
+    return <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>Loading…</p>;
   }
 
   const name = (lead: LeadSummary) =>
@@ -72,35 +82,47 @@ export default function LeadsScreen() {
 
   return (
     <>
-      <h1 className="text-xl font-semibold">Leads</h1>
-      <p className="mt-1 text-sm text-gray-600">{page.total} captured</p>
+      <h1 className="serif" style={{ fontSize: "1.5rem" }}>
+        Leads
+      </h1>
+      <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+        {page.total} captured
+      </p>
 
       {page.items.length === 0 ? (
-        <p className="mt-6 text-sm text-gray-500">No leads captured yet.</p>
+        <p className="mt-6" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+          No leads captured yet.
+        </p>
       ) : (
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <div className="table-wrap mt-6">
+          <table className="data">
             <thead>
-              <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                <th className="py-2 pr-4">Name</th>
-                <th className="py-2 pr-4">Email</th>
-                <th className="py-2 pr-4">Company</th>
-                <th className="py-2 pr-4">Source</th>
-                <th className="py-2 pr-4">Stage</th>
-                <th className="py-2 pr-4">Score</th>
-                <th className="py-2 pr-4">Captured</th>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Source</th>
+                <th>Stage</th>
+                <th>Score</th>
+                <th>Captured</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {page.items.map((lead) => (
                 <tr key={lead.lead_id}>
-                  <td className="py-2 pr-4">{name(lead)}</td>
-                  <td className="py-2 pr-4 font-mono text-xs">{lead.email}</td>
-                  <td className="py-2 pr-4">{lead.company ?? "—"}</td>
-                  <td className="py-2 pr-4">{lead.source ?? "—"}</td>
-                  <td className="py-2 pr-4">{lead.stage}</td>
-                  <td className="py-2 pr-4">{lead.score}</td>
-                  <td className="py-2 pr-4 text-gray-500">
+                  <td>{name(lead)}</td>
+                  <td className="mono" style={{ fontSize: "0.75rem" }}>
+                    {lead.email}
+                  </td>
+                  <td>{lead.company ?? "—"}</td>
+                  <td>{lead.source ?? "—"}</td>
+                  <td>
+                    <span className={`tag ${STAGE_TAG[lead.stage] ?? "tag--mute"}`}>
+                      {lead.stage}
+                    </span>
+                  </td>
+                  <td className="mono">{lead.score}</td>
+                  <td className="mono" style={{ fontSize: "0.75rem", color: "var(--faint)" }}>
                     {new Date(lead.created_at).toLocaleDateString()}
                   </td>
                 </tr>
@@ -111,12 +133,12 @@ export default function LeadsScreen() {
       )}
 
       {page.total > PAGE_SIZE ? (
-        <div className="mt-4 flex items-center gap-3 text-sm">
+        <div className="mt-4 flex items-center gap-3">
           <button
             type="button"
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            className="rounded-md border border-gray-300 px-3 py-1 disabled:opacity-40"
+            className="btn btn--ghost"
           >
             Previous
           </button>
@@ -124,7 +146,7 @@ export default function LeadsScreen() {
             type="button"
             disabled={offset + PAGE_SIZE >= page.total}
             onClick={() => setOffset(offset + PAGE_SIZE)}
-            className="rounded-md border border-gray-300 px-3 py-1 disabled:opacity-40"
+            className="btn btn--ghost"
           >
             Next
           </button>

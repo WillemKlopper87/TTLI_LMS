@@ -274,6 +274,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The public product catalogue */
+        get: operations["list_products_api_v1_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/orders": {
         parameters: {
             query?: never;
@@ -336,6 +353,23 @@ export interface paths {
         put?: never;
         /** Upload Payment Proof */
         post: operations["upload_payment_proof_api_v1_orders__order_id__payment_proof_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The finance approval queue */
+        get: operations["list_pending_payments_api_v1_payments_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -647,6 +681,70 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /** PendingPaymentSummary */
+        PendingPaymentSummary: {
+            /** Payment Id */
+            payment_id: string;
+            /** Order Id */
+            order_id: string;
+            /** Buyer Email */
+            buyer_email: string;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Payment Reference */
+            payment_reference: string | null;
+            /** Proof Uploaded */
+            proof_uploaded: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PendingPaymentsPage */
+        PendingPaymentsPage: {
+            /** Items */
+            items: components["schemas"]["PendingPaymentSummary"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** PriceSummary */
+        PriceSummary: {
+            /** Id */
+            id: string;
+            /** Currency */
+            currency: string;
+            /** Unit Amount */
+            unit_amount: string;
+            /** Tax Behaviour */
+            tax_behaviour: string;
+        };
+        /** ProductSummary */
+        ProductSummary: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Kind */
+            kind: string;
+            /** Prices */
+            prices: components["schemas"]["PriceSummary"][];
+        };
+        /** ProductsPage */
+        ProductsPage: {
+            /** Items */
+            items: components["schemas"]["ProductSummary"][];
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -1161,6 +1259,26 @@ export interface operations {
             };
         };
     };
+    list_products_api_v1_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductsPage"];
+                };
+            };
+        };
+    };
     create_order_api_v1_orders_post: {
         parameters: {
             query?: never;
@@ -1277,6 +1395,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_payments_api_v1_payments_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingPaymentsPage"];
+                };
             };
             /** @description Validation Error */
             422: {

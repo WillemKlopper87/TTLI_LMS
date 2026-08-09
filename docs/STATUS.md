@@ -15,8 +15,8 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
-| 2 | Public site and content funnel | Leads, consent, events, guest access and the admin lead view all built; brand extracted. Marketing pages still blocked on Phase 0 (#8) | ~35% |
-| 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path, sequential invoicing, the append-only ledger. Card (Payfast/Netcash) and PO checkout not started | ~30% |
+| 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, and a real marketing landing page (real TTLI copy/imagery, not placeholder) all built | ~55% |
+| 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
 | 4.5 | PWA and accessibility | Not started | 0% |
 | 5 | Corporate, workshops, marketing | Not started | 0% |
@@ -25,9 +25,9 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 83 files |
-| `mypy src` (strict) | **PASS** — 60 source files |
-| `pytest` | **PASS** — 110 passed, **0 skipped** |
+| `ruff check` / `ruff format --check` | **PASS** — 84 files |
+| `mypy src` (strict) | **PASS** — 61 source files |
+| `pytest` | **PASS** — 113 passed, **0 skipped** |
 | `alembic upgrade head` | **PASS** — at `0009` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
@@ -35,9 +35,9 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31324955958](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31324955958) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push |
 
-**Headline:** 110 tests (0 skipped), 20 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
+**Headline:** 113 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 11 `apps/web` routes (up from 4).
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -73,11 +73,13 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) replacing the placeholder navy/gold, extracted from ttli.co.za with documented provenance | `0008`, [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), `apps/web/public/brand/` | migration round-trip; `apps/web` build/typecheck; HTTP smoke test against both demo tenants confirming `acme` is untouched |
 | Admin lead view: paginated, tenant-scoped, gated on `analytics:view` | `src/services/leads.py::list_leads`, `/leads` (GET), `apps/web/app/admin/leads/` | 2 tests in `tests/test_leads.py`; HTTP smoke test through the real BFF against a logged-in admin |
 | Guest account provisioning: unique-per-lead, time-limited, magic-link-only; expiry enforced at both magic-link consumption and refresh rotation | `src/services/guest_access.py`, `/guest-access` | 8 tests in `tests/test_guest_access.py`; HTTP smoke test confirmed real Mailhog delivery via the arq worker |
-| Commerce foundation + EFT purchase path: server-resolved price/tax, data-driven tax engine, sequential gapless invoicing, append-only ledger, entitlements | `0009`, `src/services/{tax,orders,invoicing,ledger,entitlements}.py`, `/orders`, `/payments` | 9 tests in `tests/test_commerce.py`; HTTP smoke test — full EFT flow, reject/resubmit, 5x rapid order creation with no reference collisions |
+| Commerce foundation + EFT purchase path: server-resolved price/tax, data-driven tax engine, sequential gapless invoicing, append-only ledger, entitlements, the finance approval queue | `0009`, `src/services/{tax,orders,invoicing,ledger,entitlements,catalogue}.py`, `/products`, `/orders`, `/payments` | 12 tests in `tests/test_commerce.py`; HTTP smoke test — full EFT flow, reject/resubmit, 5x rapid order creation with no reference collisions |
+| Real `apps/web` build: the prototype's design system (Charter serif, stone/surface palette, button/card/tag components) applied to every page; real TTLI copy, team photos and client logos from ttli.co.za (not placeholder content); routing restructured (`/` is now the marketing landing page, login moved to `/login`) | `apps/web/app/{globals.css,page.tsx,login/,guest-access/,catalogue/,checkout/,admin/payments/}`, `docs/brand/ttli-brand-identity.md` | `typecheck`/`build` clean, 11 routes; HTTP smoke test of the full journey — landing → guest-access → catalogue → checkout → EFT proof upload → finance approval → invoice, over the real BFF |
+| BFF binary-body fix: the proxy forwarded every non-GET body through `request.text()`, which silently corrupts binary content (multipart file uploads) on the UTF-8 round-trip | `apps/web/app/api/bff/[...path]/route.ts` | Verified with an actual JPEG proof-of-payment upload through the real BFF: stored file is byte-identical to the original (same size, same MD5) |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` (non-health routes under `/api/v1`)
 
 ---
 
@@ -145,7 +147,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 5. Phase 2 — Public site and content funnel (~35%)
+## 5. Phase 2 — Public site and content funnel (~55%)
 
 Marketing pages, resource hub, podcasts, gated content, consent management, lead capture with UTM attribution, guest accounts with expiry and watermarking, event tracking.
 
@@ -158,19 +160,21 @@ Marketing pages, resource hub, podcasts, gated content, consent management, lead
 - [x] `GET /api/v1/leads` — paginated, tenant-scoped, gated on `analytics:view` (the seeded admin role already carries it — no new permission needed); backs the admin `Leads` screen (`apps/web/app/admin/leads`)
 - [x] `POST /api/v1/guest-access` (03 §4.2, REQ-LEAD-04/05/06) — provisions a unique-per-lead, time-limited guest `users` row and emails a magic link (never a password); repeat requests refresh the same guest rather than duplicating it, and requests against an existing full account never downgrade it. The expiry window (decision #6, 7 vs 14 days) ships as `settings.guest_access_days` (default 7) rather than a hardcoded guess. Guest expiry is enforced at both points that actually gate access — magic-link consumption and refresh-token rotation, the latter raising its own `GuestAccessExpired` rather than being misclassified as token-theft
 - [x] Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) extracted from ttli.co.za and applied throughout `apps/web` — provenance in [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), §2's table
+- [x] A real marketing landing page at `apps/web/app/page.tsx` — the site's actual About narrative, "90+ organisations, 19 countries" track record, the *Lead with Intent* book, five real facilitator photos and nine real client logos (Standard Bank, HENSOLDT, De'Longhi and others), all extracted from ttli.co.za at the customer's own request, not invented copy. `/login` moved off the root path to make room for it — see the routing note in HANDOFF.md
+- [x] `apps/web/app/guest-access/page.tsx` — a real form posting to `POST /guest-access`, not just the backend from the prior pass
 
 ### Outstanding — blocked on Phase 0 or genuinely not started
 
-- [ ] Marketing pages, resource hub, podcasts — blocked on content inventory and the Phase 0 sign-off on the brand/design system (#8); the *extracted* brand above is a working foundation, not that formal sign-off
+- [ ] The rest of the real site's pages as their own routes — Podcasts, "Lead With Intent"/"Cultivate with Intent" as dedicated pages, a working contact form. The landing page folds their content into one page for now; the real site's contact page has no form either, just contact details
 - [ ] REQ-LEAD-05's sample-only entitlement/watermarking and REQ-LEAD-07's guest→paid conversion — both need course/enrolment tables that don't exist yet (Phase 4)
 - [ ] The hourly guest-expiry downgrade sweep (02 §12.4) — expiry is enforced at the auth layer instead (see above); the sweep is about `status` bookkeeping, not access control, so it's a smaller follow-up
 - [ ] The full CRM (`deals`, `tasks`, `notes`, `activities`, `campaigns`, `segments`, email tables) — deliberately out of scope here; that's Phase 5 (02 §10)
 
-**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin. Met on the backend and in the admin shell — a `POST /guest-access` submission is visible on `/admin/leads` and its magic link signs in — but not yet as an actual public-facing podcast page, since marketing pages are still blocked on #8.
+**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin. Met almost end to end — the real landing page's "Try a free lesson" CTA reaches a working `/guest-access` page, submissions are visible on `/admin/leads`, and the magic link signs in — the one piece still missing is an actual podcast episode page (Podcasts isn't ported as its own route yet).
 
 ---
 
-## 6. Phase 3 — Commerce (~30%)
+## 6. Phase 3 — Commerce (~40%)
 
 Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload and finance approval, PO capture, sequential invoicing, append-only ledger, VAT engine, entitlements.
 
@@ -183,6 +187,8 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 - [x] Sequential, gapless invoice numbering (`src/services/invoicing.py`, REQ-PAY-09) — a per-`(tenant_id, series)` counter locked with `SELECT ... FOR UPDATE` inside the issuing transaction, not a Postgres sequence (which leaves gaps on rollback)
 - [x] Entitlements granted only on the `fulfilled` transition, in the same transaction as invoice issuance and the ledger entries recording both (02 §6.2)
 - [x] `GET /orders/{id}` — ownership-gated (a learner sees their own order; `payment:approve` is a separate, finance-only gate on approve/reject)
+- [x] `GET /products` (public catalogue) and `GET /payments` (the finance approval queue, `payment:approve`-gated)
+- [x] Real `apps/web` UI for the whole path: `/catalogue` (lists the real seeded product), `/checkout` (customer-type selection → EFT bank details → proof upload), `/admin/payments` (finance's approve/reject queue) — the EFT flow is no longer API-only
 
 ### Outstanding — blocked on external accounts, or genuinely not started
 

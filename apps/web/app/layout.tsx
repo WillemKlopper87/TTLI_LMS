@@ -16,7 +16,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <head>
         <title>{theme?.tenant_name ?? "TTLI"}</title>
       </head>
-      <body style={style} className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+      <body style={style} className="min-h-screen antialiased">
         {children}
       </body>
     </html>

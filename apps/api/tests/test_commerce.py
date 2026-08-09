@@ -416,3 +416,64 @@ async def test_ledger_entries_are_append_only(client, tenant_session_factory, cr
             await s.execute(
                 sa.text("UPDATE ledger_entries SET amount = 999 WHERE id = :i"), {"i": entry_id}
             )
+
+
+async def test_list_products_returns_the_seeded_catalogue(client) -> None:  # type: ignore[no-untyped-def]
+    resp = await client.get("/api/v1/products")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["items"]) >= 1
+    product = body["items"][0]
+    assert product["prices"], "seeded product should carry at least one price"
+    assert product["prices"][0]["currency"] == "ZAR"
+
+
+async def test_pending_payments_requires_permission(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token, _ = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
+
+    resp = await client.get("/api/v1/payments", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+
+
+async def test_pending_payments_lists_only_awaiting_approval(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    buyer_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+
+    order = await _create_order(client, buyer_token, price_id)
+    checkout = await client.post(
+        f"/api/v1/orders/{order['id']}/checkout/eft",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    payment_reference = checkout.json()["payment_reference"]
+
+    # Not yet in the queue — no proof uploaded, order is still eft_pending_proof.
+    before = await client.get(
+        "/api/v1/payments", headers={"Authorization": f"Bearer {finance_token}"}
+    )
+    assert before.status_code == 200
+    assert payment_reference not in {row["payment_reference"] for row in before.json()["items"]}
+
+    await client.post(
+        f"/api/v1/orders/{order['id']}/payment-proof",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("proof.pdf", b"proof", "application/pdf")},
+    )
+
+    after = await client.get(
+        "/api/v1/payments", headers={"Authorization": f"Bearer {finance_token}"}
+    )
+    assert after.status_code == 200
+    match = next(
+        row for row in after.json()["items"] if row["payment_reference"] == payment_reference
+    )
+    assert match["proof_uploaded"] is True
+    assert match["amount"] == "5175.00"

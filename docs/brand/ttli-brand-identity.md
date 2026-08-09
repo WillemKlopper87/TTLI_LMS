@@ -76,9 +76,83 @@ No `@font-face` or a named brand typeface was identifiable from the fetched
 CSS — the site relies on Divi/WordPress default font stacks. Not treated as
 a brand signal; `apps/web` keeps its existing Tailwind default font stack.
 
+## Content — home, about, contact (extracted 2026-08-09, second pass)
+
+Fetched `https://ttli.co.za/about/` and `https://ttli.co.za/contact/` in
+addition to the homepage, at the user's explicit request to carry the real
+site's content — copy, images, team, partners — into the new design rather
+than the placeholder copy the interface prototype used. Quoted verbatim
+except where noted.
+
+**Nav (top-level, exact):** Home / Lead With Intent (submenu: Coaching
+Guide) / Cultivate with Intent / Engagement / Services (submenu: Strategy,
+Learning Programs, Coaching) / Podcasts / About / Contact
+
+**About narrative (verbatim, from the About page):**
+> We train, consult and coach organisations in the Essentials Skills needed
+> to raise engagement. We offer value to customers through Engagement
+> Analysis, Training, Consulting and Coaching within the spheres of
+> Leadership, Strategy and Organisational Wellbeing. We have built a
+> reputation as a Catalyst that guide organisations towards a sustainable
+> increase in their profitability. We hold a deep belief that to work is a
+> gift and that the workplace should be an environment that inspire people
+> to share their talent, experience, ideas, uniqueness and enthusiasm.
+
+**Track record claim (verbatim):** "more than 90 organizations in 19
+countries" — the only quantitative claim on the site; no other stats
+(client count, years trading, etc.) are published.
+
+**Team** (About page; photos saved to `apps/web/public/brand/team/`):
+
+| Name | Role | Photo file |
+|---|---|---|
+| Hermann du Plessis | Founder — 20 years' experience, 15,000+ coaching hours; author of *Lead with Intent* | `team-hermann-du-plessis.jpg` |
+| Sizwe Kuzwayo | Sustainability practitioner and business consultant, 20+ years in leadership | `team-sizwe-kuzwayo.jpg` |
+| Hano du Plessis | Training Manager | `team-hano-du-plessis.jpg` |
+| Agnes Hove | Strategist — Master's in Strategy, Bachelor's in Business Management | `team-agnes-hove.jpg` |
+| Erika Botha | Management consultant and learning facilitator | `team-erika-botha.jpg` |
+
+**Contact details (verbatim, About + Contact pages):**
+- Hermann du Plessis — `hermann@ttli.co.za` — +27 82 853 7463
+- Sizwe Kuzwayo — `sizwe@ttli.co.za` — +27 79 779 8626
+- Hano du Plessis — `hano@ttli.co.za` — +27 74 722 0773
+- Physical address: "30 Kasbah Ridge, Egale Canyon Golf Estate"
+- Contact page heading: "Get In Touch" / "We would really like to hear from you."
+
+These are personal names, direct cellphone numbers and personal work
+emails of named individuals — sensitive even though the company itself
+publishes them on its own public marketing site. They're carried into this
+build because that is the explicit, narrow purpose here (rebuilding this
+company's own site with its own real content, for the same company) — not
+a general licence to redistribute them. Re-check before this ever leaves
+an internal/demo context.
+
+**Client / partner logos** (homepage; saved to
+`apps/web/public/brand/partners/`, greyscale originals as published):
+Standard Bank, HENSOLDT, De'Longhi, Floorworx, ITEC Evolve, Shangoni
+Management Services, Earthlab, TWK, Barberton Mines. No testimonial
+quotes accompany these — the site displays logos only, no attributed text.
+
+**"Lead with Intent"** — a book by founder Hermann du Plessis. Site copy:
+"A ground-breaking book by Hermann du Plessis that reveals nine leadership
+principles and practices that drive engagement and commitment in the
+workplace." Cover saved as `apps/web/public/brand/book-lead-with-intent.jpg`.
+Also the name of the site's top-level nav item and a services offering —
+treated here as the closest real analogue to a flagship "product," used as
+such in the new catalogue/landing content.
+
+**Footer (verbatim):** "TERMS OF USAGE & PRIVACY | COPYRIGHT © THEMBA
+THANDEKA LEADERSHIP INSTITUTE 2023." No footer contact block, no listed
+social profile URLs (a LinkedIn *share* button is present, not a company
+profile link) — a Linktree QR code is the only additional-links surface.
+
+**Explicitly not present on the site, so not fabricated here:** customer
+testimonials/quotes, numeric stats beyond the "90 organisations / 19
+countries" line, a company social media profile URL, and — per the first
+extraction pass — a distinct brand typeface.
+
 ## What was deliberately not extracted
 
-- **Contact email/phone:** none listed on the fetched homepage.
 - **Full color palette beyond the five above:** the WordPress block-editor's
   stock Gutenberg palette (reds/oranges/greens/purples used by the page
   builder's default color picker) also appears in the HTML but is not part

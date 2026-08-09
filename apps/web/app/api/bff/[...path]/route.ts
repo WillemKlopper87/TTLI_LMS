@@ -23,14 +23,17 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   const fingerprint = request.headers.get("x-device-fingerprint");
   if (fingerprint) headers["X-Device-Fingerprint"] = fingerprint;
 
-  const body = request.method === "GET" || request.method === "HEAD"
-    ? undefined
-    : await request.text();
+  // arrayBuffer, not text: a text() round-trip re-decodes/re-encodes as
+  // UTF-8, which corrupts binary bodies — multipart file uploads
+  // (payment-proof) in particular. JSON bodies pass through arrayBuffer
+  // just as correctly, so there's no reason to special-case content-type.
+  const body =
+    request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
   const upstream = await fetch(url, { method: request.method, headers, body, cache: "no-store" });
 
-  const responseBody = await upstream.text();
-  return new NextResponse(responseBody.length > 0 ? responseBody : null, {
+  const responseBody = await upstream.arrayBuffer();
+  return new NextResponse(responseBody.byteLength > 0 ? responseBody : null, {
     status: upstream.status,
     headers: {
       "Content-Type": upstream.headers.get("content-type") ?? "application/json",

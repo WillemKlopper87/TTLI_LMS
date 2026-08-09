@@ -240,6 +240,81 @@ raw `UPDATE`. Pushed as `a26b753`; green on both jobs on the first try —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31324955958
 (1m45s, quality + web).
 
+**Ninth pass: `apps/web` gets a real design system, real content, and UI
+for the whole EFT purchase path.** The user asked for two things together
+— restyle `apps/web` to match the interface prototype (the 11-screen
+journey mockup, `docs/brand/` provenance), and start building the screens
+that don't exist yet — then mid-turn, separately, asked for the real
+ttli.co.za content (copy, images, team, client logos) to go into the new
+design rather than the prototype's invented course names. Both landed in
+this pass.
+
+*Design system.* The prototype's tokens (Charter serif, stone/surface
+neutrals, `.btn`/`.tag`/`.card` components) are now in
+`apps/web/app/globals.css`, bridged onto the existing tenant-driven
+`--brand-primary`/`--brand-secondary` rather than replacing them —
+`--brand-wash` is computed with `color-mix()`, not hardcoded, so it stays
+correct for any tenant's color, not just TTLI's red. Login, the admin
+shell, and the leads table were restyled onto it.
+
+*Real content, not fiction.* A second extraction pass on ttli.co.za (the
+first only got colors/logo) pulled the actual About narrative, the "90+
+organisations, 19 countries" line, five real facilitator names/photos/
+roles, nine real client logos (Standard Bank, HENSOLDT, De'Longhi,
+Floorworx, ITEC Evolve, Shangoni, Earthlab, TWK, Barberton Mines), and the
+founder's book *Lead with Intent* — all with provenance in
+[docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), which
+also flags that the team's personal emails/cellphone numbers are real and
+sensitive even though TTLI publishes them themselves — carried into this
+build for its narrow stated purpose (rebuilding this company's own site
+with its own content), not redistributed further. Deliberately **not**
+fabricated: testimonials (the real site has none), and stats beyond the
+one track-record line.
+
+*Routing changed*: `/` was the login page; it's now the real marketing
+landing page (`apps/web/app/page.tsx`), and login moved to `/login`. Every
+`router.replace("/")` in `admin/layout.tsx` had to move to `"/login"` with
+it — check for that pattern before adding new auth redirects.
+
+*New screens, all backed by real endpoints* (no fabricated data): `/login`
+(moved), `/guest-access` (posts to the `POST /guest-access` this project
+already had), `/catalogue` (new `GET /products`, listing the real seeded
+product — not the prototype's "Leading Through Ambiguity"), `/checkout`
+(customer-type → `POST /orders` → `POST .../checkout/eft` → proof upload,
+the full REQ-PAY-03 path with a UI now, not just an API), `/admin/payments`
+(new `GET /payments`, the finance approve/reject queue). Screens that
+still cannot be built with real data — the course player, quiz, certificate
+verification, corporate manager view — need Phase 4/5 backend that doesn't
+exist (lessons, quizzes, certificates, organisations); building UI for
+those now would mean fabricating the very data this pass was about not
+fabricating, so they're still just the prototype's wireframe, not ported.
+
+*A real bug, caught by testing the file upload for real*: the BFF proxy
+(`apps/web/app/api/bff/[...path]/route.ts`) forwarded every non-GET
+request body through `request.text()`. That's fine for JSON but silently
+corrupts binary content on the UTF-8 decode/re-encode round-trip — exactly
+what the new payment-proof upload does. Fixed by switching to
+`arrayBuffer()` on both the request and response side. Verified properly,
+not just "it returned 204": uploaded the real *Lead with Intent* JPEG
+through the actual running BFF and diffed the stored file against the
+original — identical size, identical MD5. Test this exact way (upload a
+real binary, hash-compare what lands in `apps/api/var/storage/`) if you
+touch this proxy again; a 204 alone would not have caught the corruption.
+
+Verified: 113 tests (0 skipped, up from 110 — `tests/test_commerce.py`
+gained 3 for `GET /products`/`GET /payments`), full backend gate sweep,
+`apps/web` `typecheck`/`build` clean (11 routes), api-client regenerated.
+Live smoke test over the real BFF, not mocked: catalogue → order → EFT
+checkout → real-file proof upload (hash-verified) → finance queue →
+approve → invoice issued, plus a separate guest-access submission. Not yet
+pushed/CI-verified as of this note.
+
+Queued next, per the user's own sequencing: the security-hardening pass
+discussed earlier in this session — virus scanning on the payment-proof
+upload (still not implemented — see the Eighth pass note and STATUS.md
+§6), CSP/security headers on `apps/web`, and verifying dependency/
+container scanning is actually wired into CI.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
