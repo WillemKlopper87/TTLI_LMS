@@ -525,7 +525,9 @@ previous lesson first"), started lesson 1, attempted to complete it
 immediately and got refused — `423`, `"0s spent of 30s required"` — then
 waited the real 30 seconds and completed it for real, watching
 `next_lesson_id` and the progress endpoint both correctly show lesson 2
-unlocked. Not yet pushed as of this note.
+unlocked. Pushed as `0431928`; green on both jobs —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775
+(quality 3m4s, web 44s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

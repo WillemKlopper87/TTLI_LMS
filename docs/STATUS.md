@@ -25,12 +25,12 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 86 files |
-| `mypy src` (strict) | **PASS** — 62 source files |
-| `pytest` | **PASS** — 118 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
-| `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed this pass — see §4 below) |
+| `ruff check` / `ruff format --check` | **PASS** — 95 files |
+| `mypy src` (strict) | **PASS** — 68 source files |
+| `pytest` | **PASS** — 125 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
+| `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed in the hardening pass — see §4 below) |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
-| `alembic upgrade head` | **PASS** — at `0009` |
+| `alembic upgrade head` | **PASS** — at `0011` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
@@ -38,9 +38,9 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31332146723](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31332146723) (quality 2m37s, web 49s) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31334900775](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775) (quality 3m4s, web 44s) |
 
-**Headline:** 118 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 10 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 13 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI.
+**Headline:** 125 tests (0 skipped), 26 endpoints, 34 tables (events partitioned monthly ×14), 11 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -80,10 +80,11 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real `apps/web` build: the prototype's design system (Charter serif, stone/surface palette, button/card/tag components) applied to every page; real TTLI copy, team photos and client logos from ttli.co.za (not placeholder content); routing restructured (`/` is now the marketing landing page, login moved to `/login`) | `apps/web/app/{globals.css,page.tsx,login/,guest-access/,catalogue/,checkout/,admin/payments/}`, `docs/brand/ttli-brand-identity.md` | `typecheck`/`build` clean, 11 routes; HTTP smoke test of the full journey — landing → guest-access → catalogue → checkout → EFT proof upload → finance approval → invoice, over the real BFF |
 | BFF binary-body fix: the proxy forwarded every non-GET body through `request.text()`, which silently corrupts binary content (multipart file uploads) on the UTF-8 round-trip | `apps/web/app/api/bff/[...path]/route.ts` | Verified with an actual JPEG proof-of-payment upload through the real BFF: stored file is byte-identical to the original (same size, same MD5) |
 | Security hardening: real ClamAV virus scan (REQ-BYPASS-08) before a payment-proof upload is stored, fail-closed if the scanner is unreachable; CSP with a per-request nonce + security headers on every `apps/web` response; `pip-audit`/`npm audit` wired into CI as real gates (35 CVEs found and fixed — see `requirements.txt`'s comment) | `src/services/antivirus.py`, `apps/web/proxy.ts`, `.github/workflows/api.yml` | `tests/test_antivirus.py` (real clamd: clean file, EICAR, unreachable-host); `tests/test_commerce.py::test_infected_payment_proof_is_refused_and_order_does_not_advance`; full gate sweep re-run clean after each dependency bump |
+| Course content model (global, not tenant-scoped) + the server-side completion rule engine + enrolments sourced from an entitlement | `0011`, `src/services/{completion,enrolment}.py`, `/enrolments`, `/lessons/{id}/start`, `/lessons/{id}/complete` | 7 tests in `tests/test_learning.py`; live HTTP smoke test against a running server — real refusal (`"0s spent of 30s required"`) then a real completion after waiting past the threshold, next lesson correctly unlocked |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` (non-health routes under `/api/v1`)
 
 ---
 
