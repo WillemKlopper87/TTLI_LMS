@@ -654,8 +654,11 @@ watermark overlay and 5-second heartbeat pings. `apps/web` `typecheck`/
 already existed from the twelfth pass, this pass only added the video
 player inside the existing lesson page). Pushed as `41c9598`; `quality`
 failed as designed on the missing-ffmpeg check (see above); fixed with an
-`apt-get install` step and pushed as a second commit — see the next
-pass note for the green run.
+`apt-get install` step, pushed as `77beb76` — green on both jobs,
+including the real ffmpeg transcode tests running for the first time on
+an actual GitHub Actions runner —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31337009510
+(quality 2m53s, web 47s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

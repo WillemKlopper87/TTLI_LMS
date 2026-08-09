@@ -39,7 +39,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real ffmpeg transcode → real HLS ladder → real playback through the BFF | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth pass) |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31334900775](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775) (quality 3m4s, web 44s) — pending re-verification after this push, since it's this push's own ffmpeg-on-CI-runner assumption being tested for the first time |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31337009510](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31337009510) (quality 2m53s, web 47s) — first run with real ffmpeg on the Actions runner (`ubuntu-latest` doesn't ship it; the first attempt correctly failed loud instead of skipping, fixed with an `apt-get install` step) |
 
 **Headline:** 143 tests (0 skipped), 32 endpoints, 38 tables (events partitioned monthly ×14), 12 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress including real video-watch percentage, and a real ported VOD transcode pipeline with signed HLS playback.
 
