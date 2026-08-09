@@ -617,16 +617,22 @@ tracks that gap explicitly). It exists because the upload endpoint above
 it is otherwise unreachable in any real end-to-end flow; don't grow it
 into general authoring without deciding that's actually in scope.
 
-**CI risk flagged and addressed, not left to find out the hard way**:
-`tests/test_media.py` needs a real `ffmpeg`/`ffprobe` on PATH. `ubuntu-latest`
-GitHub Actions runners ship it, but this workflow's zero-skip policy (the
-"Assert integration tests ran" step) turns *any* skip into a hard CI
-failure — if that assumption were wrong, the failure would show up as a
-confusing downstream skip-count mismatch rather than a clear "ffmpeg not
-found." Added an explicit `ffmpeg -version && ffprobe -version` step to
-`.github/workflows/api.yml`'s `quality` job specifically so a missing
-binary fails loudly, at its own step, with an unambiguous message — this
-push is the first real test of whether that assumption holds.
+**A third real bug, this time in CI itself, caught by the same
+verify-don't-assume discipline**: `tests/test_media.py` needs a real
+`ffmpeg`/`ffprobe` on PATH, and this workflow's zero-skip policy (the
+"Assert integration tests ran" step) turns any skip into a hard CI
+failure — so rather than assume `ubuntu-latest` ships ffmpeg, the first
+push added an explicit `ffmpeg -version && ffprobe -version` step to
+`.github/workflows/api.yml`'s `quality` job specifically so a wrong
+assumption would fail loudly, at its own step, with an unambiguous
+message. It was wrong: `ubuntu-latest` does **not** ship ffmpeg —
+`quality` failed in 1m10s with `ffmpeg: command not found` (exit 127),
+exactly as designed to. Fixed with a real `sudo apt-get install -y
+ffmpeg` step ahead of the verify step, pushed as a second commit on this
+same pass. Worth internalising: two of this pass's three real bugs (the
+`lessons` grant, this one) were caught only because something was
+actually run rather than reasoned about from documentation or memory —
+the Redis `str`/`bytes` one makes three.
 
 Real end-to-end verification, both automated and live: 18 new tests in
 `tests/test_media.py`/`test_media_ffmpeg.py` (real ffmpeg transcodes, not
@@ -646,7 +652,10 @@ with the row-level state to prove it. `apps/web` gained `hls.js`
 watermark overlay and 5-second heartbeat pings. `apps/web` `typecheck`/
 `build` clean (still 15 routes — `/learn` and `/learn/[enrolmentId]`
 already existed from the twelfth pass, this pass only added the video
-player inside the existing lesson page). Not yet pushed as of this note.
+player inside the existing lesson page). Pushed as `41c9598`; `quality`
+failed as designed on the missing-ffmpeg check (see above); fixed with an
+`apt-get install` step and pushed as a second commit — see the next
+pass note for the green run.
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

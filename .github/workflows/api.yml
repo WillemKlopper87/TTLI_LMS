@@ -87,10 +87,14 @@ jobs:
 
       # tests/test_media.py runs a real transcode against real ffmpeg
       # (06 §3) — the same "don't mock it" reasoning as ClamAV below.
-      # ubuntu-latest ships ffmpeg already, but this workflow's zero-skip
-      # policy (the "Assert integration tests ran" step) turns a missing
-      # binary into a hard CI failure rather than a quiet skip, so this is
-      # asserted explicitly instead of assumed.
+      # ubuntu-latest does NOT ship ffmpeg (confirmed the hard way: a
+      # first version of this step only *verified* ffmpeg was present and
+      # failed with "command not found" — apt installs it instead now).
+      # This workflow's zero-skip policy (the "Assert integration tests
+      # ran" step) turns a missing binary into a hard CI failure rather
+      # than a quiet skip, so this can't be silently wrong again.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Verify ffmpeg is available
         run: ffmpeg -version && ffprobe -version
 
