@@ -38,7 +38,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push — first run with the new ClamAV service container |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31332146723](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31332146723) (quality 2m37s, web 49s) |
 
 **Headline:** 117 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 11 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI.
 

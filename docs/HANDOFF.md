@@ -404,11 +404,12 @@ Verified: full gate sweep against the real compose stack (ruff, ruff
 format, mypy, 117 tests / 0 skipped, migration round-trip, `alembic
 check`, api-client drift + `tsc --noEmit`), `apps/web` `typecheck` and
 `build` both clean, `pip-audit` and both `npm audit` runs at 0 findings.
-Not yet pushed/CI-verified as of this note — in particular, the GH Actions
-`--health-cmd "clamdcheck.sh"` service-container syntax for ClamAV has
-only been exercised via local `docker compose`, never through GH Actions'
-own `options:` health-check mechanism, so the very first CI run after this
-push is the real test of it.
+Pushed as `ab58ce7`; green on both jobs on the first try, including the
+ClamAV service container's GH Actions `--health-cmd "clamdcheck.sh"`
+syntax working correctly on its first-ever run (previously only exercised
+via local `docker compose`) —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31332146723
+(quality 2m37s, web 49s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
