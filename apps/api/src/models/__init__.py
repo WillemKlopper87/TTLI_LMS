@@ -8,7 +8,10 @@ is how `alembic check` starts passing while the schema quietly drifts.
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
+from src.models.consent import ConsentRecord
+from src.models.contact import Contact
 from src.models.event import Event
+from src.models.lead import Lead
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.tenant import Tenant, TenantDomain
 from src.models.theme import TenantTheme
@@ -18,7 +21,10 @@ __all__ = [
     "AuditAction",
     "AuditEvent",
     "Base",
+    "ConsentRecord",
+    "Contact",
     "Event",
+    "Lead",
     "MagicLink",
     "MfaRecoveryCode",
     "PasswordReset",

@@ -49,8 +49,27 @@ dependencies — `openapi-fetch` — resolve from *its* `node_modules`, not
 Pushed, and — unlike the first CI run ever, which needed a real fix — this
 one was green end to end on the first try, `quality` and the new `web` job
 both: [run 31319510689](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31319510689).
-**Still genuinely open: nothing from the original weakness/housekeeping
-list — see §6 for what's next.**
+
+**Fifth pass: first Phase 2 backend work** — the three pieces that don't
+depend on any of Phase 0's ten open decisions (§6 said as much; this is that
+guidance acted on). Migration `0007` adds `contacts` (encrypted PII, same
+pattern as `users`), `leads` (deliberately *not* the full CRM — 02 §10 names
+eleven more tables, `deals`/`tasks`/`campaigns`/etc., that stay Phase 5;
+this is only what `POST /leads` needs), and `consent_records` (append-only,
+copied exactly from `audit_events`' two-layer enforcement). `POST /leads`
+merges progressive-profiling fields into one lead row per contact across
+repeat submissions rather than duplicating rows — worth knowing before
+"fixing" it into an insert-only table. Separately, `src/models/event.py`'s
+`events` table had existed since Sprint 3 with nothing writing to it;
+`src/services/events.py` is that write path, now called from login
+(success/failure), magic-link request, password-reset request, refresh
+reuse detection, and lead capture. Read `src/services/events.py`'s
+docstring before adding more call sites — the `consent_analytics=True`
+default is a documented, deliberately narrow stretch of 04 §5.1's
+anonymous-analytics allowance, not something to copy uncritically onto a
+marketing surface. 6 new tests (`tests/test_leads.py`), migration
+round-trips, 91 tests total, 0 skipped. Not yet pushed/CI-verified as of
+this note — do that before treating it as done.
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

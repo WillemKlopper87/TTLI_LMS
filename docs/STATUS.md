@@ -15,7 +15,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
-| 2 | Public site and content funnel | Not started | 0% |
+| 2 | Public site and content funnel | Backend foundation only: leads, consent, event tracking. UI blocked on brand (#8) | ~10% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
 | 4.5 | PWA and accessibility | Not started | 0% |
@@ -27,8 +27,8 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 55 files |
 | `mypy src` (strict) | **PASS** — 39 source files |
-| `pytest` | **PASS** — 85 passed, **0 skipped** |
-| `alembic upgrade head` | **PASS** — at `0006` |
+| `pytest` | **PASS** — 91 passed, **0 skipped** |
+| `alembic upgrade head` | **PASS** — at `0007` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
@@ -37,7 +37,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31319510689](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31319510689) |
 
-**Headline:** 85 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
+**Headline:** 91 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 7 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -67,11 +67,13 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Rate limiting: 10/min IP, 5/min account on auth endpoints | `src/services/rate_limit.py` | 2 tests |
 | arq worker: partition extension + auth-row purge via SECURITY DEFINER functions | `src/workers/main.py`, `0005` | 2 tests in `tests/test_workers.py` |
 | Typed TS client + CI drift gate | `packages/api-client/` | `tsc --noEmit`; `git diff --exit-code` in CI |
-| CI pipeline | `.github/workflows/api.yml` | 12 gates incl. skip detection — **not yet executed, no remote** |
+| CI pipeline | `.github/workflows/api.yml` (`quality` + `web` jobs) | verified green — see the run link below |
+| Lead capture: contacts + leads (progressive profiling merges, not duplicates) + consent | `0007`, `src/services/{leads,consent}.py`, `/leads` | 6 tests in `tests/test_leads.py` |
+| Event write path: `events` table now actually receives rows (login, magic-link, password-reset, token reuse, lead capture) | `src/services/events.py` | covered in `tests/test_leads.py` |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` (non-health routes under `/api/v1`)
 
 ---
 
@@ -139,11 +141,24 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 5. Phase 2 — Public site and content funnel (0%)
+## 5. Phase 2 — Public site and content funnel (~10%)
 
 Marketing pages, resource hub, podcasts, gated content, consent management, lead capture with UTM attribution, guest accounts with expiry and watermarking, event tracking.
 
-**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin.
+### Done — backend foundation, no open decision blocks it
+
+- [x] Lead capture: `POST /api/v1/leads` (03 §4.1) — always 204 (enumeration resistance, same rule as magic-link/password-reset), rate-limited 5/hour/IP (03 §1.8's guest-signup number, the closest documented analogue)
+- [x] `contacts` (encrypted PII, same pattern as `users`) + `leads` (UTM quintet, source, score, stage, REQ-LEAD-02 progressive profiling — a second submission from the same person fills in more fields on the *same* row rather than duplicating it)
+- [x] `consent_records` — append-only, two-layer enforcement identical to `audit_events` (revoked grant + raising trigger); privacy consent gates acceptance, marketing consent is recorded as its own purpose row
+- [x] `events` write path is no longer theoretical — login, magic-link request, password-reset request, refresh-token reuse, and lead capture all write rows now
+
+### Outstanding — blocked on Phase 0 or genuinely not started
+
+- [ ] Marketing pages, resource hub, podcasts — blocked on brand/design (#8) and content inventory
+- [ ] `POST /guest-access` (03 §4.2) — the account-provisioning half of REQ-LEAD-04…07; the expiry window is blocked on decision #6 (7 vs 14 days)
+- [ ] The full CRM (`deals`, `tasks`, `notes`, `activities`, `campaigns`, `segments`, email tables) — deliberately out of scope here; that's Phase 5 (02 §10)
+
+**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin. Not yet met — no admin lead view exists, and the funnel's UI half is blocked on #8.
 
 ---
 

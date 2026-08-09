@@ -8,6 +8,8 @@ same rule extends to the magic-link and MFA endpoints added in Sprint 2.
 
 from __future__ import annotations
 
+import uuid
+
 import jwt
 from fastapi import APIRouter, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -42,7 +44,7 @@ from src.schemas.auth import (
     RefreshRequest,
     TokenResponse,
 )
-from src.services import audit, identity, rate_limit, tokens
+from src.services import audit, events, identity, rate_limit, tokens
 from src.services.email import send_email
 from src.services.tokens import RefreshTokenReused
 
@@ -63,6 +65,19 @@ LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def _anonymous_id(request: Request) -> uuid.UUID | None:
+    """No client-side anonymous-id cookie exists yet (that lands with the
+    Phase 2 web tier) — a caller may pass one via header, otherwise
+    events.record() mints a fresh one per call."""
+    raw = request.headers.get("x-anonymous-id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
 
 
 async def _enforce_login_rate_limit(redis: Redis, *, ip: str | None, email: str) -> None:
@@ -160,6 +175,12 @@ async def login(
             user_agent=request.headers.get("user-agent"),
             after={"email_domain": body.email.split("@", 1)[-1].lower()},
         )
+        await events.record(
+            session,
+            tenant_id=tenant.id,
+            event_name=events.EventName.LOGIN_FAILED,
+            anonymous_id=_anonymous_id(request),
+        )
         # Same message for unknown account, wrong password, locked and
         # suspended. The caller learns only that it did not work.
         raise Unauthenticated("Those credentials are not valid.")
@@ -176,6 +197,13 @@ async def login(
         entity_id=user.id,
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
+    )
+    await events.record(
+        session,
+        tenant_id=tenant.id,
+        event_name=events.EventName.LOGIN_SUCCEEDED,
+        anonymous_id=_anonymous_id(request),
+        user_id=user.id,
     )
     return await _issue_session(
         session,
@@ -217,6 +245,12 @@ async def request_magic_link(
                 f"Use this link to sign in (valid {settings.magic_link_minutes} minutes):\n\n"
                 f"{link}\n\nIf you did not request this, ignore this email."
             ),
+        )
+        await events.record(
+            session,
+            tenant_id=tenant.id,
+            event_name=events.EventName.MAGIC_LINK_REQUESTED,
+            anonymous_id=_anonymous_id(request),
         )
 
 
@@ -369,6 +403,13 @@ async def refresh(
                 ip=_client_ip(request),
                 user_agent=request.headers.get("user-agent"),
             )
+            await events.record(
+                session,
+                tenant_id=tenant.id,
+                event_name=events.EventName.TOKEN_REUSE_DETECTED,
+                anonymous_id=_anonymous_id(request),
+                user_id=exc.user_id,
+            )
         raise Unauthenticated("That refresh token is no longer valid.") from exc
 
     user = await session.get(User, user_id)
@@ -507,6 +548,12 @@ async def request_password_reset(
                 f"If you did not request this, ignore this email — "
                 f"your password has not changed."
             ),
+        )
+        await events.record(
+            session,
+            tenant_id=tenant.id,
+            event_name=events.EventName.PASSWORD_RESET_REQUESTED,
+            anonymous_id=_anonymous_id(request),
         )
 
 
