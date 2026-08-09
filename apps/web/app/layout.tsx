@@ -7,8 +7,8 @@ import "./globals.css";
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const theme = await getTheme();
   const style = {
-    "--brand-primary": theme?.primary_color ?? "#1b2a4a",
-    "--brand-secondary": theme?.secondary_color ?? "#c9a227",
+    "--brand-primary": theme?.primary_color ?? "#8e151c",
+    "--brand-secondary": theme?.secondary_color ?? "#bc222a",
   } as React.CSSProperties;
 
   return (

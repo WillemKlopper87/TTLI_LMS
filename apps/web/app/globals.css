@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  /* Overwritten per-tenant by the root layout from GET /tenant/theme. */
-  --brand-primary: #1b2a4a;
-  --brand-secondary: #c9a227;
+  /* Overwritten per-tenant by the root layout from GET /tenant/theme.
+     Fallback is TTLI's own brand (docs/brand/ttli-brand-identity.md),
+     since the tenant these apply to when no theme row exists is TTLI. */
+  --brand-primary: #8e151c;
+  --brand-secondary: #bc222a;
 }

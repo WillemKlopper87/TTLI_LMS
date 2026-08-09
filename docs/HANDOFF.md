@@ -68,8 +68,34 @@ docstring before adding more call sites — the `consent_analytics=True`
 default is a documented, deliberately narrow stretch of 04 §5.1's
 anonymous-analytics allowance, not something to copy uncritically onto a
 marketing surface. 6 new tests (`tests/test_leads.py`), migration
-round-trips, 91 tests total, 0 skipped. Not yet pushed/CI-verified as of
-this note — do that before treating it as done.
+round-trips, 91 tests total, 0 skipped. Pushed as `90d334c`; CI green on
+both jobs — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31320338691
+(1m47s, quality + web).
+
+**Sixth pass: real TTLI brand replaces the placeholder navy/gold.** The
+`demo` tenant's name and theme were always invented — "TTLI Executive
+Institute" and a navy/gold palette nobody chose. Fetched
+`https://ttli.co.za/`, the actual customer's live site, and extracted its
+real name (Themba Thandeka Leadership Institute), logo, and color palette
+(`#8E151C` primary, `#BC222A` secondary — pulled from the site's own CSS and
+cross-checked against the logo SVG's fill colors, not guessed).
+[docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md) is the
+provenance record — what was extracted, from where, and what was
+deliberately left out (no brand typeface was identifiable; contact
+details weren't listed on the page). Migration `0008` applies it to the
+`demo` tenant only — `acme` stays on its own placeholder palette on
+purpose, since it exists to prove per-tenant theming actually differs
+per tenant. `apps/web/app/page.tsx` and `admin/page.tsx` now render
+`theme.logo_url` when a tenant has one (falling back to the old
+text-badge treatment for tenants without a logo, e.g. `acme`); the logo
+is served as a PNG, not the SVG, because `next/image` disables SVG
+optimization by default as an XSS precaution and the PNG needed no
+config change. The SVG is still saved in `apps/web/public/brand/` as the
+archival vector source. Verified: migration round-trip, `alembic check`
+clean, `apps/web` `typecheck` and `build` clean, and a live HTTP smoke
+test against both demo tenants — confirmed the TTLI (`demo`) login page
+renders the real title/colors/logo while `acme`'s theme response is
+byte-for-byte unchanged. Not yet committed/pushed as of this note.
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

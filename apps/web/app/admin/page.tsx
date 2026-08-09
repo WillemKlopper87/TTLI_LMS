@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import type { Theme } from "@/lib/server-api";
 
 interface Me {
   user_id: string;
@@ -19,6 +21,7 @@ const SECTIONS = ["Courses", "Learners", "Orders", "Reports", "Settings"];
 export default function AdminShell() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
+  const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -32,6 +35,9 @@ export default function AdminShell() {
         setMe(await resp.json());
       })
       .catch(() => router.replace("/"));
+    fetch("/api/bff/tenant/theme")
+      .then(async (resp) => (resp.ok ? setTheme(await resp.json()) : null))
+      .catch(() => undefined);
   }, [router]);
 
   if (!me) return null;
@@ -42,7 +48,19 @@ export default function AdminShell() {
         className="w-56 shrink-0 p-4 text-white"
         style={{ backgroundColor: "var(--brand-primary)" }}
       >
-        <div className="mb-8 text-lg font-semibold">{me.tenant_slug}</div>
+        <div className="mb-8">
+          {theme?.logo_url ? (
+            <Image
+              src={theme.logo_url}
+              alt={theme.tenant_name}
+              width={160}
+              height={84}
+              className="max-w-full"
+            />
+          ) : (
+            <span className="text-lg font-semibold">{theme?.tenant_name ?? me.tenant_slug}</span>
+          )}
+        </div>
         <nav className="space-y-1">
           {SECTIONS.map((section) => (
             <div

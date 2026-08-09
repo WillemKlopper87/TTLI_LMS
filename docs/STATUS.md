@@ -28,16 +28,16 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | `ruff check` / `ruff format --check` | **PASS** — 55 files |
 | `mypy src` (strict) | **PASS** — 39 source files |
 | `pytest` | **PASS** — 91 passed, **0 skipped** |
-| `alembic upgrade head` | **PASS** — at `0007` |
+| `alembic upgrade head` | **PASS** — at `0008` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31319510689](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31319510689) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31320338691](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31320338691) |
 
-**Headline:** 91 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 7 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
+**Headline:** 91 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 8 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -70,6 +70,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | CI pipeline | `.github/workflows/api.yml` (`quality` + `web` jobs) | verified green — see the run link below |
 | Lead capture: contacts + leads (progressive profiling merges, not duplicates) + consent | `0007`, `src/services/{leads,consent}.py`, `/leads` | 6 tests in `tests/test_leads.py` |
 | Event write path: `events` table now actually receives rows (login, magic-link, password-reset, token reuse, lead capture) | `src/services/events.py` | covered in `tests/test_leads.py` |
+| Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) replacing the placeholder navy/gold, extracted from ttli.co.za with documented provenance | `0008`, [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), `apps/web/public/brand/` | migration round-trip; `apps/web` build/typecheck; HTTP smoke test against both demo tenants confirming `acme` is untouched |
 
 ### Endpoints live
 
