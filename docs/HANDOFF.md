@@ -315,6 +315,101 @@ upload (still not implemented — see the Eighth pass note and STATUS.md
 §6), CSP/security headers on `apps/web`, and verifying dependency/
 container scanning is actually wired into CI.
 
+**Tenth pass: the security-hardening work queued above.** Three pieces.
+
+*Virus scanning* (04 §3, REQ-BYPASS-08). `src/services/antivirus.py` is a
+from-scratch client for clamd's raw INSTREAM wire protocol (4-byte
+big-endian chunk-length-prefixed streaming, terminated by a zero-length
+chunk) over `asyncio.open_connection` — no `clamd` package added, since the
+protocol is small and a dependency would be one more thing to audit.
+`upload_payment_proof` in `src/routers/orders.py` scans before the file
+ever reaches storage; an infected file is refused with a `400` naming the
+signature, and the order stays in `eft_pending_proof` rather than
+advancing. **Fails closed**: an unreachable scanner raises
+`ServiceUnavailable` (503) rather than accepting the file unscanned — the
+one place in this codebase where "the dependency is down" means "refuse
+the request", not "degrade gracefully", because degrading gracefully here
+means shipping a virus. `infra/docker-compose.yml` gained a `clamav`
+service (`clamav/clamav-debian:stable`, port 3410 → clamd's default 3310);
+`.github/workflows/api.yml`'s `quality` job gained it too as a real GH
+Actions service container — like Mailhog, it needs no launch args (`docker
+inspect` confirms `CMD` is just `[clamd]`-equivalent), so it qualifies,
+unlike MinIO. `tests/test_antivirus.py` runs three tests against a real
+local clamd (clean file, the EICAR standard test string, and an
+unreachable-host case) using the same skip-if-unreachable fixture pattern
+`test_storage.py`'s S3 path already used — **not mocked**, because a mocked
+AV client would never have caught a wire-protocol bug. A fourth test,
+`test_infected_payment_proof_is_refused_and_order_does_not_advance` in
+`tests/test_commerce.py`, uploads the EICAR string through the real
+`/orders/{id}/payment-proof` endpoint and asserts the order state didn't
+move. **First run of the full suite after wiring this in showed 62 tests
+skipped** — Docker Desktop wasn't even running, so Postgres/Redis/MinIO/
+ClamAV were all unreachable and every integration test silently skipped
+rather than failing loud. Zero-skip CI (§5 below) is exactly the policy
+that exists to catch this class of false-green result; started Docker,
+brought the compose stack up, waited for ClamAV's and MinIO's health
+checks (ClamAV can take a few minutes on a cold virus-DB download; this
+container was already warm from earlier in the session), then re-ran —
+**117 passed, 0 skipped.** Don't trust a green local run without checking
+`docker ps` first if it's been a while since the stack was touched.
+
+*CSP and security headers.* `apps/web/proxy.ts` (renamed from
+`middleware.ts` — Next 16 deprecated the `middleware` file convention in
+favour of `proxy`, same function shape, just `export function proxy`
+instead of `export function middleware`; the old file's build output
+literally printed a migration notice, which is how this was caught).
+Generates a random nonce per request and sets a strict CSP —
+`script-src 'self' 'nonce-<nonce>' 'strict-dynamic'`, no `unsafe-inline`,
+no `unsafe-eval`. Next.js auto-detects the `nonce-` source and applies it
+to its own inline hydration/RSC-streaming scripts, so this works without
+any extra plumbing beyond the one file — see
+[the Next.js CSP guide](https://nextjs.org/docs/app/guides/content-security-policy).
+`style-src` keeps `unsafe-inline` deliberately: this app uses React's
+inline `style` prop pervasively (`app/checkout`, `app/page.tsx`, etc.) and
+Next's nonce mechanism doesn't cover style attributes the way it covers
+its own script tags. That's a real but lower-severity gap than script
+injection, and every inline style in this app is a literal, never
+user-supplied data — revisit if that changes. Also sets
+`X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`,
+`Permissions-Policy`, and (production-only) HSTS.
+
+*Dependency and container scanning.* `pip-audit` was already wired into
+`.github/workflows/api.yml`'s `quality` job as of an earlier pass but had
+never actually been run against current pins — running it for real found
+**35 CVEs** across `fastapi`/`starlette`, `PyJWT`, `cryptography`, and
+`python-multipart`. Fixed with staged upgrades (low-risk packages first,
+the FastAPI/Starlette major-version jump last), each stage re-verified
+with the full test suite + mypy, the FastAPI/Starlette jump additionally
+smoke-tested live including a real multipart file upload through the
+now-upgraded `python-multipart` *and* the new virus scanner together.
+`pytest`/`pytest-asyncio` also needed bumping in the same pass —
+`pytest-asyncio==0.25.0` caps at `pytest<9`, so upgrading `pytest` alone
+would have broken the test runner; both moved together
+(`pytest==9.1.1`, `pytest-asyncio==1.4.0`). Added `npm audit
+--audit-level=high` as its own CI step in both the `quality` job (for
+`packages/api-client`) and the `web` job (for `apps/web`) — previously
+`npm audit` was never actually run in CI, only ad hoc locally.
+`packages/api-client` needed a `js-yaml` override (CVE-2026-59870, a
+quadratic-CPU DoS) in `package.json`'s `overrides` field, since the
+`openapi-typescript` version that pulls it in transitively was already the
+latest release and hadn't caught up upstream yet. **Regenerating the API
+client after the FastAPI/Pydantic bump changed `schema.gen.ts` by five
+lines** — a docstring-format change on the file-upload field and two new
+optional fields (`input`, `ctx`) on the Pydantic validation-error schema —
+both are Pydantic's newer version emitting slightly different OpenAPI
+metadata, not a sign of anything wrong; committed as part of this pass
+since the drift gate requires it to match.
+
+Verified: full gate sweep against the real compose stack (ruff, ruff
+format, mypy, 117 tests / 0 skipped, migration round-trip, `alembic
+check`, api-client drift + `tsc --noEmit`), `apps/web` `typecheck` and
+`build` both clean, `pip-audit` and both `npm audit` runs at 0 findings.
+Not yet pushed/CI-verified as of this note — in particular, the GH Actions
+`--health-cmd "clamdcheck.sh"` service-container syntax for ClamAV has
+only been exercised via local `docker compose`, never through GH Actions'
+own `options:` health-check mechanism, so the very first CI run after this
+push is the real test of it.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

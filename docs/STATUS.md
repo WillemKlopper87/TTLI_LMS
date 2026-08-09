@@ -1,6 +1,6 @@
 # STATUS
 
-**Updated:** 2026-08-09 (sprints 2–5 built; Sprint 1 tenancy defects found and fixed)
+**Updated:** 2026-08-09 (sprints 2–5 built; Sprint 1 tenancy defects found and fixed; security-hardening pass added)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
@@ -25,19 +25,22 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 84 files |
-| `mypy src` (strict) | **PASS** — 61 source files |
-| `pytest` | **PASS** — 113 passed, **0 skipped** |
+| `ruff check` / `ruff format --check` | **PASS** — 86 files |
+| `mypy src` (strict) | **PASS** — 62 source files |
+| `pytest` | **PASS** — 117 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
+| `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed this pass — see §4 below) |
+| `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
 | `alembic upgrade head` | **PASS** — at `0009` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
+| Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push — first run with the new ClamAV service container |
 
-**Headline:** 113 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 11 `apps/web` routes (up from 4).
+**Headline:** 117 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 11 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -76,6 +79,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Commerce foundation + EFT purchase path: server-resolved price/tax, data-driven tax engine, sequential gapless invoicing, append-only ledger, entitlements, the finance approval queue | `0009`, `src/services/{tax,orders,invoicing,ledger,entitlements,catalogue}.py`, `/products`, `/orders`, `/payments` | 12 tests in `tests/test_commerce.py`; HTTP smoke test — full EFT flow, reject/resubmit, 5x rapid order creation with no reference collisions |
 | Real `apps/web` build: the prototype's design system (Charter serif, stone/surface palette, button/card/tag components) applied to every page; real TTLI copy, team photos and client logos from ttli.co.za (not placeholder content); routing restructured (`/` is now the marketing landing page, login moved to `/login`) | `apps/web/app/{globals.css,page.tsx,login/,guest-access/,catalogue/,checkout/,admin/payments/}`, `docs/brand/ttli-brand-identity.md` | `typecheck`/`build` clean, 11 routes; HTTP smoke test of the full journey — landing → guest-access → catalogue → checkout → EFT proof upload → finance approval → invoice, over the real BFF |
 | BFF binary-body fix: the proxy forwarded every non-GET body through `request.text()`, which silently corrupts binary content (multipart file uploads) on the UTF-8 round-trip | `apps/web/app/api/bff/[...path]/route.ts` | Verified with an actual JPEG proof-of-payment upload through the real BFF: stored file is byte-identical to the original (same size, same MD5) |
+| Security hardening: real ClamAV virus scan (REQ-BYPASS-08) before a payment-proof upload is stored, fail-closed if the scanner is unreachable; CSP with a per-request nonce + security headers on every `apps/web` response; `pip-audit`/`npm audit` wired into CI as real gates (35 CVEs found and fixed — see `requirements.txt`'s comment) | `src/services/antivirus.py`, `apps/web/proxy.ts`, `.github/workflows/api.yml` | `tests/test_antivirus.py` (real clamd: clean file, EICAR, unreachable-host); `tests/test_commerce.py::test_infected_payment_proof_is_refused_and_order_does_not_advance`; full gate sweep re-run clean after each dependency bump |
 
 ### Endpoints live
 
@@ -196,7 +200,7 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 - [ ] PO capture — deferred to keep sprint 1 to one complete vertical slice (EFT) rather than three partial ones; the schema (`orders.po_number`/`po_document_key`, `po_pending_approval` status) already anticipates it
 - [ ] Credit notes and refunds — `ledger_entries` already has `refund_issued`/`credit_note_issued` entry types ready; the issuing flow itself isn't built
 - [ ] `Idempotency-Key` handling on `POST /orders`/`POST /payments/*` (03 §1.6, REQ-PAY-07) — deferred; matters most for the webhook retries that come with card checkout, which isn't built either. Not a silent gap: every state transition in `services/orders.py` checks the expected state first, so a genuine double-submission is refused (400), not silently re-processed — real double-invoicing is prevented even without full replay semantics
-- [ ] Virus scanning on the payment-proof upload (04 §2, REQ-BYPASS-08) — no scanning engine exists in this project yet; the upload itself works (stored via the existing storage adapter, private container), just without the scan step the spec requires before a file is readable
+- [x] Virus scanning on the payment-proof upload (04 §2, REQ-BYPASS-08) — real ClamAV (`clamd`), fail-closed if unreachable
 - [ ] Subscriptions — untouched on purpose; 01 §1.4 #5 is unsigned
 
 **Demo target:** three purchase paths each producing an auditable invoice; a rejected EFT; a credit note. **Two of three met** — EFT produces an auditable invoice (verified: `INV-000001` format, correct VAT, entitlement granted, ledger entries written) and a rejected EFT correctly returns to `eft_pending_proof`. Card and PO paths, and the credit note, are the outstanding third.

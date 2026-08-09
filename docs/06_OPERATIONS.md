@@ -18,6 +18,7 @@ Audience: developers and site administrators.
 | MinIO console | | **9141** | |
 | Mailhog SMTP | `mailhog/mailhog` | **1145** | worksorder 1125 |
 | Mailhog web | | **8145** | worksorder 8125 |
+| ClamAV (clamd) | `clamav/clamav-debian:stable` | **3410** | 3310 is the clamd default |
 | API | local | **8010** | |
 | Web | local | **3010** | 3000 is taken by several projects |
 

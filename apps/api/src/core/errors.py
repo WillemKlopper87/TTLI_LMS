@@ -59,6 +59,11 @@ class TooManyAttempts(AppError):
     code = "TOO_MANY_ATTEMPTS"
 
 
+class ServiceUnavailable(AppError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "SERVICE_UNAVAILABLE"
+
+
 def _envelope(
     *, code: str, message: str, details: dict[str, Any], request: Request, status_code: int
 ) -> JSONResponse:
@@ -128,6 +133,7 @@ __all__ = [
     "Forbidden",
     "LessonLocked",
     "NotFound",
+    "ServiceUnavailable",
     "TenantUnresolved",
     "TooManyAttempts",
     "Unauthenticated",

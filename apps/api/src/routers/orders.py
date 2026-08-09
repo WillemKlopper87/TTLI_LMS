@@ -30,7 +30,7 @@ from fastapi import APIRouter, File, Query, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
-from src.core.errors import AppError, Forbidden, NotFound
+from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.models.commerce import Order, OrderItem, Payment
 from src.schemas.commerce import (
     CreateOrderRequest,
@@ -45,7 +45,7 @@ from src.schemas.commerce import (
     ProductSummary,
     RejectPaymentRequest,
 )
-from src.services import catalogue
+from src.services import antivirus, catalogue
 from src.services import orders as orders_service
 from src.services.storage import Container
 
@@ -179,6 +179,7 @@ async def upload_payment_proof(
     principal: PrincipalDep,
     session: SessionDep,
     storage: StorageDep,
+    settings: SettingsDep,
     file: UploadFile = File(...),
 ) -> None:
     order = await _get_own_order(session, principal, order_id)
@@ -197,13 +198,25 @@ async def upload_payment_proof(
         raise AppError("No payment awaiting proof for this order.")
 
     data = await file.read()
+
+    # Virus scanning before the file is readable by anyone (04 §3,
+    # REQ-BYPASS-08) — scanned before it ever reaches storage, and both an
+    # infection and an unreachable scanner refuse the upload. Failing open
+    # here (accepting on a scanner outage) is exactly the gap this control
+    # exists to close.
+    try:
+        result = await antivirus.scan(data, settings=settings)
+    except antivirus.ScanUnavailable as exc:
+        raise ServiceUnavailable("The virus scanner is unavailable. Try again shortly.") from exc
+    if not result.clean:
+        raise AppError(
+            "That file was rejected by the virus scanner and was not stored.",
+            {"signature": result.signature},
+        )
+
     key = f"{principal.tenant_id}/{order.id}/{uuid.uuid4().hex}-{file.filename or 'proof'}"
     await storage.ensure_container(Container.USER_UPLOADS)
     await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)
-    # Virus scanning before the file is readable by anyone (04 §2,
-    # REQ-BYPASS-08) is a documented control this sprint does not implement
-    # — no scanning engine exists in this project yet. Tracked in
-    # STATUS.md as a gap, not silently skipped.
     await orders_service.submit_proof(session, order=order, payment=payment, proof_object_key=key)
 
 

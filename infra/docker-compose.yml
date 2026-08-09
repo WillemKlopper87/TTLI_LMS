@@ -60,7 +60,26 @@ services:
       - "1145:1025"
       - "8145:8025"
 
+  # Virus scanning before an upload becomes readable (04 §3, REQ-BYPASS-08)
+  # — src/services/antivirus.py talks to clamd over this port. First boot
+  # downloads the virus database, which can take a few minutes; the long
+  # start_period below is deliberate, not a stuck container.
+  clamav:
+    image: clamav/clamav-debian:stable
+    container_name: ttli-clamav
+    ports:
+      - "3410:3310"
+    volumes:
+      - ttli-clamav:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 5m
+
 volumes:
   ttli-postgres:
   ttli-redis:
   ttli-minio:
+  ttli-clamav:

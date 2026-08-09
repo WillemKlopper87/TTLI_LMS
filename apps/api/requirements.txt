@@ -1,5 +1,10 @@
 # Hard pins, matched to the versions already proven in the sibling projects.
-fastapi==0.115.6
+# fastapi/starlette, PyJWT, cryptography and python-multipart were bumped
+# in the hardening pass that added `pip-audit` to CI — each one had a real,
+# fixed CVE (35 findings total; see HANDOFF.md's pass note). Re-verified:
+# full test suite, mypy, and a live smoke test including a real multipart
+# file upload through the upgraded python-multipart.
+fastapi==0.141.1
 uvicorn[standard]==0.34.0
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
@@ -8,11 +13,11 @@ psycopg2-binary==2.9.10
 pydantic[email]==2.10.4
 pydantic-settings==2.7.0
 structlog==24.4.0
-PyJWT==2.10.1
+PyJWT==2.13.0
 argon2-cffi==23.1.0
-cryptography==44.0.0
+cryptography==50.0.0
 redis==5.2.1
-python-multipart==0.0.20
+python-multipart==0.0.32
 pyotp==2.10.0
 boto3==1.43.67
 azure-storage-blob==12.30.0

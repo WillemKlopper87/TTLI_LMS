@@ -416,10 +416,7 @@ export interface components {
     schemas: {
         /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
         Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** CreateOrderRequest */
@@ -795,6 +792,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;

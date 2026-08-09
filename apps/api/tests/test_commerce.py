@@ -477,3 +477,54 @@ async def test_pending_payments_lists_only_awaiting_approval(
     )
     assert match["proof_uploaded"] is True
     assert match["amount"] == "5175.00"
+
+
+# The EICAR standard antivirus test file (https://www.eicar.org/) — every
+# real antivirus engine, including ClamAV, is configured to flag it by
+# convention. Not an actual virus.
+EICAR = rb"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+
+
+async def test_infected_payment_proof_is_refused_and_order_does_not_advance(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    # `client` already skips if Redis is unreachable; ClamAV needs its own
+    # check since it's a separate optional local service.
+    sock = socket.socket()
+    sock.settimeout(2)
+    try:
+        sock.connect((settings.clamav_host, settings.clamav_port))
+    except OSError:
+        pytest.skip(
+            "no ClamAV on the configured CLAMAV_HOST/PORT — run: "
+            "docker compose -f infra/docker-compose.yml up -d clamav"
+        )
+    finally:
+        sock.close()
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    buyer_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    order = await _create_order(client, buyer_token, price_id)
+    await client.post(
+        f"/api/v1/orders/{order['id']}/checkout/eft",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+
+    resp = await client.post(
+        f"/api/v1/orders/{order['id']}/payment-proof",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("proof.pdf", EICAR, "application/pdf")},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["details"]["signature"]
+
+    # Refused before it ever reached storage or the order's own state
+    # machine — still eft_pending_proof, not eft_pending_approval.
+    order_after = await client.get(
+        f"/api/v1/orders/{order['id']}", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert order_after.json()["status"] == "eft_pending_proof"

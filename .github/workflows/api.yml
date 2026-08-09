@@ -43,6 +43,21 @@ jobs:
         image: mailhog/mailhog:latest
         ports: ["1145:1025", "8145:8025"]
 
+      # Also needs no launch args (same reasoning as mailhog above), so it
+      # qualifies as a real CI service — unlike MinIO. --health-retries is
+      # high because first boot downloads the virus database, which can
+      # take a few minutes; GH Actions has no start_period option the way
+      # docker-compose's healthcheck does, so the retry budget covers it
+      # instead (15 × 30s = 7.5 min ceiling).
+      clamav:
+        image: clamav/clamav-debian:stable
+        ports: ["3410:3310"]
+        options: >-
+          --health-cmd "clamdcheck.sh"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 15
+
     env:
       ENVIRONMENT: local
       # app_user, not ttli: ttli is the Postgres bootstrap superuser and
@@ -86,6 +101,14 @@ jobs:
         env:
           PGPASSWORD: ttli_ci
         continue-on-error: false
+
+      # Dependency scanning (04 §3, §10). --desc prints the advisory text so
+      # a failure is actionable from the CI log alone. A real run of this
+      # once found 35 CVEs across fastapi/starlette, PyJWT, cryptography
+      # and python-multipart — all fixed by version bumps, not ignored;
+      # see requirements.txt's comment and HANDOFF.md.
+      - name: Dependency scan
+        run: pip-audit -r requirements-dev.txt --desc
 
       - name: Lint
         run: ruff check .
@@ -151,6 +174,13 @@ jobs:
           git diff --exit-code -- src/schema.gen.ts
           npm run typecheck
 
+      # npm's own advisory database (04 §3, §10) — the js-yaml override in
+      # package.json exists because of a finding this step would have caught;
+      # keeping it here catches the next one instead of relying on memory.
+      - name: Dependency scan (api-client)
+        working-directory: packages/api-client
+        run: npm audit --audit-level=high
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -178,6 +208,9 @@ jobs:
 
       - name: Install web
         run: npm ci
+
+      - name: Dependency scan (web)
+        run: npm audit --audit-level=high
 
       - name: Type check
         run: npm run typecheck

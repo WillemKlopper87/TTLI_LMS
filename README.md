@@ -104,6 +104,7 @@ Several projects share this machine. Every port below was checked against `Agent
 | MinIO console | 9141 | 9001 |
 | Mailhog SMTP | 1145 | 1025 |
 | Mailhog web | 8145 | 8025 |
+| ClamAV (clamd) | 3410 | 3310 |
 | API | 8010 | 8000 |
 | Web | 3010 | 3000 |
 

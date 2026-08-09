@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     s3_region: str = "af-south-1"
     azure_storage_connection_string: str = ""
 
+    # --- Virus scanning (04 §3, REQ-BYPASS-08) ---
+    clamav_host: str = "localhost"
+    clamav_port: int = 3410
+
     # --- Email ---
     smtp_host: str = "localhost"
     smtp_port: int = 1145

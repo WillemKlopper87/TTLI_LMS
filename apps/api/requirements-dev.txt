@@ -1,8 +1,10 @@
 -r requirements.txt
-pytest==8.3.4
-pytest-asyncio==0.25.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
 pytest-cov==6.0.0
 httpx==0.28.1
 ruff==0.8.6
 mypy==1.14.1
 moto[s3]==5.2.2
+# CI dependency scanning (04 §3, §10) — apps/api/openapi.json workflow step.
+pip-audit==2.10.1
