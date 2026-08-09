@@ -22,7 +22,7 @@ from src.core.security import (
     verify_password,
     verify_totp,
 )
-from src.models.auth import MagicLink, MfaRecoveryCode
+from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset
 from src.models.rbac import RoleAssignment, RolePermission
 from src.models.user import User
 
@@ -168,6 +168,57 @@ async def consume_magic_link(session: AsyncSession, *, raw_token: str) -> User |
     return user
 
 
+async def create_password_reset(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID, email: str, minutes: int
+) -> str | None:
+    """Same contract as create_magic_link: raw token or None, and the caller
+    must not let the two cases differ in response or timing."""
+    user = await find_by_email(session, crypto, email)
+    if user is None or user.status != "active" or user.deleted_at is not None:
+        verify_password("timing-equalisation-only", _DUMMY_HASH)
+        return None
+
+    raw = new_token()
+    session.add(
+        PasswordReset(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            token_hash=hash_token(raw),
+            expires_at=datetime.now(UTC) + timedelta(minutes=minutes),
+        )
+    )
+    await session.flush()
+    return raw
+
+
+async def consume_password_reset(
+    session: AsyncSession, *, raw_token: str, new_password: str
+) -> User | None:
+    """Atomic single use, like consume_magic_link. On success the password is
+    replaced and the login lockout cleared — the person just proved control
+    of the mailbox, which is the same proof the lockout exists to demand.
+    Revoking refresh-token families is the caller's job (tokens service)."""
+    now = datetime.now(UTC)
+    stmt = text(
+        "UPDATE password_resets SET consumed_at = :now "
+        "WHERE token_hash = :h AND consumed_at IS NULL AND expires_at > :now "
+        "RETURNING user_id"
+    )
+    row = (await session.execute(stmt, {"now": now, "h": hash_token(raw_token)})).first()
+    if row is None:
+        return None
+
+    user = await session.get(User, row[0])
+    if user is None or user.status != "active" or user.deleted_at is not None:
+        return None
+
+    user.password_hash = hash_password(new_password)
+    user.failed_login_count = 0
+    user.locked_until = None
+    await session.flush()
+    return user
+
+
 def is_mfa_locked(user: User, *, now: datetime | None = None) -> bool:
     if user.mfa_locked_until is None:
         return False
@@ -247,7 +298,9 @@ __all__ = [
     "RECOVERY_CODE_COUNT",
     "authenticate",
     "consume_magic_link",
+    "consume_password_reset",
     "create_magic_link",
+    "create_password_reset",
     "create_user",
     "enroll_mfa",
     "find_by_email",

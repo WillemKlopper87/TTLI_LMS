@@ -27,7 +27,18 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", get_settings().sync_database_url)
+
+_sync_url = get_settings().sync_database_url
+# Migrations need the superuser (DDL, CREATE ROLE). If DATABASE_URL_SYNC is
+# unset, sync_database_url derives from DATABASE_URL — which is app_user's
+# and cannot run migrations. Fail with the real reason instead of a
+# permission error twenty statements in.
+if "app_user" in _sync_url.split("@", 1)[0]:
+    raise RuntimeError(
+        "The migration connection resolves to the app_user role, which cannot run DDL. "
+        "Set DATABASE_URL_SYNC to the superuser connection string."
+    )
+config.set_main_option("sqlalchemy.url", _sync_url)
 
 
 def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 30
     magic_link_minutes: int = 15
+    password_reset_minutes: int = 30
     mfa_pending_minutes: int = 5
     mfa_enroll_minutes: int = 10
     mfa_issuer_name: str = "TTLI"

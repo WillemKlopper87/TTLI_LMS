@@ -37,6 +37,8 @@ from src.schemas.auth import (
     MfaEnrollConfirmResponse,
     MfaEnrollResponse,
     MfaVerifyRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     RefreshRequest,
     TokenResponse,
 )
@@ -262,6 +264,7 @@ async def mfa_verify(
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
+    redis: RedisDep,
 ) -> TokenResponse:
     try:
         claims = decode_purpose_token(
@@ -281,6 +284,19 @@ async def mfa_verify(
         raise TooManyAttempts("Too many failed attempts. Try again in 15 minutes.")
 
     ok = await identity.verify_mfa_code(session, crypto, user=user, code=body.code)
+    if ok:
+        # A challenge token is single-use per *successful* login (failed code
+        # attempts may retry against the same challenge — the 6-attempt
+        # lockout above bounds those). SET NX is the atomic claim: the second
+        # successful use of the same token loses the race and is a replay.
+        claimed = await redis.set(
+            f"mfa:consumed:{hash_token(body.mfa_token).hex()}",
+            "1",
+            nx=True,
+            ex=settings.mfa_pending_minutes * 60,
+        )
+        if not claimed:
+            raise Unauthenticated("That MFA challenge is invalid or has expired.")
     if not ok:
         if identity.is_mfa_locked(user):
             await audit.record(
@@ -452,6 +468,80 @@ async def mfa_enroll_confirm(
         user_agent=request.headers.get("user-agent"),
     )
     return MfaEnrollConfirmResponse(recovery_codes=codes)
+
+
+@router.post(
+    "/password-reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Request a password-reset link",
+)
+async def request_password_reset(
+    body: PasswordResetRequest,
+    request: Request,
+    session: SessionDep,
+    crypto: CryptoDep,
+    settings: SettingsDep,
+    tenant: TenantDep,
+    redis: RedisDep,
+) -> None:
+    """Always 204, whether or not the address exists — same enumeration rule
+    as the magic-link request (03_API_SPEC.md §2.8)."""
+    await _enforce_login_rate_limit(redis, ip=_client_ip(request), email=body.email)
+    raw = await identity.create_password_reset(
+        session,
+        crypto,
+        tenant_id=tenant.id,
+        email=body.email,
+        minutes=settings.password_reset_minutes,
+    )
+    if raw is not None:
+        link = f"https://{tenant.hostname}/auth/password-reset?token={raw}"
+        await send_email(
+            settings,
+            to=body.email,
+            subject=f"Reset your {tenant.name} password",
+            body=(
+                f"Use this link to choose a new password "
+                f"(valid {settings.password_reset_minutes} minutes):\n\n{link}\n\n"
+                f"If you did not request this, ignore this email — "
+                f"your password has not changed."
+            ),
+        )
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Set a new password with a reset token",
+)
+async def confirm_password_reset(
+    body: PasswordResetConfirmRequest,
+    request: Request,
+    session: SessionDep,
+    tenant: TenantDep,
+) -> None:
+    user = await identity.consume_password_reset(
+        session, raw_token=body.token, new_password=body.new_password
+    )
+    if user is None:
+        raise Unauthenticated("That link is invalid or has expired.")
+
+    # Proof of the mailbox is not proof that existing sessions are the same
+    # person. Every refresh-token family dies; the next login starts fresh.
+    await tokens.revoke_all_for_user(session, user_id=user.id)
+
+    await audit.record(
+        session,
+        tenant_id=tenant.id,
+        action=AuditAction.PASSWORD_CHANGED,
+        actor_user_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 @router.get("/me", response_model=MeResponse, summary="The current principal")

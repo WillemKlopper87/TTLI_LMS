@@ -1,6 +1,14 @@
 # HANDOFF — for the next agent
 
 **Written:** 2026-08-08, end of the session that built Sprints 2–4 of Phase 1.
+**Updated:** 2026-08-09 — a follow-up session closed most of §3 and §4:
+work is committed (still no remote), the drift gate is wired, weaknesses
+1/2/3/4/6/8 are fixed with tests, and Sprint 5's worker + password reset are
+built (migration `0005`). Items below are struck through or marked ✅ where
+done; [STATUS.md](STATUS.md) carries the current numbers (81 tests, 12
+endpoints, 5 migrations). **Still genuinely open: push to a remote and get CI
+green; tenant themes; the `apps/web` scaffold/admin shell; weaknesses 5 and 7.**
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
@@ -51,96 +59,67 @@ diff and commit in sensible chunks (suggested: ① Sprint-1 defect fixes,
 
 ## 3. Unfinished work, in order
 
-### 3.1 Housekeeping (do first, ~an hour)
+### 3.1 Housekeeping — ✅ done 2026-08-09, except the push
 
-- **Commit** (see §1). Then push to a remote so CI runs for the first time.
-  Expect teething: the workflow was extended blind (APP_DB_PASSWORD env,
-  app_user URL) and has never executed.
-- **`.env.example` is stale.** Missing every setting added since Sprint 1:
-  `MAGIC_LINK_MINUTES`, `MFA_PENDING_MINUTES`, `MFA_ENROLL_MINUTES`,
-  `MFA_ISSUER_NAME`, `STORAGE_LOCAL_ROOT`, `AZURE_STORAGE_CONNECTION_STRING`.
-  Compare against `Settings` in [src/core/config.py](../apps/api/src/core/config.py).
-- **`docs/STATUS.md` is two sprints stale.** It still describes Sprint 1 (39
-  tests, 3 endpoints, 8 tables, "blocked on Docker"). Reality: 75 tests, 10
-  endpoints, 13 tables (incl. partitioned `events` with 14 partitions),
-  4 migrations, Docker running. Rewrite §1–§4; keep the honest tone.
-- **`docs/03_API_SPEC.md` §2** does not document `POST /auth/mfa/enroll` /
-  `enroll/confirm` (spec'd verification but not the enrolment it presupposes).
-  Add them; note the enrolment-token flow.
+- ✅ Committed. **Still to do: push to a remote so CI runs for the first
+  time.** Expect teething: the workflow has never executed.
+- ✅ `.env.example` now covers every `Settings` field.
+- ✅ `docs/STATUS.md` rewritten to current state.
+- ✅ `docs/03_API_SPEC.md` gained §2.7 (MFA enrolment) and §2.8 (password
+  reset).
 
-### 3.2 Finish Sprint 4: the api-client drift gate
+### 3.2 Finish Sprint 4: the api-client drift gate — ✅ done 2026-08-09
 
-`packages/api-client` exists and typechecks, but the **CI drift gate — the
-entire point per README ("with a CI drift gate") — is not wired.** Add to
-`api.yml` after the "Export OpenAPI" step:
+Wired into `api.yml` (setup-node + `npm ci && npm run generate &&
+git diff --exit-code -- src/schema.gen.ts && npm run typecheck`), verified
+locally. `src/schema.gen.ts` is committed; `apps/api/openapi.json` stays
+gitignored. The gate has already earned its keep once: the password-reset
+endpoints changed the schema and forced a regeneration.
 
-```yaml
-- name: api-client drift
-  working-directory: packages/api-client
-  run: |
-    npm ci
-    npm run generate
-    git diff --exit-code -- src/schema.gen.ts
-    npm run typecheck
-```
+### 3.3 Remaining Phase 1 (sprint 5 of ~5) — half done 2026-08-09
 
-`src/schema.gen.ts` must be committed for `git diff --exit-code` to mean
-anything. `apps/api/openapi.json` is deliberately gitignored (regenerated);
-the generated *client* is the committed artifact.
-
-### 3.3 Remaining Phase 1 (sprint 5 of ~5)
-
-From [STATUS.md §4](STATUS.md) and the Phase 1 demo target ("two tenants
-resolving to different themes; login with MFA; an empty admin shell"):
-
-- **arq worker skeleton** (`src/workers/` is an empty package; Redis is up).
-  First two jobs: extend `events` partitions monthly (0004 bootstraps only
-  ~13 months), and purge expired `refresh_tokens` / `magic_links` rows.
-- **Tenant themes** (`tenant_themes` table per 02 §4.3) + surfacing
+- ✅ **arq worker** (`src/workers/main.py`): monthly partition extension and
+  daily expired-auth purge, both via `SECURITY DEFINER` functions from
+  migration `0005` so the worker keeps the least-privileged `app_user`
+  connection. Run it with `arq src.workers.main.WorkerSettings`.
+- ✅ **Password reset** (`0005`, §2.8 of the API spec): single-use, revokes
+  every refresh-token family, clears the login lockout.
+- ⬜ **Tenant themes** (`tenant_themes` table per 02 §4.3) + surfacing
   `tenant.settings` so two hostnames render differently.
-- **Empty admin shell** — first `apps/web` scaffold (Next.js 15, port 3010),
-  consuming `@ttli/api-client`.
-- **Password reset flow** — same single-use hashed-token machinery as magic
-  links (04 §1.2 says 30 min); mostly copy the existing pattern.
+- ⬜ **Empty admin shell** — first `apps/web` scaffold (Next.js 15, port
+  3010), consuming `@ttli/api-client`.
 
 ## 4. Known weaknesses to review (none are gate failures; all are real)
 
-Ordered by risk:
+Ordered by risk. **1/2/3/4/6/8 fixed with tests on 2026-08-09; 5 and 7 remain.**
 
-1. **MFA challenge tokens are replayable.** The `mfa_token` from a 202 login is
-   a stateless JWT valid 5 minutes and *not* invalidated after successful
-   verify — verify twice, get two token families. Fix: single-use marker in
-   Redis keyed on the token's hash (same pattern as rate limiting), or a `jti`
-   denylist. [src/routers/auth.py](../apps/api/src/routers/auth.py) `mfa_verify`.
-2. **Device fingerprint is stored, never checked.** 04 §1.2 says refresh
-   tokens are "device-bound"; `tokens.rotate()` carries the fingerprint
-   forward but does not compare it. Decide: enforce (reject mismatched
-   rotation) or downgrade the doc claim.
-3. **Rate limiter details** ([src/services/rate_limit.py](../apps/api/src/services/rate_limit.py)):
-   fixed-window (2× burst at window edges — acceptable per spec, but note it);
-   `INCR` then `EXPIRE` non-atomic — a crash between them leaves an immortal
-   key. A 5-line Lua script or `SET ... NX EX` + `INCR` fixes both. Also: only
-   login + magic-link-request are limited; 03 §1.8 also lists guest signup,
-   verification, heartbeat (future endpoints — wire the helper in as they land).
-4. **No negative caching for unknown hostnames.** `get_or_resolve_tenant`
-   caches hits only; a flood of requests with bogus `X-Tenant-Host` values hits
-   Postgres every time. Cache the miss for ~10s.
-5. **`X-Tenant-Host` is client-controllable.** Harmless while the token's
+1. ✅ **MFA challenge tokens are replayable** — fixed: a successful verify
+   claims the token via Redis `SET NX`; the second success is refused
+   (`test_mfa_challenge_is_single_use`). Failed code attempts still retry
+   against the same challenge, bounded by the 6-attempt lockout.
+2. ✅ **Device fingerprint enforced** — the consuming UPDATE in
+   `tokens.rotate()` refuses a mismatch (when both sides carry one) without
+   consuming or revoking, so a wrong-fingerprint presenter can neither rotate
+   nor DoS the real session (`test_refresh_rejects_device_fingerprint_mismatch`).
+3. ✅/⬜ **Rate limiter** — the immortal-key crash window is healed
+   (`EXPIRE ... NX` on every hit); the 2× window-edge burst stays, accepted
+   and documented in the module docstring. Still open: 03 §1.8's limits for
+   guest signup / verification / heartbeat — wire `rate_limit.hit` in as
+   those endpoints land.
+4. ✅ **Negative caching** — unknown hostnames are cached as a 10s miss
+   sentinel (`test_unknown_hostname_is_negative_cached`).
+5. ⬜ **`X-Tenant-Host` is client-controllable.** Harmless while the token's
    `tid` claim is cross-checked (`get_principal` does), but the production BFF
    **must strip inbound `X-Tenant-Host`** — record that in 06_OPERATIONS when
    the web tier lands.
-6. **`sync_database_url` derivation footgun.** If `DATABASE_URL_SYNC` is unset
-   it derives from `DATABASE_URL` — which is now `app_user`, who cannot CREATE
-   ROLE. Migrations would fail confusingly. Consider making
-   `DATABASE_URL_SYNC` required, or asserting the derived URL isn't app_user's.
-7. **Email failures are swallowed** (`services/email.py` logs and continues —
-   correct for enumeration safety on magic links, but there's no retry/queue.
-   Move sends onto arq when workers exist.)
-8. **Migration 0002 reads `os.getenv` directly**, not pydantic Settings — so
-   running `alembic downgrade`/`upgrade` from a shell without the break-glass
-   env vars exported silently skips seeding the admin (bit me this session;
-   the RLS "no seeded user" skip was the symptom). Align it with Settings or
-   document loudly in the migration docstring.
+6. ✅ **`sync_database_url` derivation footgun** — `alembic/env.py` now
+   refuses to run migrations over an `app_user` connection, with the real
+   reason in the error.
+7. ⬜ **Email failures are swallowed** (`services/email.py` logs and continues
+   — correct for enumeration safety on magic links, but there's no
+   retry/queue). The worker exists now; move sends onto arq.
+8. ✅ **Migration 0002** now reads pydantic Settings (which loads `.env`), so
+   a plain-shell `alembic` run seeds identically to the app and CI.
 
 ## 5. Conventions that will bite you if unknown
 

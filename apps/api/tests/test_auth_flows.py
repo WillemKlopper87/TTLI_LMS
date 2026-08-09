@@ -309,3 +309,125 @@ async def test_tenant_resolution_is_cached_in_redis(client) -> None:  # type: ig
     cached = await get_redis().get(f"tenant:host:{TENANT_HOST}")
     assert cached is not None
     assert TENANT_HOST in cached
+
+
+async def test_unknown_hostname_is_negative_cached(client) -> None:  # type: ignore[no-untyped-def]
+    from src.core.redis import get_redis
+
+    bogus = f"nope-{uuid.uuid4().hex[:8]}.example"
+    resp = await client.get("/api/v1/auth/me", headers={"X-Tenant-Host": bogus})
+    assert resp.status_code == 400  # TENANT_UNRESOLVED
+
+    assert await get_redis().get(f"tenant:host:{bogus}") == "__miss__"
+
+
+async def test_mfa_challenge_is_single_use(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    """A successful verify consumes the challenge; replaying the same
+    mfa_token with a fresh valid code must not mint a second session."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    enroll = await client.post("/api/v1/auth/mfa/enroll", headers=headers)
+    secret, enrollment_token = enroll.json()["secret"], enroll.json()["enrollment_token"]
+    await client.post(
+        "/api/v1/auth/mfa/enroll/confirm",
+        headers=headers,
+        json={"enrollment_token": enrollment_token, "code": pyotp.TOTP(secret).now()},
+    )
+
+    challenge = (
+        await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    ).json()
+    mfa_token = challenge["mfa_token"]
+
+    first = await client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"mfa_token": mfa_token, "code": pyotp.TOTP(secret).now()},
+    )
+    assert first.status_code == 200
+
+    replay = await client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"mfa_token": mfa_token, "code": pyotp.TOTP(secret).now()},
+    )
+    assert replay.status_code == 401
+
+
+async def test_refresh_rejects_device_fingerprint_mismatch(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": PASSWORD},
+        headers={"X-Device-Fingerprint": "device-a"},
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    wrong_device = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+        headers={"X-Device-Fingerprint": "device-b"},
+    )
+    assert wrong_device.status_code == 401
+
+    # The mismatch refused the rotation without consuming or revoking:
+    # the legitimate device still rotates fine.
+    right_device = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+        headers={"X-Device-Fingerprint": "device-a"},
+    )
+    assert right_device.status_code == 200
+
+
+async def test_password_reset_flow(client, tenant_session_factory, crypto, settings) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    # Request always answers 204, known address or not.
+    assert (
+        await client.post("/api/v1/auth/password-reset", json={"email": email})
+    ).status_code == 204
+
+    # A session that must die when the reset lands.
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    old_refresh = login.json()["refresh_token"]
+
+    async with tenant_session_factory(tenant_id) as s:
+        raw = await identity.create_password_reset(
+            s, crypto, tenant_id=tenant_id, email=email, minutes=settings.password_reset_minutes
+        )
+    assert raw is not None
+
+    new_password = "an entirely new passphrase 7!"
+    confirm = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": raw, "new_password": new_password},
+    )
+    assert confirm.status_code == 204
+
+    # Single use.
+    replay = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": raw, "new_password": "yet another passphrase 3!"},
+    )
+    assert replay.status_code == 401
+
+    # Old password dead, old refresh-token family revoked, new password works.
+    assert (
+        await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    ).status_code == 401
+    assert (
+        await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
+    ).status_code == 401
+    assert (
+        await client.post("/api/v1/auth/login", json={"email": email, "password": new_password})
+    ).status_code == 200

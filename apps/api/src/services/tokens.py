@@ -104,13 +104,22 @@ async def rotate(
     """
     token_hash = hash_token(raw_token)
     now = datetime.now(UTC)
+    # Device binding (04 §1.2): when the row recorded a fingerprint and the
+    # caller presents a different one, the UPDATE matches nothing and the
+    # rotation is refused. A caller presenting none is tolerated — the header
+    # is optional — which keeps this a tripwire for naive theft, not a
+    # guarantee against an attacker who also copied the fingerprint.
     consume_stmt = text(
         "UPDATE refresh_tokens SET consumed_at = :now "
         "WHERE token_hash = :h AND consumed_at IS NULL AND revoked_at IS NULL "
         "AND expires_at > :now "
+        "AND (device_fingerprint IS NULL OR CAST(:fp AS text) IS NULL "
+        "OR device_fingerprint = CAST(:fp AS text)) "
         "RETURNING user_id, family_id, device_fingerprint"
     )
-    won = (await session.execute(consume_stmt, {"now": now, "h": token_hash})).first()
+    won = (
+        await session.execute(consume_stmt, {"now": now, "h": token_hash, "fp": device_fingerprint})
+    ).first()
 
     if won is not None:
         user_id, family_id, existing_fp = won
@@ -131,15 +140,22 @@ async def rotate(
         RefreshToken.family_id,
         RefreshToken.consumed_at,
         RefreshToken.revoked_at,
+        RefreshToken.expires_at,
     ).where(RefreshToken.token_hash == token_hash)
     existing = (await session.execute(lookup_stmt)).first()
 
     if existing is None:
         raise RefreshTokenReused("no such token")
-    reused_user_id, family_id, consumed_at, revoked_at = existing
+    reused_user_id, family_id, consumed_at, revoked_at, expires_at = existing
     if revoked_at is None and consumed_at is not None:
         await _revoke_family(session, family_id=family_id)
         raise RefreshTokenReused("token already consumed", user_id=reused_user_id)
+    if revoked_at is None and consumed_at is None and expires_at > now:
+        # Live token, lost only on the fingerprint clause: a device-binding
+        # mismatch. Refused but not consumed and the family stays alive —
+        # revoking here would let anyone holding a stolen token DoS the
+        # legitimate session just by presenting a wrong fingerprint.
+        raise RefreshTokenReused("device fingerprint mismatch", user_id=reused_user_id)
     raise RefreshTokenReused("token family already revoked or expired", user_id=reused_user_id)
 
 
@@ -152,4 +168,25 @@ async def _revoke_family(session: AsyncSession, *, family_id: uuid.UUID) -> None
     await session.flush()
 
 
-__all__ = ["IssuedRefreshToken", "RefreshTokenReused", "issue_family", "rotate"]
+async def revoke_all_for_user(session: AsyncSession, *, user_id: uuid.UUID) -> int:
+    """Revoke every live refresh token the user holds, across all families.
+
+    Called on password reset: proof-of-mailbox does not prove the old
+    sessions are the same person, so they all die (03_API_SPEC.md §2.8).
+    """
+    stmt = text(
+        "UPDATE refresh_tokens SET revoked_at = :now "
+        "WHERE user_id = :u AND revoked_at IS NULL RETURNING 1"
+    )
+    revoked = (await session.execute(stmt, {"now": datetime.now(UTC), "u": user_id})).all()
+    await session.flush()
+    return len(revoked)
+
+
+__all__ = [
+    "IssuedRefreshToken",
+    "RefreshTokenReused",
+    "issue_family",
+    "revoke_all_for_user",
+    "rotate",
+]

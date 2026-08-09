@@ -1,18 +1,20 @@
 # STATUS
 
-**Updated:** 2026-08-08 (sprint 1 built — foundations, tenancy, identity, CI)
+**Updated:** 2026-08-09 (sprints 2–5 built; Sprint 1 tenancy defects found and fixed)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
 
 ## 1. Summary
 
-Sprint 1 of Phase 1 is built and passing every gate that does not need a database. Phase 0 remains blocked on the customer — the foundation work was brought forward deliberately, because none of it depends on the ten open decisions.
+Sprints 1–5 of Phase 1 are built; every gate passes against a live Postgres, Redis and MinIO. Phase 0 remains blocked on the customer — the foundation work was brought forward deliberately, because none of it depends on the ten open decisions.
+
+Running the previously-blocked gates exposed that **Sprint 1's tenant isolation did not actually work**: the app connected as the Postgres superuser, which bypasses row-level security unconditionally. Fixed — the app now connects as a least-privileged `app_user` role created by the baseline migration, and the RLS suite passes as that role. The migration round-trip and a transaction-handling bug that silently discarded failed-login lockout counters were fixed in the same pass. Details in [HANDOFF.md §2](HANDOFF.md).
 
 | Phase | Name | State | Done |
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
-| 1 | Foundation | Sprint 1 of ~5 complete | ~20% |
+| 1 | Foundation | Sprints 1–5 built; themes + admin shell remain | ~75% |
 | 2 | Public site and content funnel | Not started | 0% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
@@ -23,26 +25,20 @@ Sprint 1 of Phase 1 is built and passing every gate that does not need a databas
 
 | Gate | Status |
 |---|---|
-| `ruff check` | **PASS** — 36 files |
-| `ruff format --check` | **PASS** |
-| `mypy src` (strict) | **PASS** — 27 source files |
-| `pytest` | **PASS** — 31 passed, 8 skipped |
-| `alembic upgrade head` | **BLOCKED** — no local Postgres |
-| Migration round-trip | **BLOCKED** — no local Postgres |
-| `alembic check` | **BLOCKED** — no local Postgres |
-| `api-client` drift check | n/a — sprint 2 |
+| `ruff check` / `ruff format --check` | **PASS** — 55 files |
+| `mypy src` (strict) | **PASS** — 39 source files |
+| `pytest` | **PASS** — 81 passed, **0 skipped** |
+| `alembic upgrade head` | **PASS** — at `0005` |
+| Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
+| `alembic check` | **PASS** — no model drift |
+| `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
+| S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 
-**Headline:** 39 tests (31 passing, 8 integration tests written but skipped), 3 endpoints, 8 tables.
+**Headline:** 81 tests (0 skipped), 12 endpoints, 13 tables (events partitioned monthly ×14), 5 migrations, typed TS client with a CI drift gate.
 
-> The 8 skips are the row-level-security suite in `tests/test_rls.py`. They are written, and they run in CI, which provisions its own Postgres service. They cannot run on this machine because **Docker Desktop's Linux engine is not running** — the named pipe `//./pipe/dockerDesktopLinuxEngine` does not exist and `docker info` exits 1. Start Docker Desktop, wait for the whale icon to settle, then:
->
-> ```bash
-> docker compose -f infra/docker-compose.yml up -d postgres redis
-> cd apps/api && ./.venv/Scripts/python.exe -m alembic upgrade head
-> ./.venv/Scripts/python.exe -m pytest
-> ```
+> CI itself has **never run** — the repository has no remote yet. Pushing it is the next agent's first task ([HANDOFF.md §1](HANDOFF.md)).
 
 ---
 
@@ -57,17 +53,24 @@ Sprint 1 of Phase 1 is built and passing every gate that does not need a databas
 | Source extractor | [docs/source/extract.py](source/extract.py) | `--check` passes; asserts exact character counts |
 | Extracted source | [docs/source/](source/) | 5 files, byte-identical to the export modulo LF normalisation |
 | Documentation set | `docs/01`–`06`, `STATUS.md` | Cross-links resolve |
-| Config + production safety | `src/core/config.py` | 10 tests in `tests/test_config.py` |
+| Config + production safety | `src/core/config.py` | 13 tests in `tests/test_config.py` |
 | Field encryption + blind index | `src/core/crypto.py` | 9 tests in `tests/test_crypto.py` |
-| Argon2id, JWT, UUID v7 | `src/core/security.py`, `ids.py` | 12 tests in `tests/test_security.py` |
-| Tenant resolution + RLS binding | `src/core/tenancy.py`, `db.py` | `tests/test_rls.py` (CI only) |
-| Schema + RLS policies | `alembic/versions/0001_baseline_schema.py` | CI only |
-| Seed: 17 permissions, 6 roles, 2 tenants | `alembic/versions/0002_seed_roles_and_tenants.py` | CI only |
-| CI pipeline | `.github/workflows/api.yml` | 10 gates incl. skip detection |
+| Argon2id, JWT, TOTP, UUID v7 | `src/core/security.py`, `ids.py` | 12 tests in `tests/test_security.py` |
+| Tenant resolution + Redis cache (incl. negative cache) + RLS binding | `src/core/tenancy.py`, `db.py`, `redis.py` | `tests/test_rls.py`, `tests/test_auth_flows.py` |
+| Schema + RLS + least-privileged `app_user` role | `alembic/versions/0001` | 8 RLS tests, run as `app_user` |
+| Seed: 17 permissions, 6 roles, 2 tenants, break-glass admin | `alembic/versions/0002` | reads pydantic Settings, not raw env |
+| Magic links, TOTP + recovery codes, refresh rotation with family revocation, device binding | `0003`, `src/services/{identity,tokens}.py` | 14 end-to-end HTTP tests in `tests/test_auth_flows.py` |
+| Storage adapter: Local / S3 / Azure, container classification enforced | `src/services/storage/` | 20 tests (moto for S3; verified against real MinIO) |
+| First-party `events`, partitioned monthly, consent on the row | `0004`, `src/models/event.py` | 3 raw-SQL tests in `tests/test_events.py` |
+| Password reset (single-use, revokes all sessions) | `0005`, `/auth/password-reset*` | end-to-end test |
+| Rate limiting: 10/min IP, 5/min account on auth endpoints | `src/services/rate_limit.py` | 2 tests |
+| arq worker: partition extension + auth-row purge via SECURITY DEFINER functions | `src/workers/main.py`, `0005` | 2 tests in `tests/test_workers.py` |
+| Typed TS client + CI drift gate | `packages/api-client/` | `tsc --noEmit`; `git diff --exit-code` in CI |
+| CI pipeline | `.github/workflows/api.yml` | 12 gates incl. skip detection — **not yet executed, no remote** |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `POST /api/v1/auth/login` · `GET /api/v1/auth/me`
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` (auth routes under `/api/v1`)
 
 ---
 
@@ -98,30 +101,35 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 4. Phase 1 — Foundation (~20%)
+## 4. Phase 1 — Foundation (~75%)
 
-### Done — sprint 1
+### Done — sprints 1–5
 
-- [x] Monorepo skeleton: `apps/api`, `infra/`, `.github/`
+- [x] Monorepo skeleton: `apps/api`, `infra/`, `.github/`, `packages/api-client`
 - [x] `infra/docker-compose.yml` on the reserved ports ([06 §1.1](06_OPERATIONS.md#11-services))
 - [x] `.env.example` and `check_production_safety()` returning a list of problems
 - [x] FastAPI skeleton, structlog, request IDs, the error envelope
 - [x] Alembic baseline with `citext`, `pg_trgm`, `pgcrypto`
-- [x] Tenancy: `tenant_id`, hostname resolution, `SET LOCAL app.tenant_id`, RLS policies with `FORCE`
-- [x] Identity: Argon2id, JWT issue and verify, lockout, timing-equalised login
+- [x] Tenancy: `tenant_id`, hostname resolution (Redis-cached, misses too), `SET LOCAL app.tenant_id`, RLS with `FORCE`, **least-privileged `app_user` connection**
+- [x] Identity: Argon2id, JWT, lockout, timing-equalised login; magic links; TOTP with recovery codes and its own lockout; single-use MFA challenges
+- [x] Refresh-token rotation: family revocation on reuse, device-fingerprint binding
+- [x] Password reset: single-use, revokes every session, clears lockout
 - [x] Field encryption (AES-GCM) and HMAC blind index
-- [x] Append-only audit log — a raising trigger, not a silent `DO INSTEAD NOTHING` rule
+- [x] Append-only audit log — raising trigger *and* no UPDATE/DELETE grant for `app_user`
 - [x] Seed migration: 17 permissions, 6 roles, 2 tenants, break-glass admin refused in production
+- [x] Storage adapter across S3, Azure Blob and local; five classified containers
+- [x] Events table, partitioned monthly, with a `SECURITY DEFINER` extension function
+- [x] `packages/api-client` generation with a CI drift gate
+- [x] Redis-backed rate limiting and the tenant-config cache
+- [x] arq worker: monthly partition extension, daily expired-auth purge
 - [x] `.github/workflows/api.yml` with the full gate set ([06 §4.5](06_OPERATIONS.md#45-deployment))
 
-### Outstanding — sprints 2 to 5
+### Outstanding — to close Phase 1
 
-- [ ] Magic links and TOTP; refresh-token rotation with family revocation on reuse
-- [ ] Storage adapter across S3, Azure Blob and local
-- [ ] Events table, partitioned
-- [ ] `packages/api-client` generation with a CI drift gate
-- [ ] Redis-backed rate limiting and the tenant-config cache
-- [ ] Run the migration and RLS suites locally (blocked on Docker)
+- [ ] Push to a remote and get CI green for the first time
+- [ ] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)) and per-tenant theming
+- [ ] `apps/web` scaffold (Next.js 15, port 3010) consuming `@ttli/api-client`; empty admin shell
+- [ ] Remaining weaknesses in [HANDOFF.md §4](HANDOFF.md) not yet closed (BFF header-stripping note, email retry via arq)
 
 **Demo target:** two tenants resolving to different themes; login with MFA; an empty admin shell.
 

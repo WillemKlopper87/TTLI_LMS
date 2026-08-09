@@ -6,7 +6,7 @@ is how `alembic check` starts passing while the schema quietly drifts.
 """
 
 from src.models.audit import AuditAction, AuditEvent
-from src.models.auth import MagicLink, MfaRecoveryCode, RefreshToken
+from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
 from src.models.event import Event
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
@@ -20,6 +20,7 @@ __all__ = [
     "Event",
     "MagicLink",
     "MfaRecoveryCode",
+    "PasswordReset",
     "Permission",
     "RefreshToken",
     "Role",

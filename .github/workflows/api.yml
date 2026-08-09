@@ -117,3 +117,20 @@ jobs:
         with:
           name: openapi
           path: apps/api/openapi.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/api-client/package-lock.json
+
+      # The generated client is committed; a schema change that was not
+      # regenerated and committed alongside it fails here. This is the drift
+      # gate the type contract depends on (README "Type contract" row).
+      - name: api-client drift
+        working-directory: packages/api-client
+        run: |
+          npm ci
+          npm run generate
+          git diff --exit-code -- src/schema.gen.ts
+          npm run typecheck

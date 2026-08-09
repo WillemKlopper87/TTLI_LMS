@@ -134,6 +134,14 @@ Rotates the refresh token. **Reuse of a consumed refresh token revokes the entir
 
 Per-tenant SAML/OIDC. Just-in-time provisioning with role mapping. Phase 5.
 
+### 2.7 `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm`
+
+Added in Sprint 2 — §2.4 documented verification without the enrolment it presupposes. `enroll` (authenticated) returns a fresh TOTP secret, its `otpauth://` provisioning URI, and a short-lived enrolment token carrying the secret; nothing is persisted yet. `confirm` proves possession with a live code from the authenticator, then stores the secret encrypted, marks MFA enforced, and returns ten single-use recovery codes — shown once, stored hashed, invalidated as a set on regeneration ([04 §1.3](04_SECURITY_AND_COMPLIANCE.md#13-multi-factor-authentication)). Re-running the pair rotates the secret.
+
+### 2.8 `POST /auth/password-reset` · `POST /auth/password-reset/confirm`
+
+The same shape as magic links, per [04 §1.2](04_SECURITY_AND_COMPLIANCE.md#12-sessions-and-tokens): request always returns `204` whether or not the address exists; the emailed token is single-use, hashed at rest, 30-minute expiry; consumption is atomic. A successful reset revokes every refresh-token family the user holds.
+
 ---
 
 ## 3. Catalogue and content

@@ -24,6 +24,10 @@ from starlette.requests import Request
 from src.models.tenant import Tenant, TenantDomain
 
 CACHE_TTL_SECONDS = 60
+# Misses are cached too, briefly: a flood of requests carrying bogus
+# X-Tenant-Host values must not translate into one Postgres query each.
+MISS_TTL_SECONDS = 10
+_MISS_SENTINEL = "__miss__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,12 +71,16 @@ async def get_or_resolve_tenant(
         return None
 
     cached = await redis.get(_cache_key(hostname))
+    if cached == _MISS_SENTINEL:
+        return None
     if cached is not None:
         payload = json.loads(cached)
         return TenantContext(**{**payload, "id": uuid.UUID(payload["id"])})
 
     tenant = await resolve_tenant(session, hostname)
-    if tenant is not None:
+    if tenant is None:
+        await redis.set(_cache_key(hostname), _MISS_SENTINEL, ex=MISS_TTL_SECONDS)
+    else:
         payload = json.dumps(asdict(tenant), default=str)
         await redis.set(_cache_key(hostname), payload, ex=ttl_seconds)
     return tenant

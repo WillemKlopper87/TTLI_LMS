@@ -63,6 +63,17 @@ class MfaEnrollConfirmResponse(BaseModel):
     recovery_codes: list[str]
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=1)
+    # Minimum length is the one composition rule worth having; the real
+    # defence is Argon2id plus rate limiting (04 §1.1, §1.4).
+    new_password: str = Field(min_length=12, max_length=256)
+
+
 __all__ = [
     "LoginRequest",
     "MagicLinkConsumeRequest",
@@ -73,6 +84,8 @@ __all__ = [
     "MfaEnrollConfirmResponse",
     "MfaEnrollResponse",
     "MfaVerifyRequest",
+    "PasswordResetConfirmRequest",
+    "PasswordResetRequest",
     "RefreshRequest",
     "TokenResponse",
 ]

@@ -117,7 +117,13 @@ def upgrade() -> None:
                 {"r": code, "p": perm},
             )
 
-    environment = os.getenv("ENVIRONMENT", "local")
+    # Settings, not raw os.getenv: pydantic loads .env, so running alembic
+    # from a plain shell behaves the same as the app and CI instead of
+    # silently skipping the break-glass seed when nothing is exported.
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    environment = settings.environment
     tenant_ids: dict[str, uuid.UUID] = {}
 
     for slug, name, hostname in DEMO_TENANTS:
@@ -138,27 +144,22 @@ def upgrade() -> None:
         )
 
     # --- Break-glass administrator ------------------------------------------
-    if os.getenv("BREAK_GLASS_ADMIN_ENABLED", "").lower() not in {"1", "true", "yes"}:
+    if not settings.break_glass_admin_enabled:
         return
     if environment == "production":
         raise RuntimeError("BREAK_GLASS_ADMIN_ENABLED must not be set when ENVIRONMENT=production")
     if "demo" not in tenant_ids:
         return
 
-    password = os.getenv("BREAK_GLASS_ADMIN_PASSWORD", "")
+    password = settings.break_glass_admin_password
     if not password:
         raise RuntimeError("BREAK_GLASS_ADMIN_PASSWORD is required when the admin is enabled")
-
-    import base64
 
     from src.core.crypto import CryptoBox
     from src.core.security import hash_password
 
-    crypto = CryptoBox(
-        base64.b64decode(os.environ["FIELD_ENCRYPTION_KEY"]),
-        base64.b64decode(os.environ["BLIND_INDEX_KEY"]),
-    )
-    email = os.getenv("BREAK_GLASS_ADMIN_EMAIL", "admin@ttli.local").strip().lower()
+    crypto = CryptoBox(settings.encryption_key_bytes(), settings.blind_index_key_bytes())
+    email = settings.break_glass_admin_email.strip().lower()
     user_id = _uuid7()
 
     # users and role_assignments are RLS-forced, so even the table owner has to
