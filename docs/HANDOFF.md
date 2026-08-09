@@ -236,7 +236,9 @@ this sprint). Live smoke test: full EFT happy path (order → checkout →
 proof → approve → invoice `INV-000001`, correct VAT, entitlement granted,
 two ledger entries) and reject → resubmit → approve, both over real HTTP
 against a running server, plus the append-only ledger genuinely refusing a
-raw `UPDATE`. Not yet pushed/CI-verified as of this note.
+raw `UPDATE`. Pushed as `a26b753`; green on both jobs on the first try —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31324955958
+(1m45s, quality + web).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
