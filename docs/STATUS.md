@@ -35,7 +35,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31321303793](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31321303793) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31322764499](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31322764499) |
 
 **Headline:** 101 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 8 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 

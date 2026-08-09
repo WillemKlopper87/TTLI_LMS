@@ -162,6 +162,9 @@ that this is dev-database cross-session pollution, not a bug in
 automated test suite (which doesn't share that stale data) passed
 cleanly. Not fixed here — it's local dev-environment hygiene, not
 shippable code; a fresh `docker compose down -v && up` would clear it.
+Pushed as `f6b3b70`; green on both jobs on the first try —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31322764499
+(1m52s, quality + web).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
