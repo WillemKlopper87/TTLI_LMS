@@ -22,7 +22,7 @@ from src.core.errors import (
 from src.core.logging import configure_logging, get_logger
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
-from src.routers import auth, guest_access, health, leads, learning, orders, tenant
+from src.routers import auth, guest_access, health, leads, learning, media, orders, tenant
 
 log = get_logger(__name__)
 
@@ -89,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(guest_access.router, prefix="/api/v1")
     app.include_router(orders.router, prefix="/api/v1")
     app.include_router(learning.router, prefix="/api/v1")
+    app.include_router(media.router, prefix="/api/v1")
 
     return app
 

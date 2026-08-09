@@ -85,6 +85,15 @@ jobs:
       - name: Install
         run: pip install -r requirements-dev.txt
 
+      # tests/test_media.py runs a real transcode against real ffmpeg
+      # (06 §3) — the same "don't mock it" reasoning as ClamAV below.
+      # ubuntu-latest ships ffmpeg already, but this workflow's zero-skip
+      # policy (the "Assert integration tests ran" step) turns a missing
+      # binary into a hard CI failure rather than a quiet skip, so this is
+      # asserted explicitly instead of assumed.
+      - name: Verify ffmpeg is available
+        run: ffmpeg -version && ffprobe -version
+
       # The extensions are created by postgres-init in Compose; the CI service
       # container does not mount it, so they are applied here instead.
       #

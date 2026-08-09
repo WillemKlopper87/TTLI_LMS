@@ -11,6 +11,7 @@ process, which connects as the same least-privileged app_user as the API.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any, ClassVar
 
 from arq import func
@@ -22,6 +23,8 @@ from src.core.config import get_settings
 from src.core.db import dispose_engine, get_sessionmaker, init_engine
 from src.core.logging import configure_logging, get_logger
 from src.services.email import send_sync
+from src.services.media.pipeline import transcode_video_asset
+from src.services.storage import get_storage_adapter
 
 log = get_logger(__name__)
 
@@ -55,6 +58,24 @@ async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: st
     log.info("email_sent", to_domain=to.rsplit("@", 1)[-1])
 
 
+async def transcode_video_job(ctx: dict[str, Any], *, video_asset_id: str) -> None:
+    """The long-running half of the media pipeline (06 §3.2) — ffmpeg is a
+    blocking subprocess, so this runs off the request path entirely,
+    matching how send_email_job already keeps SMTP off it."""
+    settings = get_settings()
+    factory = get_sessionmaker()
+    storage = get_storage_adapter(settings)
+    # No session.begin() wrapper — transcode_video_asset commits at
+    # multiple points itself (progress updates, then the final state), not
+    # once at the end, which session.begin()'s single-commit-on-exit
+    # contract doesn't fit.
+    async with factory() as session:
+        await transcode_video_asset(
+            session, storage, settings, video_asset_id=uuid.UUID(video_asset_id)
+        )
+    log.info("transcode_job_finished", video_asset_id=video_asset_id)
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(level=settings.log_level, pretty=settings.environment == "local")
@@ -71,6 +92,11 @@ class WorkerSettings:
         extend_event_partitions,
         purge_expired_auth,
         func(send_email_job, max_tries=5),
+        # max_tries=1: a failed transcode already leaves video_assets/
+        # transcode_jobs in a clean 'failed' state with the real error
+        # (pipeline.py's except clause) — a bare retry would just re-run
+        # the same doomed ffmpeg invocation.
+        func(transcode_video_job, max_tries=1),
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Partitions monthly on the 1st; 0004 bootstrapped ~13 months of
@@ -83,4 +109,10 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
 
 
-__all__ = ["WorkerSettings", "extend_event_partitions", "purge_expired_auth", "send_email_job"]
+__all__ = [
+    "WorkerSettings",
+    "extend_event_partitions",
+    "purge_expired_auth",
+    "send_email_job",
+    "transcode_video_job",
+]

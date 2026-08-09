@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     clamav_host: str = "localhost"
     clamav_port: int = 3410
 
+    # --- Media pipeline (06 §3, 02 §5.4/5.5) ---
+    ffmpeg_path: str = ""
+    ffprobe_path: str = ""
+    # 03 §6.7's signed playback URL — short-lived, bound to user and
+    # session, re-minted per playback attempt rather than cached.
+    playback_url_expiry_seconds: int = 300
+    # REQ-BYPASS-09 — deters account sharing without being aggressive
+    # enough to frustrate a paying executive on two devices.
+    max_concurrent_video_sessions: int = 2
+    # REQ-BYPASS-03's tolerance for how far a heartbeat's position may
+    # exceed wall-clock-bounded expectations before being rejected.
+    heartbeat_max_playback_rate: float = 2.0
+
     # --- Email ---
     smtp_host: str = "localhost"
     smtp_port: int = 1145

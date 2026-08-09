@@ -17,7 +17,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
 | 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, a real marketing landing page, a working contact form and a dedicated book page all built. Only Podcasts/"Cultivate with Intent" remain, blocked on missing content | ~70% |
 | 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
-| 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
+| 4 | Core LMS, anti-bypass, credentials | Sprints 1–2: content model, the completion rule engine, enrolments, and a real ported VOD transcode pipeline with signed HLS playback and heartbeat validation | ~40% |
 | 4.5 | PWA and accessibility | Not started | 0% |
 | 5 | Corporate, workshops, marketing | Not started | 0% |
 | 6 | AI insights | Not started | 0% |
@@ -25,22 +25,23 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 95 files |
-| `mypy src` (strict) | **PASS** — 68 source files |
-| `pytest` | **PASS** — 125 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
+| `ruff check` / `ruff format --check` | **PASS** — 107 files |
+| `mypy src` (strict) | **PASS** — 77 source files |
+| `pytest` | **PASS** — 143 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed in the hardening pass — see §4 below) |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
-| `alembic upgrade head` | **PASS** — at `0011` |
+| `alembic upgrade head` | **PASS** — at `0012` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
+| Real ffmpeg transcode → real HLS ladder → real playback through the BFF | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth pass) |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31334900775](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775) (quality 3m4s, web 44s) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31334900775](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775) (quality 3m4s, web 44s) — pending re-verification after this push, since it's this push's own ffmpeg-on-CI-runner assumption being tested for the first time |
 
-**Headline:** 125 tests (0 skipped), 26 endpoints, 34 tables (events partitioned monthly ×14), 11 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress.
+**Headline:** 143 tests (0 skipped), 32 endpoints, 38 tables (events partitioned monthly ×14), 12 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress including real video-watch percentage, and a real ported VOD transcode pipeline with signed HLS playback.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -84,7 +85,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` (non-health routes under `/api/v1`)
 
 ---
 
@@ -212,7 +213,7 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 
 ---
 
-## 7. Phase 4 — Core LMS, anti-bypass, credentials (~20%)
+## 7. Phase 4 — Core LMS, anti-bypass, credentials (~40%)
 
 Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat validation, the server-side completion rule engine, quizzes, surveys with per-survey anonymity, certificates with public verification, badges with LinkedIn sharing.
 
@@ -228,14 +229,24 @@ Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat v
 - [x] Real `apps/web` UI: `/learn` (my courses) and `/learn/[enrolmentId]` (the lesson checklist, start/complete buttons) — post-login routing now sends learners here instead of the admin shell, and staff (any `analytics:view`/`payment:approve` holder) to `/admin`
 - [x] Seeded one demo course ("Executive Leadership Certificate", one module, two document lessons) — explicitly structural content to exercise the mechanics end to end, the same precedent `0009`'s demo product set; not real TTLI curriculum, which was never provided
 
+### Done — sprint 2: the ported VOD transcode pipeline, signed HLS, heartbeat validation
+
+- [x] `video_assets`, `transcode_jobs`, `video_progress`, `video_heartbeats` (`0012`) — the first two global (like `courses`), the last two tenant-scoped/RLS like `enrolments`
+- [x] `src/services/media/{ffmpeg,transcoder,pipeline}.py` — the VOD ladder ported from `Streaming_Server`'s `transcoding-engine.js` (06 §3.2): one decode, N encodes via a single `filter_complex split`, IDR pinned to segment boundaries, CMAF/fMP4 output, VOD-only (this platform never streams live, so the source's live sliding-window mode wasn't ported). Runs as an arq job (`transcode_video_job`) off the request path
+- [x] `POST /video-assets` (upload, `course:edit`-gated, virus-scanned through the same `services/antivirus.py` the payment-proof path uses) · `GET /video-assets/{id}` · `POST /lessons/{id}/video` (a narrow single-field attach, not general lesson authoring)
+- [x] Signed HLS playback (`src/services/media/playback.py`, 03 §6.7): entitlement checked before a URL is ever minted, Redis-backed short-lived tokens, `GET /media/{id}/hls/{filename}` rewrites every manifest's internal references to carry the token — the "media players cannot set headers on segment requests" constraint 06 §3.2 inherited from the source project, solved for real here since nothing in `Streaming_Server` had to
+- [x] Concurrent-session cap (REQ-BYPASS-09) — the oldest playback session is evicted when a new one exceeds the configured limit, not the newest
+- [x] Heartbeat validation (`src/services/video_progress.py`, REQ-BYPASS-02/03/04): server-assigned timestamps only, `watched_seconds` bounded by real elapsed wall-clock time per heartbeat, `furthest_position_seconds` seek ceiling refuses forward jumps
+- [x] `video_watch_percentage` graduated out of the rule engine's "not available yet" list — real watch data now backs it
+- [x] Real `apps/web` video player (`app/learn/[enrolmentId]/video-player.tsx`, hls.js) with a real watermark overlay and heartbeat pings every 5s
+
 ### Outstanding — the rest of Phase 4
 
-- [ ] The media module: ported VOD ladder, signed HLS, player-overlay watermark, heartbeat validation, concurrent-stream caps (sprint 2) — `video_watch_percentage` in the rule engine refuses with "not available yet" until this lands
 - [ ] Quizzes with question banks, surveys with per-survey anonymity, assignments (virus-scanned, reusing `services/antivirus.py`) (sprint 3)
 - [ ] Certificates with public QR verification, badges with LinkedIn sharing (sprint 4)
-- [ ] Course/lesson authoring UI — content is migration-seeded this sprint, same precedent as Phase 3 sprint 1's seeded product; a content-author role and CRUD endpoints don't exist yet
+- [ ] Course/lesson authoring UI — content is migration-seeded, same precedent as Phase 3 sprint 1's seeded product; a content-author *screen* doesn't exist yet, though the API endpoints a real one would call now do
 
-**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone. **First half met** — verified live over real HTTP against a running server (not just the test suite): started a lesson, attempted to complete it early and got refused with `"0s spent of 30s required"`, waited past the real 30-second threshold, completed it for real, and watched lesson 2 unlock. Certificate verification is sprint 4.
+**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone. **First two-thirds met** — verified live over real HTTP against running servers (not just the test suite): started a lesson, got refused early with `"0s spent of 30s required"`, waited the real threshold, completed it, watched the next lesson unlock; separately, uploaded a real video, watched a real ffmpeg transcode complete, played it back through signed HLS end to end through the actual BFF with byte-identical (MD5-verified) segment delivery, and confirmed a seek beyond the furthest watched position is refused. Certificate verification is sprint 4.
 
 ---
 

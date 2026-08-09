@@ -92,11 +92,13 @@ class Lesson(Base, TimestampMixin):
         String(32), nullable=False, server_default="document"
     )
     access_level: Mapped[str] = mapped_column(AccessLevel, nullable=False, server_default="paid")
-    # Document-activity body. Nullable — a future video/quiz/survey/
-    # assignment lesson carries its content in that subsystem's own table
-    # (video_assets, quizzes, ...) instead, referenced by a column those
-    # sprints add here.
+    # Document-activity body. Nullable — a video/quiz/survey/assignment
+    # lesson carries its content in that subsystem's own table instead.
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # video_assets.id for activity_type="video" lessons (Phase 4 sprint 2).
+    video_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("video_assets.id", ondelete="SET NULL"), nullable=True
+    )
     # Lesson-level override of the course default (02 §5.2) — absent
     # fields fall through to the course's completion_rules, never a null
     # that silently disables the course-level rule.

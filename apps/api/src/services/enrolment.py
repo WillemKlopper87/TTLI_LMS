@@ -26,7 +26,9 @@ from src.core.ids import uuid7
 from src.models.audit import AuditAction
 from src.models.course import Course, Lesson, Module
 from src.models.learning import Enrolment, LessonCompletion
+from src.models.media import VideoAsset
 from src.services import audit
+from src.services import video_progress as video_progress_service
 from src.services.completion import evaluate, merge_rules
 
 
@@ -52,6 +54,7 @@ class LessonProgressRow:
     title: str
     position: int
     activity_type: str
+    video_asset_id: uuid.UUID | None
     state: str
     unmet_requirements: list[str]
 
@@ -80,6 +83,30 @@ async def _get_lesson_and_course(
     if row is None:
         raise NotFound("No such lesson.")
     return row[0], row[1]
+
+
+async def has_access_to_video(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, video_asset_id: uuid.UUID
+) -> bool:
+    """03 §6.7's entitlement check, run before a playback URL is ever
+    minted — a video is reachable only through a lesson, whose course the
+    caller must hold a real enrolment for."""
+    course_ids_stmt = (
+        select(Course.id)
+        .join(Module, Module.course_id == Course.id)
+        .join(Lesson, Lesson.module_id == Module.id)
+        .where(Lesson.video_asset_id == video_asset_id)
+    )
+    course_ids = (await session.execute(course_ids_stmt)).scalars().all()
+    if not course_ids:
+        return False
+
+    enrolment_stmt = select(Enrolment.id).where(
+        Enrolment.tenant_id == tenant_id,
+        Enrolment.user_id == user_id,
+        Enrolment.course_id.in_(course_ids),
+    )
+    return (await session.execute(enrolment_stmt)).first() is not None
 
 
 async def get_or_create_enrolment(
@@ -187,6 +214,35 @@ async def _next_lesson(
     return None
 
 
+async def _video_watch_percentage(
+    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
+) -> float | None:
+    if lesson.video_asset_id is None:
+        return None
+    video_asset = await session.get(VideoAsset, lesson.video_asset_id)
+    if video_asset is None or video_asset.duration_seconds is None:
+        return None
+    return await video_progress_service.watch_percentage(
+        session,
+        enrolment_id=enrolment_id,
+        lesson_id=lesson.id,
+        duration_seconds=video_asset.duration_seconds,
+    )
+
+
+async def resolve_enrolment_for_lesson(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, lesson_id: uuid.UUID
+) -> tuple[Enrolment, Lesson]:
+    """The ownership resolution `start_lesson`/`complete_lesson` each do
+    inline, factored out for `POST /lessons/{id}/heartbeat`
+    (routers/learning.py) too."""
+    lesson, course = await _get_lesson_and_course(session, lesson_id)
+    enrolment = await get_own_enrolment(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+    )
+    return enrolment, lesson
+
+
 async def start_lesson(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, lesson_id: uuid.UUID
 ) -> LessonCompletion:
@@ -236,7 +292,10 @@ async def complete_lesson(
         )
 
     rules = merge_rules(course.completion_rules, lesson.completion_rules)
-    result = evaluate(rules, first_seen_at=completion.first_seen_at)
+    watched_pct = await _video_watch_percentage(session, lesson=lesson, enrolment_id=enrolment.id)
+    result = evaluate(
+        rules, first_seen_at=completion.first_seen_at, video_watched_percentage=watched_pct
+    )
     completion.rule_evaluation = result.as_json()
 
     if not result.met:
@@ -301,7 +360,14 @@ async def get_progress(
             state = completion.state
             if state != "completed":
                 rules = merge_rules(course.completion_rules, lesson.completion_rules)
-                result = evaluate(rules, first_seen_at=completion.first_seen_at)
+                watched_pct = await _video_watch_percentage(
+                    session, lesson=lesson, enrolment_id=enrolment.id
+                )
+                result = evaluate(
+                    rules,
+                    first_seen_at=completion.first_seen_at,
+                    video_watched_percentage=watched_pct,
+                )
                 unmet = [c.reason for c in result.checks if not c.met]
         elif previous_completed:
             state = "available"
@@ -316,6 +382,7 @@ async def get_progress(
                 title=lesson.title,
                 position=lesson.position,
                 activity_type=lesson.activity_type,
+                video_asset_id=lesson.video_asset_id,
                 state=state,
                 unmet_requirements=unmet,
             )
@@ -332,6 +399,8 @@ __all__ = [
     "get_or_create_enrolment",
     "get_own_enrolment",
     "get_progress",
+    "has_access_to_video",
     "list_own_enrolments",
+    "resolve_enrolment_for_lesson",
     "start_lesson",
 ]

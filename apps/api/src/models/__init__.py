@@ -34,6 +34,7 @@ from src.models.course import (
 from src.models.event import Event
 from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
+from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.tenant import Tenant, TenantDomain
 from src.models.theme import TenantTheme
@@ -81,5 +82,9 @@ __all__ = [
     "TenantMixin",
     "TenantTheme",
     "TimestampMixin",
+    "TranscodeJob",
     "User",
+    "VideoAsset",
+    "VideoHeartbeat",
+    "VideoProgress",
 ]

@@ -529,6 +529,125 @@ unlocked. Pushed as `0431928`; green on both jobs —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31334900775
 (quality 3m4s, web 44s).
 
+**Thirteenth pass: Phase 4 sprint 2 — the ported VOD transcode pipeline,
+signed HLS playback, heartbeat validation.** The biggest, most technically
+novel piece of Phase 4. `0012` adds `video_assets`/`transcode_jobs`
+(global, like `courses`) and `video_progress`/`video_heartbeats`
+(tenant-scoped/RLS, like `enrolments`) — see the migration's own docstring
+for why `video_heartbeats` gets the plain grant rather than
+`ledger_entries`-style two-layer append-only enforcement, and why
+partitioning was deliberately deferred alongside the retention sweep that
+would consume it.
+
+**The port itself** (`src/services/media/{ffmpeg,transcoder,pipeline}.py`)
+is a from-scratch Python reimplementation of `Streaming_Server`'s
+`transcoding-engine.js` — not a translation tool, a human read of the JS
+and rebuilt the same ffmpeg argument construction in Python's
+`asyncio.create_subprocess_exec`. Confirmed empirically, not assumed: ran
+the real `ffmpeg` binary with the Python-built args against a synthetic
+test clip and inspected the actual output tree before trusting the
+upload-iteration logic in `pipeline.py` — ffmpeg auto-generates
+`init_0.mp4`/`init_1.mp4` per variant (not the single `init.mp4` the
+`-hls_fmp4_init_filename` flag name suggests), which is exactly the kind
+of detail worth verifying against a real binary rather than the source
+JS's comments. Runs as an arq job (`transcode_video_job`,
+`src/workers/main.py`) off the request path, matching how
+`send_email_job` already keeps SMTP off it. VOD-only: `Streaming_Server`'s
+live sliding-HLS-window mode was deliberately not ported, since 01 §5.8
+already decided this platform never streams live broadcast content —
+porting a mode nothing here would ever exercise would be unexercised code
+carrying its own bug surface for no reason.
+
+**Signed HLS playback** (`src/services/media/playback.py`, 03 §6.7) solves
+the "media players cannot set headers on segment requests" problem 06
+§3.2 flagged as inherited from `Streaming_Server` but never actually
+built there. The access token travels as a query parameter; `GET
+/media/{id}/hls/{filename}` rewrites every relative reference inside a
+served manifest to carry that same token — both plain lines and the
+`#EXT-X-MAP:URI="..."` init-segment reference, which needed its own regex
+since it's a comment-prefixed line with a URI hiding inside quotes.
+Entitlement is checked once, before a URL is minted, never cached, via
+`services/enrolment.py::has_access_to_video` (walks lesson → module →
+course → the caller's own enrolment). Concurrent-session cap
+(REQ-BYPASS-09) evicts the *oldest* Redis-tracked session when a new mint
+exceeds the configured limit — the person in front of the screen right
+now keeps playing, not whoever logged in first.
+
+**Heartbeat validation** (`src/services/video_progress.py`,
+REQ-BYPASS-02/03/04) is new logic, not ported from anywhere — nothing in
+`Streaming_Server` needed it. `watched_seconds` grows by at most the
+real, server-measured interval since the previous heartbeat (capped per
+heartbeat at 30s so a paused tab or dropped connection can't be replayed
+as watched time on reconnect — 03 §13 leaves the real heartbeat interval
+an open question, so this is a documented reasonable default, not a
+guess dressed up as a decision). `furthest_position_seconds` is a seek
+ceiling with a small buffering-jitter tolerance; a heartbeat claiming a
+position beyond it is refused with `SEEK_NOT_PERMITTED`, verified all the
+way down to the database row (a rejected heartbeat writes nothing —
+checked directly via SQL, not just the HTTP response code). This feeds
+`video_watch_percentage`, which graduates out of the completion rule
+engine's "not available yet" refusal list in this pass —
+`services/enrolment.py::_video_watch_percentage` looks up real watched
+data before `services/completion.py::evaluate` runs.
+
+**Two real bugs, both caught only because this was verified live against
+running servers, not just the test suite** — the same lesson the ninth
+and eleventh passes already taught, worth repeating because it keeps
+paying off: (1) `POST /lessons/{id}/video` 500'd with
+`InsufficientPrivilegeError: permission denied for table lessons` —
+`0011` left `lessons` SELECT-only for `app_user` since nothing wrote to it
+that sprint; this sprint's narrow video-attach endpoint is lessons' first
+real writer, so `0012` grants `UPDATE` (not `INSERT`/`DELETE` — still not
+general authoring). Fixed in `0012` itself before it was ever committed,
+not a follow-up migration. (2) `playback.validate()` crashed with
+`AttributeError: 'str' object has no attribute 'decode'` — the Redis
+client (`core/redis.py`) is constructed with `decode_responses=True`,
+so every value already comes back as `str`; the `.decode()` calls I'd
+written assumed `bytes`, copied from a mental model of redis-py's
+default rather than checked against this project's actual client
+construction. Neither bug was hit by `tests/test_media.py` because those
+tests were written *after* the live smoke test that found them — a
+reminder that a green test suite only proves what it was written to
+check, not what a real request path actually does.
+
+**A narrow, deliberate authoring endpoint**: `POST /lessons/{id}/video`
+attaches a `video_asset_id` and flips `activity_type` to `"video"` — one
+field, not general lesson CRUD, which still doesn't exist (STATUS.md
+tracks that gap explicitly). It exists because the upload endpoint above
+it is otherwise unreachable in any real end-to-end flow; don't grow it
+into general authoring without deciding that's actually in scope.
+
+**CI risk flagged and addressed, not left to find out the hard way**:
+`tests/test_media.py` needs a real `ffmpeg`/`ffprobe` on PATH. `ubuntu-latest`
+GitHub Actions runners ship it, but this workflow's zero-skip policy (the
+"Assert integration tests ran" step) turns *any* skip into a hard CI
+failure — if that assumption were wrong, the failure would show up as a
+confusing downstream skip-count mismatch rather than a clear "ffmpeg not
+found." Added an explicit `ffmpeg -version && ffprobe -version` step to
+`.github/workflows/api.yml`'s `quality` job specifically so a missing
+binary fails loudly, at its own step, with an unambiguous message — this
+push is the first real test of whether that assumption holds.
+
+Real end-to-end verification, both automated and live: 18 new tests in
+`tests/test_media.py`/`test_media_ffmpeg.py` (real ffmpeg transcodes, not
+mocked — same reasoning as `test_antivirus.py`'s real ClamAV), full suite
+143 tests / 0 skipped. Separately, a live smoke test against actually
+running API, web and arq-worker processes: uploaded a real synthetic
+video over real HTTP, watched the real worker transcode it in ~2s,
+attached it to a lesson, minted a real playback token as a real enrolled
+buyer, fetched the real manifest through the actual Next.js BFF (not the
+API directly) and confirmed every reference line carried the token,
+downloaded a real segment through both the API directly and through the
+BFF and confirmed the two are MD5-identical (the same binary-integrity
+verification the ninth pass's BFF fix established as the bar), sent real
+heartbeats and watched a seek beyond the furthest position get refused
+with the row-level state to prove it. `apps/web` gained `hls.js`
+(`npm audit`: 0 vulnerabilities) and a real video player component with a
+watermark overlay and 5-second heartbeat pings. `apps/web` `typecheck`/
+`build` clean (still 15 routes — `/learn` and `/learn/[enrolmentId]`
+already existed from the twelfth pass, this pass only added the video
+player inside the existing lesson page). Not yet pushed as of this note.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

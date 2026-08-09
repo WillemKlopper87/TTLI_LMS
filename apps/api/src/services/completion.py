@@ -4,12 +4,14 @@ The frontend may display progress; this module is the only thing that
 decides whether a lesson is actually complete — no client assertion is
 ever trusted, and every timestamp used here is server-assigned.
 
-A rule field whose subsystem doesn't exist yet — video, quiz, survey,
-assignment, live attendance (Phase 4 sprints 2/3, Phase 5) — evaluates as
-**not met**, with a specific reason, rather than being silently ignored.
-An absent subsystem is not the same as an absent rule: a lesson authored
-with `quiz_pass_score` set must not complete just because no quiz engine
-exists to check it against.
+A rule field whose subsystem doesn't exist yet — quiz, survey, assignment,
+live attendance (Phase 4 sprint 3, Phase 5) — evaluates as **not met**,
+with a specific reason, rather than being silently ignored. An absent
+subsystem is not the same as an absent rule: a lesson authored with
+`quiz_pass_score` set must not complete just because no quiz engine exists
+to check it against. `video_watch_percentage` graduated out of this list
+in Phase 4 sprint 2 — real watch data now backs it
+(services/video_progress.py), so it's evaluated for real below.
 """
 
 from __future__ import annotations
@@ -70,7 +72,6 @@ class RuleEvaluation:
 # always fails the check, with a reason naming what's missing — never a
 # silent pass.
 _NOT_YET_AVAILABLE = {
-    "video_watch_percentage": "Video playback is not available yet (Phase 4 sprint 2).",
     "quiz_pass_score": "Quizzes are not available yet (Phase 4 sprint 3).",
     "survey_required": "Surveys are not available yet (Phase 4 sprint 3).",
     "assignment_approval_required": "Assignments are not available yet (Phase 4 sprint 3).",
@@ -79,7 +80,11 @@ _NOT_YET_AVAILABLE = {
 
 
 def evaluate(
-    rules: CompletionRules, *, first_seen_at: datetime, now: datetime | None = None
+    rules: CompletionRules,
+    *,
+    first_seen_at: datetime,
+    now: datetime | None = None,
+    video_watched_percentage: float | None = None,
 ) -> RuleEvaluation:
     now = now or datetime.now(UTC)
     checks: list[RuleCheck] = []
@@ -95,6 +100,24 @@ def evaluate(
                     "Minimum time met."
                     if met
                     else f"{int(elapsed)}s spent of {rules.minimum_time_seconds}s required."
+                ),
+            )
+        )
+
+    if rules.video_watch_percentage is not None:
+        # None means no validated heartbeat data exists yet for this
+        # enrolment/lesson (services/video_progress.py::watch_percentage)
+        # — treated as 0%, never as "the rule doesn't apply".
+        watched = video_watched_percentage or 0.0
+        met = watched >= rules.video_watch_percentage
+        checks.append(
+            RuleCheck(
+                rule="video_watch_percentage",
+                met=met,
+                reason=(
+                    "Video watch requirement met."
+                    if met
+                    else f"{watched:.0f}% watched of {rules.video_watch_percentage}% required."
                 ),
             )
         )

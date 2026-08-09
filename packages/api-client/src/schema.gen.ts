@@ -478,12 +478,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lessons/{lesson_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report real-time video-watch progress (REQ-BYPASS-02/03/04) */
+        post: operations["record_heartbeat_api_v1_lessons__lesson_id__heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/video-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a source video for transcoding */
+        post: operations["upload_video_asset_api_v1_video_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/video-assets/{video_asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check a video asset's transcode state */
+        get: operations["get_video_asset_api_v1_video_assets__video_asset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach an uploaded video asset to a lesson */
+        post: operations["attach_video_to_lesson_api_v1_lessons__lesson_id__video_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/{video_asset_id}/playback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mint a short-lived signed playlist URL (03 §6.7) */
+        get: operations["get_playback_api_v1_media__video_asset_id__playback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/{video_asset_id}/hls/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve one HLS manifest or segment */
+        get: operations["get_hls_file_api_v1_media__video_asset_id__hls__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
         Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_video_asset_api_v1_video_assets_post */
+        Body_upload_video_asset_api_v1_video_assets_post: {
             /** File */
             file: string;
         };
@@ -530,6 +637,30 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeartbeatRequest
+         * @description 03 §6.3. No timestamp field on purpose — REQ-BYPASS-02 means the
+         *     server assigns it, so there is nothing here for a client to lie
+         *     about.
+         */
+        HeartbeatRequest: {
+            /** Position Seconds */
+            position_seconds: number | string;
+            /**
+             * Playback Rate
+             * @default 1.0
+             */
+            playback_rate: number | string;
+            /** Session Id */
+            session_id: string;
+        };
+        /** HeartbeatResponse */
+        HeartbeatResponse: {
+            /** Furthest Position Seconds */
+            furthest_position_seconds: string;
+            /** Watched Seconds */
+            watched_seconds: string;
         };
         /** InvoiceResponse */
         InvoiceResponse: {
@@ -660,6 +791,8 @@ export interface components {
             position: number;
             /** Activity Type */
             activity_type: string;
+            /** Video Asset Id */
+            video_asset_id: string | null;
             /** State */
             state: string;
             /** Unmet Requirements */
@@ -832,6 +965,17 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** PlaybackResponse */
+        PlaybackResponse: {
+            /** Playlist Url */
+            playlist_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            watermark: components["schemas"]["WatermarkPayload"];
+        };
         /** PriceSummary */
         PriceSummary: {
             /** Id */
@@ -916,6 +1060,22 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VideoAssetResponse */
+        VideoAssetResponse: {
+            /** Id */
+            id: string;
+            /** State */
+            state: string;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+        };
+        /** WatermarkPayload */
+        WatermarkPayload: {
+            /** Text */
+            text: string;
+            /** Opacity */
+            opacity: number;
         };
     };
     responses: never;
@@ -1722,6 +1882,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LessonCompleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_heartbeat_api_v1_lessons__lesson_id__heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeartbeatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_video_asset_api_v1_video_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_video_asset_api_v1_video_assets_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoAssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_video_asset_api_v1_video_assets__video_asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoAssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_video_to_lesson_api_v1_lessons__lesson_id__video_post: {
+        parameters: {
+            query: {
+                video_asset_id: string;
+            };
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_playback_api_v1_media__video_asset_id__playback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hls_file_api_v1_media__video_asset_id__hls__filename__get: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path: {
+                video_asset_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

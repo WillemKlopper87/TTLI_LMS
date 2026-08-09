@@ -6,12 +6,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
+import { VideoPlayer } from "./video-player";
+
 interface LessonProgress {
   lesson_id: string;
   module_title: string;
   title: string;
   position: number;
   activity_type: string;
+  video_asset_id: string | null;
   state: string;
   unmet_requirements: string[];
 }
@@ -132,6 +135,12 @@ export default function LearnEnrolmentPage() {
                 {lesson.state.replace("_", " ")}
               </span>
             </div>
+
+            {lesson.activity_type === "video" &&
+            lesson.video_asset_id &&
+            (lesson.state === "in_progress" || lesson.state === "requirements_met") ? (
+              <VideoPlayer lessonId={lesson.lesson_id} videoAssetId={lesson.video_asset_id} />
+            ) : null}
 
             {lesson.unmet_requirements.length > 0 ? (
               <ul className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>

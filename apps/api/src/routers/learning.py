@@ -11,18 +11,22 @@ learner-facing routes.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter
 
-from src.core.deps import PrincipalDep, SessionDep
+from src.core.deps import PrincipalDep, SessionDep, SettingsDep
 from src.core.errors import NotFound
 from src.schemas.learning import (
     EnrolmentProgressResponse,
+    HeartbeatRequest,
+    HeartbeatResponse,
     LessonCompleteResponse,
     LessonProgressResponse,
     OwnEnrolmentResponse,
 )
 from src.services import enrolment as enrolment_service
+from src.services import video_progress as video_progress_service
 
 router = APIRouter(tags=["learning"])
 
@@ -82,6 +86,7 @@ async def get_progress(
                 title=row.title,
                 position=row.position,
                 activity_type=row.activity_type,
+                video_asset_id=str(row.video_asset_id) if row.video_asset_id else None,
                 state=row.state,
                 unmet_requirements=row.unmet_requirements,
             )
@@ -122,6 +127,40 @@ async def complete_lesson(
     return LessonCompleteResponse(
         state=completion.state,
         next_lesson_id=str(next_lesson.id) if next_lesson else None,
+    )
+
+
+@router.post(
+    "/lessons/{lesson_id}/heartbeat",
+    response_model=HeartbeatResponse,
+    summary="Report real-time video-watch progress (REQ-BYPASS-02/03/04)",
+)
+async def record_heartbeat(
+    lesson_id: str,
+    body: HeartbeatRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> HeartbeatResponse:
+    enrolment, _lesson = await enrolment_service.resolve_enrolment_for_lesson(
+        session,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        lesson_id=_parse_uuid(lesson_id),
+    )
+    result = await video_progress_service.record_heartbeat(
+        session,
+        tenant_id=principal.tenant_id,
+        enrolment_id=enrolment.id,
+        lesson_id=_parse_uuid(lesson_id),
+        position_seconds=body.position_seconds,
+        playback_rate=body.playback_rate,
+        session_id=body.session_id,
+        max_playback_rate=Decimal(str(settings.heartbeat_max_playback_rate)),
+    )
+    return HeartbeatResponse(
+        furthest_position_seconds=result.furthest_position_seconds,
+        watched_seconds=result.watched_seconds,
     )
 
 
