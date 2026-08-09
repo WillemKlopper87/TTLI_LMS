@@ -95,7 +95,12 @@ archival vector source. Verified: migration round-trip, `alembic check`
 clean, `apps/web` `typecheck` and `build` clean, and a live HTTP smoke
 test against both demo tenants — confirmed the TTLI (`demo`) login page
 renders the real title/colors/logo while `acme`'s theme response is
-byte-for-byte unchanged. Not yet committed/pushed as of this note.
+byte-for-byte unchanged. Pushed as `9f4b631`; CI's `quality` job failed
+first try on `ruff format --check` — the migration file had been through
+`ruff check` locally but not `ruff format`, a gate-sweep gap worth
+remembering. Fixed and pushed as `b161f18`; green on both jobs —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31321303793
+(1m31s, quality + web).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
