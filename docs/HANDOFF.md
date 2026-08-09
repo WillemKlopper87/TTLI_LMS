@@ -1,18 +1,35 @@
 # HANDOFF — for the next agent
 
 **Written:** 2026-08-08, end of the session that built Sprints 2–4 of Phase 1.
-**Updated:** 2026-08-09, twice — the second pass closed §4's last item too:
-work is committed (still no remote), the drift gate is wired, all eight
-ranked weaknesses are fixed with tests, and Sprint 5's worker + password
-reset + tenant themes + `apps/web` are all built. [STATUS.md](STATUS.md)
-carries the current numbers (85 tests, 13 endpoints, 6 migrations). Weakness
-7 closed last: `send_email` now enqueues a `send_email_job` (arq,
-`max_tries=5`, real delivery verified against Mailhog in both local dev and
-CI) instead of sending inline — see `src/core/queue.py`,
-`src/services/email.py`, `src/workers/main.py`. **Still genuinely open: push
-to a remote and get CI green (the workflow does not yet build `apps/web` —
-add a job when wiring the remote); the Next 15 `npm audit` findings, which
-only Next 16 fixes — a stack-decision change, not an `npm audit fix`.**
+**Updated:** 2026-08-09, three times. Second pass closed §4's last item
+(work committed, drift gate wired, all eight ranked weaknesses fixed with
+tests, Sprint 5's worker + password reset + tenant themes + `apps/web` all
+built — [STATUS.md](STATUS.md) carries current numbers: 85 tests, 13
+endpoints, 6 migrations). Weakness 7 closed last: `send_email` now enqueues
+a `send_email_job` (arq, `max_tries=5`, real delivery verified against
+Mailhog in both local dev and CI) instead of sending inline — see
+`src/core/queue.py`, `src/services/email.py`, `src/workers/main.py`.
+
+**Third pass: the repo is published and CI is verified green.**
+`https://github.com/WillemKlopper87/TTLI_LMS` (private). The *first-ever*
+run failed immediately — `psql "$DATABASE_URL_SYNC" -f ...` in the "Create
+extensions" step doesn't understand SQLAlchemy's `postgresql+psycopg2://`
+scheme, so it silently fell back to a nonexistent local socket. That step
+had been sitting unchanged since the original Sprint 1 commit and had
+genuinely never executed until that run — exactly the class of bug the
+whole point of running CI was to surface, and the local dev loop (Windows,
+Python 3.11, `docker exec ttli-postgres psql` directly) could never have
+caught it. Fixed with explicit `-h`/`-p`/`-U`/`-d` flags instead of the URI.
+The second run — Python 3.12, Ubuntu, first time either had touched this
+code — passed every step end to end, including the zero-skip integration
+assertion, the migration round-trip, drift check, and the api-client drift
+gate: [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520).
+**Still genuinely open: the CI workflow does not yet build/typecheck
+`apps/web` — add a job for it; the Next 15 `npm audit` findings, which only
+Next 16 fixes — a stack-decision change, not an `npm audit fix` (impact
+analysis says the bump is actually low-risk for this codebase, since it was
+built async-API-clean from the start — see the conversation, not yet
+written up as a doc).**
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
@@ -38,11 +55,12 @@ Every claim below was executed this session, not inferred.
 Containers `ttli-postgres` (5452), `ttli-redis` (6399), `ttli-minio` (9140/9141)
 were left running. Database is seeded (demo + acme tenants, break-glass admin).
 
-**⚠ Nothing from this session is committed.** `git status` shows ~38 modified or
-new files on `main`. There is no remote; CI has therefore *never actually run* —
-treat `.github/workflows/api.yml` as unproven until it has. First job: review the
-diff and commit in sensible chunks (suggested: ① Sprint-1 defect fixes,
-② Sprint 2 identity, ③ Sprint 3 storage+events, ④ Sprint 4 redis+client).
+**⚠ Historical note, no longer current:** at the point this section was
+written, nothing was committed and there was no remote — see the "Third
+pass" update at the top of this file for what actually happened: the repo
+is now published and `.github/workflows/api.yml` is verified green (one
+real bug found and fixed on the way — a `psql` URI-parsing failure in the
+"Create extensions" step, unrelated to anything built this session).
 
 ## 2. What was fixed this session (context for reviewing the diff)
 
@@ -64,10 +82,11 @@ diff and commit in sensible chunks (suggested: ① Sprint-1 defect fixes,
 
 ## 3. Unfinished work, in order
 
-### 3.1 Housekeeping — ✅ done 2026-08-09, except the push
+### 3.1 Housekeeping — ✅ done 2026-08-09, including the push
 
-- ✅ Committed. **Still to do: push to a remote so CI runs for the first
-  time.** Expect teething: the workflow has never executed.
+- ✅ Committed, pushed to `https://github.com/WillemKlopper87/TTLI_LMS`
+  (private), CI verified green (see the "Third pass" note at the top of
+  this file).
 - ✅ `.env.example` now covers every `Settings` field.
 - ✅ `docs/STATUS.md` rewritten to current state.
 - ✅ `docs/03_API_SPEC.md` gained §2.7 (MFA enrolment) and §2.8 (password

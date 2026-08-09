@@ -14,7 +14,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Phase | Name | State | Done |
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
-| 1 | Foundation | Built end-to-end; remaining: first CI run (needs a remote) | ~95% |
+| 1 | Foundation | Built end-to-end, published, CI green | ~98% |
 | 2 | Public site and content funnel | Not started | 0% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
@@ -35,10 +35,11 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
+| CI (`.github/workflows/api.yml`), GitHub Actions | **PASS** — [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520) |
 
 **Headline:** 85 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
-> CI itself has **never run** — the repository has no remote yet. Pushing it is the next agent's first task ([HANDOFF.md §1](HANDOFF.md)).
+> Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
 ---
 
@@ -126,7 +127,8 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ### Outstanding — to close Phase 1
 
-- [ ] Push to a remote and get CI green for the first time
+- [x] Push to a remote and get CI green — [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520)
+- [ ] CI does not yet build/typecheck `apps/web`
 - [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
 - [x] `apps/web` (Next.js 15, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
 - [x] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7): `send_email` enqueues a `send_email_job` (`max_tries=5`) instead of sending inline; the request path never blocks on or fails because of SMTP
