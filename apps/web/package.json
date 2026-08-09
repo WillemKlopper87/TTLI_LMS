@@ -1,0 +1,25 @@
+{
+  "name": "@ttli/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public site, storefront, learner and admin portals. Phase 1 scope: a tenant-themed login page and an empty admin shell.",
+  "scripts": {
+    "dev": "next dev -p 3010",
+    "build": "next build",
+    "start": "next start -p 3010",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ttli/api-client": "file:../../packages/api-client",
+    "next": "15.5.23",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
+  }
+}

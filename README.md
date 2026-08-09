@@ -48,17 +48,17 @@ Rationale and rejected alternatives for each: [docs/01_PRD.md §5](docs/01_PRD.m
 
 ```
 apps/
-  web/                     Next.js 15                        (not yet scaffolded)
-  api/                     FastAPI                           (not yet scaffolded)
+  web/                     Next.js 15 — login + admin shell, BFF proxy   ✅
+  api/                     FastAPI — identity, tenancy, storage, worker  ✅
     src/{core,models,schemas,routers,services,workers}/
     alembic/  tests/
 packages/
-  api-client/              generated — never hand-edited     (not yet scaffolded)
+  api-client/              generated types + thin client; drift-gated    ✅
 infra/
-  docker-compose.yml                                         (not yet scaffolded)
-  postgres-init/                                             (not yet scaffolded)
-docs/                      the documentation set             ✅
-  source/                  preserved planning material       ✅
+  docker-compose.yml       Postgres, Redis, MinIO, Mailhog               ✅
+  postgres-init/           extensions bootstrap                          ✅
+docs/                      the documentation set                         ✅
+  source/                  preserved planning material                   ✅
 chat-export-1786178220416.json    original export, reference only
 ```
 
@@ -66,19 +66,25 @@ chat-export-1786178220416.json    original export, reference only
 
 ## Local development
 
-Nothing to run yet. Once Phase 1 exists:
-
 ```bash
 cp .env.example .env                      # DATABASE_URL has no default, by design
 docker compose -f infra/docker-compose.yml up -d
 cd apps/api && alembic upgrade head && uvicorn src.main:app --reload --port 8010
-cd apps/web && npm install && npm run dev
+cd apps/web && npm install && npm run dev # login + admin shell on :3010
 ```
 
-What works today:
+Visit http://localhost:3010 for the demo tenant; add `127.0.0.1 meridian.localhost`
+to your hosts file and visit http://meridian.localhost:3010 to see the second
+tenant's branding on the same code. The break-glass admin credentials are in
+your `.env`. The arq worker (maintenance jobs) runs with
+`arq src.workers.main.WorkerSettings` from `apps/api`.
+
+Verification:
 
 ```bash
+cd apps/api && pytest                     # 82 tests; needs the compose stack up
 python docs/source/extract.py --check     # verify the extracted source against the export
+python docs/check_links.py                # every doc link resolves
 ```
 
 ---

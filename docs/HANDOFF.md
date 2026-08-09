@@ -6,9 +6,13 @@ work is committed (still no remote), the drift gate is wired, weaknesses
 1/2/3/4/6/8 are fixed with tests, and Sprint 5's worker + password reset are
 built (migration `0005`). Items below are struck through or marked ✅ where
 done; [STATUS.md](STATUS.md) carries the current numbers (81 tests, 12
-endpoints, 5 migrations; tenant themes followed as `0006`). **Still genuinely
-open: push to a remote and get CI green; the `apps/web` scaffold/admin shell;
-weaknesses 5 and 7.**
+endpoints, 5 migrations; tenant themes followed as `0006`, and `apps/web`
+now exists — themed login with MFA, empty admin shell, BFF proxy — verified
+end-to-end against both tenants over HTTP). **Still genuinely open: push to
+a remote and get CI green (note: the CI workflow does not yet build
+`apps/web` — add a job when wiring the remote); weakness 7 (email via arq);
+the Next 15 `npm audit` findings, which only Next 16 fixes — a stack-decision
+change, not an `npm audit fix`.**
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
@@ -88,8 +92,14 @@ endpoints changed the schema and forced a regeneration.
 - ✅ **Tenant themes** — `0006` creates and seeds `tenant_themes`;
   `GET /api/v1/tenant/theme` returns the resolved tenant's palette, and the
   demo-target test proves two hostnames answer with two brands.
-- ⬜ **Empty admin shell** — first `apps/web` scaffold (Next.js 15, port
-  3010), consuming `@ttli/api-client`. The last Phase 1 engineering item.
+- ✅ **Empty admin shell** — `apps/web` (Next.js 15.5, React 19, Tailwind 4,
+  port 3010): server-rendered login page themed from `GET /tenant/theme`,
+  the MFA challenge step, an admin shell showing the signed-in principal,
+  and the BFF proxy (the browser's only path to the API — no CORS surface).
+  Access token lives in SPA memory per 04 §1.2; the HttpOnly-cookie refresh
+  flow via the BFF is the natural next web-tier step. Hand-written minimal
+  scaffold, not create-next-app; `npm run build` and `npm run typecheck` are
+  the gates until a web CI job exists.
 
 ## 4. Known weaknesses to review (none are gate failures; all are real)
 
@@ -110,10 +120,12 @@ Ordered by risk. **1/2/3/4/6/8 fixed with tests on 2026-08-09; 5 and 7 remain.**
    those endpoints land.
 4. ✅ **Negative caching** — unknown hostnames are cached as a 10s miss
    sentinel (`test_unknown_hostname_is_negative_cached`).
-5. ⬜ **`X-Tenant-Host` is client-controllable.** Harmless while the token's
-   `tid` claim is cross-checked (`get_principal` does), but the production BFF
-   **must strip inbound `X-Tenant-Host`** — record that in 06_OPERATIONS when
-   the web tier lands.
+5. ✅ **`X-Tenant-Host` is client-controllable** — the BFF now exists
+   (`apps/web/app/api/bff/[...path]/route.ts`) and sets `X-Tenant-Host` from
+   the request's own Host header, discarding anything inbound; verified by
+   smoke test (a smuggled header still resolved the true tenant). Standing
+   rule: **any future ingress in front of the API must preserve this** — the
+   API keeps its own `tid`-claim cross-check as the second layer.
 6. ✅ **`sync_database_url` derivation footgun** — `alembic/env.py` now
    refuses to run migrations over an `app_user` connection, with the real
    reason in the error.

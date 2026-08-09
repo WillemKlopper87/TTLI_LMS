@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+:root {
+  /* Overwritten per-tenant by the root layout from GET /tenant/theme. */
+  --brand-primary: #1b2a4a;
+  --brand-secondary: #c9a227;
+}

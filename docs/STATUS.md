@@ -14,7 +14,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Phase | Name | State | Done |
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
-| 1 | Foundation | Sprints 1–5 built; only the `apps/web` admin shell remains | ~85% |
+| 1 | Foundation | Built end-to-end; remaining: first CI run (needs a remote) | ~95% |
 | 2 | Public site and content funnel | Not started | 0% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
@@ -101,7 +101,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 4. Phase 1 — Foundation (~85%)
+## 4. Phase 1 — Foundation (~95%)
 
 ### Done — sprints 1–5
 
@@ -128,10 +128,12 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 - [ ] Push to a remote and get CI green for the first time
 - [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
-- [ ] `apps/web` scaffold (Next.js 15, port 3010) consuming `@ttli/api-client`; empty admin shell
-- [ ] Remaining weaknesses in [HANDOFF.md §4](HANDOFF.md) not yet closed (BFF header-stripping note, email retry via arq)
+- [x] `apps/web` (Next.js 15, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
+- [ ] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7)
 
-**Demo target:** two tenants resolving to different themes; login with MFA; an empty admin shell.
+**Demo target — met, verified over HTTP:** `localhost:3010` renders TTLI Executive Institute in navy `#1B2A4A`; `meridian.localhost:3010` renders Meridian Holdings in green `#14532D` from the same build; login flows through the BFF, MFA challenge included; the admin shell shows the signed-in principal and permissions.
+
+> `npm audit` flags Next 15's bundled postcss/sharp; the only fix is Next 16, a breaking major that contradicts the documented stack decision ([01 §5](01_PRD.md#5-technical-decisions)). Build-tooling exposure only at this phase — upgrade deliberately, through the decision log, not via `npm audit fix --force`.
 
 ---
 
