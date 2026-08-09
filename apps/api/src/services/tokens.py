@@ -39,6 +39,15 @@ class RefreshTokenReused(Exception):
         self.user_id = user_id
 
 
+class GuestAccessExpired(Exception):
+    """Raised when a guest's refresh token is presented after guest_expires_at.
+
+    Deliberately not a RefreshTokenReused — an expired guest is not a theft
+    signal, and treating it as one would revoke the family and fire an
+    incorrect TOKEN_REUSE_DETECTED audit event for ordinary expiry.
+    """
+
+
 async def issue_family(
     session: AsyncSession,
     *,
@@ -104,6 +113,24 @@ async def rotate(
     """
     token_hash = hash_token(raw_token)
     now = datetime.now(UTC)
+
+    # Bounds a guest's *whole* session lifetime, not just login: without this,
+    # a refresh token issued before guest_expires_at could keep rotating past
+    # it (REQ-LEAD-05, "time-limited"). Checked separately from the consuming
+    # UPDATE below and raised as its own exception — folding it into that
+    # UPDATE's WHERE clause would make an expired guest's refresh attempt
+    # fall into the reuse/theft diagnosis path and wrongly revoke the family
+    # plus fire a TOKEN_REUSE_DETECTED audit event for what is just expiry.
+    guest_stmt = text(
+        "SELECT u.is_guest, u.guest_expires_at FROM refresh_tokens rt "
+        "JOIN users u ON u.id = rt.user_id WHERE rt.token_hash = :h"
+    )
+    guest_row = (await session.execute(guest_stmt, {"h": token_hash})).first()
+    if guest_row is not None:
+        is_guest, guest_expires_at = guest_row
+        if is_guest and guest_expires_at is not None and guest_expires_at <= now:
+            raise GuestAccessExpired("Guest access has expired.")
+
     # Device binding (04 §1.2): when the row recorded a fingerprint and the
     # caller presents a different one, the UPDATE matches nothing and the
     # rotation is refused. A caller presenting none is tolerated — the header
@@ -184,6 +211,7 @@ async def revoke_all_for_user(session: AsyncSession, *, user_id: uuid.UUID) -> i
 
 
 __all__ = [
+    "GuestAccessExpired",
     "IssuedRefreshToken",
     "RefreshTokenReused",
     "issue_family",

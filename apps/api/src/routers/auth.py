@@ -46,7 +46,7 @@ from src.schemas.auth import (
 )
 from src.services import audit, events, identity, rate_limit, tokens
 from src.services.email import send_email
-from src.services.tokens import RefreshTokenReused
+from src.services.tokens import GuestAccessExpired, RefreshTokenReused
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -391,6 +391,8 @@ async def refresh(
             days=settings.refresh_token_days,
             device_fingerprint=request.headers.get("x-device-fingerprint"),
         )
+    except GuestAccessExpired as exc:
+        raise Unauthenticated("Guest access has expired.") from exc
     except RefreshTokenReused as exc:
         if exc.user_id is not None:
             await audit.record(

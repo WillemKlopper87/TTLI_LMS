@@ -8,12 +8,12 @@ about who has expressed interest.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 from redis.asyncio import Redis
 
-from src.core.deps import CryptoDep, RedisDep, SessionDep, TenantDep
+from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, TenantDep
 from src.core.errors import AppError, TooManyAttempts
-from src.schemas.leads import LeadRequest
+from src.schemas.leads import LeadRequest, LeadsPage, LeadSummary
 from src.services import consent, events, leads, rate_limit
 
 router = APIRouter(prefix="/leads", tags=["leads"])
@@ -115,6 +115,49 @@ async def capture_lead(
         event_name=events.EventName.LEAD_CAPTURED,
         properties={"is_new_contact": result.is_new_contact, "source": body.source},
         consent_marketing=body.marketing_consent,
+    )
+
+
+@router.get(
+    "",
+    response_model=LeadsPage,
+    summary="List captured leads for the resolved tenant",
+)
+async def list_leads(
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> LeadsPage:
+    # analytics:view, not a dedicated lead:view — leads are marketing/
+    # analytics data, and the seeded admin role already carries it (0002),
+    # so this needed no new permission.
+    principal.require("analytics:view")
+
+    items, total = await leads.list_leads(
+        session, crypto, tenant_id=principal.tenant_id, limit=limit, offset=offset
+    )
+    return LeadsPage(
+        items=[
+            LeadSummary(
+                lead_id=str(row.lead_id),
+                contact_id=str(row.contact_id),
+                email=row.email,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                company=row.company,
+                job_title=row.job_title,
+                source=row.source,
+                score=row.score,
+                stage=row.stage,
+                created_at=row.created_at,
+            )
+            for row in items
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

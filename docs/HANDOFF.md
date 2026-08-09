@@ -102,6 +102,67 @@ remembering. Fixed and pushed as `b161f18`; green on both jobs —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31321303793
 (1m31s, quality + web).
 
+**Seventh pass: admin lead view + guest-access provisioning — the two
+Phase 2 pieces no open decision blocks.** Asked rather than guessed
+scope (§6 already said Phase 0 gates most of Phase 2); the user picked
+both. `GET /leads` (`src/services/leads.py::list_leads`) is paginated,
+tenant-scoped, and gated on `analytics:view` — the seeded admin role
+already carries that permission (0002), so this needed no new
+permission or migration, just the first real use of
+`Principal.require()`, which had existed unused in `core/deps.py` since
+Sprint 2. `apps/web/app/admin/` gained a shared `layout.tsx` (auth
+check + sidebar, previously duplicated into `page.tsx` — factored out
+now that a second page needs it) and `admin/leads/page.tsx`.
+
+`POST /guest-access` (03 §4.2, REQ-LEAD-04/05/06) reuses
+`leads.capture()` first — every guest account is unique per lead — then
+creates or reuses a `users` row via `identity.create_user(is_guest=True,
+...)`, which already existed unused since Sprint 1. Decision #6 (7 vs 14
+days) is still unsigned, so the window is `settings.guest_access_days`
+(default 7), not a hardcoded guess. Two real bugs surfaced while making
+"time-limited" actually true, since neither enforcement point existed
+before this pass needed them:
+
+1. `identity.consume_magic_link()` didn't check `guest_expires_at` at
+   all — an expired guest's link would still work. Fixed with one
+   comparison.
+2. `tokens.rotate()` had the same gap for refresh tokens, but the fix is
+   *not* as simple as adding a WHERE clause to the existing consuming
+   UPDATE: that statement's failure path is reuse/theft diagnosis
+   (`RefreshTokenReused`), and an expired guest is not a theft signal.
+   Folding the two together would revoke the token family and fire a
+   `TOKEN_REUSE_DETECTED` audit event for what is just expiry — a false
+   security signal. Added a separate `GuestAccessExpired` exception,
+   checked before the consuming UPDATE runs, so the two failure modes
+   stay distinguishable both in code and in whatever alerts on that audit
+   action later.
+
+The hourly guest-expiry downgrade sweep (02 §12.4) still doesn't exist —
+deliberately deferred, documented in `services/guest_access.py`'s
+docstring and STATUS.md §5. It's `status`-column bookkeeping, not access
+control; the two enforcement points above are what actually gate access,
+and they don't depend on a cron job existing.
+
+Verified: 101 tests (0 skipped, up from 91 — `tests/test_leads.py` +2,
+new `tests/test_guest_access.py` +8), `ruff check`/`format`/`mypy` clean,
+`alembic check` clean (no schema change — `is_guest`/`guest_expires_at`
+already existed), `apps/web` `typecheck`/`build` clean, api-client
+regenerated from the new `openapi.json`. Live HTTP smoke test against
+real running servers: `POST /guest-access` through the real BFF → 204 →
+confirmed a magic-link email actually arrived in Mailhog via the arq
+worker (not just enqueued) → logged into an admin account and confirmed
+the lead appears on `GET /leads` with correct decrypted fields. One
+smoke-test surprise worth recording: paging through *all* historical
+leads in the shared local dev Postgres hit `cryptography.exceptions.
+InvalidTag` on older rows — contacts encrypted under a different
+`FIELD_ENCRYPTION_KEY` than the currently configured one, accumulated
+across this session's earlier test runs. Confirmed via targeted queries
+that this is dev-database cross-session pollution, not a bug in
+`list_leads()` — the newly created rows all decrypt fine, and the
+automated test suite (which doesn't share that stale data) passed
+cleanly. Not fixed here — it's local dev-environment hygiene, not
+shippable code; a fresh `docker compose down -v && up` would clear it.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
@@ -261,10 +322,14 @@ Ordered by risk. **1/2/3/4/6/8 fixed with tests on 2026-08-09; 5 and 7 remain.**
 - **Phase 0 is still the critical path** and is the customer's, not yours: ten
   unsigned decisions ([01 §1.4](01_PRD.md)). Nothing you build changes that;
   keep bringing forward only work that no open decision can invalidate.
-- **Phase 2 (public site/funnel):** starts with `apps/web` — which sprint 5's
-  admin shell scaffolds anyway. Leads/consent tables follow the 0003 migration
-  pattern; `consent_records` is append-only (copy the audit_events treatment).
-  Event tracking already has its table — Phase 2 only adds the write path.
+- **Phase 2 (public site/funnel):** the decision-independent slice is done —
+  leads/consent/events, `GET /leads` + the admin `Leads` screen, and
+  `POST /guest-access` (see the "Seventh pass" note above). What's left is
+  genuinely blocked: marketing pages need Phase 0's brand/design sign-off
+  (#8) and a content inventory neither of which engineering can produce.
+  REQ-LEAD-05/07 (sample entitlements, guest→paid conversion) need Phase 4's
+  course tables. Don't build ahead of those — there's nothing left in Phase 2
+  that isn't blocked on either Phase 0 or Phase 4.
 - **Phase 3 (commerce):** the append-only `ledger_entries` and sequential
   invoice numbers are SARS-compliance-critical — read 02 §6.4/§6.6 *before*
   designing, and reuse the two-layer append-only enforcement (revoked grant +

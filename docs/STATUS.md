@@ -15,7 +15,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
-| 2 | Public site and content funnel | Backend foundation only: leads, consent, event tracking. UI blocked on brand (#8) | ~10% |
+| 2 | Public site and content funnel | Leads, consent, events, guest access and the admin lead view all built; brand extracted. Marketing pages still blocked on Phase 0 (#8) | ~35% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
 | 4.5 | PWA and accessibility | Not started | 0% |
@@ -25,9 +25,9 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 55 files |
-| `mypy src` (strict) | **PASS** — 39 source files |
-| `pytest` | **PASS** — 91 passed, **0 skipped** |
+| `ruff check` / `ruff format --check` | **PASS** — 73 files |
+| `mypy src` (strict) | **PASS** — 52 source files |
+| `pytest` | **PASS** — 101 passed, **0 skipped** |
 | `alembic upgrade head` | **PASS** — at `0008` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
@@ -37,7 +37,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31321303793](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31321303793) |
 
-**Headline:** 91 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 8 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
+**Headline:** 101 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 8 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -68,13 +68,15 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | arq worker: partition extension + auth-row purge via SECURITY DEFINER functions | `src/workers/main.py`, `0005` | 2 tests in `tests/test_workers.py` |
 | Typed TS client + CI drift gate | `packages/api-client/` | `tsc --noEmit`; `git diff --exit-code` in CI |
 | CI pipeline | `.github/workflows/api.yml` (`quality` + `web` jobs) | verified green — see the run link below |
-| Lead capture: contacts + leads (progressive profiling merges, not duplicates) + consent | `0007`, `src/services/{leads,consent}.py`, `/leads` | 6 tests in `tests/test_leads.py` |
+| Lead capture: contacts + leads (progressive profiling merges, not duplicates) + consent | `0007`, `src/services/{leads,consent}.py`, `/leads` | 8 tests in `tests/test_leads.py` |
 | Event write path: `events` table now actually receives rows (login, magic-link, password-reset, token reuse, lead capture) | `src/services/events.py` | covered in `tests/test_leads.py` |
 | Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) replacing the placeholder navy/gold, extracted from ttli.co.za with documented provenance | `0008`, [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), `apps/web/public/brand/` | migration round-trip; `apps/web` build/typecheck; HTTP smoke test against both demo tenants confirming `acme` is untouched |
+| Admin lead view: paginated, tenant-scoped, gated on `analytics:view` | `src/services/leads.py::list_leads`, `/leads` (GET), `apps/web/app/admin/leads/` | 2 tests in `tests/test_leads.py`; HTTP smoke test through the real BFF against a logged-in admin |
+| Guest account provisioning: unique-per-lead, time-limited, magic-link-only; expiry enforced at both magic-link consumption and refresh rotation | `src/services/guest_access.py`, `/guest-access` | 8 tests in `tests/test_guest_access.py`; HTTP smoke test confirmed real Mailhog delivery via the arq worker |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` (non-health routes under `/api/v1`)
 
 ---
 
@@ -142,24 +144,28 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 5. Phase 2 — Public site and content funnel (~10%)
+## 5. Phase 2 — Public site and content funnel (~35%)
 
 Marketing pages, resource hub, podcasts, gated content, consent management, lead capture with UTM attribution, guest accounts with expiry and watermarking, event tracking.
 
-### Done — backend foundation, no open decision blocks it
+### Done — no open decision blocks it
 
 - [x] Lead capture: `POST /api/v1/leads` (03 §4.1) — always 204 (enumeration resistance, same rule as magic-link/password-reset), rate-limited 5/hour/IP (03 §1.8's guest-signup number, the closest documented analogue)
 - [x] `contacts` (encrypted PII, same pattern as `users`) + `leads` (UTM quintet, source, score, stage, REQ-LEAD-02 progressive profiling — a second submission from the same person fills in more fields on the *same* row rather than duplicating it)
 - [x] `consent_records` — append-only, two-layer enforcement identical to `audit_events` (revoked grant + raising trigger); privacy consent gates acceptance, marketing consent is recorded as its own purpose row
 - [x] `events` write path is no longer theoretical — login, magic-link request, password-reset request, refresh-token reuse, and lead capture all write rows now
+- [x] `GET /api/v1/leads` — paginated, tenant-scoped, gated on `analytics:view` (the seeded admin role already carries it — no new permission needed); backs the admin `Leads` screen (`apps/web/app/admin/leads`)
+- [x] `POST /api/v1/guest-access` (03 §4.2, REQ-LEAD-04/05/06) — provisions a unique-per-lead, time-limited guest `users` row and emails a magic link (never a password); repeat requests refresh the same guest rather than duplicating it, and requests against an existing full account never downgrade it. The expiry window (decision #6, 7 vs 14 days) ships as `settings.guest_access_days` (default 7) rather than a hardcoded guess. Guest expiry is enforced at both points that actually gate access — magic-link consumption and refresh-token rotation, the latter raising its own `GuestAccessExpired` rather than being misclassified as token-theft
+- [x] Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) extracted from ttli.co.za and applied throughout `apps/web` — provenance in [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), §2's table
 
 ### Outstanding — blocked on Phase 0 or genuinely not started
 
-- [ ] Marketing pages, resource hub, podcasts — blocked on brand/design (#8) and content inventory
-- [ ] `POST /guest-access` (03 §4.2) — the account-provisioning half of REQ-LEAD-04…07; the expiry window is blocked on decision #6 (7 vs 14 days)
+- [ ] Marketing pages, resource hub, podcasts — blocked on content inventory and the Phase 0 sign-off on the brand/design system (#8); the *extracted* brand above is a working foundation, not that formal sign-off
+- [ ] REQ-LEAD-05's sample-only entitlement/watermarking and REQ-LEAD-07's guest→paid conversion — both need course/enrolment tables that don't exist yet (Phase 4)
+- [ ] The hourly guest-expiry downgrade sweep (02 §12.4) — expiry is enforced at the auth layer instead (see above); the sweep is about `status` bookkeeping, not access control, so it's a smaller follow-up
 - [ ] The full CRM (`deals`, `tasks`, `notes`, `activities`, `campaigns`, `segments`, email tables) — deliberately out of scope here; that's Phase 5 (02 §10)
 
-**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin. Not yet met — no admin lead view exists, and the funnel's UI half is blocked on #8.
+**Demo target:** the whole funnel, from a podcast to a working guest login, with the lead visible in admin. Met on the backend and in the admin shell — a `POST /guest-access` submission is visible on `/admin/leads` and its magic link signs in — but not yet as an actual public-facing podcast page, since marketing pages are still blocked on #8.
 
 ---
 

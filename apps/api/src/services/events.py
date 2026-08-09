@@ -31,6 +31,7 @@ class EventName:
     PASSWORD_RESET_REQUESTED = "auth.password_reset.requested"  # noqa: S105 - ditto
     TOKEN_REUSE_DETECTED = "auth.token.reuse_detected"  # noqa: S105 - ditto
     LEAD_CAPTURED = "lead.captured"
+    GUEST_ACCESS_GRANTED = "lead.guest_access_granted"
 
 
 async def record(

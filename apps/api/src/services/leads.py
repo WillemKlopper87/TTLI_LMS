@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
@@ -102,4 +103,67 @@ async def capture(
     return LeadCapture(contact_id=contact.id, lead_id=lead.id, is_new_contact=is_new_contact)
 
 
-__all__ = ["LeadCapture", "capture", "find_contact_by_email"]
+@dataclass(frozen=True, slots=True)
+class LeadRow:
+    lead_id: uuid.UUID
+    contact_id: uuid.UUID
+    email: str
+    first_name: str | None
+    last_name: str | None
+    company: str | None
+    job_title: str | None
+    source: str | None
+    score: int
+    stage: str
+    created_at: datetime
+
+
+async def list_leads(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID, limit: int, offset: int
+) -> tuple[list[LeadRow], int]:
+    """Admin lead view (STATUS.md's demo target: "the lead visible in
+    admin"). RLS already scopes both queries to `tenant_id`; the explicit
+    filter here matches the rest of the codebase's belt-and-braces style
+    rather than relying on RLS alone.
+    """
+    total = (
+        await session.execute(
+            select(func.count()).select_from(Lead).where(Lead.tenant_id == tenant_id)
+        )
+    ).scalar_one()
+
+    stmt = (
+        select(Lead, Contact)
+        .join(Contact, Contact.id == Lead.contact_id)
+        .where(Lead.tenant_id == tenant_id)
+        .order_by(Lead.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await session.execute(stmt)).all()
+    items = [
+        LeadRow(
+            lead_id=lead.id,
+            contact_id=contact.id,
+            email=crypto.decrypt(contact.email_encrypted),
+            first_name=(
+                crypto.decrypt(contact.first_name_encrypted)
+                if contact.first_name_encrypted
+                else None
+            ),
+            last_name=(
+                crypto.decrypt(contact.last_name_encrypted) if contact.last_name_encrypted else None
+            ),
+            company=lead.company,
+            job_title=lead.job_title,
+            source=lead.source,
+            score=lead.score,
+            stage=lead.stage,
+            created_at=lead.created_at,
+        )
+        for lead, contact in rows
+    ]
+    return items, total
+
+
+__all__ = ["LeadCapture", "LeadRow", "capture", "find_contact_by_email", "list_leads"]

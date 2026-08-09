@@ -16,10 +16,13 @@ from src.core.db import dispose_engine, init_engine
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
+from src.models.rbac import RoleAssignment
+from src.services import identity
 
 pytestmark = pytest.mark.integration
 
 TENANT_HOST = "localhost"
+PASSWORD = "correct horse battery staple 9!"
 
 
 def _redis_reachable(url: str) -> bool:
@@ -223,3 +226,51 @@ async def test_login_writes_an_event(client, tenant_session_factory, crypto) -> 
             )
         ).scalar_one()
     assert count >= 1
+
+
+async def _login(client, tenant_session_factory, crypto, *, tenant_id, role: str | None) -> str:  # type: ignore[no-untyped-def]
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+        )
+        if role is not None:
+            s.add(RoleAssignment(tenant_id=tenant_id, user_id=user.id, role_code=role))
+
+    resp = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert resp.status_code == 200
+    return str(resp.json()["access_token"])
+
+
+async def test_list_leads_requires_permission(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
+
+    resp = await client.get("/api/v1/leads", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+
+
+async def test_list_leads_returns_captured_leads(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    resp = await client.post(
+        "/api/v1/leads", json=_minimal_body(email, company="Globex", source="podcast")
+    )
+    assert resp.status_code == 204
+
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+
+    resp = await client.get(
+        "/api/v1/leads",
+        params={"limit": 5, "offset": 0},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 1
+    assert body["limit"] == 5
+    assert body["offset"] == 0
+    match = next((row for row in body["items"] if row["email"] == email), None)
+    assert match is not None
+    assert match["company"] == "Globex"
+    assert match["source"] == "podcast"

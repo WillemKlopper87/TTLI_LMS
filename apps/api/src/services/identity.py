@@ -165,6 +165,8 @@ async def consume_magic_link(session: AsyncSession, *, raw_token: str) -> User |
     user = await session.get(User, row[0])
     if user is None or user.status != "active" or user.deleted_at is not None:
         return None
+    if user.is_guest and user.guest_expires_at is not None and user.guest_expires_at <= now:
+        return None
     return user
 
 

@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     mfa_pending_minutes: int = 5
     mfa_enroll_minutes: int = 10
     mfa_issuer_name: str = "TTLI"
+    # 01 §1.4 decision #6 (7 vs 14 days) is unsigned — configurable via env
+    # rather than hardcoded, same placeholder pattern as tenant_themes' seed
+    # colors. 7 is the conservative default until the customer signs off.
+    guest_access_days: int = 7
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"
     break_glass_admin_password: str = ""

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -31,4 +33,25 @@ class LeadRequest(BaseModel):
     source: str | None = None
 
 
-__all__ = ["LeadRequest"]
+class LeadSummary(BaseModel):
+    lead_id: str
+    contact_id: str
+    email: str
+    first_name: str | None
+    last_name: str | None
+    company: str | None
+    job_title: str | None
+    source: str | None
+    score: int
+    stage: str
+    created_at: datetime
+
+
+class LeadsPage(BaseModel):
+    items: list[LeadSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+__all__ = ["LeadRequest", "LeadSummary", "LeadsPage"]

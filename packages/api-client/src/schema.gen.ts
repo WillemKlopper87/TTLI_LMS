@@ -246,10 +246,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List captured leads for the resolved tenant */
+        get: operations["list_leads_api_v1_leads_get"];
         put?: never;
         /** Capture a lead */
         post: operations["capture_lead_api_v1_leads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guest-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provision a time-limited guest account */
+        post: operations["request_guest_access_api_v1_guest_access_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -309,6 +327,45 @@ export interface components {
             timeline?: string | null;
             /** Source */
             source?: string | null;
+        };
+        /** LeadSummary */
+        LeadSummary: {
+            /** Lead Id */
+            lead_id: string;
+            /** Contact Id */
+            contact_id: string;
+            /** Email */
+            email: string;
+            /** First Name */
+            first_name: string | null;
+            /** Last Name */
+            last_name: string | null;
+            /** Company */
+            company: string | null;
+            /** Job Title */
+            job_title: string | null;
+            /** Source */
+            source: string | null;
+            /** Score */
+            score: number;
+            /** Stage */
+            stage: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** LeadsPage */
+        LeadsPage: {
+            /** Items */
+            items: components["schemas"]["LeadSummary"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -803,7 +860,70 @@ export interface operations {
             };
         };
     };
+    list_leads_api_v1_leads_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     capture_lead_api_v1_leads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_guest_access_api_v1_guest_access_post: {
         parameters: {
             query?: never;
             header?: never;
