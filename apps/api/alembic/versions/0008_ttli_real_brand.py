@@ -49,7 +49,12 @@ def _apply(name: str, theme: dict[str, str | None]) -> None:
             "UPDATE tenant_themes SET primary_color = :p, secondary_color = :s, logo_url = :l "
             "WHERE tenant_id = :t"
         ),
-        {"p": theme["primary_color"], "s": theme["secondary_color"], "l": theme["logo_url"], "t": tenant_id},
+        {
+            "p": theme["primary_color"],
+            "s": theme["secondary_color"],
+            "l": theme["logo_url"],
+            "t": tenant_id,
+        },
     )
 
 
