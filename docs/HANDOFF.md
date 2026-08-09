@@ -6,8 +6,9 @@ work is committed (still no remote), the drift gate is wired, weaknesses
 1/2/3/4/6/8 are fixed with tests, and Sprint 5's worker + password reset are
 built (migration `0005`). Items below are struck through or marked ✅ where
 done; [STATUS.md](STATUS.md) carries the current numbers (81 tests, 12
-endpoints, 5 migrations). **Still genuinely open: push to a remote and get CI
-green; tenant themes; the `apps/web` scaffold/admin shell; weaknesses 5 and 7.**
+endpoints, 5 migrations; tenant themes followed as `0006`). **Still genuinely
+open: push to a remote and get CI green; the `apps/web` scaffold/admin shell;
+weaknesses 5 and 7.**
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
@@ -84,10 +85,11 @@ endpoints changed the schema and forced a regeneration.
   connection. Run it with `arq src.workers.main.WorkerSettings`.
 - ✅ **Password reset** (`0005`, §2.8 of the API spec): single-use, revokes
   every refresh-token family, clears the login lockout.
-- ⬜ **Tenant themes** (`tenant_themes` table per 02 §4.3) + surfacing
-  `tenant.settings` so two hostnames render differently.
+- ✅ **Tenant themes** — `0006` creates and seeds `tenant_themes`;
+  `GET /api/v1/tenant/theme` returns the resolved tenant's palette, and the
+  demo-target test proves two hostnames answer with two brands.
 - ⬜ **Empty admin shell** — first `apps/web` scaffold (Next.js 15, port
-  3010), consuming `@ttli/api-client`.
+  3010), consuming `@ttli/api-client`. The last Phase 1 engineering item.
 
 ## 4. Known weaknesses to review (none are gate failures; all are real)
 

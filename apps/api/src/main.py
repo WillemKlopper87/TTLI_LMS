@@ -21,7 +21,7 @@ from src.core.errors import (
 )
 from src.core.logging import configure_logging, get_logger
 from src.core.redis import dispose_redis, init_redis
-from src.routers import auth, health
+from src.routers import auth, health, tenant
 
 log = get_logger(__name__)
 
@@ -81,6 +81,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(tenant.router, prefix="/api/v1")
 
     return app
 

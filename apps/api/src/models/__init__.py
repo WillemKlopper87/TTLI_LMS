@@ -11,6 +11,7 @@ from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
 from src.models.event import Event
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.tenant import Tenant, TenantDomain
+from src.models.theme import TenantTheme
 from src.models.user import User
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "Tenant",
     "TenantDomain",
     "TenantMixin",
+    "TenantTheme",
     "TimestampMixin",
     "User",
 ]

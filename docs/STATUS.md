@@ -14,7 +14,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Phase | Name | State | Done |
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
-| 1 | Foundation | Sprints 1–5 built; themes + admin shell remain | ~75% |
+| 1 | Foundation | Sprints 1–5 built; only the `apps/web` admin shell remains | ~85% |
 | 2 | Public site and content funnel | Not started | 0% |
 | 3 | Commerce | Not started | 0% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
@@ -27,8 +27,8 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 55 files |
 | `mypy src` (strict) | **PASS** — 39 source files |
-| `pytest` | **PASS** — 81 passed, **0 skipped** |
-| `alembic upgrade head` | **PASS** — at `0005` |
+| `pytest` | **PASS** — 82 passed, **0 skipped** |
+| `alembic upgrade head` | **PASS** — at `0006` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
@@ -36,7 +36,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 
-**Headline:** 81 tests (0 skipped), 12 endpoints, 13 tables (events partitioned monthly ×14), 5 migrations, typed TS client with a CI drift gate.
+**Headline:** 82 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate.
 
 > CI itself has **never run** — the repository has no remote yet. Pushing it is the next agent's first task ([HANDOFF.md §1](HANDOFF.md)).
 
@@ -70,7 +70,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` (auth routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` (non-health routes under `/api/v1`)
 
 ---
 
@@ -101,7 +101,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 
 ---
 
-## 4. Phase 1 — Foundation (~75%)
+## 4. Phase 1 — Foundation (~85%)
 
 ### Done — sprints 1–5
 
@@ -127,7 +127,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 ### Outstanding — to close Phase 1
 
 - [ ] Push to a remote and get CI green for the first time
-- [ ] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)) and per-tenant theming
+- [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
 - [ ] `apps/web` scaffold (Next.js 15, port 3010) consuming `@ttli/api-client`; empty admin shell
 - [ ] Remaining weaknesses in [HANDOFF.md §4](HANDOFF.md) not yet closed (BFF header-stripping note, email retry via arq)
 

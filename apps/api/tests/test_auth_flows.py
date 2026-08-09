@@ -311,6 +311,17 @@ async def test_tenant_resolution_is_cached_in_redis(client) -> None:  # type: ig
     assert TENANT_HOST in cached
 
 
+async def test_two_tenants_resolve_to_different_themes(client) -> None:  # type: ignore[no-untyped-def]
+    """The Phase 1 demo target: the same endpoint, two hostnames, two brands."""
+    demo = await client.get("/api/v1/tenant/theme")  # X-Tenant-Host: localhost
+    acme = await client.get("/api/v1/tenant/theme", headers={"X-Tenant-Host": "meridian.localhost"})
+    assert demo.status_code == acme.status_code == 200
+    assert demo.json()["tenant_slug"] == "demo"
+    assert acme.json()["tenant_slug"] == "acme"
+    assert demo.json()["primary_color"] != acme.json()["primary_color"]
+    assert demo.json()["primary_color"] is not None
+
+
 async def test_unknown_hostname_is_negative_cached(client) -> None:  # type: ignore[no-untyped-def]
     from src.core.redis import get_redis
 
