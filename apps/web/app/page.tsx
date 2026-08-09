@@ -14,9 +14,14 @@ import { getTheme } from "@/lib/server-api";
  * second tenant to supply its own marketing copy, so this page is
  * TTLI-specific content wrapped in tenant-driven chrome.
  *
- * Not built: Podcasts, "Lead With Intent" and "Cultivate with Intent" as
- * their own pages, and a working contact form — the real site's contact
- * page has no form, just contact details, reproduced as such below.
+ * "Lead with Intent" (/lead-with-intent) and a working contact form
+ * (/contact, source="contact_form" through POST /leads) are now real
+ * pages. Still not built: Podcasts and "Cultivate with Intent" — no real
+ * content was extracted for either (docs/brand/ttli-brand-identity.md
+ * notes the real site names them in its nav but the extraction pass never
+ * pulled episode/page content), so building them now would mean
+ * fabricating copy. Genuinely blocked on the same content-inventory gap
+ * as Phase 0 (01_PRD.md §1.4), not a missed task.
  */
 export default async function LandingPage() {
   const theme = await getTheme();
@@ -39,9 +44,9 @@ export default async function LandingPage() {
         </Link>
         <nav className="hidden gap-6 md:flex" style={{ fontSize: "0.8125rem", color: "var(--ink-2)" }}>
           <a href="#about">About</a>
-          <a href="#programme">Lead with Intent</a>
+          <Link href="/lead-with-intent">Lead with Intent</Link>
           <a href="#partners">Clients</a>
-          <a href="#contact">Contact</a>
+          <Link href="/contact">Contact</Link>
         </nav>
         <div className="flex items-center gap-2">
           <Link href="/login" className="btn btn--ghost">
@@ -127,6 +132,9 @@ export default async function LandingPage() {
                 drive engagement and commitment in the workplace — the foundation the Institute's
                 own programmes are built from.
               </p>
+              <Link href="/lead-with-intent" className="btn btn--ghost mt-4">
+                Read more
+              </Link>
             </div>
           </div>
         </div>
@@ -191,7 +199,7 @@ export default async function LandingPage() {
       </main>
 
       {/* ---- Footer / contact ---- */}
-      <footer id="contact" className="px-6 py-12" style={{ background: "var(--ink)", color: "var(--on-brand)" }}>
+      <footer className="px-6 py-12" style={{ background: "var(--ink)", color: "var(--on-brand)" }}>
         <div className="mx-auto max-w-3xl text-center">
           <p className="eyebrow" style={{ color: "var(--on-brand)", opacity: 0.7 }}>
             Get in touch
@@ -202,6 +210,9 @@ export default async function LandingPage() {
           <p className="mt-4" style={{ fontSize: "0.8125rem", opacity: 0.85 }}>
             30 Kasbah Ridge, Egale Canyon Golf Estate
           </p>
+          <Link href="/contact" className="btn btn--ghost mt-4" style={{ borderColor: "var(--on-brand)", color: "var(--on-brand)" }}>
+            Send us a message
+          </Link>
           <p className="mt-6" style={{ fontSize: "0.75rem", opacity: 0.55 }}>
             Terms of usage &amp; privacy &middot; Copyright &copy; {name} 2026
           </p>

@@ -516,6 +516,8 @@ export interface components {
             budget?: string | null;
             /** Timeline */
             timeline?: string | null;
+            /** Message */
+            message?: string | null;
             /** Source */
             source?: string | null;
         };
@@ -535,6 +537,8 @@ export interface components {
             company: string | null;
             /** Job Title */
             job_title: string | null;
+            /** Message */
+            message: string | null;
             /** Source */
             source: string | null;
             /** Score */

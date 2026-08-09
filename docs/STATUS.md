@@ -15,7 +15,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|---|---:|
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
-| 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, and a real marketing landing page (real TTLI copy/imagery, not placeholder) all built | ~55% |
+| 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, a real marketing landing page, a working contact form and a dedicated book page all built. Only Podcasts/"Cultivate with Intent" remain, blocked on missing content | ~70% |
 | 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
 | 4.5 | PWA and accessibility | Not started | 0% |
@@ -27,7 +27,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 86 files |
 | `mypy src` (strict) | **PASS** — 62 source files |
-| `pytest` | **PASS** — 117 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
+| `pytest` | **PASS** — 118 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog *and* ClamAV) |
 | `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed this pass — see §4 below) |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
 | `alembic upgrade head` | **PASS** — at `0009` |
@@ -40,7 +40,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31332146723](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31332146723) (quality 2m37s, web 49s) |
 
-**Headline:** 117 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 11 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI.
+**Headline:** 118 tests (0 skipped), 22 endpoints, 28 tables (events partitioned monthly ×14), 10 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 13 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned payment-proof uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -166,10 +166,12 @@ Marketing pages, resource hub, podcasts, gated content, consent management, lead
 - [x] Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) extracted from ttli.co.za and applied throughout `apps/web` — provenance in [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), §2's table
 - [x] A real marketing landing page at `apps/web/app/page.tsx` — the site's actual About narrative, "90+ organisations, 19 countries" track record, the *Lead with Intent* book, five real facilitator photos and nine real client logos (Standard Bank, HENSOLDT, De'Longhi and others), all extracted from ttli.co.za at the customer's own request, not invented copy. `/login` moved off the root path to make room for it — see the routing note in HANDOFF.md
 - [x] `apps/web/app/guest-access/page.tsx` — a real form posting to `POST /guest-access`, not just the backend from the prior pass
+- [x] `apps/web/app/contact/page.tsx` — a real, working contact form (the live site's own contact page has none, just contact details) posting to `POST /leads` with `source="contact_form"`; `leads.message` (`0010`) carries the free-text body and surfaces in the admin Leads screen
+- [x] `apps/web/app/lead-with-intent/page.tsx` — a dedicated page for the founder's book, using the real extracted copy, not the landing page's teaser only
 
 ### Outstanding — blocked on Phase 0 or genuinely not started
 
-- [ ] The rest of the real site's pages as their own routes — Podcasts, "Lead With Intent"/"Cultivate with Intent" as dedicated pages, a working contact form. The landing page folds their content into one page for now; the real site's contact page has no form either, just contact details
+- [ ] Podcasts and "Cultivate with Intent" as dedicated routes — the real site names both in its nav, but no episode/page content was ever extracted for either, so building them now would mean fabricating copy. Same content-inventory gap as Phase 0, not a missed task
 - [ ] REQ-LEAD-05's sample-only entitlement/watermarking and REQ-LEAD-07's guest→paid conversion — both need course/enrolment tables that don't exist yet (Phase 4)
 - [ ] The hourly guest-expiry downgrade sweep (02 §12.4) — expiry is enforced at the auth layer instead (see above); the sweep is about `status` bookkeeping, not access control, so it's a smaller follow-up
 - [ ] The full CRM (`deals`, `tasks`, `notes`, `activities`, `campaigns`, `segments`, email tables) — deliberately out of scope here; that's Phase 5 (02 §10)

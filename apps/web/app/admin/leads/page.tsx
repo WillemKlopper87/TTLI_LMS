@@ -12,6 +12,7 @@ interface LeadSummary {
   last_name: string | null;
   company: string | null;
   job_title: string | null;
+  message: string | null;
   source: string | null;
   score: number;
   stage: string;
@@ -101,6 +102,7 @@ export default function LeadsScreen() {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Company</th>
+                <th>Message</th>
                 <th>Source</th>
                 <th>Stage</th>
                 <th>Score</th>
@@ -115,6 +117,12 @@ export default function LeadsScreen() {
                     {lead.email}
                   </td>
                   <td>{lead.company ?? "—"}</td>
+                  <td
+                    style={{ maxWidth: "22ch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={lead.message ?? undefined}
+                  >
+                    {lead.message ?? "—"}
+                  </td>
                   <td>{lead.source ?? "—"}</td>
                   <td>
                     <span className={`tag ${STAGE_TAG[lead.stage] ?? "tag--mute"}`}>

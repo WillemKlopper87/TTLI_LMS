@@ -88,6 +88,7 @@ async def capture_lead(
             "training_goal": body.training_goal,
             "budget": body.budget,
             "timeline": body.timeline,
+            "message": body.message,
         },
         utm={
             "utm_source": body.utm_source,
@@ -148,6 +149,7 @@ async def list_leads(
                 last_name=row.last_name,
                 company=row.company,
                 job_title=row.job_title,
+                message=row.message,
                 source=row.source,
                 score=row.score,
                 stage=row.stage,

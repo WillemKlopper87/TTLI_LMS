@@ -411,6 +411,53 @@ via local `docker compose`) —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31332146723
 (quality 2m37s, web 49s).
 
+**Eleventh pass, start of a longer arc: Phase 2 close-out, then Phase 4
+onward, skipping the rest of Phase 3.** User direction: build forward
+through Phases 2/4/4.5/5/6/7 up to whatever is genuinely still blocked by
+[01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off), rather
+than waiting on the customer. Card/PO checkout (Phase 3's remainder) stay
+un-built — blocked on external sandbox credentials, not a choice. Two
+things are being built but deliberately kept inert rather than skipped:
+Phase 6's AI insights ship fully wired but `tenants.ai_enabled` (already
+a spec'd column, 02 §11.2) stays off and demos run on synthetic data only
+— decision #4 (may redacted prompts leave South Africa) is the customer's
+DPA question, not engineering's, and real learner data going through it
+unsigned would breach the residency requirement. Phase 7's Terraform gets
+written and load/pen-test/DR-drill/POPIA-matrix work runs against the
+local Compose stack; actual Azure provisioning stays parked on decision
+#10 (region availability), independent of §5.10's already-settled
+"Compose now, Azure later." Everything else has no real Phase-0
+dependency left: SCORM (#1) is explicitly out of scope already; the video
+launch default (signed HLS + watermark, DRM behind a flag, §5.8) is
+already decided regardless of #3; CPD fields (#7) are nullable; brand
+(#8) was already worked around with the real extracted TTLI identity.
+
+Closed out Phase 2 first, since it was small: `apps/web/app/contact/` — a
+real, working contact form (the live site's own contact page has none,
+just contact details) posting to the existing `POST /leads` with
+`source="contact_form"`. Rather than a parallel messages table, `0010`
+adds a `message` column to `leads` itself, following the exact overwrite
+semantics `services/leads.py`'s other progressive-profiling fields already
+use (a documented, accepted tradeoff — a second submission from the same
+person replaces the message rather than keeping both, fine at this
+volume). Surfaces in the admin Leads screen as a new truncated/`title`-
+tooltip column. Also `apps/web/app/lead-with-intent/page.tsx`, a dedicated
+page for the founder's book using the real extracted copy (previously
+only a landing-page teaser existed). **Deliberately not built:** Podcasts
+and "Cultivate with Intent" — the real site names both in its nav but no
+episode/page content was ever extracted for either; building them now
+would mean fabricating copy, the same content-inventory gap Phase 0 is
+already blocked on, not a missed task.
+
+Verified: `tests/test_leads.py` gained
+`test_contact_form_message_is_captured_and_visible_to_admin`; full backend
+gate sweep (ruff, mypy, 118 tests / 0 skipped against the real compose
+stack, migration round-trip, `alembic check`); `apps/web` `typecheck` and
+`build` both clean (13 routes, up from 11); api-client regenerated for the
+new `message` field. Not yet pushed as of this note — going straight into
+Phase 4 sprint 1 next (course/module/lesson content model + completion
+rule engine + enrolments), so this and that will likely land as one push.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

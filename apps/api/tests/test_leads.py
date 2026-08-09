@@ -274,3 +274,33 @@ async def test_list_leads_returns_captured_leads(client, tenant_session_factory,
     assert match is not None
     assert match["company"] == "Globex"
     assert match["source"] == "podcast"
+
+
+async def test_contact_form_message_is_captured_and_visible_to_admin(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Phase 2 close-out: the real /contact page posts here with
+    source="contact_form" and a free-text message (0010)."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    resp = await client.post(
+        "/api/v1/leads",
+        json=_minimal_body(
+            email,
+            source="contact_form",
+            message="We'd like a quote for 40 seats on the Lead with Intent programme.",
+        ),
+    )
+    assert resp.status_code == 204
+
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    resp = await client.get(
+        "/api/v1/leads",
+        params={"limit": 5, "offset": 0},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    match = next((row for row in resp.json()["items"] if row["email"] == email), None)
+    assert match is not None
+    assert match["message"] == "We'd like a quote for 40 seats on the Lead with Intent programme."
+    assert match["source"] == "contact_form"

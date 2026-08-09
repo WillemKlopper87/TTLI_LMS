@@ -44,6 +44,7 @@ class Lead(Base, TimestampMixin):
     training_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     budget: Mapped[str | None] = mapped_column(Text, nullable=True)
     timeline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     utm_source: Mapped[str | None] = mapped_column(Text, nullable=True)
     utm_medium: Mapped[str | None] = mapped_column(Text, nullable=True)

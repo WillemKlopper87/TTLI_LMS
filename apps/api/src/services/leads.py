@@ -31,6 +31,7 @@ _PROGRESSIVE_FIELDS = (
     "training_goal",
     "budget",
     "timeline",
+    "message",
 )
 _UTM_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term")
 
@@ -112,6 +113,7 @@ class LeadRow:
     last_name: str | None
     company: str | None
     job_title: str | None
+    message: str | None
     source: str | None
     score: int
     stage: str
@@ -156,6 +158,7 @@ async def list_leads(
             ),
             company=lead.company,
             job_title=lead.job_title,
+            message=lead.message,
             source=lead.source,
             score=lead.score,
             stage=lead.stage,

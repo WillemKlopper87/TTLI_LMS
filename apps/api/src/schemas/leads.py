@@ -30,6 +30,10 @@ class LeadRequest(BaseModel):
     budget: str | None = None
     timeline: str | None = None
 
+    # The contact form's free-text message — not really "progressive
+    # profiling" in spirit, but stored the same way (services/leads.py).
+    message: str | None = Field(default=None, max_length=4000)
+
     source: str | None = None
 
 
@@ -41,6 +45,7 @@ class LeadSummary(BaseModel):
     last_name: str | None
     company: str | None
     job_title: str | None
+    message: str | None
     source: str | None
     score: int
     stage: str
