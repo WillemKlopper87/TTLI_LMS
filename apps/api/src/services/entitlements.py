@@ -1,10 +1,11 @@
 """The bridge between commerce and learning (02 §4.7).
 
 Granted only on an order's transition to `fulfilled`, and never before
-(02 §6.2) — the course/learning-path tables `target_id` would eventually
-point at don't exist yet (Phase 4), so today's only `kind` is `course`,
-carrying the product's own id as a stand-in target until that phase gives
-it a real one.
+(02 §6.2). `target_id` is polymorphic on `kind` (no FK — see the model's
+own docstring); for `kind="course"` it is the real `courses.id` (Phase 4),
+resolved from `Product.course_id` by the caller
+(services/orders.py::approve_eft), not the product's own id used as a
+stand-in before courses existed.
 """
 
 from __future__ import annotations

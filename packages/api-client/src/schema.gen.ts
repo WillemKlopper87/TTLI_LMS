@@ -410,6 +410,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/enrolments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own enrolments */
+        get: operations["list_own_enrolments_api_v1_enrolments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/enrolments/{enrolment_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-lesson progress for one of the caller's enrolments */
+        get: operations["get_progress_api_v1_enrolments__enrolment_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a lesson (idempotent) */
+        post: operations["start_lesson_api_v1_lessons__lesson_id__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete a lesson — the server-side rule engine decides, not the caller */
+        post: operations["complete_lesson_api_v1_lessons__lesson_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -446,6 +514,17 @@ export interface components {
             amount: string;
             /** Currency */
             currency: string;
+        };
+        /** EnrolmentProgressResponse */
+        EnrolmentProgressResponse: {
+            /** Enrolment Id */
+            enrolment_id: string;
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Lessons */
+            lessons: components["schemas"]["LessonProgressResponse"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -562,6 +641,30 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** LessonCompleteResponse */
+        LessonCompleteResponse: {
+            /** State */
+            state: string;
+            /** Next Lesson Id */
+            next_lesson_id: string | null;
+        };
+        /** LessonProgressResponse */
+        LessonProgressResponse: {
+            /** Lesson Id */
+            lesson_id: string;
+            /** Module Title */
+            module_title: string;
+            /** Title */
+            title: string;
+            /** Position */
+            position: number;
+            /** Activity Type */
+            activity_type: string;
+            /** State */
+            state: string;
+            /** Unmet Requirements */
+            unmet_requirements: string[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -667,6 +770,19 @@ export interface components {
             payment_reference: string | null;
             /** Items */
             items: components["schemas"]["OrderItemResponse"][];
+        };
+        /** OwnEnrolmentResponse */
+        OwnEnrolmentResponse: {
+            /** Enrolment Id */
+            enrolment_id: string;
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Started At */
+            started_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -1496,6 +1612,117 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_own_enrolments_api_v1_enrolments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnEnrolmentResponse"][];
+                };
+            };
+        };
+    };
+    get_progress_api_v1_enrolments__enrolment_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentProgressResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_lesson_api_v1_lessons__lesson_id__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_lesson_api_v1_lessons__lesson_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonCompleteResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

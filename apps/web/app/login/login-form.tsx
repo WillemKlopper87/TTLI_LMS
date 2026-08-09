@@ -5,6 +5,23 @@ import { useState } from "react";
 
 import { setAccessToken } from "@/lib/session";
 
+// Any of these means "this account has a staff surface to land on" — the
+// permissions already gating the working admin screens (Leads, Payments).
+// Everyone else is a learner/buyer: send them to their own courses, not an
+// admin shell with nothing they can do in it.
+const STAFF_PERMISSIONS = ["analytics:view", "payment:approve"];
+
+async function postLoginRedirect(router: ReturnType<typeof useRouter>, token: string) {
+  const resp = await fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+  if (resp.ok) {
+    const me = await resp.json();
+    const isStaff = (me.permissions ?? []).some((p: string) => STAFF_PERMISSIONS.includes(p));
+    router.push(isStaff ? "/admin" : "/learn");
+    return;
+  }
+  router.push("/learn");
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -32,8 +49,9 @@ export function LoginForm() {
       setError("Those credentials are not valid.");
       return;
     }
-    setAccessToken((await resp.json()).access_token);
-    router.push("/admin");
+    const token = (await resp.json()).access_token;
+    setAccessToken(token);
+    await postLoginRedirect(router, token);
   }
 
   async function submitMfa(event: React.FormEvent) {
@@ -50,8 +68,9 @@ export function LoginForm() {
       setError(resp.status === 429 ? "Too many attempts. Try again later." : "That code is not valid.");
       return;
     }
-    setAccessToken((await resp.json()).access_token);
-    router.push("/admin");
+    const token = (await resp.json()).access_token;
+    setAccessToken(token);
+    await postLoginRedirect(router, token);
   }
 
   if (mfaToken) {

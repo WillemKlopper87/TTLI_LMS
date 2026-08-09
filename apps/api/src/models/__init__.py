@@ -23,19 +23,32 @@ from src.models.commerce import (
 )
 from src.models.consent import ConsentRecord
 from src.models.contact import Contact
+from src.models.course import (
+    AccessLevel,
+    Course,
+    CourseTenantAssignment,
+    Lesson,
+    ManagerVisibility,
+    Module,
+)
 from src.models.event import Event
 from src.models.lead import Lead
+from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.tenant import Tenant, TenantDomain
 from src.models.theme import TenantTheme
 from src.models.user import User
 
 __all__ = [
+    "AccessLevel",
     "AuditAction",
     "AuditEvent",
     "Base",
     "ConsentRecord",
     "Contact",
+    "Course",
+    "CourseTenantAssignment",
+    "Enrolment",
     "Entitlement",
     "Event",
     "Invoice",
@@ -43,8 +56,13 @@ __all__ = [
     "InvoiceNumberCounter",
     "Lead",
     "LedgerEntry",
+    "Lesson",
+    "LessonCompletion",
+    "LessonState",
     "MagicLink",
+    "ManagerVisibility",
     "MfaRecoveryCode",
+    "Module",
     "Order",
     "OrderItem",
     "PasswordReset",

@@ -69,6 +69,8 @@ class AuditAction:
     TENANT_CREATED = "tenant.created"
     ROLE_ASSIGNED = "rbac.role.assigned"
     ROLE_REVOKED = "rbac.role.revoked"
+    LESSON_COMPLETED = "lesson.completed"
+    LESSON_COMPLETION_REFUSED = "lesson.completion_refused"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

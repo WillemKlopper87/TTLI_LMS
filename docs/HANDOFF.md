@@ -454,9 +454,78 @@ Verified: `tests/test_leads.py` gained
 gate sweep (ruff, mypy, 118 tests / 0 skipped against the real compose
 stack, migration round-trip, `alembic check`); `apps/web` `typecheck` and
 `build` both clean (13 routes, up from 11); api-client regenerated for the
-new `message` field. Not yet pushed as of this note — going straight into
-Phase 4 sprint 1 next (course/module/lesson content model + completion
-rule engine + enrolments), so this and that will likely land as one push.
+new `message` field. Pushed as `0ecbe81`; green on both jobs —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31333417953
+(2m34s). Going straight into Phase 4 sprint 1 next (course/module/lesson
+content model + completion rule engine + enrolments).
+
+**Twelfth pass: Phase 4 sprint 1 — content model, the completion rule
+engine, and enrolments.** `0011` adds `courses`/`modules`/`lessons`
+(deliberately **not** tenant-scoped, 02 §1.3) and the tenant-scoped/RLS
+`course_tenant_assignments`/`enrolments`/`lesson_completions`.
+`Product.course_id` is the real bridge now — `services/orders.py::
+approve_eft` resolves the actual `courses.id` instead of the product's own
+id used as a stand-in before this sprint (see `services/entitlements.py`'s
+old docstring in git history), and creates the enrolment in the same
+transaction as the entitlement grant, get-or-create so a repeat purchase
+of the same course doesn't violate the one-enrolment-per-course unique
+constraint. Both demo tenants' existing seeded products (`0009`) now point
+at the one seeded course — genuinely demonstrates the "one course, two
+tenant-branded bundles at different prices" shape 02 §6.1 describes, not
+just states it.
+
+`src/services/completion.py` is the rule engine (REQ-BYPASS-01/02):
+merges course-default and lesson-override `completion_rules` jsonb
+per-field (02 §5.2), evaluates `minimum_time_seconds` for real against
+server-assigned timestamps, and — this is the part worth reading before
+adding a fifth rule field — treats any rule referencing a subsystem that
+doesn't exist yet (video, quiz, survey, assignment, live attendance) as
+**failed, with a specific reason**, never silently skipped. A lesson
+authored with `quiz_pass_score` set must not complete just because no quiz
+engine exists to check it against; that would be REQ-BYPASS-01 violated by
+omission. `src/services/enrolment.py` is prerequisite enforcement
+(REQ-BYPASS-10) — a strict linear chain by `(module.position,
+lesson.position)` this sprint, no drip-release or cohorts yet — and the
+three learner-facing endpoints (`GET /enrolments`, `GET /enrolments/{id}/
+progress`, `POST /lessons/{id}/start`, `POST /lessons/{id}/complete`),
+all ownership-gated the same way `routers/orders.py` gates orders. Every
+progression decision is audit-logged via `audit_events`, including
+refusals (REQ-BYPASS-11) — `AuditAction.LESSON_COMPLETED` /
+`LESSON_COMPLETION_REFUSED`.
+
+**A real, pre-existing gap surfaced and fixed along the way**: every login
+redirected to `/admin` regardless of role, a harmless no-op back when only
+staff accounts existed, but now a real learner buying a real course would
+land on the empty admin shell with nothing to do. Fixed in
+`apps/web/app/login/login-form.tsx` — after login, fetch `/auth/me` and
+route by whether the account holds any staff-gating permission
+(`analytics:view`, `payment:approve`); everyone else goes to the new
+`/learn`. Same class of bug as the BFF binary-body issue from the ninth
+pass: obvious only once there's a real user on the other side of it.
+
+`apps/web/app/learn/page.tsx` ("my courses") and `/learn/[enrolmentId]`
+(the lesson checklist — every state and unmet-requirements reason comes
+straight from the server, the page does not compute a checklist itself)
+are real, working UI, not API-only. Seeded content ("Executive Leadership
+Certificate", one module, two document lessons) is explicitly structural
+— the same "demo product seeded so the EFT purchase path is exercisable"
+precedent `0009` set, not real TTLI curriculum, which was never provided.
+
+Verified two ways. First, the usual gate sweep: ruff, ruff format, mypy,
+125 tests / 0 skipped (7 new in `tests/test_learning.py`) against the real
+compose stack, migration round-trip, `alembic check`, api-client
+regenerated, `apps/web` `typecheck`/`build` clean (15 routes, up from 13).
+Second — and this is the one worth repeating for any future anti-bypass
+work — a live smoke test against the actual running API and web dev
+servers, not the pytest ASGI transport: logged in as a real buyer over
+real HTTP, bought the seeded course through the full EFT path, had a real
+finance user approve it, listed the resulting real enrolment, fetched
+real progress (lesson 1 available, lesson 2 locked with "Complete the
+previous lesson first"), started lesson 1, attempted to complete it
+immediately and got refused — `423`, `"0s spent of 30s required"` — then
+waited the real 30 seconds and completed it for real, watching
+`next_lesson_id` and the progress endpoint both correctly show lesson 2
+unlocked. Not yet pushed as of this note.
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

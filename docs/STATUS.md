@@ -211,11 +211,30 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 
 ---
 
-## 7. Phase 4 — Core LMS, anti-bypass, credentials (0%)
+## 7. Phase 4 — Core LMS, anti-bypass, credentials (~20%)
 
 Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat validation, the server-side completion rule engine, quizzes, surveys with per-survey anonymity, certificates with public verification, badges with LinkedIn sharing.
 
-**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone.
+### Done — sprint 1: content model, the completion rule engine, enrolments
+
+- [x] `courses`, `modules`, `lessons` (`0011`) — deliberately **not** tenant-scoped (02 §1.3: "the global course catalogue rows that all tenants share"); `course_tenant_assignments` controls per-tenant visibility instead of duplicating rows
+- [x] `Product.course_id` bridges commerce to learning for real — `services/orders.py::approve_eft` resolves the actual course now, not the product's own id used as a stand-in before this sprint. Both demo tenants' existing seeded products point at the one seeded course, proving the "one course, two tenant-branded bundles at different prices" shape (02 §6.1)
+- [x] `enrolments`, `lesson_completions` (`0011`, tenant-scoped, RLS) — an enrolment is created only from `approve_eft`, in the same transaction as the entitlement grant, never independently
+- [x] The completion rule engine (`src/services/completion.py`, REQ-BYPASS-01/02): evaluates `minimum_time_seconds` for real against server-assigned timestamps; a rule field whose subsystem doesn't exist yet (video, quiz, survey, assignment, live attendance) evaluates as **not met** with a specific reason, never silently skipped
+- [x] `POST /lessons/{id}/start` (idempotent), `POST /lessons/{id}/complete` (423 `LESSON_LOCKED` with the unmet-requirements checklist on refusal), `GET /enrolments/{id}/progress`, `GET /enrolments` (REQ-LMS-03's discovery list) — all ownership-gated
+- [x] Prerequisite enforcement (REQ-BYPASS-10): a strict linear chain by `(module.position, lesson.position)` this sprint — no drip-release dates or cohorts yet (02 §13 open question)
+- [x] Every progression decision is audit-logged, including refusals (REQ-BYPASS-11) — `audit_events.action` = `lesson.completed` / `lesson.completion_refused`
+- [x] Real `apps/web` UI: `/learn` (my courses) and `/learn/[enrolmentId]` (the lesson checklist, start/complete buttons) — post-login routing now sends learners here instead of the admin shell, and staff (any `analytics:view`/`payment:approve` holder) to `/admin`
+- [x] Seeded one demo course ("Executive Leadership Certificate", one module, two document lessons) — explicitly structural content to exercise the mechanics end to end, the same precedent `0009`'s demo product set; not real TTLI curriculum, which was never provided
+
+### Outstanding — the rest of Phase 4
+
+- [ ] The media module: ported VOD ladder, signed HLS, player-overlay watermark, heartbeat validation, concurrent-stream caps (sprint 2) — `video_watch_percentage` in the rule engine refuses with "not available yet" until this lands
+- [ ] Quizzes with question banks, surveys with per-survey anonymity, assignments (virus-scanned, reusing `services/antivirus.py`) (sprint 3)
+- [ ] Certificates with public QR verification, badges with LinkedIn sharing (sprint 4)
+- [ ] Course/lesson authoring UI — content is migration-seeded this sprint, same precedent as Phase 3 sprint 1's seeded product; a content-author role and CRUD endpoints don't exist yet
+
+**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone. **First half met** — verified live over real HTTP against a running server (not just the test suite): started a lesson, attempted to complete it early and got refused with `"0s spent of 30s required"`, waited past the real 30-second threshold, completed it for real, and watched lesson 2 unlock. Certificate verification is sprint 4.
 
 ---
 

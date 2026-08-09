@@ -78,6 +78,13 @@ class Product(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default="course")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # A product is sellable; a course is learnable (02 §5.1) — this is the
+    # bridge. Nullable because Product.kind is not always "course" even
+    # though that is the only kind seeded so far; entitlements.grant()
+    # requires it to be set for kind="course" products (services/orders.py).
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 class Price(Base, TimestampMixin):

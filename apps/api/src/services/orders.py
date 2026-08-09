@@ -27,6 +27,7 @@ from src.core.errors import AppError
 from src.core.ids import uuid7
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
 from src.models.user import User
+from src.services import enrolment as enrolment_service
 from src.services import entitlements, invoicing, ledger, tax
 
 
@@ -200,15 +201,42 @@ async def approve_eft(
         await session.execute(select(OrderItem).where(OrderItem.order_id == order.id))
     ).scalars()
     for item in items:
-        await entitlements.grant(
+        product = await session.get(Product, item.product_id)
+        if product is None:
+            raise OrderError("Order references a product that no longer exists.")
+
+        # Product.kind is "course" for everything sold so far — target_id
+        # resolves to the real course now (Phase 4), not the product's own
+        # id used as a stand-in before courses existed (see git history on
+        # services/entitlements.py's docstring).
+        if product.kind == "course":
+            if product.course_id is None:
+                raise OrderError(
+                    f"Product {product.slug!r} is a course product with no linked course; "
+                    "cannot grant entitlement."
+                )
+            target_id = product.course_id
+        else:
+            target_id = product.id
+
+        entitlement = await entitlements.grant(
             session,
             tenant_id=tenant_id,
             user_id=order.user_id,
             source_order_id=order.id,
-            kind="course",
-            target_id=item.product_id,
+            kind=product.kind,
+            target_id=target_id,
             quantity=item.quantity,
         )
+
+        if product.kind == "course":
+            await enrolment_service.get_or_create_enrolment(
+                session,
+                tenant_id=tenant_id,
+                user_id=order.user_id,
+                course_id=target_id,
+                entitlement_id=entitlement.id,
+            )
 
     order.status = "fulfilled"
     await session.flush()
