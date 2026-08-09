@@ -8,6 +8,19 @@ is how `alembic check` starts passing while the schema quietly drifts.
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
+from src.models.commerce import (
+    Entitlement,
+    Invoice,
+    InvoiceItem,
+    InvoiceNumberCounter,
+    LedgerEntry,
+    Order,
+    OrderItem,
+    Payment,
+    Price,
+    Product,
+    TaxRule,
+)
 from src.models.consent import ConsentRecord
 from src.models.contact import Contact
 from src.models.event import Event
@@ -23,17 +36,28 @@ __all__ = [
     "Base",
     "ConsentRecord",
     "Contact",
+    "Entitlement",
     "Event",
+    "Invoice",
+    "InvoiceItem",
+    "InvoiceNumberCounter",
     "Lead",
+    "LedgerEntry",
     "MagicLink",
     "MfaRecoveryCode",
+    "Order",
+    "OrderItem",
     "PasswordReset",
+    "Payment",
     "Permission",
+    "Price",
+    "Product",
     "RefreshToken",
     "Role",
     "RoleAssignment",
     "RolePermission",
     "SoftDeleteMixin",
+    "TaxRule",
     "Tenant",
     "TenantDomain",
     "TenantMixin",

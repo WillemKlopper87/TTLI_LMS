@@ -16,7 +16,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | 0 | Discovery and sign-off | **BLOCKED** — 10 open decisions | 0% |
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
 | 2 | Public site and content funnel | Leads, consent, events, guest access and the admin lead view all built; brand extracted. Marketing pages still blocked on Phase 0 (#8) | ~35% |
-| 3 | Commerce | Not started | 0% |
+| 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path, sequential invoicing, the append-only ledger. Card (Payfast/Netcash) and PO checkout not started | ~30% |
 | 4 | Core LMS, anti-bypass, credentials | Not started | 0% |
 | 4.5 | PWA and accessibility | Not started | 0% |
 | 5 | Corporate, workshops, marketing | Not started | 0% |
@@ -25,19 +25,19 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 73 files |
-| `mypy src` (strict) | **PASS** — 52 source files |
-| `pytest` | **PASS** — 101 passed, **0 skipped** |
-| `alembic upgrade head` | **PASS** — at `0008` |
+| `ruff check` / `ruff format --check` | **PASS** — 83 files |
+| `mypy src` (strict) | **PASS** — 60 source files |
+| `pytest` | **PASS** — 110 passed, **0 skipped** |
+| `alembic upgrade head` | **PASS** — at `0009` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31322764499](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31322764499) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push |
 
-**Headline:** 101 tests (0 skipped), 14 endpoints, 17 tables (events partitioned monthly ×14), 8 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
+**Headline:** 110 tests (0 skipped), 20 endpoints, 28 tables (events partitioned monthly ×14), 9 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -73,10 +73,11 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) replacing the placeholder navy/gold, extracted from ttli.co.za with documented provenance | `0008`, [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), `apps/web/public/brand/` | migration round-trip; `apps/web` build/typecheck; HTTP smoke test against both demo tenants confirming `acme` is untouched |
 | Admin lead view: paginated, tenant-scoped, gated on `analytics:view` | `src/services/leads.py::list_leads`, `/leads` (GET), `apps/web/app/admin/leads/` | 2 tests in `tests/test_leads.py`; HTTP smoke test through the real BFF against a logged-in admin |
 | Guest account provisioning: unique-per-lead, time-limited, magic-link-only; expiry enforced at both magic-link consumption and refresh rotation | `src/services/guest_access.py`, `/guest-access` | 8 tests in `tests/test_guest_access.py`; HTTP smoke test confirmed real Mailhog delivery via the arq worker |
+| Commerce foundation + EFT purchase path: server-resolved price/tax, data-driven tax engine, sequential gapless invoicing, append-only ledger, entitlements | `0009`, `src/services/{tax,orders,invoicing,ledger,entitlements}.py`, `/orders`, `/payments` | 9 tests in `tests/test_commerce.py`; HTTP smoke test — full EFT flow, reject/resubmit, 5x rapid order creation with no reference collisions |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` (non-health routes under `/api/v1`)
 
 ---
 
@@ -169,11 +170,30 @@ Marketing pages, resource hub, podcasts, gated content, consent management, lead
 
 ---
 
-## 6. Phase 3 — Commerce (0%)
+## 6. Phase 3 — Commerce (~30%)
 
 Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload and finance approval, PO capture, sequential invoicing, append-only ledger, VAT engine, entitlements.
 
-**Demo target:** three purchase paths each producing an auditable invoice; a rejected EFT; a credit note.
+### Done — sprint 1: the EFT purchase path, end to end
+
+- [x] `products`, `prices`, `tax_rules`, `orders`, `order_items`, `payments`, `invoice_number_counters`, `invoices`, `invoice_items`, `ledger_entries`, `entitlements` (`0009`) — 11 new tables, RLS on all, append-only enforcement on `ledger_entries` (same two-layer pattern as `audit_events`/`consent_records`)
+- [x] Tax engine (`src/services/tax.py`, REQ-PAY-08): data-driven, not hardcoded — `0009` seeds only South African domestic VAT (15%), the one rate 01 §1.4 #2 doesn't block. International customers are refused with a clear, specific reason, never charged a guessed rate
+- [x] `POST /orders` — prices and tax resolved server-side from `price_id` references, never a client-supplied amount (03 §5.1)
+- [x] `POST /orders/{id}/checkout/eft`, `POST /orders/{id}/payment-proof`, `POST /payments/{id}/approve`, `POST /payments/{id}/reject` (REQ-PAY-03) — the full EFT lifecycle: bank details issued, proof uploaded, finance approves or rejects, rejection returns to `eft_pending_proof` for resubmission
+- [x] Sequential, gapless invoice numbering (`src/services/invoicing.py`, REQ-PAY-09) — a per-`(tenant_id, series)` counter locked with `SELECT ... FOR UPDATE` inside the issuing transaction, not a Postgres sequence (which leaves gaps on rollback)
+- [x] Entitlements granted only on the `fulfilled` transition, in the same transaction as invoice issuance and the ledger entries recording both (02 §6.2)
+- [x] `GET /orders/{id}` — ownership-gated (a learner sees their own order; `payment:approve` is a separate, finance-only gate on approve/reject)
+
+### Outstanding — blocked on external accounts, or genuinely not started
+
+- [ ] Card checkout (Payfast/Netcash) — blocked on live sandbox credentials (01 §1.4's Phase 0 outstanding list), not a decision or a design gap
+- [ ] PO capture — deferred to keep sprint 1 to one complete vertical slice (EFT) rather than three partial ones; the schema (`orders.po_number`/`po_document_key`, `po_pending_approval` status) already anticipates it
+- [ ] Credit notes and refunds — `ledger_entries` already has `refund_issued`/`credit_note_issued` entry types ready; the issuing flow itself isn't built
+- [ ] `Idempotency-Key` handling on `POST /orders`/`POST /payments/*` (03 §1.6, REQ-PAY-07) — deferred; matters most for the webhook retries that come with card checkout, which isn't built either. Not a silent gap: every state transition in `services/orders.py` checks the expected state first, so a genuine double-submission is refused (400), not silently re-processed — real double-invoicing is prevented even without full replay semantics
+- [ ] Virus scanning on the payment-proof upload (04 §2, REQ-BYPASS-08) — no scanning engine exists in this project yet; the upload itself works (stored via the existing storage adapter, private container), just without the scan step the spec requires before a file is readable
+- [ ] Subscriptions — untouched on purpose; 01 §1.4 #5 is unsigned
+
+**Demo target:** three purchase paths each producing an auditable invoice; a rejected EFT; a credit note. **Two of three met** — EFT produces an auditable invoice (verified: `INV-000001` format, correct VAT, entitlement granted, ledger entries written) and a rejected EFT correctly returns to `eft_pending_proof`. Card and PO paths, and the credit note, are the outstanding third.
 
 > Nothing is sellable at the end of this phase — there is no course player yet. A working checkout demo will look like a finished business and is not one. See [05 §3](05_COMMERCIAL.md#what-is-sellable-and-when).
 

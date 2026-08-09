@@ -38,6 +38,9 @@ uploads/
 *.sqlite3
 minio-data/
 postgres-data/
+# LocalStorageAdapter's on-disk root (STORAGE_BACKEND=local) — payment
+# proofs and other uploads written during dev/test runs, never committed.
+apps/api/var/
 
 # --- Editors / OS ---
 .vscode/

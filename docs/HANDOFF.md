@@ -166,6 +166,78 @@ Pushed as `f6b3b70`; green on both jobs on the first try —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31322764499
 (1m52s, quality + web).
 
+**Eighth pass: Phase 3 sprint 1 — commerce foundation and the full EFT
+purchase path.** With Phase 2's decision-independent slice done, §6 named
+Phase 3/4 as next — but unlike Phase 2, both are blocked at the *root* by
+unsigned decisions (VAT #2 and subscriptions #5 for commerce; SCORM/xAPI #1
+and the DRM/watermark question #3 for the LMS content model). Asked the
+user how to proceed rather than guessing scope; told to attempt it anyway,
+using the same placeholder-not-guess pattern already established
+(`guest_access_days`, `tenant_themes`'s seed colors). It worked here too:
+02 §6.5 already says tax is data ("it lives in a row, not a constant"), so
+migration `0009` seeds only South African domestic VAT — the one rate not
+in question — and `services/tax.py` refuses the international case with a
+specific, honest reason instead of inventing a rate. Subscriptions aren't
+touched at all.
+
+Scoped to one complete vertical slice — EFT — rather than three partial
+ones: EFT needs no third-party account (card checkout needs live
+Payfast/Netcash sandbox credentials, still on Phase 0's outstanding list;
+PO capture was cut for scope, not blocked). `0009` adds 11 tables:
+`products`, `prices`, `tax_rules`, `orders`, `order_items`, `payments`,
+`invoice_number_counters`, `invoices`, `invoice_items`, `ledger_entries`
+(append-only, same two-layer pattern as `audit_events`), `entitlements`.
+`services/invoicing.py` implements REQ-PAY-09's sequential, gapless
+numbering exactly as 02 §6.4 specifies — a per-`(tenant_id, series)`
+counter locked with `SELECT ... FOR UPDATE` inside the issuing transaction,
+not a Postgres sequence (non-transactional, leaves gaps on rollback).
+`services/orders.py` drives the state machine end to end: create → EFT
+checkout → proof upload → finance approves or rejects; approval issues the
+invoice, grants entitlements and writes two ledger entries, all in one
+transaction, matching 02 §6.2's "never before `fulfilled`" rule.
+
+Live HTTP smoke testing (not just automated tests) caught two real bugs
+before they shipped:
+
+1. `create_order()` flushed the `Order` row *before* resolving each line's
+   tax — so a refusal partway through (an unresolvable tax case, a bad
+   `price_id`) left an orphaned empty `draft` order behind. `get_session()`
+   commits whatever an `AppError` leaves flushed, by design, for auth
+   bookkeeping (§2.3 above) — that same mechanism silently created data
+   debris here. Fixed by resolving and validating every line *before*
+   writing the order at all — a two-phase create, not one interleaved loop.
+2. `_generate_payment_reference()` derived the reference from
+   `order_id.hex[:10]` — but a UUID7's first 12 hex characters are its
+   millisecond timestamp (`core/ids.py`), so two orders created in the same
+   millisecond got an *identical* reference, colliding on the unique
+   index. Only surfaced because a test created two orders back-to-back and
+   failed intermittently — passed in isolation, failed under the full
+   suite, which was the tell. Fixed by slicing from `hex[12:22]` instead,
+   into the random portion; verified with a 5000-iteration collision test
+   (0 collisions) and a live 5x rapid-fire smoke test.
+
+Deferred, and tracked in STATUS.md §6 rather than silently dropped:
+`Idempotency-Key` handling (03 §1.6) — the state-machine checks already
+refuse a genuine double-submission with 400 rather than silently
+re-processing it, so the financial harm (double invoice, double
+entitlement) is prevented even without full replay semantics; virus
+scanning on the payment-proof upload (04 §2, REQ-BYPASS-08) — no scanning
+engine exists in this project at all, flagged explicitly rather than
+pretended-away; credit notes/refunds; card and PO checkout.
+
+Also fixed in this pass, unrelated to commerce: `apps/api/var/` (the local
+storage adapter's on-disk root) was never gitignored and had payment-proof
+test artifacts sitting untracked — added to `.gitignore`.
+
+Verified: 110 tests (0 skipped, up from 101 — new `tests/test_commerce.py`,
+9 tests), full gate sweep, migration round-trip, `alembic check` clean,
+api-client regenerated, `apps/web` build/typecheck clean (no web changes
+this sprint). Live smoke test: full EFT happy path (order → checkout →
+proof → approve → invoice `INV-000001`, correct VAT, entitlement granted,
+two ledger entries) and reject → resubmit → approve, both over real HTTP
+against a running server, plus the append-only ledger genuinely refusing a
+raw `UPDATE`. Not yet pushed/CI-verified as of this note.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
@@ -333,11 +405,15 @@ Ordered by risk. **1/2/3/4/6/8 fixed with tests on 2026-08-09; 5 and 7 remain.**
   REQ-LEAD-05/07 (sample entitlements, guest→paid conversion) need Phase 4's
   course tables. Don't build ahead of those — there's nothing left in Phase 2
   that isn't blocked on either Phase 0 or Phase 4.
-- **Phase 3 (commerce):** the append-only `ledger_entries` and sequential
-  invoice numbers are SARS-compliance-critical — read 02 §6.4/§6.6 *before*
-  designing, and reuse the two-layer append-only enforcement (revoked grant +
-  raising trigger) exactly as `audit_events` does. Idempotency keys on all
-  webhook tables (unique constraint, not application logic).
+- **Phase 3 (commerce):** sprint 1 (see "Eighth pass") built the foundation
+  and the full EFT path — read it before adding to this phase, it already
+  has the append-only ledger, sequential invoicing and the tax engine
+  wired up correctly; don't rebuild them differently. What's left: card
+  checkout (blocked on live Payfast/Netcash sandbox credentials, not a
+  decision or a design gap), PO capture, credit notes/refunds, and
+  `Idempotency-Key` handling (03 §1.6) — put real idempotency keys on
+  webhook tables via a unique constraint when card checkout arrives, not
+  application logic.
 - **Phase 4 (LMS/media):** port from `Streaming_Server`
   (`c:/Users/Wille/Downloads/applications/Streaming_Server`) into
   `src/services/media/` — **do not modify that project** (06 §3.1). The

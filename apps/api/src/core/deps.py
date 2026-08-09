@@ -25,6 +25,7 @@ from src.core.errors import AppError, Forbidden, TenantUnresolved, Unauthenticat
 from src.core.redis import get_redis
 from src.core.security import decode_access_token
 from src.core.tenancy import TenantContext, get_or_resolve_tenant, hostname_from_request
+from src.services.storage import StorageService, get_storage_adapter
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -93,6 +94,13 @@ def get_crypto(settings: SettingsDep) -> CryptoBox:
 
 
 CryptoDep = Annotated[CryptoBox, Depends(get_crypto)]
+
+
+def get_storage(settings: SettingsDep) -> StorageService:
+    return get_storage_adapter(settings)
+
+
+StorageDep = Annotated[StorageService, Depends(get_storage)]
 
 
 @dataclass(frozen=True, slots=True)

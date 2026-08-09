@@ -274,14 +274,174 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Order */
+        post: operations["create_order_api_v1_orders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Order */
+        get: operations["get_order_api_v1_orders__order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{order_id}/checkout/eft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Checkout Eft */
+        post: operations["checkout_eft_api_v1_orders__order_id__checkout_eft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{order_id}/payment-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Payment Proof */
+        post: operations["upload_payment_proof_api_v1_orders__order_id__payment_proof_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/{payment_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Payment */
+        post: operations["approve_payment_api_v1_payments__payment_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/payments/{payment_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Payment */
+        post: operations["reject_payment_api_v1_payments__payment_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
+        Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** CreateOrderRequest */
+        CreateOrderRequest: {
+            /** Currency */
+            currency: string;
+            /** Customer Type */
+            customer_type: string;
+            /** Lines */
+            lines: components["schemas"]["OrderLine"][];
+        };
+        /** EftCheckoutResponse */
+        EftCheckoutResponse: {
+            /** Payment Id */
+            payment_id: string;
+            /** Payment Reference */
+            payment_reference: string;
+            /** Bank Name */
+            bank_name: string;
+            /** Account Name */
+            account_name: string;
+            /** Account Number */
+            account_number: string;
+            /** Branch Code */
+            branch_code: string;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InvoiceResponse */
+        InvoiceResponse: {
+            /** Id */
+            id: string;
+            /** Number */
+            number: string;
+            /** Status */
+            status: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Currency */
+            currency: string;
+            /** Subtotal */
+            subtotal: string;
+            /** Tax Total */
+            tax_total: string;
+            /** Grand Total */
+            grand_total: string;
         };
         /** LeadRequest */
         LeadRequest: {
@@ -431,6 +591,48 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** OrderItemResponse */
+        OrderItemResponse: {
+            /** Product Id */
+            product_id: string;
+            /** Quantity */
+            quantity: number;
+            /** Unit Amount */
+            unit_amount: string;
+            /** Tax Amount */
+            tax_amount: string;
+            /** Line Total */
+            line_total: string;
+        };
+        /** OrderLine */
+        OrderLine: {
+            /** Price Id */
+            price_id: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+        };
+        /** OrderResponse */
+        OrderResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Currency */
+            currency: string;
+            /** Subtotal */
+            subtotal: string;
+            /** Tax Total */
+            tax_total: string;
+            /** Grand Total */
+            grand_total: string;
+            /** Payment Reference */
+            payment_reference: string | null;
+            /** Items */
+            items: components["schemas"]["OrderItemResponse"][];
+        };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
             /** Token */
@@ -450,6 +652,11 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** RejectPaymentRequest */
+        RejectPaymentRequest: {
+            /** Reason */
+            reason: string;
         };
         /** ThemeResponse */
         ThemeResponse: {
@@ -933,6 +1140,198 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LeadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_order_api_v1_orders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_order_api_v1_orders__order_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    checkout_eft_api_v1_orders__order_id__checkout_eft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EftCheckoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_payment_api_v1_payments__payment_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_payment_api_v1_payments__payment_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectPaymentRequest"];
             };
         };
         responses: {

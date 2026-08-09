@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     # rather than hardcoded, same placeholder pattern as tenant_themes' seed
     # colors. 7 is the conservative default until the customer signs off.
     guest_access_days: int = 7
+
+    # --- Commerce (02 §6) ---
+    # Real values are finance's, not engineering's, to invent — placeholders
+    # so POST /orders/{id}/checkout/eft has something to display rather than
+    # nothing, same reasoning as guest_access_days above.
+    eft_bank_name: str = "Not yet configured"
+    eft_account_name: str = "Not yet configured"
+    eft_account_number: str = "Not yet configured"
+    eft_branch_code: str = "Not yet configured"
+    supplier_vat_number: str = ""
+
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"
     break_glass_admin_password: str = ""
