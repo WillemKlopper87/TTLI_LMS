@@ -35,7 +35,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), GitHub Actions | **PASS** — [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — [run 31319510689](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31319510689) |
 
 **Headline:** 85 tests (0 skipped), 13 endpoints, 14 tables (events partitioned monthly ×14), 6 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries.
 
@@ -128,7 +128,7 @@ Blocked on the customer, not on engineering. No code may start until this closes
 ### Outstanding — to close Phase 1
 
 - [x] Push to a remote and get CI green — [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520)
-- [x] CI builds/typechecks `apps/web` — new `web` job in `.github/workflows/api.yml` (renamed `ci` internally; file kept as `api.yml`)
+- [x] CI builds/typechecks `apps/web` — new `web` job in `.github/workflows/api.yml` (renamed `ci` internally; file kept as `api.yml`), green on its first-ever run
 - [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
 - [x] `apps/web` (Next.js **16.3.0**, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
 - [x] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7): `send_email` enqueues a `send_email_job` (`max_tries=5`) instead of sending inline; the request path never blocks on or fails because of SMTP

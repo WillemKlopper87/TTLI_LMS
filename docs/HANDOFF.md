@@ -46,6 +46,9 @@ in the same pass (installs `packages/api-client` first, since its own
 dependencies — `openapi-fetch` — resolve from *its* `node_modules`, not
 `apps/web`'s, once symlinked in); the workflow's internal `name:` is now
 `ci` to reflect that it covers both apps (filename kept as `api.yml`).
+Pushed, and — unlike the first CI run ever, which needed a real fix — this
+one was green end to end on the first try, `quality` and the new `web` job
+both: [run 31319510689](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31319510689).
 **Still genuinely open: nothing from the original weakness/housekeeping
 list — see §6 for what's next.**
 
