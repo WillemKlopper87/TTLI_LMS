@@ -72,8 +72,17 @@ jobs:
 
       # The extensions are created by postgres-init in Compose; the CI service
       # container does not mount it, so they are applied here instead.
+      #
+      # Explicit flags, not "$DATABASE_URL_SYNC" as a URI: psql does not
+      # understand the postgresql+psycopg2:// scheme SQLAlchemy uses (that
+      # +psycopg2 driver suffix is a SQLAlchemy convention, not part of libpq's
+      # URI grammar) — it fails to parse, falls back to a local socket, and
+      # dies with "No such file or directory". Never caught locally because
+      # this workflow had not executed even once before this comment was
+      # written; local verification always went through `docker exec
+      # ttli-postgres psql` directly, bypassing this exact invocation.
       - name: Create extensions
-        run: psql "$DATABASE_URL_SYNC" -f ../../infra/postgres-init/01-extensions.sql
+        run: psql -h localhost -p 5452 -U ttli -d ttli -f ../../infra/postgres-init/01-extensions.sql
         env:
           PGPASSWORD: ttli_ci
         continue-on-error: false
