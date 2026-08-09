@@ -128,14 +128,14 @@ Blocked on the customer, not on engineering. No code may start until this closes
 ### Outstanding — to close Phase 1
 
 - [x] Push to a remote and get CI green — [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520)
-- [ ] CI does not yet build/typecheck `apps/web`
+- [x] CI builds/typechecks `apps/web` — new `web` job in `.github/workflows/api.yml` (renamed `ci` internally; file kept as `api.yml`)
 - [x] `tenant_themes` ([02 §4.3](02_DATA_MODEL.md#43-tenant_themes)): table, seed, `GET /tenant/theme` — two hostnames return two palettes (`0006`)
-- [x] `apps/web` (Next.js 15, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
+- [x] `apps/web` (Next.js **16.3.0**, port 3010): tenant-themed login with the MFA step, empty admin shell, and a BFF proxy that sets `X-Tenant-Host` from the real Host header — dropping any smuggled value — so the browser never talks to the API directly (no CORS surface)
 - [x] Email retry via arq ([HANDOFF.md §4](HANDOFF.md) weakness 7): `send_email` enqueues a `send_email_job` (`max_tries=5`) instead of sending inline; the request path never blocks on or fails because of SMTP
 
-**Demo target — met, verified over HTTP:** `localhost:3010` renders TTLI Executive Institute in navy `#1B2A4A`; `meridian.localhost:3010` renders Meridian Holdings in green `#14532D` from the same build; login flows through the BFF, MFA challenge included; the admin shell shows the signed-in principal and permissions.
+**Demo target — met, verified over HTTP, twice (Next 15 and again on Next 16):** `localhost:3010` renders TTLI Executive Institute in navy `#1B2A4A`; `meridian.localhost:3010` renders Meridian Holdings in green `#14532D` from the same build; login flows through the BFF (including a full POST proxy round-trip), MFA challenge included; the admin shell shows the signed-in principal and permissions.
 
-> `npm audit` flags Next 15's bundled postcss/sharp; the only fix is Next 16, a breaking major that contradicts the documented stack decision ([01 §5](01_PRD.md#5-technical-decisions)). Build-tooling exposure only at this phase — upgrade deliberately, through the decision log, not via `npm audit fix --force`.
+> **Upgraded to Next 16** (was: deferred, see prior note below). Resolves the postcss/sharp CVEs `npm audit` flagged under 15 — `apps/web` audits clean now. The app was built async-API-clean from the start, so the only real casualty was Turbopack (16's new default builder): it cannot resolve `@ttli/api-client` through the `file:../../packages/api-client` npm-workspace symlink — a known, still-open upstream limitation (`vercel/next.js#85316`, `#88335`, `#77562`), not something in our config. Worked around with `--webpack` in both `dev` and `build` scripts (`apps/web/next.config.ts` documents why); Webpack resolves it exactly as it did under Next 15. Verified: clean `npm ci` from lockfiles in both `packages/api-client` and `apps/web`, `typecheck`, `build`, and the full two-tenant HTTP smoke test all pass identically to before the upgrade.
 
 ---
 

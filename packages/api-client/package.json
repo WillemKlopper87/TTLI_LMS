@@ -6,6 +6,12 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "generate": "openapi-typescript ../../apps/api/openapi.json -o src/schema.gen.ts",
     "typecheck": "tsc --noEmit"

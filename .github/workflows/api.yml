@@ -1,4 +1,4 @@
-name: api
+name: ci
 
 on:
   push:
@@ -150,3 +150,41 @@ jobs:
           npm run generate
           git diff --exit-code -- src/schema.gen.ts
           npm run typecheck
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            packages/api-client/package-lock.json
+
+      # apps/web depends on @ttli/api-client via "file:../../packages/api-client"
+      # — npm symlinks the package directory itself, but its own dependencies
+      # (openapi-fetch) resolve from *its* node_modules, not apps/web's. That
+      # only exists once this install runs.
+      - name: Install api-client
+        working-directory: packages/api-client
+        run: npm ci
+
+      - name: Install web
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      # --webpack (already in package.json's build script): Turbopack, Next
+      # 16's default, cannot currently resolve @ttli/api-client through the
+      # npm-workspace symlink above — a known, still-open upstream limitation
+      # (vercel/next.js#85316, #88335, #77562). See apps/web/next.config.ts.
+      - name: Build
+        run: npm run build

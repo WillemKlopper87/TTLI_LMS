@@ -24,12 +24,30 @@ The second run — Python 3.12, Ubuntu, first time either had touched this
 code — passed every step end to end, including the zero-skip integration
 assertion, the migration round-trip, drift check, and the api-client drift
 gate: [run 31318484520](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31318484520).
-**Still genuinely open: the CI workflow does not yet build/typecheck
-`apps/web` — add a job for it; the Next 15 `npm audit` findings, which only
-Next 16 fixes — a stack-decision change, not an `npm audit fix` (impact
-analysis says the bump is actually low-risk for this codebase, since it was
-built async-API-clean from the start — see the conversation, not yet
-written up as a doc).**
+
+**Fourth pass: upgraded to Next.js 16** (`15.5.23` → `16.3.0`). The impact
+analysis referenced above turned out right — the app was built
+async-API-clean from the start (already awaited `params`/`headers()`
+everywhere), already on React 19.2.8 and TypeScript 5.9.3, so almost none of
+16's breaking-change list applied. The one real hit: Turbopack, 16's new
+default builder for `dev`/`build`, cannot resolve `@ttli/api-client` through
+the `file:../../packages/api-client` npm-workspace symlink — confirmed as a
+known, still-open upstream limitation (`vercel/next.js#85316`, `#88335`,
+`#77562`), reproduced even after adding an explicit `"exports"` field to
+that package. Fix: both scripts now pass `--webpack`
+(`apps/web/package.json`), which resolves it exactly as Webpack (15's
+default) always did — `apps/web/next.config.ts` documents why, so nobody
+"cleans up" the flag later. Revisit once those upstream issues close.
+Verified clean: `npm ci` from lockfiles in both `packages/api-client` and
+`apps/web`, `typecheck`, `build`, and the full two-tenant HTTP smoke test
+(including a POST through the BFF to `/auth/login`) — all pass identically
+to the pre-upgrade run. A `web` job was added to `.github/workflows/api.yml`
+in the same pass (installs `packages/api-client` first, since its own
+dependencies — `openapi-fetch` — resolve from *its* `node_modules`, not
+`apps/web`'s, once symlinked in); the workflow's internal `name:` is now
+`ci` to reflect that it covers both apps (filename kept as `api.yml`).
+**Still genuinely open: nothing from the original weakness/housekeeping
+list — see §6 for what's next.**
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
@@ -111,14 +129,15 @@ endpoints changed the schema and forced a regeneration.
 - ✅ **Tenant themes** — `0006` creates and seeds `tenant_themes`;
   `GET /api/v1/tenant/theme` returns the resolved tenant's palette, and the
   demo-target test proves two hostnames answer with two brands.
-- ✅ **Empty admin shell** — `apps/web` (Next.js 15.5, React 19, Tailwind 4,
-  port 3010): server-rendered login page themed from `GET /tenant/theme`,
-  the MFA challenge step, an admin shell showing the signed-in principal,
-  and the BFF proxy (the browser's only path to the API — no CORS surface).
-  Access token lives in SPA memory per 04 §1.2; the HttpOnly-cookie refresh
-  flow via the BFF is the natural next web-tier step. Hand-written minimal
-  scaffold, not create-next-app; `npm run build` and `npm run typecheck` are
-  the gates until a web CI job exists.
+- ✅ **Empty admin shell** — `apps/web` (Next.js **16.3.0** — upgraded from
+  15.5 in the "Fourth pass" noted at the top of this file — React 19,
+  Tailwind 4, port 3010): server-rendered login page themed from
+  `GET /tenant/theme`, the MFA challenge step, an admin shell showing the
+  signed-in principal, and the BFF proxy (the browser's only path to the
+  API — no CORS surface). Access token lives in SPA memory per 04 §1.2; the
+  HttpOnly-cookie refresh flow via the BFF is the natural next web-tier
+  step. Hand-written minimal scaffold, not create-next-app; `npm run build`
+  and `npm run typecheck` now also run in CI (`web` job, `api.yml`).
 
 ## 4. Known weaknesses to review (none are gate failures; all are real)
 
