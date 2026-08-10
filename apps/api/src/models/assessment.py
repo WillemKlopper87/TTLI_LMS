@@ -14,6 +14,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -171,6 +172,16 @@ class SurveyResponse(Base):
             unique=True,
         ),
         Index("uq_survey_responses_survey_user", "survey_id", "user_id", unique=True),
+        # Created via raw SQL in 0013 (op.execute, not a declarative
+        # CheckConstraint) — declared here too so alembic's autogenerate
+        # can see it. A newer alembic (dependency-upgrade sprint B) added
+        # real comparison for exactly this, surfacing a gap between this
+        # model and the database that existed since 0013 but was
+        # previously invisible to `alembic check`.
+        CheckConstraint(
+            "(user_id IS NULL) <> (respondent_reference IS NULL)",
+            name="ck_survey_responses_one_subject",
+        ),
     )
 
     id: Mapped[uuid.UUID] = pk()
