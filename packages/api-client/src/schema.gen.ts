@@ -239,6 +239,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenant/settings/manager-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** REQ-TEN-03's tenant-level toggle, current value */
+        get: operations["get_manager_visibility_setting_api_v1_tenant_settings_manager_visibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * REQ-TEN-03's tenant-level toggle
+         * @description The second of REQ-TEN-03's three conditions — a tenant admin's
+         *     own toggle, independent of any single course's setting. Merges into
+         *     the existing `settings` jsonb rather than overwriting it, since
+         *     other keys may already live there.
+         */
+        patch: operations["update_manager_visibility_setting_api_v1_tenant_settings_manager_visibility_patch"];
+        trace?: never;
+    };
     "/api/v1/leads": {
         parameters: {
             query?: never;
@@ -518,6 +542,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organisations/{organisation_id}/reports/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Progress Report
+         * @description REQ-TEN-03's report: response shape is determined by policy, not
+         *     by query parameters — a caller who fails any of the three
+         *     conditions gets an empty `learners` list, never present-and-redacted
+         *     rows (04 §2.3's P2, 03 §9).
+         */
+        get: operations["progress_report_api_v1_organisations__organisation_id__reports_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organisations/{organisation_id}/seats/invite": {
         parameters: {
             query?: never;
@@ -573,6 +620,40 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Courses */
+        get: operations["list_courses_api_v1_courses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/manager-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Manager Visibility */
+        patch: operations["update_manager_visibility_api_v1_courses__course_id__manager_visibility_patch"];
         trace?: never;
     };
     "/api/v1/enrolments": {
@@ -1301,6 +1382,20 @@ export interface components {
              */
             pdf_available: boolean;
         };
+        /** CourseResponse */
+        CourseResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Manager Visibility */
+            manager_visibility: string;
+        };
+        /** CoursesPageResponse */
+        CoursesPageResponse: {
+            /** Items */
+            items: components["schemas"]["CourseResponse"][];
+        };
         /** CreateOrderRequest */
         CreateOrderRequest: {
             /** Currency */
@@ -1498,6 +1593,19 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** LearnerRowResponse */
+        LearnerRowResponse: {
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Status */
+            status: string;
+            /** Completed At */
+            completed_at: string | null;
+            /** Best Quiz Score */
+            best_quiz_score: string | null;
+        };
         /** LessonCompleteResponse */
         LessonCompleteResponse: {
             /** State */
@@ -1563,6 +1671,16 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /** ManagerVisibilitySettingRequest */
+        ManagerVisibilitySettingRequest: {
+            /** Allow Manager Individual Results */
+            allow_manager_individual_results: boolean;
+        };
+        /** ManagerVisibilitySettingResponse */
+        ManagerVisibilitySettingResponse: {
+            /** Allow Manager Individual Results */
+            allow_manager_individual_results: boolean;
         };
         /** MeResponse */
         MeResponse: {
@@ -1791,6 +1909,23 @@ export interface components {
         ProductsPage: {
             /** Items */
             items: components["schemas"]["ProductSummary"][];
+        };
+        /** ProgressReportResponse */
+        ProgressReportResponse: {
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Enrolled */
+            enrolled: number;
+            /** Completed */
+            completed: number;
+            /** Completion Rate */
+            completion_rate: number;
+            /** Individual Visible */
+            individual_visible: boolean;
+            /** Learners */
+            learners: components["schemas"]["LearnerRowResponse"][];
         };
         /** QuizAnswerSubmission */
         QuizAnswerSubmission: {
@@ -2099,6 +2234,11 @@ export interface components {
             certificate_number: string | null;
             /** Lessons */
             lessons: components["schemas"]["TranscriptLessonResponse"][];
+        };
+        /** UpdateManagerVisibilityRequest */
+        UpdateManagerVisibilityRequest: {
+            /** Manager Visibility */
+            manager_visibility: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2523,6 +2663,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeResponse"];
+                };
+            };
+        };
+    };
+    get_manager_visibility_setting_api_v1_tenant_settings_manager_visibility_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagerVisibilitySettingResponse"];
+                };
+            };
+        };
+    };
+    update_manager_visibility_setting_api_v1_tenant_settings_manager_visibility_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagerVisibilitySettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManagerVisibilitySettingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3078,6 +3271,39 @@ export interface operations {
             };
         };
     };
+    progress_report_api_v1_organisations__organisation_id__reports_progress_get: {
+        parameters: {
+            query: {
+                course_id: string;
+            };
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     invite_members_api_v1_organisations__organisation_id__seats_invite_post: {
         parameters: {
             query?: never;
@@ -3168,6 +3394,61 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_courses_api_v1_courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoursesPageResponse"];
+                };
+            };
+        };
+    };
+    update_manager_visibility_api_v1_courses__course_id__manager_visibility_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateManagerVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

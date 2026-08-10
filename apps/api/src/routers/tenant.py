@@ -10,8 +10,11 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
-from src.core.deps import SessionDep, TenantDep
+from src.core.deps import PrincipalDep, SessionDep, TenantDep
+from src.core.errors import NotFound
+from src.models.tenant import Tenant
 from src.models.theme import TenantTheme
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
@@ -43,4 +46,58 @@ async def theme(session: SessionDep, tenant: TenantDep) -> ThemeResponse:
     )
 
 
-__all__ = ["ThemeResponse", "router"]
+class ManagerVisibilitySettingRequest(BaseModel):
+    allow_manager_individual_results: bool
+
+
+class ManagerVisibilitySettingResponse(BaseModel):
+    allow_manager_individual_results: bool
+
+
+@router.get(
+    "/settings/manager-visibility",
+    response_model=ManagerVisibilitySettingResponse,
+    summary="REQ-TEN-03's tenant-level toggle, current value",
+)
+async def get_manager_visibility_setting(
+    principal: PrincipalDep, session: SessionDep
+) -> ManagerVisibilitySettingResponse:
+    principal.require("tenant:manage")
+    tenant = await session.get(Tenant, principal.tenant_id)
+    if tenant is None:  # pragma: no cover - the request already resolved this tenant
+        raise NotFound("No such tenant.")
+    return ManagerVisibilitySettingResponse(
+        allow_manager_individual_results=bool(
+            tenant.settings.get("allow_manager_individual_results", False)
+        )
+    )
+
+
+@router.patch(
+    "/settings/manager-visibility",
+    response_model=ManagerVisibilitySettingResponse,
+    summary="REQ-TEN-03's tenant-level toggle",
+)
+async def update_manager_visibility_setting(
+    body: ManagerVisibilitySettingRequest, principal: PrincipalDep, session: SessionDep
+) -> ManagerVisibilitySettingResponse:
+    """The second of REQ-TEN-03's three conditions — a tenant admin's
+    own toggle, independent of any single course's setting. Merges into
+    the existing `settings` jsonb rather than overwriting it, since
+    other keys may already live there."""
+    principal.require("tenant:manage")
+    tenant = await session.get(Tenant, principal.tenant_id)
+    if tenant is None:  # pragma: no cover - the request already resolved this tenant
+        raise NotFound("No such tenant.")
+    tenant.settings = {
+        **tenant.settings,
+        "allow_manager_individual_results": body.allow_manager_individual_results,
+    }
+    flag_modified(tenant, "settings")
+    await session.flush()
+    return ManagerVisibilitySettingResponse(
+        allow_manager_individual_results=tenant.settings["allow_manager_individual_results"]
+    )
+
+
+__all__ = ["ManagerVisibilitySettingResponse", "ThemeResponse", "router"]

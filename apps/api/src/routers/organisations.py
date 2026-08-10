@@ -32,7 +32,9 @@ from src.schemas.organisations import (
     SeatSummariesResponse,
     SeatSummaryResponse,
 )
+from src.schemas.reports import LearnerRowResponse, ProgressReportResponse
 from src.services import organisations as organisations_service
+from src.services import reports as reports_service
 
 router = APIRouter(tags=["organisations"])
 
@@ -150,6 +152,52 @@ async def list_assigned_seats(
             )
             for row in rows
         ]
+    )
+
+
+@router.get(
+    "/organisations/{organisation_id}/reports/progress", response_model=ProgressReportResponse
+)
+async def progress_report(
+    organisation_id: str,
+    course_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+) -> ProgressReportResponse:
+    """REQ-TEN-03's report: response shape is determined by policy, not
+    by query parameters — a caller who fails any of the three
+    conditions gets an empty `learners` list, never present-and-redacted
+    rows (04 §2.3's P2, 03 §9)."""
+    org_id = _parse_uuid(organisation_id)
+    await organisations_service.require_membership(
+        session, tenant_id=principal.tenant_id, organisation_id=org_id, user_id=principal.user_id
+    )
+    report = await reports_service.get_progress_report(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        principal=principal,
+        organisation_id=org_id,
+        course_id=_parse_uuid(course_id),
+    )
+    return ProgressReportResponse(
+        course_id=str(report.course_id),
+        course_title=report.course_title,
+        enrolled=report.enrolled,
+        completed=report.completed,
+        completion_rate=report.completion_rate,
+        individual_visible=report.individual_visible,
+        learners=[
+            LearnerRowResponse(
+                user_id=str(row.user_id),
+                email=row.email,
+                status=row.status,
+                completed_at=row.completed_at,
+                best_quiz_score=row.best_quiz_score,
+            )
+            for row in report.learners
+        ],
     )
 
 

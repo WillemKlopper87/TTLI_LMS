@@ -38,6 +38,30 @@ interface AssignedSeat {
   granted_at: string;
 }
 
+interface LearnerRow {
+  user_id: string;
+  email: string;
+  status: string;
+  completed_at: string | null;
+  best_quiz_score: string | null;
+}
+
+interface ProgressReport {
+  course_id: string;
+  course_title: string;
+  enrolled: number;
+  completed: number;
+  completion_rate: number;
+  individual_visible: boolean;
+  learners: LearnerRow[];
+}
+
+const STATUS_TAG: Record<string, string> = {
+  completed: "tag--done",
+  in_progress: "tag--live",
+  not_started: "tag--mute",
+};
+
 const RELATIONSHIP_TAG: Record<string, string> = {
   admin: "tag--brand",
   manager: "tag--live",
@@ -73,6 +97,9 @@ export default function OrganisationDetailPage() {
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
   const [holders, setHolders] = useState<AssignedSeat[] | null>(null);
   const [revokeBusy, setRevokeBusy] = useState<string | null>(null);
+
+  const [reportCourseId, setReportCourseId] = useState<string | null>(null);
+  const [report, setReport] = useState<ProgressReport | null>(null);
 
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();
@@ -161,6 +188,20 @@ export default function OrganisationDetailPage() {
     await loadHolders(courseId);
   }
 
+  async function toggleReport(courseId: string) {
+    if (reportCourseId === courseId) {
+      setReportCourseId(null);
+      setReport(null);
+      return;
+    }
+    setReportCourseId(courseId);
+    setReport(null);
+    const resp = await authedFetch(
+      `/api/bff/organisations/${orgId}/reports/progress?course_id=${courseId}`,
+    );
+    if (resp.ok) setReport(await resp.json());
+  }
+
   async function revoke(entitlementId: string) {
     setRevokeBusy(entitlementId);
     const resp = await authedFetch(`/api/bff/organisations/${orgId}/seats/${entitlementId}/revoke`, {
@@ -223,6 +264,7 @@ export default function OrganisationDetailPage() {
                   <th scope="col">Assigned</th>
                   <th scope="col">Available</th>
                   <th scope="col"></th>
+                  <th scope="col"></th>
                 </tr>
               </thead>
               <tbody>
@@ -242,6 +284,15 @@ export default function OrganisationDetailPage() {
                           {expandedCourseId === row.course_id ? "Hide" : "Manage"}
                         </button>
                       ) : null}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => toggleReport(row.course_id)}
+                      >
+                        {reportCourseId === row.course_id ? "Hide report" : "Report"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -279,6 +330,61 @@ export default function OrganisationDetailPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        ) : null}
+
+        {reportCourseId ? (
+          <div className="card mt-3 p-4">
+            <b style={{ fontSize: "0.8125rem" }}>Progress report</b>
+            {report === null ? (
+              <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+                Loading…
+              </p>
+            ) : (
+              <>
+                <div className="mt-2 flex flex-wrap gap-4" style={{ fontSize: "0.8125rem" }}>
+                  <span>
+                    Enrolled <b className="mono">{report.enrolled}</b>
+                  </span>
+                  <span>
+                    Completed <b className="mono">{report.completed}</b>
+                  </span>
+                  <span>
+                    Completion rate{" "}
+                    <b className="mono">{Math.round(report.completion_rate * 100)}%</b>
+                  </span>
+                </div>
+                {report.individual_visible ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {report.learners.map((row) => (
+                      <div
+                        key={row.user_id}
+                        className="flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <span className="mono" style={{ fontSize: "0.8125rem" }}>
+                          {row.email}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {row.best_quiz_score !== null ? (
+                            <span className="mono" style={{ fontSize: "0.75rem" }}>
+                              {row.best_quiz_score}%
+                            </span>
+                          ) : null}
+                          <span className={`tag ${STATUS_TAG[row.status] ?? "tag--mute"}`}>
+                            {row.status.replace("_", " ")}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                    Individual results are hidden — an admin has not enabled manager visibility
+                    for this course.
+                  </p>
+                )}
+              </>
             )}
           </div>
         ) : null}

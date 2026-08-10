@@ -65,6 +65,17 @@ async def _get_membership(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def get_relationship(
+    session: AsyncSession, *, organisation_id: uuid.UUID, user_id: uuid.UUID
+) -> str | None:
+    """A user's standing in an organisation (`member`/`manager`/`admin`),
+    or `None` if they aren't a member at all — the per-organisation grant
+    `services/reports.py` checks for REQ-TEN-03's "explicit permission"
+    condition, since RBAC roles here are tenant-wide, not org-scoped."""
+    membership = await _get_membership(session, organisation_id=organisation_id, user_id=user_id)
+    return membership.relationship if membership is not None else None
+
+
 async def require_membership(
     session: AsyncSession, *, tenant_id: uuid.UUID, organisation_id: uuid.UUID, user_id: uuid.UUID
 ) -> Organisation:
@@ -374,6 +385,7 @@ __all__ = [
     "assign_seat",
     "assign_seats_bulk",
     "create_organisation",
+    "get_relationship",
     "list_assigned_seats",
     "list_members",
     "list_seat_summaries",

@@ -25,6 +25,7 @@ from src.core.redis import dispose_redis, init_redis
 from src.routers import (
     assessment,
     auth,
+    courses,
     credentials,
     guest_access,
     health,
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(guest_access.router, prefix="/api/v1")
     app.include_router(orders.router, prefix="/api/v1")
     app.include_router(organisations.router, prefix="/api/v1")
+    app.include_router(courses.router, prefix="/api/v1")
     app.include_router(learning.router, prefix="/api/v1")
     app.include_router(media.router, prefix="/api/v1")
     app.include_router(assessment.router, prefix="/api/v1")

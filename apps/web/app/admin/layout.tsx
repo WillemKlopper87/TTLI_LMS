@@ -12,13 +12,15 @@ import { AdminContext, type Me } from "./admin-context";
 
 // The Phase 1 "empty admin shell": navigation that exists but leads nowhere
 // yet, and proof of who is signed in. Sections fill in with their phase —
-// "Leads" (Phase 2) and "Payments" (Phase 3, REQ-PAY-03's finance queue)
-// are the first two that do.
+// "Leads" (Phase 2), "Payments" (Phase 3, REQ-PAY-03's finance queue) and
+// "Settings" (Phase 5 sprint 2, REQ-TEN-03's manager-visibility toggles)
+// are the ones that do so far.
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Payments", href: "/admin/payments" },
+  { label: "Settings", href: "/admin/settings" },
 ];
-const INERT_SECTIONS = ["Courses", "Learners", "Reports", "Settings"];
+const INERT_SECTIONS = ["Courses", "Learners", "Reports"];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();

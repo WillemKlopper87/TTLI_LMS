@@ -1298,6 +1298,73 @@ the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31405
 passing in a clean environment (confirms the `0016` downgrade fix
 holds outside the local dev database it was diagnosed against).
 
+**Nineteenth pass: Phase 5 sprint 2 — manager visibility, REQ-TEN-03's
+demo target.** `0017` adds `team:reports:view_individual`, granted only
+to `admin`/`super_admin` — a platform-staff override, not the actual
+mechanism an organisation's own manager uses. That distinction is the
+sprint's real design decision: RBAC roles in this codebase are
+tenant-wide, not per-organisation, so granting the "explicit
+permission" REQ-TEN-03 requires through `role_assignments` would let a
+manager in one organisation see another organisation's individual
+results — precisely the leak the ABAC condition
+`manager.organisation_id = learner.organisation_id` exists to close.
+An organisation's own manager instead satisfies that condition through
+`organisation_members.relationship` (`manager`/`admin`, from 0016) —
+already the right per-organisation grant mechanism, just reused rather
+than duplicated. `services/reports.py::get_progress_report` checks all
+three at once: `courses.manager_visibility = individual_enabled`,
+`tenants.settings.allow_manager_individual_results = true` (the
+existing `settings` jsonb column, no migration needed for that half),
+and (RBAC permission OR org relationship in
+manager/admin). Aggregate stats always return; individual rows are
+**absent**, never present-and-redacted, on any single failing
+condition (03 §9's exact wording) — a redacted row would still leak
+that a person exists and didn't complete something, the precise
+bullying-enabling gap REQ-TEN-03 exists to close.
+
+Two narrow, single-purpose endpoints were added alongside the report
+endpoint, deliberately not a general course-authoring or
+tenant-settings surface: `PATCH /courses/{id}/manager-visibility`
+(`course:edit`-gated) and `GET/PATCH /tenant/settings/manager-
+visibility` (`tenant:manage`-gated, merges into the existing settings
+jsonb via `flag_modified` rather than overwriting it). `GET /courses`
+was added too, once the frontend build made clear the admin toggle UI
+had no way to list courses to toggle — same "narrow, not general"
+discipline as the endpoint it supports, `course:view`-gated, no
+create/update/delete.
+
+Migration round-trip was verified *immediately* after writing `0017`
+(`downgrade -1` → `upgrade head` → `alembic check`) rather than
+discovered broken later — applying sprint 1's own lesson before it
+could repeat.
+
+Frontend: `/admin/settings` (the tenant-wide checkbox, a per-course
+visibility dropdown — reuses the existing plain-CSS-class system, no
+new components), and a "Report" panel added to the existing
+`/organisations/[id]` seats table (a "Report" button per course
+showing aggregate stats always, individual rows only when the API
+says `individual_visible: true`, and an explicit "an admin has not
+enabled manager visibility for this course" message otherwise — never
+a client-side guess about what should be visible).
+
+Full gate sweep clean: `ruff check`/`format --check` (134 files),
+`mypy src` (95 files, strict), `pytest -q -rs` run twice for
+determinism (173 passed, 0 skipped — up from 167), `apps/web`
+`typecheck`/`build` clean (22 routes, +1). Live smoke test seeded a
+third real user (a platform `super_admin`, distinct from the org's own
+admin and from finance) via the actual service layer, then drove the
+exact demo scenario through the real BFF: report showed
+`individual_visible: false` and an empty `learners` array before
+either toggle → platform admin flipped the course toggle via `PATCH
+/courses/{id}/manager-visibility` → flipped the tenant toggle via
+`PATCH /tenant/settings/manager-visibility` → the same report, same
+organisation, now returned the real invited employee's email and
+`status: "not_started"`. Both new page routes (`/admin/settings`,
+the extended `/organisations/[id]`) confirmed rendering with no
+console/server errors. Toggles were reset back to their safe defaults
+after the smoke test so the dev database doesn't carry stray state
+into the next session.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
