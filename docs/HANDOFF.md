@@ -1193,6 +1193,19 @@ container's own removal of Mailhog works, not just the local compose
 file — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31394330419
 (quality 3m37s, web 55s).
 
+**Addendum, same session, next message:** local SMTP delivery was worth
+keeping after all — reinstated, but as Mailpit (the already-verified
+fix above), never as the vulnerable `mailhog/mailhog` image. Restored:
+the compose service, the CI service container, and
+`test_send_email_job_delivers_via_smtp` (identical to what was
+verified working before removal — same `/api/v1` shape, same
+assertions). Re-ran the test against a live Mailpit container to
+confirm the restoration actually works rather than trusting the diff:
+4/4 tests in `tests/test_workers.py` pass. Net position after both
+changes: 159 tests (back up from 158), the CVEs from the original
+image are still gone, nothing about `services/email.py` changed at any
+point in either direction.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

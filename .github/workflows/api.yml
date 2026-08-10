@@ -36,6 +36,13 @@ jobs:
           --health-timeout 3s
           --health-retries 12
 
+      # Mailpit (infra/docker-compose.yml's docstring has the Trivy-scan
+      # reasoning for why it's not mailhog/mailhog) — no health-cmd, no
+      # launch args, so it starts serving as soon as the container is up.
+      mailhog:
+        image: axllent/mailpit:v1.24
+        ports: ["1145:1025", "8145:8025"]
+
       # No health-cmd: the image ships no CLI to probe with, and it needs
       # no launch args, so it qualifies as a real CI service — unlike
       # MinIO. --health-retries is high because first boot downloads the

@@ -16,6 +16,8 @@ Audience: developers and site administrators.
 | Redis | `redis:7-alpine` | **6399** | 6379 taken; worksorder 6389, collab 6380 |
 | MinIO API | `minio/minio` | **9140** | 9000 taken; worksorder 9110, collab 9002 |
 | MinIO console | | **9141** | |
+| Mailpit SMTP | `axllent/mailpit` | **1145** | worksorder 1125 |
+| Mailpit web | | **8145** | worksorder 8125 |
 | ClamAV (clamd) | `clamav/clamav-debian:stable` | **3410** | 3310 is the clamd default |
 | API | local | **8010** | |
 | Web | local | **3010** | 3000 is taken by several projects |

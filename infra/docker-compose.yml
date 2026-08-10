@@ -1,5 +1,5 @@
 # Ports are deliberately non-default. Other projects on this machine already own
-# 5432/6379/9000 — see README.md for the full reservation table.
+# 5432/6379/9000/1025 — see README.md for the full reservation table.
 name: ttli
 
 services:
@@ -52,6 +52,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  # Mailpit — a local SMTP catcher for magic-link/password-reset/guest
+  # emails in dev and CI. Not mailhog/mailhog: a Trivy image scan found
+  # 109 CRITICAL/1250 HIGH CVEs in that image (years-unmaintained
+  # upstream, EOL Alpine 3.12 base — docs/STATUS.md §10 has the full
+  # scan). Mailpit is the actively-maintained successor, pinned to a
+  # specific tag rather than `:latest`. Its own API is `/api/v1`, not
+  # MailHog's `/api/v2` — tests/test_workers.py was written against the
+  # real, verified response shape (sent a real message and inspected the
+  # actual payload), not assumed MailHog-compatible.
+  mailhog:
+    image: axllent/mailpit:v1.24
+    container_name: ttli-mailhog
+    ports:
+      - "1145:1025"
+      - "8145:8025"
 
   # Virus scanning before an upload becomes readable (04 §3, REQ-BYPASS-08)
   # — src/services/antivirus.py talks to clamd over this port. First boot
