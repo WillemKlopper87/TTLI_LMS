@@ -11,10 +11,17 @@
 # that touch how this project uses them (checked uvicorn's own
 # setup_event_loop/reload_delay changes specifically since those move the
 # most; this project never subclasses uvicorn.Config/Server, only invokes
-# it via the CLI, so neither applies). redis stays pinned here — its
-# client bump is paired with the Redis server major-version bump instead
-# (Sprints C/F), since redis-py 8 changes RESP3 becomes the default wire
-# protocol and needs auditing real call sites, not just a number change.
+# it via the CLI, so neither applies). redis stays pinned <6 here on
+# purpose, not just conservatively — `arq` (this project's job queue,
+# below) declares `redis[hiredis]<6,>=4.2.0` as a hard dependency, and
+# arq is itself in maintenance-only mode with no newer release to lift
+# that cap. Confirmed by actually trying `pip install redis==8.1.0`:
+# pip's resolver reports the conflict outright. The Redis *server* was
+# still bumped to 8 (infra/docker-compose.yml) — safe on its own since
+# RESP3 is opt-in per-client, so this pinned RESP2 client is never
+# forced onto it. Lifting this pin means replacing arq first (its own
+# maintainers point to SAQ or Streaq), a real migration, not a version
+# bump — tracked as its own future item, not silently deferred.
 fastapi==0.141.1
 uvicorn[standard]==0.52.1
 sqlalchemy[asyncio]==2.0.51

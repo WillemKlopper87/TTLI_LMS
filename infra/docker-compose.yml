@@ -21,8 +21,14 @@ services:
       timeout: 3s
       retries: 12
 
+  # Dependency-upgrade sprint F: bumped from redis:7-alpine. Safe on its
+  # own, decoupled from the redis-py client (staying pinned <6, see
+  # requirements.txt's own comment) — RESP3 is opt-in via HELLO 3, so a
+  # RESP2 client is never forced onto it; Redis 8 serves both at once.
+  # Also relicensed back to AGPLv3 with the 8.0 GA, so the SSPL/RSAL
+  # concern that would once have blocked this doesn't apply anymore.
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: ttli-redis
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     ports:

@@ -1634,6 +1634,52 @@ has no `MINIO_ROOT_USER`-style env-var bootstrap (needs its own
 distroless image with no shell, so the current `mc ready local`
 healthcheck can't carry over as-is.
 
+Sprint B (the low-risk Python patch/minor batch — SQLAlchemy, alembic,
+uvicorn, pydantic, pydantic-settings, argon2-cffi, structlog, asyncpg,
+psycopg2-binary, ruff, pytest-cov) shipped clean but surfaced two real
+bugs that a version-number bump alone wouldn't predict, both caught by
+CI rather than local verification the first time round — worth reading
+STATUS.md's Sprint B bullet in full, but the shape of both is the same
+lesson: **a bump that touches the schema/OpenAPI toolchain needs
+`alembic check` and `api-client` regeneration run explicitly, not
+assumed covered by the general gate sweep.** First, alembic 1.19's
+improved `checkconstraint_byname` autogenerate comparator correctly
+detected that `SurveyResponse.ck_survey_responses_one_subject` (created
+via raw `op.execute()` SQL in migration `0013`) was never declared in
+the model's `__table_args__` — a real gap that existed since `0013`
+shipped, invisible to the older alembic, fixed by declaring the
+`CheckConstraint` to match `ConsentRecord`'s already-correct handling
+of the identical pattern. Second, pydantic 2.13.4 changed how
+`dict[str, object]` JSONB fields render in the generated OpenAPI schema
+(`Record<string, never>` → an open `{[key: string]: unknown}` index
+signature), which broke the `api-client drift` CI gate until
+`openapi.json`/`schema.gen.ts` were regenerated and `apps/web` re-typechecked/rebuilt.
+
+Sprint C (the redis-py client bump, originally scoped together with
+Sprint F as one "Redis major version" unit) turned out to be genuinely
+blocked, not just risky, and had to be split off: `arq==0.28.0` (this
+project's job queue) hard-pins `redis[hiredis]<6,>=4.2.0`, confirmed by
+actually running `pip install redis==8.1.0` locally rather than reading
+release notes — pip's resolver reported the conflict outright. `arq`
+itself is in maintenance-only mode with no newer release to lift that
+cap; its own maintainers point to SAQ or Streaq as successors. Lifting
+this pin is a real migration (replacing the job queue library across
+four job types), not a version bump, so it's deferred as its own future
+decision rather than forced or silently folded into this sprint.
+
+Sprint F (Redis server 7→8 alone, decoupled from the now-blocked Sprint
+C) shipped clean: `infra/docker-compose.yml` and
+`.github/workflows/api.yml` both bumped to `redis:8-alpine`. Safe
+without the client bump because RESP3 is opt-in per-client via `HELLO
+3` — a RESP2 client (redis-py 5.x, staying pinned) is never forced onto
+it, Redis 8 serves both protocols at once. Verified live: recreated the
+container, confirmed `redis_version:8.10.0` via `redis-cli info
+server`, then ran the full 187-test suite twice against it — the four
+real call sites that talk to Redis (`core/tenancy.py`'s tenant cache,
+`routers/auth.py`'s MFA-replay claim, `services/media/playback.py`'s
+session tracking, `services/rate_limit.py`) are all exercised by that
+suite over the real container, not mocked.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

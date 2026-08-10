@@ -28,7 +28,7 @@ jobs:
           --health-retries 12
 
       redis:
-        image: redis:7-alpine
+        image: redis:8-alpine
         ports: ["6399:6379"]
         options: >-
           --health-cmd "redis-cli ping"
