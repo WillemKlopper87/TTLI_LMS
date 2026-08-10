@@ -99,14 +99,14 @@ export default function LeadsScreen() {
           <table className="data">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Company</th>
-                <th>Message</th>
-                <th>Source</th>
-                <th>Stage</th>
-                <th>Score</th>
-                <th>Captured</th>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Company</th>
+                <th scope="col">Message</th>
+                <th scope="col">Source</th>
+                <th scope="col">Stage</th>
+                <th scope="col">Score</th>
+                <th scope="col">Captured</th>
               </tr>
             </thead>
             <tbody>

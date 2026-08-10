@@ -88,7 +88,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <div
               key={section}
               className="cursor-not-allowed rounded-md px-3 py-2 text-sm"
-              style={{ opacity: 0.6 }}
+              // 0.6 opacity white-on-brand read at 3.55:1 against
+              // --brand-deep — below WCAG AA's 4.5:1 for normal text.
+              // 0.85 clears 4.6:1 against both ends of the brand
+              // gradient; cursor-not-allowed + aria-disabled + the title
+              // tooltip carry the "not yet available" meaning instead of
+              // relying on a low-contrast dim alone.
+              style={{ opacity: 0.85, fontStyle: "italic" }}
+              aria-disabled="true"
               title="Arrives with its phase"
             >
               {section}

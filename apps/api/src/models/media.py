@@ -50,6 +50,10 @@ class VideoAsset(Base, TimestampMixin):
         PGUUID(as_uuid=True), ForeignKey("transcode_jobs.id", ondelete="SET NULL"), nullable=True
     )
     playlist_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # WebVTT, stored under this asset's own video-assets/{id}/ prefix and
+    # served through the same signed playback token as HLS segments —
+    # see 0015's migration docstring.
+    caption_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Per rung: height, video kbps, maxrate, bufsize (02 §5.4) — a snapshot
     # of the ladder actually used, since LADDER in services/media/ffmpeg.py
     # could change between this asset's transcode and a later one.

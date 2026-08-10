@@ -1,6 +1,6 @@
 # STATUS
 
-**Updated:** 2026-08-10 (Phase 4 sprint 4 — certificates, badges, public verification — built and closed out)
+**Updated:** 2026-08-10 (Phase 4.5 — PWA and WCAG 2.1 AA — built and closed out; Phase 4 now fully closed)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
@@ -17,33 +17,36 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
 | 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, a real marketing landing page, a working contact form and a dedicated book page all built. Only Podcasts/"Cultivate with Intent" remain, blocked on missing content | ~70% |
 | 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
-| 4 | Core LMS, anti-bypass, credentials | Sprints 1–4: content model, the completion rule engine, enrolments, a real ported VOD transcode pipeline with signed HLS playback and heartbeat validation, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, and certificates/badges with a real PDF+QR, public verification, and LinkedIn sharing. Only course/lesson/template *authoring UI* remains | ~90% |
-| 4.5 | PWA and accessibility | Not started | 0% |
+| 4 | Core LMS, anti-bypass, credentials | Sprints 1–4 plus REQ-LMS-06/07 (transcript, captions), picked up in the 4.5 pass. Content model, the completion rule engine, enrolments, a real ported VOD transcode pipeline with signed HLS playback, heartbeat validation and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real PDF+QR/public verification/LinkedIn sharing, and a printable transcript. Only course/lesson/template *authoring UI* remains | ~95% |
+| 4.5 | PWA and accessibility | Installable PWA (manifest, icons, service worker, offline shell), a real WCAG 2.1 AA contrast/labels/status-messages pass across `apps/web`. Push notifications deliberately deferred — no VAPID/content decision exists, same class of gap as Phase 3's payment-gateway sandbox creds | ~90% |
 | 5 | Corporate, workshops, marketing | Not started | 0% |
 | 6 | AI insights | Not started | 0% |
 | 7 | Hardening and cloud | Not started | 0% |
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 121 files |
+| `ruff check` / `ruff format --check` | **PASS** — 122 files |
 | `mypy src` (strict) | **PASS** — 87 source files |
-| `pytest` | **PASS** — 157 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
-| `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities, including `reportlab`/`qrcode`/`Pillow` (new this sprint) |
+| `pytest` | **PASS** — 159 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
+| `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
-| `alembic upgrade head` | **PASS** — at `0014` |
-| Migration round-trip | **PASS** — every revision downgrades and re-upgrades, including a real design correction to `0014` caught and fixed before commit (see §7 sprint 4) |
+| `alembic upgrade head` | **PASS** — at `0015` |
+| Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
-| Real ffmpeg transcode → real HLS ladder → real playback through the BFF | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth pass) |
+| Real ffmpeg transcode → real HLS ladder → real playback through the BFF, incl. WebVTT captions | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth and latest passes) |
 | Real quiz auto-grading, anonymous-survey pseudonymisation, virus-scanned assignment submissions | **PASS** — `tests/test_assessment.py`; live smoke test end to end (see HANDOFF.md's Fourteenth pass) |
-| Real certificate PDF+QR generation, public verification, revocation, badge/certificate visibility, LinkedIn sharing | **PASS** — `tests/test_credentials.py`; live smoke test through the actual running dev servers and the real BFF, including the `/verify/[token]` page itself (see HANDOFF.md's latest pass) |
+| Real certificate PDF+QR generation, public verification, revocation, badge/certificate visibility, LinkedIn sharing | **PASS** — `tests/test_credentials.py`; live smoke test through the actual running dev servers and the real BFF, including the `/verify/[token]` page itself (see HANDOFF.md's Fifteenth pass) |
+| Real printable transcript, owner-only, completed-lessons-only | **PASS** — `tests/test_learning.py`; live smoke test through the real BFF and the actual `/learn/[id]/transcript` page (see HANDOFF.md's latest pass) |
+| WCAG 2.1 AA contrast audit | **PASS** — every text/background pair in `globals.css` computed against the real WCAG relative-luminance formula (not eyeballed); two failures found and fixed (`--faint` at 3.1:1, `--live` tag at 3.8:1 — both now 4.5:1+ in both themes) |
+| PWA installability | **PASS** — manifest (dynamic, per-tenant `theme_color`/name via `app/manifest.ts`), 192/512/maskable icons, service worker with a real offline-shell fallback — verified live: `/manifest.webmanifest`, `/sw.js`, `/offline.html` all serve correctly, `<link rel="manifest">` and `theme-color` confirmed in rendered HTML |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31375456707](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31375456707) (quality 3m19s, web 57s) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | Pending re-run after this pass's push — updated here once green |
 
-**Headline:** 157 tests (0 skipped), 56 endpoints, 52 tables (events partitioned monthly ×14), 14 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 16 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, and certificates/badges with a real reportlab-rendered PDF, an embedded scannable QR code, encrypted+blind-indexed public verification, and LinkedIn sharing.
+**Headline:** 159 tests (0 skipped), 58 endpoints, 52 tables (events partitioned monthly ×14), 15 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 17 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, an installable PWA with a real offline shell, and a WCAG 2.1 AA-verified colour system.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -88,10 +91,14 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Quizzes (auto-graded + manually-graded), anonymous/identified surveys, virus-scanned assignments, all wired into the completion rule engine | `0013`, `src/services/{quiz,survey,assignment}.py`, `/quizzes`, `/surveys`, `/assignments` and their sub-routes | 9 tests in `tests/test_assessment.py`; live smoke test — real quiz with mixed auto/manual grading, anonymous survey response verified `user_id IS NULL` at the database level, infected assignment submission refused, clean one approved |
 | Certificates and badges: real PDF (reportlab) with an embedded scannable QR code, encrypted+blind-indexed verification token (reconstructable, unlike a hashed magic-link token), public verification page gated on learner-chosen visibility, revocation with audit trail, LinkedIn "Add to Certification" sharing | `0014`, `src/services/credentials.py`, `/enrolments/{id}/credentials`, `/certificates/{id}/pdf`, `/verify/{token}`, `/certificates/{id}/revoke`, `/certificates/{id}` (PATCH), `/badges/{id}` (PATCH), `/badges/{id}/share/linkedin` | 5 tests in `tests/test_credentials.py`; live smoke test through the actual running dev servers over the real BFF — course completion issuing a real certificate+badge, a real downloaded PDF confirmed to start with `%PDF`, visibility toggled from private to public through the exact `PATCH` calls the frontend makes, the public `/verify/[token]` page itself returning 200 |
 | Real `apps/web` UI: `credentials-panel.tsx` (certificate/badge cards, visibility selectors, PDF download, LinkedIn share) wired into `/learn/[enrolmentId]`; the public, unauthenticated `/verify/[token]` page (REQ-CRED-03) | `apps/web/app/learn/[enrolmentId]/credentials-panel.tsx`, `apps/web/app/verify/[token]/page.tsx` | `typecheck`/`build` clean; live smoke test confirmed the BFF proxy (extended to forward `PATCH`) round-trips both visibility toggles and the `/verify/[token]` route renders |
+| WebVTT captions (REQ-LMS-07): human-authored upload, served through the same signed playback token as HLS segments — no new entitlement path | `0015`, `/video-assets/{id}/captions`, `services/media/playback.py` (`.vtt` content-type) | 1 test in `tests/test_media.py`; live smoke test — real ffmpeg transcode, real caption upload, `has_captions`/`captions_url` confirmed through the real BFF |
+| Printable transcript (REQ-LMS-06): completed lessons only, real `completed_at` timestamps, owner-only | `src/services/enrolment.py::get_transcript`, `/enrolments/{id}/transcript`, `apps/web/app/learn/[enrolmentId]/transcript/page.tsx` (browser print, not a generated PDF) | 1 test in `tests/test_learning.py`; live smoke test — real course completion, transcript empty before and fully populated after, the actual print page returning 200 |
+| WCAG 2.1 AA: computed contrast audit (not eyeballed) found and fixed two real palette failures; form labels added where only a placeholder existed (login, quiz/survey free-text, assignment upload, admin reject-reason); `role="alert"` on 16 dynamic status messages; table header `scope`; heading-hierarchy fix | `apps/web/app/globals.css`, `login-form.tsx`, `quiz-player.tsx`, `survey-form.tsx`, `assignment-upload.tsx`, `admin/payments/page.tsx`, `admin/leads/page.tsx`, `catalogue/page.tsx` | Contrast ratios verified with the actual WCAG relative-luminance formula; `typecheck`/`build` clean |
+| Installable PWA: dynamic per-tenant manifest, 192/512/maskable icons generated from the real TTLI brand mark, a service worker with a genuine offline-shell fallback (not fabricated offline data sync) | `apps/web/app/manifest.ts`, `register-sw.tsx`, `public/sw.js`, `public/offline.html` | Live-verified against the running dev server: `/manifest.webmanifest` resolves the real tenant theme, `/sw.js` and `/offline.html` serve correctly, `<link rel="manifest">`/`theme-color` confirmed in rendered HTML |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /enrolments/{id}/credentials` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `GET /surveys/{id}` · `GET /certificates/{id}/pdf` · `GET /verify/{token}` · `GET /badges/{id}/share/linkedin` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` · `POST /quizzes` · `POST /quizzes/{id}/questions` · `POST /lessons/{id}/quiz` · `POST /quizzes/{id}/attempts` · `POST /quiz-attempts/{id}/submit` · `POST /quiz-answers/{id}/grade` · `POST /surveys` · `POST /surveys/{id}/questions` · `POST /lessons/{id}/survey` · `POST /surveys/{id}/responses` · `POST /assignments` · `POST /lessons/{id}/assignment` · `POST /assignments/{id}/submissions` · `POST /assignment-submissions/{id}/review` · `POST /certificates/{id}/revoke` · `PATCH /certificates/{id}` · `PATCH /badges/{id}` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /enrolments/{id}/credentials` · `GET /enrolments/{id}/transcript` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `GET /surveys/{id}` · `GET /certificates/{id}/pdf` · `GET /verify/{token}` · `GET /badges/{id}/share/linkedin` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` · `POST /video-assets/{id}/captions` · `POST /quizzes` · `POST /quizzes/{id}/questions` · `POST /lessons/{id}/quiz` · `POST /quizzes/{id}/attempts` · `POST /quiz-attempts/{id}/submit` · `POST /quiz-answers/{id}/grade` · `POST /surveys` · `POST /surveys/{id}/questions` · `POST /lessons/{id}/survey` · `POST /surveys/{id}/responses` · `POST /assignments` · `POST /lessons/{id}/assignment` · `POST /assignments/{id}/submissions` · `POST /assignment-submissions/{id}/review` · `POST /certificates/{id}/revoke` · `PATCH /certificates/{id}` · `PATCH /badges/{id}` (non-health routes under `/api/v1`)
 
 ---
 
@@ -219,7 +226,7 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 
 ---
 
-## 7. Phase 4 — Core LMS, anti-bypass, credentials (~55%)
+## 7. Phase 4 — Core LMS, anti-bypass, credentials (~95%)
 
 Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat validation, the server-side completion rule engine, quizzes, surveys with per-survey anonymity, certificates with public verification, badges with LinkedIn sharing.
 
@@ -268,6 +275,12 @@ Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat v
 - [x] `GET /badges/{id}/share/linkedin` — LinkedIn's documented `profile/add` deep-link query parameters, reconstructing the exact verification URL embedded in the original PDF's QR code from the encrypted token, never a re-derived one
 - [x] Real `apps/web` UI: `credentials-panel.tsx` on `/learn/[enrolmentId]` (certificate/badge cards, visibility selectors, PDF download, LinkedIn share), and the public `/verify/[token]` page (REQ-CRED-03) — required extending the BFF proxy to forward `PATCH`, which it didn't before this sprint
 
+### Done — REQ-LMS-06/07: printable transcript, WebVTT captions (picked up during the 4.5 pass)
+
+- [x] `GET /enrolments/{id}/transcript` (REQ-LMS-06) — completed lessons only, each with the real `completed_at` the rule engine assigned, not the full progress checklist `GET /enrolments/{id}/progress` already serves. `identity.py` gained a `display_name()` helper (full name, else email fallback) refactored out of `credentials.py`'s issuance code and reused here — the same learner-name resolution, not a second implementation that could drift
+- [x] `video_assets.caption_object_key` (`0015`) + `POST /video-assets/{id}/captions` (REQ-LMS-07) — human-authored WebVTT upload, not automatic transcription (no ASR pipeline exists in this project, and fabricating caption text for content nobody wrote would be worse than no captions). Served through the exact same signed playback token as HLS segments, not a new entitlement path — `<track kind="captions">` in `video-player.tsx`
+- [x] Real `apps/web` UI: `/learn/[enrolmentId]/transcript` (browser print via `window.print()` and a real `@media print` rule, not a generated PDF — the certificate already owns that treatment)
+
 ### Outstanding — the rest of Phase 4
 
 - [ ] Course/lesson/template authoring UI — content, question banks and now certificate/badge templates are migration-seeded or wired via direct SQL in tests, same precedent as Phase 3 sprint 1's seeded product; no authoring *screen* exists yet for any of them, though the API endpoints a real one would call now do (learning content) or don't yet (templates — no `POST /certificate-templates` exists, matching REQ-CRED-01's "no direct issuance endpoint" reasoning doesn't apply to templates themselves, this is a genuine gap, not a deliberate omission)
@@ -276,18 +289,45 @@ Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat v
 
 ---
 
-## 8. Phases 4.5–7 (0%)
+## 8. Phase 4.5 — PWA and accessibility (~90%)
+
+Installable PWA, offline shell, WCAG 2.1 AA audit and remediation (01 §5.9/§6.6). Push notifications are the one piece deliberately not built.
+
+### Done
+
+- [x] Dynamic web app manifest (`apps/web/app/manifest.ts`, not a static `public/manifest.json`) — `theme_color`/`name`/`short_name` resolve the *signed-in tenant's* own theme via the same `getTheme()` server call `layout.tsx` already uses, so a white-label tenant installs under its own identity, not TTLI's hardcoded one. `short_name` is computed (initials when the tenant name is too long for a home-screen label) since the API has no dedicated short-name field
+- [x] Icons generated from the real TTLI brand mark (`public/brand/ttli-mark.png`), not a placeholder — 192×192 and 512×512 `any`-purpose, plus a 512×512 `maskable` variant with the mark kept inside the ~80% safe zone every OS mask (circle, squircle, rounded-square) crops to
+- [x] Service worker (`public/sw.js`) with a genuine offline-shell fallback, not fabricated offline data sync — this platform's content is per-tenant and server-rendered from a live API, so caching course/lesson data would need background sync and conflict resolution this project has no infrastructure for. What it honestly provides: network-first navigation, falling back to a real branded `offline.html` (not the browser's default connection-error page) only when the network request itself fails
+- [x] iOS-specific PWA meta tags (`apple-mobile-web-app-capable`, `apple-touch-icon`) — iOS Safari doesn't read the web manifest for "Add to Home Screen"
+- [x] WCAG 2.1 AA contrast audit — every color pair in `globals.css` computed against the actual WCAG relative-luminance formula (`(L1+0.05)/(L2+0.05)`), not eyeballed. Two real failures found: `--faint` at 3.1:1 on white (used pervasively for timestamps/helper text/loading states, all normal-weight text well under the "large text" threshold) and `.tag--live`'s color at 3.8:1 against its own wash (tags render at 9px, nowhere near large-text size). Both corrected to 4.5:1+ in both light and dark mode, verified against every surface each token actually appears on (not just one background)
+- [x] Missing accessible names fixed where a `placeholder` was standing in for a `<label>` (WCAG 1.3.1/3.3.2/4.1.2) — most notably the login form's email/password/MFA-code inputs, the single most important form in the app, which had none. Also fixed: the admin payment-rejection reason input, quiz/survey free-text answers, the assignment file picker. Login inputs also gained `autoComplete` values (`email`/`current-password`/`one-time-code` — WCAG 1.3.5)
+- [x] `role="alert"` added to 16 dynamic status/error messages across every form and async action in `apps/web` (WCAG 2.1's SC 4.1.3, Status Messages) — screen readers now announce a failed submit or a rejected upload without the user needing to already be focused on that element
+- [x] Table header `scope="col"` added (`admin/leads/page.tsx`'s existing table, and the new transcript table) — WCAG 1.3.1
+- [x] Heading-hierarchy fix on `/catalogue` — product cards were `<h3>` directly under the page's `<h1>`, skipping `<h2>` entirely
+- [x] Admin sidebar's "coming soon" nav items read at 3.55:1 against the brand gradient's lighter end (opacity-based dimming) — raised to a verified 4.5:1+, with italics added as a non-opacity-only way to keep them visually distinct from real links
+- [x] REQ-LMS-06/07 (transcript, captions) — real accessibility features in their own right, credited under Phase 4 above since that's where their requirement IDs live, but built in this pass
+
+### Outstanding
+
+- [ ] Push notifications ("where supported", 01 §5.9) — deliberately not built. No VAPID key infrastructure exists, and more importantly no one has decided what a push notification would even say (lesson reminder? certificate issued? payment approved?) — building the wiring without that decision would be the same mistake as inventing UI copy nobody wrote. Same class of gap as Phase 3's Payfast/Netcash sandbox credentials: a real external/product decision, not an engineering shortcut
+- [ ] No automated accessibility test (axe-core or similar) wired into CI yet — this pass's audit was a real, computed, one-time pass, not a regression gate. A future change to `globals.css` could reintroduce a contrast failure silently
+- [ ] No browser automation available this session to visually verify screen-reader behaviour or keyboard navigation end to end — the fixes are structurally correct (verified via computed contrast ratios, HTML output inspection, and WCAG success-criterion citations) but were not confirmed with an actual screen reader
+
+**Demo target:** installable app; WCAG 2.1 AA audit passed. **Met**, with the push-notification caveat above — verified live against the running dev server: the manifest resolves the real tenant's theme (confirmed the exact JSON payload), the service worker and offline page both serve correctly, and `<link rel="manifest">`/`theme-color` are present in the actual rendered HTML, not just the source. The accessibility side was verified by computation (contrast ratios) and inspection (HTML/ARIA output), not by a live assistive-technology session — see Outstanding.
+
+---
+
+## 9. Phases 5–7 (0%)
 
 | Phase | Demo target |
 |---|---|
-| 4.5 PWA and accessibility | Installable app; WCAG 2.1 AA audit passed |
 | 5 Corporate and workshops | A manager who cannot see individual scores until an admin enables it for one course |
 | 6 AI insights | 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log |
 | 7 Hardening and cloud | Load test at 100 concurrent; restore drill completed; POPIA matrix delivered |
 
 ---
 
-## 9. Known gaps in what is already written
+## 10. Known gaps in what is already written
 
 ### Closed since the source material
 
@@ -322,7 +362,7 @@ Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat v
 
 ---
 
-## 10. Recommended next three steps
+## 11. Recommended next three steps
 
 1. **Put the decision register to the customer.** All ten items in [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off), as one document, for signature. Nothing else can start.
 2. **Get the content inventory.** Video count, total duration, source formats. It feeds the transcode sizing *and* the cost model, and the cost model gates every price in [05_COMMERCIAL.md](05_COMMERCIAL.md).
@@ -338,7 +378,7 @@ git rev-parse --show-toplevel             # repository isolation
 
 ---
 
-## 11. Schedule reality
+## 12. Schedule reality
 
 The source material claims 9–14 months for the full ecosystem while its own gate durations sum to 52–83 weeks. Neither figure survived review.
 

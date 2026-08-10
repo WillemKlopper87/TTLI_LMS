@@ -9,6 +9,7 @@ class VideoAssetResponse(BaseModel):
     id: str
     state: str
     duration_seconds: int | None
+    has_captions: bool = False
 
 
 class WatermarkPayload(BaseModel):
@@ -18,6 +19,7 @@ class WatermarkPayload(BaseModel):
 
 class PlaybackResponse(BaseModel):
     playlist_url: str
+    captions_url: str | None = None
     expires_at: datetime
     watermark: WatermarkPayload
 

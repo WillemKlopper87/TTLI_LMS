@@ -57,7 +57,7 @@ export default function VerifyPage() {
       </div>
 
       {error ? (
-        <p className="card text-center" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>
+        <p role="alert" className="card text-center" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>
           {error}
         </p>
       ) : null}

@@ -232,7 +232,7 @@ export function CredentialsPanel({ enrolmentId }: { enrolmentId: string }) {
         </div>
       ) : null}
 
-      {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
     </section>
   );
 }

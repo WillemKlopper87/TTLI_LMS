@@ -135,6 +135,7 @@ export default function PaymentsScreen() {
                   className="input"
                   style={{ maxWidth: "16rem" }}
                   placeholder="Reason for rejection"
+                  aria-label={`Reason for rejecting payment ${payment.payment_id}`}
                   value={reason[payment.payment_id] ?? ""}
                   onChange={(e) => setReason({ ...reason, [payment.payment_id]: e.target.value })}
                 />

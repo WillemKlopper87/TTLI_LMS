@@ -444,6 +444,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/enrolments/{enrolment_id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A printable transcript of completed lessons (REQ-LMS-06) */
+        get: operations["get_transcript_api_v1_enrolments__enrolment_id__transcript_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lessons/{lesson_id}/start": {
         parameters: {
             query?: never;
@@ -506,6 +523,23 @@ export interface paths {
         put?: never;
         /** Upload a source video for transcoding */
         post: operations["upload_video_asset_api_v1_video_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/video-assets/{video_asset_id}/captions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a WebVTT caption track for a video asset (REQ-LMS-07) */
+        post: operations["upload_captions_api_v1_video_assets__video_asset_id__captions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1019,6 +1053,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_captions_api_v1_video_assets__video_asset_id__captions_post */
+        Body_upload_captions_api_v1_video_assets__video_asset_id__captions_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
         Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
             /** File */
@@ -1461,6 +1500,8 @@ export interface components {
         PlaybackResponse: {
             /** Playlist Url */
             playlist_url: string;
+            /** Captions Url */
+            captions_url?: string | null;
             /**
              * Expires At
              * Format: date-time
@@ -1746,6 +1787,40 @@ export interface components {
             /** Expires In */
             expires_in: number;
         };
+        /** TranscriptLessonResponse */
+        TranscriptLessonResponse: {
+            /** Module Title */
+            module_title: string;
+            /** Title */
+            title: string;
+            /** Position */
+            position: number;
+            /** Completed At */
+            completed_at: string | null;
+        };
+        /**
+         * TranscriptResponse
+         * @description REQ-LMS-06: a printable transcript — apps/web renders this as a
+         *     print-optimised page, not a PDF; the data is what needs to be
+         *     correct, not a particular file format.
+         */
+        TranscriptResponse: {
+            /** Learner Name */
+            learner_name: string;
+            /** Course Title */
+            course_title: string;
+            /**
+             * Enrolled At
+             * Format: date-time
+             */
+            enrolled_at: string;
+            /** Completed At */
+            completed_at: string | null;
+            /** Certificate Number */
+            certificate_number: string | null;
+            /** Lessons */
+            lessons: components["schemas"]["TranscriptLessonResponse"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1782,6 +1857,11 @@ export interface components {
             state: string;
             /** Duration Seconds */
             duration_seconds: number | null;
+            /**
+             * Has Captions
+             * @default false
+             */
+            has_captions: boolean;
         };
         /**
          * VisibilityRequest
@@ -2557,6 +2637,37 @@ export interface operations {
             };
         };
     };
+    get_transcript_api_v1_enrolments__enrolment_id__transcript_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_lesson_api_v1_lessons__lesson_id__start_post: {
         parameters: {
             query?: never;
@@ -2673,6 +2784,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["VideoAssetResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_captions_api_v1_video_assets__video_asset_id__captions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_captions_api_v1_video_assets__video_asset_id__captions_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

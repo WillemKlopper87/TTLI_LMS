@@ -163,7 +163,7 @@ export default function GuestAccessPage() {
             <span>Send me occasional programme announcements.</span>
           </label>
 
-          {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+          {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
 
           <button type="submit" disabled={busy} className="btn btn--primary btn--lg btn--block mt-2">
             Send my sign-in link

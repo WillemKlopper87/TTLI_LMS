@@ -77,7 +77,7 @@ export function SurveyForm({ surveyId, onSubmitted }: { surveyId: string; onSubm
     onSubmitted();
   }
 
-  if (error) return <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
+  if (error) return <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
   if (submitted) {
     return (
       <p className="card mt-3" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
@@ -114,6 +114,7 @@ export function SurveyForm({ surveyId, onSubmitted }: { surveyId: string; onSubm
             <textarea
               className="input mt-2"
               rows={3}
+              aria-label={q.prompt}
               onChange={(e) => setValues((prev) => ({ ...prev, [q.question_id]: e.target.value }))}
             />
           )}

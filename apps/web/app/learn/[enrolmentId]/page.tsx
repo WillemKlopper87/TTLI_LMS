@@ -105,7 +105,7 @@ export default function LearnEnrolmentPage() {
   if (error) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-16">
-        <p style={{ fontSize: "0.875rem", color: "var(--stop)" }}>{error}</p>
+        <p role="alert" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>{error}</p>
       </main>
     );
   }
@@ -119,9 +119,14 @@ export default function LearnEnrolmentPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-16">
-      <Link href="/learn" className="btn btn--ghost">
-        &larr; My courses
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href="/learn" className="btn btn--ghost">
+          &larr; My courses
+        </Link>
+        <Link href={`/learn/${enrolmentId}/transcript`} className="btn btn--ghost">
+          Transcript
+        </Link>
+      </div>
       <h1 className="serif mt-4" style={{ fontSize: "1.65rem" }}>
         {progress.course_title}
       </h1>

@@ -93,6 +93,37 @@ async def upload_video_asset(
     return VideoAssetResponse(id=str(asset.id), state=asset.state, duration_seconds=None)
 
 
+@router.post(
+    "/video-assets/{video_asset_id}/captions",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Upload a WebVTT caption track for a video asset (REQ-LMS-07)",
+)
+async def upload_captions(
+    video_asset_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    storage: StorageDep,
+    file: UploadFile = File(...),
+) -> None:
+    # Human-authored WebVTT upload, not automatic transcription — no ASR
+    # pipeline exists in this project, and fabricating caption text for
+    # content nobody wrote would be worse than no captions at all.
+    principal.require("course:edit")
+    asset = await session.get(VideoAsset, _parse_uuid(video_asset_id))
+    if asset is None:
+        raise NotFound("No such video asset.")
+    data = await file.read()
+    if not data.lstrip().startswith(b"WEBVTT"):
+        raise AppError("That file is not a valid WebVTT (.vtt) caption track.")
+
+    key = f"video-assets/{video_asset_id}/captions.vtt"
+    await storage.ensure_container(Container.PRIVATE_CONTENT)
+    await storage.upload_object(Container.PRIVATE_CONTENT, key, data, content_type="text/vtt")
+    asset.caption_object_key = key
+    await session.flush()
+
+
 @router.get(
     "/video-assets/{video_asset_id}",
     response_model=VideoAssetResponse,
@@ -106,7 +137,10 @@ async def get_video_asset(
     if asset is None:
         raise NotFound("No such video asset.")
     return VideoAssetResponse(
-        id=str(asset.id), state=asset.state, duration_seconds=asset.duration_seconds
+        id=str(asset.id),
+        state=asset.state,
+        duration_seconds=asset.duration_seconds,
+        has_captions=asset.caption_object_key is not None,
     )
 
 
@@ -180,6 +214,9 @@ async def get_playback(
         # hardcode. The frontend prefixes this with /api/bff/ itself, the
         # same way it already builds every other bff fetch URL.
         playlist_url=f"media/{video_asset_id}/hls/master.m3u8?access_token={token}",
+        captions_url=f"media/{video_asset_id}/hls/captions.vtt?access_token={token}"
+        if asset.caption_object_key is not None
+        else None,
         expires_at=datetime.now(UTC) + timedelta(seconds=settings.playback_url_expiry_seconds),
         watermark=WatermarkPayload(text=f"{email} · {_client_ip(request)}", opacity=0.18),
     )
@@ -214,6 +251,8 @@ async def get_hls_file(
         return Response(content=rewritten, media_type="application/vnd.apple.mpegurl")
     if filename.endswith(".mp4"):
         return Response(content=data, media_type="video/mp4")
+    if filename.endswith(".vtt"):
+        return Response(content=data, media_type="text/vtt")
     return Response(content=data, media_type="video/iso.segment")
 
 

@@ -48,7 +48,7 @@ export default function LearnIndexPage() {
       </h1>
 
       {error ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>
+        <p role="alert" className="mt-6" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>
           {error}
         </p>
       ) : enrolments === null ? (

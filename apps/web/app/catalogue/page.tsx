@@ -76,9 +76,9 @@ export default function CataloguePage() {
           {products.map((product) => (
             <div key={product.id} className="card p-5">
               <span className="tag tag--brand">{product.kind}</span>
-              <h3 className="serif mt-2" style={{ fontSize: "1.0625rem" }}>
+              <h2 className="serif mt-2" style={{ fontSize: "1.0625rem" }}>
                 {product.name}
-              </h3>
+              </h2>
               {product.description ? (
                 <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
                   {product.description}

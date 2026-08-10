@@ -24,6 +24,8 @@ from src.schemas.learning import (
     LessonCompleteResponse,
     LessonProgressResponse,
     OwnEnrolmentResponse,
+    TranscriptLessonResponse,
+    TranscriptResponse,
 )
 from src.services import enrolment as enrolment_service
 from src.services import video_progress as video_progress_service
@@ -95,6 +97,39 @@ async def get_progress(
                 unmet_requirements=row.unmet_requirements,
             )
             for row in lessons
+        ],
+    )
+
+
+@router.get(
+    "/enrolments/{enrolment_id}/transcript",
+    response_model=TranscriptResponse,
+    summary="A printable transcript of completed lessons (REQ-LMS-06)",
+)
+async def get_transcript(
+    enrolment_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> TranscriptResponse:
+    transcript = await enrolment_service.get_transcript(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        enrolment_id=_parse_uuid(enrolment_id),
+    )
+    return TranscriptResponse(
+        learner_name=transcript.learner_name,
+        course_title=transcript.course_title,
+        enrolled_at=transcript.enrolled_at,
+        completed_at=transcript.completed_at,
+        certificate_number=transcript.certificate_number,
+        lessons=[
+            TranscriptLessonResponse(
+                module_title=row.module_title,
+                title=row.title,
+                position=row.position,
+                completed_at=row.completed_at,
+            )
+            for row in transcript.lessons
         ],
     )
 

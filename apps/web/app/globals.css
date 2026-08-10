@@ -25,13 +25,20 @@
   --ink: #1c1719;
   --ink-2: #453c40;
   --muted: #6e6469;
-  --faint: #9a9096;
+  /* #9a9096 read at 3.1:1 on white — fails WCAG AA's 4.5:1 for normal
+     text, which this is used for throughout (timestamps, helper text,
+     "Loading…"). Darkened to the same hue at 4.6:1+ against every
+     surface it appears on, verified via the WCAG relative-luminance
+     formula, not eyeballed. */
+  --faint: #71676d;
   --rule: #dedad9;
   --rule-2: #cac8c4;
 
   --done: #2e6f4e;
   --done-wash: #e2eee7;
-  --live: #a66a0a;
+  /* #a66a0a on --live-wash was 3.8:1 — .tag--live renders at 9px, well
+     under the "large text" threshold, so it needs the full 4.5:1. */
+  --live: #935e09;
   --live-wash: #f5ebd9;
   --stop: #a32e24;
   --stop-wash: #f7e4e2;
@@ -55,7 +62,9 @@
     --ink: #efeaec;
     --ink-2: #c9c0c4;
     --muted: #9c9296;
-    --faint: #6f656a;
+    /* Same fix as light mode's --faint, mirrored: #6f656a was 3.1:1 on
+       the lightest dark-mode surface (--surface-2); lightened to 4.6:1+. */
+    --faint: #93888e;
     --rule: #322b2e;
     --rule-2: #443b3f;
     --done: #6dbf95;
@@ -266,4 +275,25 @@ table.data tbody td {
 
 table.data tbody tr:last-child td {
   border-bottom: 0;
+}
+
+/* REQ-LMS-06: the printable transcript hides its own chrome (nav links,
+   the print button) when actually printed — a real @media print rule,
+   not a second page that duplicates the layout. */
+.no-print {
+  display: inline-flex;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+    color: black;
+  }
+  .card {
+    border-color: #999;
+    box-shadow: none;
+  }
 }

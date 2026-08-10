@@ -100,7 +100,7 @@ export function QuizPlayer({ quizId, onGraded }: { quizId: string; onGraded: () 
     onGraded();
   }
 
-  if (error) return <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
+  if (error) return <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
   if (result) {
     return (
       <div className="card mt-3">
@@ -126,6 +126,7 @@ export function QuizPlayer({ quizId, onGraded }: { quizId: string; onGraded: () 
             <textarea
               className="input mt-2"
               rows={q.question_type === "long_text" ? 4 : 1}
+              aria-label={q.prompt}
               onChange={(e) => setText(q.question_id, e.target.value)}
             />
           ) : (
@@ -146,7 +147,7 @@ export function QuizPlayer({ quizId, onGraded }: { quizId: string; onGraded: () 
           )}
         </div>
       ))}
-      {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
       <button type="button" disabled={busy} onClick={submit} className="btn btn--primary">
         Submit quiz
       </button>

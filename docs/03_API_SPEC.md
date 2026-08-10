@@ -211,6 +211,10 @@ Unauthenticated but **signature-validated**; an invalid signature is `401` and a
 
 Returns per-lesson state with, for each locked lesson, the specific unmet requirements. The UI renders the checklist from this — it does not compute it.
 
+### 6.1a `GET /enrolments/{id}/transcript`
+
+REQ-LMS-06 — completed lessons only, each with the real `completed_at` the rule engine assigned. `apps/web` renders this as a print-optimised page (browser print, not a generated PDF — the transcript's job is to be correct and printable, not to duplicate the certificate's PDF+QR treatment).
+
 ### 6.2 `POST /lessons/{id}/start`
 
 Idempotent. Records `first_seen_at`, transitions `available` → `in_progress`.
@@ -250,12 +254,17 @@ Returns a short-lived signed playlist URL plus the watermark payload the player 
 ```json
 {
   "playlist_url": "https://cdn.../master.m3u8?token=...",
+  "captions_url": "https://cdn.../captions.vtt?token=...",
   "expires_at": "2026-08-08T15:02:00Z",
   "watermark": {"text": "jakoklopper@gmail.com · 41.x.x.x", "opacity": 0.18}
 }
 ```
 
-Entitlement is checked before the URL is minted; the URL is bound to the user and the session; segment requests accept `?access_token=` because media players cannot set headers on segment requests. Download is refused unless the admin has enabled it for the tenant, package or user.
+Entitlement is checked before the URL is minted; the URL is bound to the user and the session; segment requests accept `?access_token=` because media players cannot set headers on segment requests. Download is refused unless the admin has enabled it for the tenant, package or user. `captions_url` is `null` until a caption track has been uploaded for the asset (§6.8) — the same signed-token mechanism as segments, since a `<track>` element can't set an `Authorization` header either.
+
+### 6.8 `POST /video-assets/{id}/captions`
+
+`course:edit`-gated. Accepts a WebVTT (`.vtt`) file, rejected with `400` if it doesn't start with the `WEBVTT` magic line. Human-authored upload, not automatic transcription (REQ-LMS-07) — no ASR pipeline exists in this project.
 
 ---
 

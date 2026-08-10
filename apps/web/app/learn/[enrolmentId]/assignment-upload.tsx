@@ -67,10 +67,11 @@ export function AssignmentUpload({ assignmentId }: { assignmentId: string }) {
     <form onSubmit={submit} className="card mt-3 flex flex-col gap-3">
       <input
         type="file"
+        aria-label="Assignment file"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         style={{ fontSize: "0.8125rem" }}
       />
-      {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
       <button
         type="submit"
         disabled={busy || !file}

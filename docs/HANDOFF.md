@@ -904,6 +904,167 @@ from a freshly-exported `openapi.json` and typechecked clean. Pushed as
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31375456707
 (quality 3m19s, web 57s).
 
+**Sixteenth pass: Phase 4.5 — PWA and accessibility, plus two REQ-LMS
+items left over from Phase 4.** Closes Phase 4 to ~95% and opens Phase
+4.5 to ~90% — the only deliberate gap left open in either is push
+notifications, discussed below.
+
+**REQ-LMS-06/07 first, since they're really Phase 4's own unfinished
+business.** Printable transcript: `GET /enrolments/{id}/transcript`
+returns completed lessons only, each with the real `completed_at` the
+rule engine assigned — not the full progress checklist
+`GET /enrolments/{id}/progress` already serves, a different question
+with a different answer. Learner-name resolution (full name, else
+email — the same fallback `services/credentials.py` already used for
+certificates) was duplicated inline there; pulled out into
+`identity.py::display_name()` and both call sites now share it, since
+two independent implementations of "how do we address this learner"
+would drift the moment one changed. `apps/web` renders the transcript
+as a real `@media print` page (`window.print()`), not a generated PDF —
+the certificate already owns that treatment, and duplicating it for a
+transcript would be building the same thing twice for no reason.
+
+WebVTT captions: `video_assets.caption_object_key` (`0015`) plus
+`POST /video-assets/{id}/captions`, human-authored upload rather than
+automatic transcription — this project has no ASR pipeline, and
+fabricating caption text for content nobody actually wrote would be
+worse than shipping no captions at all. The interesting design decision
+is where captions are *served*: rather than inventing a new
+entitlement-checked endpoint, `captions.vtt` is stored under the video
+asset's own `video-assets/{id}/` prefix and served through
+`GET /media/{id}/hls/{filename}` — the exact signed-token mechanism
+segments already use, since a `<track>` element can't set an
+`Authorization` header any more than a segment request can (06 §3.2's
+constraint, solved once, reused here rather than solved twice).
+
+**PWA.** `app/manifest.ts`, not a static `public/manifest.json` — this
+project's tenants each get their own theme (`app/layout.tsx` already
+fetches it server-side to set brand CSS variables), so a hardcoded
+manifest would install every tenant's PWA under TTLI's name and colour.
+The manifest resolves `theme_color`/`name` from the same `getTheme()`
+call, live-verified against the running dev server: the served
+`/manifest.webmanifest` genuinely contains "Themba Thandeka Leadership
+Institute" and `#8E151C`, not a placeholder. `short_name` has no backing
+API field, so it's computed — initials when the tenant name won't fit a
+home-screen label (~12 characters), the name itself when it will; for
+TTLI's actual name this produces "TTLI" without that string being
+hardcoded anywhere. Icons (192/512/maskable) were generated from the
+real brand mark (`public/brand/ttli-mark.png`, the red starfish), not a
+placeholder square — the maskable variant keeps the mark inside the
+~80% safe zone every OS mask crops to, verified by rendering it.
+
+The service worker (`public/sw.js`) is an offline *shell*, deliberately
+not offline *data* — this platform's content is per-tenant, server-
+rendered, and live; caching course/lesson state for real offline use
+would need background sync and conflict resolution, infrastructure this
+project doesn't have. What it honestly does: network-first for
+navigations, falling back to a real branded `offline.html` only when the
+network request itself fails, so a learner sees "you're offline, your
+progress is safe on the server" instead of the browser's generic
+connection-error page. Registered from a small `"use client"` component
+(`register-sw.tsx`) mounted in the root layout, since `layout.tsx`
+itself is an async server component and can't touch `navigator`.
+
+**WCAG 2.1 AA — computed, not eyeballed.** Every color pair in
+`globals.css` was run through the actual WCAG relative-luminance
+contrast formula
+(`(L1+0.05)/(L2+0.05)`, sRGB channels linearised per the spec), not
+judged by looking at them. This found two real failures that had been
+shipping since earlier sprints: `--faint` (`#9a9096`) read at 3.1:1
+against white — used pervasively for timestamps, helper text and every
+"Loading…" state across eleven files, all normal-weight text nowhere
+near the "large text" size threshold that would lower the bar to 3:1.
+`.tag--live`'s color (`#a66a0a`) read at 3.8:1 against its own wash —
+tags render at 9px, so they need the full 4.5:1 too. Both darkened
+(lightened in dark mode) along the *same hue* to 4.5:1+ against every
+surface each token actually appears on — not just one background,
+since `--faint` sits on `--surface`, `--stone` and `--surface-2` at
+different points in the app, and the worst of the three is what
+matters. Fixed at the token level in `globals.css` rather than patched
+per call site, so all eleven files inherit the fix automatically and no
+future usage can reintroduce the failure by picking a different
+call-site override.
+
+Missing accessible names were the next-most-consequential find: the
+**login form** — the single most important form in the entire
+application — had `placeholder` text standing in for a `<label>` on all
+three of its inputs (email, password, MFA code), which fails WCAG
+1.3.1/3.3.2/4.1.2 and, practically, means a screen-reader user gets no
+announced field name at all. Fixed with `aria-label` plus `autoComplete`
+values (`email`/`current-password`/`one-time-code` — WCAG 1.3.5, and a
+genuine UX improvement for password managers, not just an accessibility
+checkbox). Same pattern fixed on the admin payment-rejection input, the
+quiz/survey free-text `<textarea>`s (labelled from the question prompt
+text itself, so the accessible name matches what's visually asked), and
+the assignment file picker.
+
+`role="alert"` went on 16 dynamic error/status messages across every
+form and async action in the app (WCAG 2.1's SC 4.1.3, new in 2.1 — a
+genuine addition over 2.0, not a re-check of an old rule) — a failed
+submit or a rejected upload is now announced without the user needing
+focus already on that element. One found-and-deliberately-left case:
+`credentials-panel.tsx`'s revoked-reason display is static content that
+renders once on load, not a status change in response to an action, so
+`role="alert"` there would be noise, not signal — the distinction
+mattered enough to note in the diff rather than blanket-applying the
+attribute everywhere red text appears.
+
+Smaller fixes in the same pass: table headers gained `scope="col"`
+(`admin/leads/page.tsx`'s pre-existing table, and the new transcript
+table); `/catalogue` skipped straight from `<h1>` to `<h3>` on its
+product cards with no `<h2>` between, fixed; the admin sidebar's
+"coming soon" nav items were dimmed via `opacity: 0.6`, which against
+the brand gradient's lighter end worked out to 3.55:1 — raised to a
+verified 4.5:1+ and given `aria-disabled` plus italics so the "this
+isn't real yet" meaning survives on a non-color channel too, not just a
+fainter version of the same color.
+
+**What this pass could not verify.** No browser automation tool was
+available this session, so nothing here was confirmed with an actual
+screen reader or a real keyboard-only pass — the fixes are correct by
+construction (computed contrast ratios, HTML/ARIA output inspected via
+curl, each change cites the WCAG success criterion it addresses) but
+"structurally correct" and "confirmed accessible by a human using
+assistive technology" are different claims, and only the first one is
+being made here. Also not built: an automated accessibility gate
+(axe-core or equivalent) in CI, so this audit is a one-time pass, not a
+regression check — a future `globals.css` change could reintroduce a
+contrast failure silently. Both are recorded as open items, not glossed
+over.
+
+**Push notifications ("where supported", 01 §5.9) were deliberately not
+built**, the one piece of this phase's stated scope left undone on
+purpose. Two real blockers, not an oversight: no VAPID key
+infrastructure exists, and — more fundamentally — nobody has decided
+what a push notification would actually say. A lesson reminder? A
+certificate-issued confirmation? A payment-approved notice? Wiring the
+mechanism without that product decision would repeat the exact mistake
+this project has avoided everywhere else: inventing content nobody
+asked for. Same category of gap as Phase 3's Payfast/Netcash sandbox
+credentials — a real external decision blocking the work, not an
+engineering shortcut.
+
+Verified: 2 new backend tests (`tests/test_media.py`'s caption test,
+`tests/test_learning.py`'s transcript test), full suite 159 tests / 0
+skipped, run twice for determinism. Migration `0015` round-tripped
+clean, `alembic check` clean. `mypy src` clean (87 files, unchanged —
+captions/transcript logic went into existing files, no new backend
+modules this pass). Live smoke test against the actual running dev
+servers, through the real BFF: uploaded a real video, ran a real ffmpeg
+transcode, uploaded a real WebVTT file, confirmed `has_captions`/
+`captions_url` end to end; completed the seeded course for a fresh
+learner and confirmed the transcript was empty before and fully
+populated (real timestamps) after, including the actual
+`/learn/[id]/transcript` page returning 200; confirmed
+`/manifest.webmanifest`, `/sw.js` and `/offline.html` all serve
+correctly and that `<link rel="manifest">`/`theme-color` appear in the
+real rendered HTML. `apps/web` gained `manifest.ts`, `register-sw.tsx`,
+`public/sw.js`, `public/offline.html`, three generated icon files, and
+`/learn/[enrolmentId]/transcript/page.tsx` — 17 routes now, up from 16.
+`typecheck`/`build` both clean. `npm audit` clean on both packages.
+`packages/api-client` regenerated from a fresh `openapi.json` and
+typechecked clean.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

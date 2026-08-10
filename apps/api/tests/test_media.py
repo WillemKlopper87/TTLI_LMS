@@ -354,6 +354,85 @@ async def test_enrolled_learner_can_play_and_the_manifest_carries_the_token(
             assert f"access_token={token}" in line
 
 
+async def test_captions_upload_gated_and_served_through_signed_playback_token(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """REQ-LMS-07: a WebVTT caption track, uploaded once by a content
+    author, served through the exact same signed playback token as HLS
+    segments — no separate entitlement path to get wrong (0015's
+    migration docstring)."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    before = await client.get(
+        f"/api/v1/video-assets/{video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert before.json()["has_captions"] is False
+
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    forbidden = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/captions",
+        headers={"Authorization": f"Bearer {learner_token}"},
+        files={
+            "file": ("captions.vtt", b"WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nHello.", "text/vtt")
+        },
+    )
+    assert forbidden.status_code == 403
+
+    invalid = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/captions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={"file": ("captions.vtt", b"not a real vtt file", "text/vtt")},
+    )
+    assert invalid.status_code == 400
+
+    upload = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/captions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={
+            "file": ("captions.vtt", b"WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nHello.", "text/vtt")
+        },
+    )
+    assert upload.status_code == 204
+
+    after = await client.get(
+        f"/api/v1/video-assets/{video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert after.json()["has_captions"] is True
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    playback_resp = await client.get(
+        f"/api/v1/media/{video_asset_id}/playback",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert playback_resp.status_code == 200
+    captions_url = playback_resp.json()["captions_url"]
+    assert captions_url is not None
+    assert captions_url.startswith(f"media/{video_asset_id}/hls/captions.vtt?access_token=")
+
+    vtt_resp = await client.get(f"/api/v1/{captions_url}")
+    assert vtt_resp.status_code == 200
+    assert vtt_resp.headers["content-type"].startswith("text/vtt")
+    assert vtt_resp.text.startswith("WEBVTT")
+
+
 async def test_hls_route_rejects_an_invalid_token(client) -> None:  # type: ignore[no-untyped-def]
     resp = await client.get(
         f"/api/v1/media/{uuid.uuid4()}/hls/master.m3u8?access_token=not-a-real-token"

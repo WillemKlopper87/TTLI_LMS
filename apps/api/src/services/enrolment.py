@@ -29,9 +29,11 @@ from src.core.ids import uuid7
 from src.models.assessment import Assignment, AssignmentSubmission, QuizAttempt, Survey
 from src.models.audit import AuditAction
 from src.models.course import Course, Lesson, Module
+from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import VideoAsset
-from src.services import audit
+from src.models.user import User
+from src.services import audit, identity
 from src.services import credentials as credentials_service
 from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
@@ -67,6 +69,24 @@ class LessonProgressRow:
     assignment_id: uuid.UUID | None
     state: str
     unmet_requirements: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptLessonRow:
+    module_title: str
+    title: str
+    position: int
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class Transcript:
+    learner_name: str
+    course_title: str
+    enrolled_at: datetime
+    completed_at: datetime | None
+    certificate_number: str | None
+    lessons: list[TranscriptLessonRow]
 
 
 async def _ordered_lessons(session: AsyncSession, course_id: uuid.UUID) -> list[OrderedLesson]:
@@ -588,13 +608,64 @@ async def get_progress(
     return enrolment, course, rows
 
 
+async def get_transcript(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    enrolment_id: uuid.UUID,
+) -> Transcript:
+    """REQ-LMS-06 — completed lessons only, each with the real
+    `completed_at` the rule engine assigned, not a re-derived guess."""
+    enrolment = await _get_own_enrolment_by_id(
+        session, tenant_id=tenant_id, user_id=user_id, enrolment_id=enrolment_id
+    )
+    course = await session.get(Course, enrolment.course_id)
+    if course is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such course.")
+    user = await session.get(User, user_id)
+    learner_name = identity.display_name(user, crypto) if user is not None else "Learner"
+
+    ordered = await _ordered_lessons(session, course.id)
+    completions_stmt = select(LessonCompletion).where(LessonCompletion.enrolment_id == enrolment.id)
+    completions = {c.lesson_id: c for c in (await session.execute(completions_stmt)).scalars()}
+
+    lessons = [
+        TranscriptLessonRow(
+            module_title=item.module.title,
+            title=item.lesson.title,
+            position=item.lesson.position,
+            completed_at=completions[item.lesson.id].completed_at,
+        )
+        for item in ordered
+        if item.lesson.id in completions and completions[item.lesson.id].state == "completed"
+    ]
+
+    certificate = (
+        await session.execute(select(Certificate).where(Certificate.enrolment_id == enrolment.id))
+    ).scalar_one_or_none()
+
+    return Transcript(
+        learner_name=learner_name,
+        course_title=course.title,
+        enrolled_at=enrolment.created_at,
+        completed_at=enrolment.completed_at,
+        certificate_number=certificate.certificate_number if certificate is not None else None,
+        lessons=lessons,
+    )
+
+
 __all__ = [
     "LessonProgressRow",
     "OwnEnrolmentRow",
+    "Transcript",
+    "TranscriptLessonRow",
     "complete_lesson",
     "get_or_create_enrolment",
     "get_own_enrolment",
     "get_progress",
+    "get_transcript",
     "has_access_to_video",
     "list_own_enrolments",
     "resolve_enrolment_for_assignment",

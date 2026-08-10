@@ -40,6 +40,7 @@ from src.models.credential import (
 )
 from src.models.learning import Enrolment
 from src.models.user import User
+from src.services import identity
 
 VISIBILITY_VALUES = ("private", "public", "link_only")
 
@@ -85,15 +86,7 @@ async def issue_for_completed_enrolment(
         return IssuedCredentials(certificate=existing, badge=None, raw_verification_token=None)
 
     user = await session.get(User, enrolment.user_id)
-    learner_name = "Learner"
-    if user is not None:
-        if user.full_name_encrypted:
-            learner_name = crypto.decrypt(user.full_name_encrypted)
-        else:
-            # No name was ever captured for this account (guest/checkout
-            # flows don't collect one yet) — the email is a documented,
-            # honest fallback, not a fabricated name.
-            learner_name = crypto.decrypt(user.email_encrypted)
+    learner_name = identity.display_name(user, crypto) if user is not None else "Learner"
 
     certificate: Certificate | None = None
     raw_token: str | None = None

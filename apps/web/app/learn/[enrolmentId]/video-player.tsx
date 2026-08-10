@@ -12,6 +12,7 @@ interface Watermark {
 
 interface PlaybackResponse {
   playlist_url: string;
+  captions_url: string | null;
   expires_at: string;
   watermark: Watermark;
 }
@@ -25,6 +26,7 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sessionIdRef = useRef<string>(crypto.randomUUID());
   const [watermark, setWatermark] = useState<Watermark | null>(null);
+  const [captionsUrl, setCaptionsUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,6 +46,7 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
       const playback: PlaybackResponse = await resp.json();
       if (cancelled) return;
       setWatermark(playback.watermark);
+      setCaptionsUrl(playback.captions_url ? `/api/bff/${playback.captions_url}` : null);
 
       const src = `/api/bff/${playback.playlist_url}`;
       const video = videoRef.current;
@@ -89,12 +92,22 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
   }, [lessonId, videoAssetId]);
 
   if (error) {
-    return <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
+    return <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;
   }
 
   return (
     <div className="relative mt-3">
-      <video ref={videoRef} controls className="w-full" style={{ borderRadius: "4px" }} />
+      <video
+        ref={videoRef}
+        controls
+        aria-label="Lesson video"
+        className="w-full"
+        style={{ borderRadius: "4px" }}
+      >
+        {captionsUrl ? (
+          <track kind="captions" src={captionsUrl} srcLang="en" label="English" default />
+        ) : null}
+      </video>
       {watermark ? (
         <div
           className="pointer-events-none absolute bottom-2 right-2"

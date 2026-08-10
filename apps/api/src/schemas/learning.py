@@ -40,6 +40,26 @@ class LessonCompleteResponse(BaseModel):
     next_lesson_id: str | None
 
 
+class TranscriptLessonResponse(BaseModel):
+    module_title: str
+    title: str
+    position: int
+    completed_at: datetime | None
+
+
+class TranscriptResponse(BaseModel):
+    """REQ-LMS-06: a printable transcript — apps/web renders this as a
+    print-optimised page, not a PDF; the data is what needs to be
+    correct, not a particular file format."""
+
+    learner_name: str
+    course_title: str
+    enrolled_at: datetime
+    completed_at: datetime | None
+    certificate_number: str | None
+    lessons: list[TranscriptLessonResponse]
+
+
 class HeartbeatRequest(BaseModel):
     """03 §6.3. No timestamp field on purpose — REQ-BYPASS-02 means the
     server assigns it, so there is nothing here for a client to lie
@@ -62,4 +82,6 @@ __all__ = [
     "LessonCompleteResponse",
     "LessonProgressResponse",
     "OwnEnrolmentResponse",
+    "TranscriptLessonResponse",
+    "TranscriptResponse",
 ]

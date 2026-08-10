@@ -313,6 +313,65 @@ async def test_complete_lesson_unlocks_next_and_updates_progress(
     assert rows[lesson_2_id]["state"] == "available"
 
 
+async def test_transcript_lists_only_completed_lessons_and_is_owner_only(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """REQ-LMS-06: the transcript is completed lessons only, each with the
+    real completed_at the rule engine assigned — not the full progress
+    checklist GET /enrolments/{id}/progress already serves."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_1_id = lessons[0][0]
+
+    async with tenant_session_factory(tenant_id) as s:
+        enrolment_id = (
+            await s.execute(
+                sa.text("SELECT id FROM enrolments WHERE user_id = :u"), {"u": buyer_id}
+            )
+        ).scalar_one()
+
+    before = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/transcript",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert before.status_code == 200, before.text
+    assert before.json()["lessons"] == []
+    assert before.json()["course_title"] == "Executive Leadership Certificate"
+    assert "@" in before.json()["learner_name"]  # no full name captured — email fallback
+
+    await client.post(
+        f"/api/v1/lessons/{lesson_1_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+    await _backdate_first_seen(
+        tenant_session_factory, tenant_id, enrolment_id=enrolment_id, lesson_id=lesson_1_id
+    )
+    await client.post(
+        f"/api/v1/lessons/{lesson_1_id}/complete", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    after = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/transcript",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    rows = after.json()["lessons"]
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Welcome"
+    assert rows[0]["completed_at"] is not None
+
+    stranger_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    forbidden = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/transcript",
+        headers={"Authorization": f"Bearer {stranger_token}"},
+    )
+    assert forbidden.status_code == 403
+
+
 async def test_list_own_enrolments(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)

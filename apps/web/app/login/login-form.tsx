@@ -84,10 +84,12 @@ export function LoginForm() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="123456"
+          aria-label="Authentication code"
+          autoComplete="one-time-code"
           autoFocus
           required
         />
-        {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+        {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
         <button type="submit" disabled={busy} className="btn btn--primary btn--block">
           Verify
         </button>
@@ -103,6 +105,8 @@ export function LoginForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@example.com"
+        aria-label="Email address"
+        autoComplete="email"
         required
       />
       <input
@@ -111,9 +115,11 @@ export function LoginForm() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Password"
+        aria-label="Password"
+        autoComplete="current-password"
         required
       />
-      {error ? <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      {error ? <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
       <button type="submit" disabled={busy} className="btn btn--primary btn--block">
         Sign in
       </button>

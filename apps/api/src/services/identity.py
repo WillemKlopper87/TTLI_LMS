@@ -60,6 +60,16 @@ def is_locked(user: User, *, now: datetime | None = None) -> bool:
     return user.locked_until > (now or datetime.now(UTC))
 
 
+def display_name(user: User, crypto: CryptoBox) -> str:
+    """The learner-facing name for a document (certificate, transcript) —
+    `full_name_encrypted` when captured, else the email, which is a
+    documented, honest fallback rather than a fabricated name for
+    accounts guest/checkout flows never asked for a name."""
+    if user.full_name_encrypted:
+        return crypto.decrypt(user.full_name_encrypted)
+    return crypto.decrypt(user.email_encrypted)
+
+
 async def authenticate(
     session: AsyncSession, crypto: CryptoBox, *, email: str, password: str
 ) -> User | None:
@@ -304,6 +314,7 @@ __all__ = [
     "create_magic_link",
     "create_password_reset",
     "create_user",
+    "display_name",
     "enroll_mfa",
     "find_by_email",
     "is_locked",

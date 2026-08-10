@@ -157,7 +157,7 @@ export default function CheckoutPage() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>
-          {error ? <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+          {error ? <p role="alert" className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
           <button
             type="button"
             className="btn btn--primary btn--block mt-3"
@@ -190,7 +190,7 @@ export default function CheckoutPage() {
         </select>
       </label>
 
-      {error ? <p className="mt-3" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
+      {error ? <p role="alert" className="mt-3" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p> : null}
 
       <button
         type="button"
