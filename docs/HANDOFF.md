@@ -1456,6 +1456,10 @@ roster (a stranger's identical request correctly 403'd) → the
 facilitator marked the booking `attended`. `/admin/workshops` confirmed
 rendering with no console/server errors.
 
+Committed as `382cda8`, pushed to `main`; CI green on both jobs on
+the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31410531703
+(quality 4m10s, web 53s).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
