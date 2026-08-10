@@ -17,6 +17,8 @@ import { AdminContext, type Me } from "./admin-context";
 // are the ones that do so far.
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
+  { label: "Deals", href: "/admin/deals" },
+  { label: "Campaigns", href: "/admin/campaigns" },
   { label: "Payments", href: "/admin/payments" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Settings", href: "/admin/settings" },

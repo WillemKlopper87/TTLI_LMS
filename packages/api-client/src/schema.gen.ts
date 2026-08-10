@@ -796,6 +796,238 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deals */
+        get: operations["list_deals_api_v1_deals_get"];
+        put?: never;
+        /** Create Deal */
+        post: operations["create_deal_api_v1_deals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deals/{deal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deal */
+        get: operations["get_deal_api_v1_deals__deal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deals/{deal_id}/stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Deal Stage */
+        patch: operations["update_deal_stage_api_v1_deals__deal_id__stage_patch"];
+        trace?: never;
+    };
+    "/api/v1/deals/{deal_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Task */
+        post: operations["create_task_api_v1_deals__deal_id__tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Task */
+        post: operations["complete_task_api_v1_tasks__task_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deals/{deal_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Note */
+        post: operations["add_note_api_v1_deals__deal_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Segments */
+        get: operations["list_segments_api_v1_segments_get"];
+        put?: never;
+        /** Create Segment */
+        post: operations["create_segment_api_v1_segments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/email-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_email_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_api_v1_email_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Campaigns */
+        get: operations["list_campaigns_api_v1_campaigns_get"];
+        put?: never;
+        /** Create Campaign */
+        post: operations["create_campaign_api_v1_campaigns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{campaign_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Campaign */
+        get: operations["get_campaign_api_v1_campaigns__campaign_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{campaign_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Campaign */
+        post: operations["send_campaign_api_v1_campaigns__campaign_id__send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/email-events/bounce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Bounce
+         * @description Structured the way a real ESP's signed bounce webhook would call
+         *     it — gated on `campaign:manage` for now, since no live ESP webhook
+         *     integration exists to authenticate a genuinely public caller (02
+         *     §10's own scope boundary, same class as `services/meeting/teams.py`
+         *     not making real Graph calls).
+         */
+        post: operations["record_bounce_api_v1_email_events_bounce_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/unsubscribe/{email_send_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unsubscribe */
+        get: operations["unsubscribe_api_v1_unsubscribe__email_send_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enrolments": {
         parameters: {
             query?: never;
@@ -1378,6 +1610,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityResponse */
+        ActivityResponse: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Detail */
+            detail: Record<string, never>;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** AddAvailabilityRequest */
         AddAvailabilityRequest: {
             /** Day Of Week */
@@ -1532,6 +1778,36 @@ export interface components {
             /** Join Url */
             join_url: string | null;
         };
+        /** CampaignResponse */
+        CampaignResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Template Id */
+            template_id: string;
+            /** Segment Id */
+            segment_id: string;
+            /** Status */
+            status: string;
+            /** Sent At */
+            sent_at: string | null;
+        };
+        /** CampaignStatsResponse */
+        CampaignStatsResponse: {
+            campaign: components["schemas"]["CampaignResponse"];
+            /** Sent */
+            sent: number;
+            /** Suppressed */
+            suppressed: number;
+            /** Bounced */
+            bounced: number;
+        };
+        /** CampaignsPage */
+        CampaignsPage: {
+            /** Items */
+            items: components["schemas"]["CampaignResponse"][];
+        };
         /** CertificatePdfResponse */
         CertificatePdfResponse: {
             /** Pdf Url */
@@ -1574,12 +1850,41 @@ export interface components {
             /** Items */
             items: components["schemas"]["CourseResponse"][];
         };
+        /** CreateCampaignRequest */
+        CreateCampaignRequest: {
+            /** Name */
+            name: string;
+            /** Template Id */
+            template_id: string;
+            /** Segment Id */
+            segment_id: string;
+        };
+        /** CreateDealRequest */
+        CreateDealRequest: {
+            /** Email */
+            email: string;
+            /** Title */
+            title: string;
+            /** Amount */
+            amount?: number | string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Campaign */
+            campaign?: string | null;
+        };
         /** CreateFacilitatorRequest */
         CreateFacilitatorRequest: {
             /** Email */
             email: string;
             /** Bio */
             bio?: string | null;
+        };
+        /** CreateNoteRequest */
+        CreateNoteRequest: {
+            /** Body */
+            body: string;
         };
         /** CreateOrderRequest */
         CreateOrderRequest: {
@@ -1596,6 +1901,15 @@ export interface components {
         CreateOrganisationRequest: {
             /** Name */
             name: string;
+        };
+        /** CreateSegmentRequest */
+        CreateSegmentRequest: {
+            /** Name */
+            name: string;
+            /** Criteria */
+            criteria?: {
+                [key: string]: string;
+            };
         };
         /** CreateSessionRequest */
         CreateSessionRequest: {
@@ -1614,6 +1928,24 @@ export interface components {
             /** Capacity */
             capacity: number;
         };
+        /** CreateTaskRequest */
+        CreateTaskRequest: {
+            /** Title */
+            title: string;
+            /** Due At */
+            due_at?: string | null;
+            /** Assigned To User Id */
+            assigned_to_user_id?: string | null;
+        };
+        /** CreateTemplateRequest */
+        CreateTemplateRequest: {
+            /** Name */
+            name: string;
+            /** Subject */
+            subject: string;
+            /** Body Text */
+            body_text: string;
+        };
         /** CreateWorkshopRequest */
         CreateWorkshopRequest: {
             /** Title */
@@ -1627,6 +1959,47 @@ export interface components {
              * @default 60
              */
             default_duration_minutes: number;
+        };
+        /** DealDetailResponse */
+        DealDetailResponse: {
+            deal: components["schemas"]["DealResponse"];
+            /** Tasks */
+            tasks: components["schemas"]["TaskResponse"][];
+            /** Notes */
+            notes: components["schemas"]["NoteResponse"][];
+            /** Activities */
+            activities: components["schemas"]["ActivityResponse"][];
+        };
+        /** DealResponse */
+        DealResponse: {
+            /** Id */
+            id: string;
+            /** Contact Email */
+            contact_email: string;
+            /** Title */
+            title: string;
+            /** Stage */
+            stage: string;
+            /** Amount */
+            amount: string | null;
+            /** Currency */
+            currency: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** DealsPage */
+        DealsPage: {
+            /** Items */
+            items: components["schemas"]["DealResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** EftCheckoutResponse */
         EftCheckoutResponse: {
@@ -1978,6 +2351,20 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** NoteResponse */
+        NoteResponse: {
+            /** Id */
+            id: string;
+            /** Body */
+            body: string;
+            /** Author Email */
+            author_email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** OrderItemResponse */
         OrderItemResponse: {
             /** Product Id */
@@ -2294,6 +2681,13 @@ export interface components {
             /** Answers */
             answers: components["schemas"]["QuizAnswerSubmission"][];
         };
+        /** RecordBounceRequest */
+        RecordBounceRequest: {
+            /** Email Send Id */
+            email_send_id: string;
+            /** Reason */
+            reason: string;
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
@@ -2353,6 +2747,29 @@ export interface components {
             assigned: number;
             /** Available */
             available: number;
+        };
+        /** SegmentResponse */
+        SegmentResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Criteria */
+            criteria: Record<string, never>;
+        };
+        /** SegmentsPage */
+        SegmentsPage: {
+            /** Items */
+            items: components["schemas"]["SegmentResponse"][];
+        };
+        /** SendCampaignResponse */
+        SendCampaignResponse: {
+            /** Sent */
+            sent: number;
+            /** Suppressed */
+            suppressed: number;
+            /** Excluded No Consent */
+            excluded_no_consent: number;
         };
         /** SessionResponse */
         SessionResponse: {
@@ -2461,6 +2878,33 @@ export interface components {
             /** Questions */
             questions: components["schemas"]["SurveyQuestionView"][];
         };
+        /** TaskResponse */
+        TaskResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Due At */
+            due_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
+        };
+        /** TemplateResponse */
+        TemplateResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Subject */
+            subject: string;
+            /** Body Text */
+            body_text: string;
+        };
+        /** TemplatesPage */
+        TemplatesPage: {
+            /** Items */
+            items: components["schemas"]["TemplateResponse"][];
+        };
         /** ThemeResponse */
         ThemeResponse: {
             /** Tenant Slug */
@@ -2525,6 +2969,11 @@ export interface components {
             certificate_number: string | null;
             /** Lessons */
             lessons: components["schemas"]["TranscriptLessonResponse"][];
+        };
+        /** UpdateDealStageRequest */
+        UpdateDealStageRequest: {
+            /** Stage */
+            stage: string;
         };
         /** UpdateManagerVisibilityRequest */
         UpdateManagerVisibilityRequest: {
@@ -4122,6 +4571,519 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RosterResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deals_api_v1_deals_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_deal_api_v1_deals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDealRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deal_api_v1_deals__deal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_deal_stage_api_v1_deals__deal_id__stage_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDealStageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DealResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_api_v1_deals__deal_id__tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_task_api_v1_tasks__task_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_note_api_v1_deals__deal_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_segments_api_v1_segments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentsPage"];
+                };
+            };
+        };
+    };
+    create_segment_api_v1_segments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSegmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_email_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatesPage"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_email_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_campaigns_api_v1_campaigns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignsPage"];
+                };
+            };
+        };
+    };
+    create_campaign_api_v1_campaigns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_campaign_api_v1_campaigns__campaign_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignStatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_campaign_api_v1_campaigns__campaign_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendCampaignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_bounce_api_v1_email_events_bounce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordBounceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsubscribe_api_v1_unsubscribe__email_send_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email_send_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -1460,6 +1460,131 @@ Committed as `382cda8`, pushed to `main`; CI green on both jobs on
 the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31410531703
 (quality 4m10s, web 53s).
 
+**Twenty-first pass: Phase 5 sprint 4 — CRM and marketing engine (02
+§10, REQ-CRM-01 through REQ-CRM-05). Phase 5 is now complete.** `0019`
+creates exactly the ten tables 02 §10 already named — `deals`, `tasks`,
+`notes`, `activities`, `segments`, `email_templates`, `campaigns`,
+`email_sends`, `email_events`, `suppressions` — reusing `leads`/
+`contacts`/`consent_records` from Phase 2 rather than duplicating them.
+The shape is deliberately deal-centric: `tasks`/`notes` always
+reference a required `deal_id`, and every mutation (deal created, stage
+changed, task created/completed, note added) writes a real row to
+`activities`, append-only via the same revoked-grant-plus-trigger
+pattern `consent_records` already established (`refuse_mutation()`,
+reused rather than reimplemented) — a deal's own tamper-evident
+history, not a view computed after the fact.
+
+The marketing half reuses more than it builds. Segments match only
+non-PII `leads` attributes (stage, the UTM quintet) — 02 §10/04 §4.4's
+own resolution of encrypted-email-vs-bulk-marketing — computed at send
+time, never a stored address list. Sending checks two independent
+gates: marketing consent (Phase 2's `consent_records`) and the
+suppression list (`suppressions`, keyed on `email_blind_index`, never
+plaintext). A consent-less contact is silently excluded, counted but
+never listed; a suppressed one still produces an `email_sends` row so
+the campaign's own report proves it was correctly withheld — the same
+"absent vs present-and-redacted" distinction REQ-TEN-03 established in
+sprint 2, applied to a different subsystem. Deliberately no separate
+ESP provider abstraction the way `0018` built one for meeting
+providers: `services/email.py`'s real SMTP path (Mailpit locally, any
+real relay in production) already sends both transactional and bulk
+mail — there's no second, credentials-blocked implementation to build
+an interface around. REQ-CRM-03's SPF/DKIM/DMARC requirement is a
+DNS/domain-ownership decision, not a code capability gap.
+
+The unsubscribe link is real, not a logged event nobody acts on:
+`{PUBLIC_WEB_URL}/unsubscribe/{email_send_id}` is embedded in every
+sent email (no separate token infrastructure — the send's own UUID is
+unguessable enough, same trust level as a magic link), and following
+it writes a real suppression row, a real `granted=false` consent row
+(via `services/consent.py::record`, not reimplemented), and an
+append-only `email_events` row. A second campaign to that contact is
+verified to actually exclude them — via the *consent* gate specifically,
+since that fires before the suppression check in `send_campaign`; the
+suppression list is the defense-in-depth backstop for a contact who
+somehow re-consents without it being re-checked, not the only thing
+standing between them and a resend. `POST /email-events/bounce` is
+structured the way a real ESP's signed webhook would call it,
+`campaign:manage`-gated for now (same documented boundary as
+`services/meeting/teams.py` never making a real Graph call).
+
+Two real bugs surfaced and were fixed before this was called done:
+
+1. **Subject-line substitution was silently missing.** `{{first_name}}`
+   was only replaced in the email body, never the subject — caught by
+   the live smoke test's real Mailpit delivery check, which showed the
+   literal placeholder in a real received message's subject line.
+   Automated tests never caught it because they only verify enqueue
+   behaviour and business-logic counts, not rendered content — the live
+   smoke test's real-delivery check is what this class of bug needs.
+   Fixed in `services/campaigns.py::send_campaign`; re-verified against
+   a fresh real send showing "A programme for Naledi", not the
+   placeholder.
+2. **A test-determinism bug that would have caused flaky CI.** The demo
+   tenant's `leads` table is a real, persistent dev database shared
+   across every test run in this session, never reset between them. A
+   segment scoped only by pipeline stage (e.g. `{"stage": "qualified"}`)
+   also matches leads a *previous* run of the same test file left
+   behind, silently inflating the counts `test_campaigns.py`'s
+   assertions depend on being exact. Caught by actually running the
+   full suite twice in a row (this project's own standing determinism
+   requirement) with real leftover data present on the second pass —
+   `test_unsubscribe_link_suppresses_future_sends` failed on stage
+   alone in an early draft. Fixed by tagging every test-created lead
+   with a unique `utm_campaign` marker via `leads.capture()`'s existing
+   UTM fields and always including that marker in the test's own
+   segment criteria, so each test's segment is scoped to only the leads
+   it created — verified clean across two full consecutive runs
+   afterward.
+3. A third, purely environmental issue (not a code bug, recorded so it
+   doesn't get re-diagnosed as one): a background `arq` worker process
+   left running from an earlier live-smoke-test session was competing
+   with pytest's own in-process job handling on the *same* Redis queue,
+   causing unrelated `test_media.py` failures (playback 404s) on a full
+   suite run. Diagnosed by noticing the failures were in transcoding/
+   playback code nothing in this sprint touched, then confirming two
+   duplicate `uvicorn`/`arq` process pairs were running via `Get-
+   CimInstance Win32_Process`. Killing the stray processes before
+   re-running the suite made both determinism passes clean. Lesson:
+   never leave a live smoke test's worker process running into a
+   subsequent `pytest` invocation.
+
+Frontend: `/admin/deals` (pipeline list, deal creation, an expandable
+per-deal panel showing stage/tasks/notes/the full activity trail),
+`/admin/campaigns` (segment/template/campaign creation, send, live
+sent/suppressed/bounced stats), and the public `/unsubscribe/[id]`
+page — one-click, no confirmation step, matching RFC 8058's own
+one-click-unsubscribe convention rather than adding unnecessary
+friction. `deal:manage`/`campaign:manage` added to `login-form.tsx`'s
+`STAFF_PERMISSIONS`, same reasoning as sprint 3's facilitator-routing
+fix.
+
+Full gate sweep clean: `ruff check`/`format --check` (154 files),
+`mypy src` (110 files, strict), `pytest -q -rs` run twice for
+determinism (187 passed, 0 skipped — up from 178), `apps/web`
+`typecheck`/`build` clean (26 routes, +3), migration round-trip
+verified immediately after writing `0019`. Live smoke test ran the
+entire flow through the real BFF with a real running `arq` worker
+(needed for actual Mailpit delivery, unlike previous sprints' smoke
+tests which only checked enqueue behaviour): a real public
+`POST /leads` capture with marketing consent → a deal created against
+that same contact → stage changed to `qualified` → a task created and
+completed → a note added → deal detail returning the complete,
+correctly-ordered activity trail → a segment/template/campaign created
+and sent → the real email confirmed in Mailpit with both subject and
+body correctly personalised and a real unsubscribe link → that link
+followed end to end (both the actual page and the underlying endpoint
+independently confirmed) → a second campaign send confirmed to exclude
+the now-unsubscribed contact. All three new page routes confirmed
+rendering with no console/server errors.
+
+**Phase 5 is complete** — sprints 1 through 4, all four built and
+verified to the same bar: real schema, real services, real tests run
+twice for determinism, real frontend, real live smoke tests against
+running servers (including, this sprint, a real background worker for
+actual email delivery), real docs updated in the same pass as the
+code, real CI green before moving on.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
