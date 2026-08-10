@@ -40,7 +40,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real quiz auto-grading, anonymous-survey pseudonymisation, virus-scanned assignment submissions | **PASS** — `tests/test_assessment.py`; live smoke test end to end (see HANDOFF.md's Fourteenth pass) |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31359802592](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31359802592) (quality 3m5s, web 57s) |
 
 **Headline:** 152 tests (0 skipped), 41 endpoints, 47 tables (events partitioned monthly ×14), 13 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback, and quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation.
 

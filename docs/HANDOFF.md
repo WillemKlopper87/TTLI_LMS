@@ -773,8 +773,10 @@ refused with the real signature name, approved the clean one. `apps/web`
 gained `quiz-player.tsx`/`survey-form.tsx`/`assignment-upload.tsx`, wired
 into `/learn/[enrolmentId]` by `activity_type`; `typecheck`/`build` both
 clean (still 15 routes — no new pages, only new components inside the
-existing lesson page). `npm audit` clean on both packages. Not yet pushed
-as of this note.
+existing lesson page). `npm audit` clean on both packages. Pushed as
+`fac6dd3`; green on both jobs on the first try —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31359802592
+(quality 3m5s, web 57s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
