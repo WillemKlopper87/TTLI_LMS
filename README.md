@@ -33,7 +33,7 @@ A multi-tenant platform for selling and delivering executive and leadership trai
 | Database | PostgreSQL 16, row-level security for tenant isolation |
 | Queue and cache | arq + Redis 7 |
 | Identity | Self-issued JWT, Argon2id, magic links, TOTP; per-tenant SAML/OIDC via `msal` |
-| Object storage | S3 / Azure Blob / local adapter — MinIO in development |
+| Object storage | S3 / Azure Blob / local adapter — Garage in development |
 | Video | Self-hosted HLS ladder ported from the in-house `Streaming_Server`; DRM behind a flag |
 | Email | External ESP |
 | AI | Provider abstraction over OpenAI, Anthropic, Gemini and Azure OpenAI, behind a PII-redaction gateway |
@@ -55,8 +55,9 @@ apps/
 packages/
   api-client/              generated types + thin client; drift-gated    ✅
 infra/
-  docker-compose.yml       Postgres, Redis, MinIO, Mailpit, ClamAV       ✅
+  docker-compose.yml       Postgres, Redis, Garage, Mailpit, ClamAV      ✅
   postgres-init/           extensions bootstrap                          ✅
+  garage/                  garage.toml — single-node dev config          ✅
 docs/                      the documentation set                         ✅
   source/                  preserved planning material                   ✅
 chat-export-1786178220416.json    original export, reference only
@@ -100,8 +101,8 @@ Several projects share this machine. Every port below was checked against `Agent
 |---|---:|---:|
 | Postgres | 5452 | 5432 |
 | Redis | 6399 | 6379 |
-| MinIO API | 9140 | 9000 |
-| MinIO console | 9141 | 9001 |
+| Garage S3 API | 9140 | 3900 |
+| Garage admin API | 9141 | 3903 |
 | Mailpit SMTP | 1145 | 1025 |
 | Mailpit web | 8145 | 8025 |
 | ClamAV (clamd) | 3410 | 3310 |

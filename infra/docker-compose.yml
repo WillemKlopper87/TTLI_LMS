@@ -41,23 +41,58 @@ services:
       timeout: 3s
       retries: 12
 
-  minio:
-    image: minio/minio:latest
-    container_name: ttli-minio
-    command: ["server", "/data", "--console-address", ":9001"]
+  # Dependency-upgrade sprint G: replaces minio/minio. Community-edition
+  # MinIO's pre-built binaries were discontinued Oct 2025 and the repo
+  # itself was archived twice since — no further security patches will
+  # ever land on that image. Garage was validated directly against this
+  # project's actual services/storage/s3.py usage before adopting it, not
+  # assumed compatible: presigned URLs, CopyObject, ListObjectsV2
+  # pagination, the Expiration lifecycle action, and S3 CreateBucket
+  # itself (needed by ensure_container's runtime bucket creation) all
+  # confirmed working end to end against a real container, including the
+  # exact BucketAlreadyOwnedByYou idempotency path ensure_container
+  # depends on. Object versioning (Garage's one real gap) isn't used here.
+  #
+  # No env-var root-user bootstrap like MinIO's MINIO_ROOT_USER/PASSWORD
+  # — instead `--single-node --default-bucket` (Garage 2.3.0+) reads
+  # GARAGE_DEFAULT_ACCESS_KEY/SECRET_KEY/BUCKET and creates the layout,
+  # key, and bucket automatically. Confirmed hands-on, not assumed from
+  # docs: the auto-created key gets full create-bucket rights (not just
+  # owner rights on the one default bucket), so the app's own
+  # ensure_container() can still create the other containers it needs.
+  # GARAGE_DEFAULT_ACCESS_KEY must match apps/api/.env's S3_ACCESS_KEY —
+  # Garage requires the GK<24 hex>/<64 hex> key format, unlike MinIO,
+  # which accepted arbitrary strings.
+  #
+  # No healthcheck: block, unlike every other service here — confirmed
+  # hands-on, not assumed, that this is a real gap in the image rather
+  # than an oversight in this config. The distroless image ships only
+  # the `garage` binary (`docker exec ... sh` fails with "executable
+  # file not found in $PATH"), so there is no shell, curl, or wget
+  # inside the container to run a CMD-SHELL probe against the admin
+  # API's /health endpoint with — the same constraint already
+  # documented on mailhog above, for the same reason (no CLI to probe
+  # with), just newly hit here rather than previously known.
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: ttli-garage
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: ttli_dev
-      MINIO_ROOT_PASSWORD: ttli_local_dev
+      GARAGE_DEFAULT_ACCESS_KEY: GKb9c32ff7b3db35e902fd29f7
+      GARAGE_DEFAULT_SECRET_KEY: 43e555c82c4dd74d5d783f61510d2badd718f9937d9e4c326c25628527d5280c
+      GARAGE_DEFAULT_BUCKET: ttli-default
     ports:
-      - "9140:9000"
-      - "9141:9001"
+      # 9140 kept from MinIO's S3 API port for continuity — no change
+      # needed to S3_ENDPOINT_URL. 9141 repurposed from MinIO's web
+      # console (Garage ships no bundled console) to the admin API,
+      # useful for a human to hit /health or /v2/GetClusterHealth
+      # directly; see README.md's port table for the same note.
+      - "9140:3900"
+      - "9141:3903"
     volumes:
-      - ttli-minio:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - ttli-garage-meta:/var/lib/garage/meta
+      - ttli-garage-data:/var/lib/garage/data
 
   # Mailpit — a local SMTP catcher for magic-link/password-reset/guest
   # emails in dev and CI. Not mailhog/mailhog: a Trivy image scan found
@@ -100,5 +135,6 @@ services:
 volumes:
   ttli-postgres:
   ttli-redis:
-  ttli-minio:
+  ttli-garage-meta:
+  ttli-garage-data:
   ttli-clamav:

@@ -1,0 +1,27 @@
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "lmdb"
+
+# Single dev node, no replication — matches this project's other infra
+# services (one Postgres, one Redis instance, no clustering locally).
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+# Dev-only secret, same class as postgres/redis/minio's plaintext
+# credentials already hardcoded in docker-compose.yml. Not used outside
+# this single-node container; there is no other node to authenticate to.
+rpc_secret = "e2e8dbad82e414252abf49aaf4dc6d6176787e638e021012c79fb3b9087d679c"
+
+[s3_api]
+# Matches S3_REGION in apps/api/.env (af-south-1, the target production
+# region per 01_PRD.md §5) — Garage's region is just a label used in
+# request signing, not tied to a real AWS region, so there is no reason
+# for the local dev value to diverge from the documented target region.
+s3_region = "af-south-1"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token = "ac4324c09d4d0d3eec4b82db4520581a6bb66c2ba047c539"

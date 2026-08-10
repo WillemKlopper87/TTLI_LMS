@@ -14,8 +14,8 @@ Audience: developers and site administrators.
 |---|---|---:|---|
 | Postgres | `postgres:16-alpine` | **5452** | 5432 is taken; worksorder holds 5442, collab 5433, Internal_Booking 55532 |
 | Redis | `redis:7-alpine` | **6399** | 6379 taken; worksorder 6389, collab 6380 |
-| MinIO API | `minio/minio` | **9140** | 9000 taken; worksorder 9110, collab 9002 |
-| MinIO console | | **9141** | |
+| Garage S3 API | `dxflrs/garage:v2.3.0` | **9140** | 9000 taken; worksorder 9110, collab 9002 |
+| Garage admin API | | **9141** | |
 | Mailpit SMTP | `axllent/mailpit` | **1145** | worksorder 1125 |
 | Mailpit web | | **8145** | worksorder 8125 |
 | ClamAV (clamd) | `clamav/clamav-debian:stable` | **3410** | 3310 is the clamd default |
@@ -24,7 +24,7 @@ Audience: developers and site administrators.
 
 Every port here is deliberately non-default and checked against every sibling project on this machine. Reusing 5432 means two projects cannot run at once, which is the failure mode this table exists to prevent.
 
-Health checks on every service; named volumes so a `docker compose down` does not destroy the database.
+Health checks on every service except Garage, whose distroless image ships only the `garage` binary — no shell, curl, or wget inside the container to run a probe with (confirmed hands-on: `docker exec ... sh` fails with "executable file not found in $PATH"), the same reason Mailpit has none either. Named volumes so a `docker compose down` does not destroy the database.
 
 ### 1.2 Postgres bootstrap
 
@@ -51,7 +51,7 @@ StorageService
   set_metadata()       list_objects()      apply_lifecycle_policy()
 ```
 
-`S3StorageAdapter` · `AzureBlobStorageAdapter` · `LocalStorageAdapter` (development, backed by MinIO).
+`S3StorageAdapter` · `AzureBlobStorageAdapter` · `LocalStorageAdapter` (development, backed by [Garage](https://garagehq.deuxfleurs.fr/) — swapped from MinIO in the dependency-upgrade sprint after MinIO's community-edition binaries were discontinued and its repo archived; `infra/garage/garage.toml` has the single-node config, `infra/docker-compose.yml` the bootstrap detail). CI never touches either — `tests/test_storage.py`'s automated coverage runs against moto's in-process S3 mock, so a live Garage/MinIO instance is a manual local sanity check only, never a CI dependency.
 
 ### 2.2 Containers
 

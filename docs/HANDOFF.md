@@ -1692,6 +1692,66 @@ a way either default would catch. A clean version bump, confirmed by
 running the tool against the real codebase rather than trusting the
 release-note estimate that scoped this sprint in the first place.
 
+Sprint G (MinIO → Garage `v2.3.0` for local dev storage) is the one
+where checking directly, rather than trusting a source, mattered most —
+two things this sprint's own original scoping got wrong, both caught
+before they shipped:
+
+1. A web search claimed Garage doesn't support the S3 `CreateBucket`
+   operation, which `services/storage/s3.py`'s `ensure_container()`
+   depends on every time it runs. That would have been a real,
+   load-bearing incompatibility. Fetched the *official* S3-compatibility
+   reference page directly instead of trusting the search summary —
+   `CreateBucket` is listed "✅ Implemented" — then confirmed it against
+   a live container: created a bucket the auto-provisioned key was never
+   explicitly granted, and it succeeded, including the exact
+   `BucketAlreadyOwnedByYou` response `ensure_container`'s exception
+   handler already expects on a repeat call.
+2. The original scoping (see this pass note's Sprint A/G entry above)
+   assumed the distroless image's missing Docker healthcheck could
+   become "a TCP/HTTP check instead" — wrong. The image ships *only* the
+   `garage` binary: `docker exec ttli-garage sh` fails with "executable
+   file not found in $PATH". There is no shell, curl, or wget inside the
+   container to run any check with, TCP or otherwise. The `garage`
+   service in `infra/docker-compose.yml` has no `healthcheck:` block at
+   all — same as `mailhog`, and for the same reason (no CLI inside the
+   image to probe with).
+
+Bootstrap itself turned out simpler than scoped, not harder: Garage
+2.3.0 added `garage server --single-node --default-bucket`, which reads
+`GARAGE_DEFAULT_ACCESS_KEY`/`SECRET_KEY`/`BUCKET` env vars and
+auto-configures the single-node cluster layout, an access key, and a
+bucket on first boot — close to MinIO's `MINIO_ROOT_USER`/`PASSWORD`
+simplicity, no custom init container needed. Confirmed hands-on that the
+auto-created key gets *global* create-bucket rights, not just owner
+rights on the one default bucket (the docs don't say either way) — this
+is what lets the app's own `ensure_container()` create the other three
+containers (`private-content`, `user-uploads`, `generated-documents`)
+that `--default-bucket` doesn't pre-create.
+
+One real, unavoidable constraint: Garage requires access keys in a
+`GK<24 hex>`/`<64 hex> secret` format, unlike MinIO's arbitrary
+strings, so `apps/api/.env` (gitignored, edited locally) and the
+tracked `.env.example` both needed new `S3_ACCESS_KEY`/`S3_SECRET_KEY`
+values, matching `infra/docker-compose.yml`'s
+`GARAGE_DEFAULT_ACCESS_KEY`/`SECRET_KEY`. New file:
+`infra/garage/garage.toml` (single-node config; `s3_region =
+"af-south-1"` deliberately matches `.env`'s existing `S3_REGION` rather
+than an arbitrary Garage-specific label).
+
+Verified against the live container using the app's actual adapter
+code, not raw `boto3` standing in for it: every operation
+`services/storage/s3.py` performs — `ensure_container` (including its
+idempotent second-call path) across all four real containers,
+`upload_object`/`get_object`, `list_objects` with a prefix,
+`generate_signed_url` (fetched over real HTTP, not just generated),
+`set_metadata`'s `CopyObject` self-copy trick, `get_public_url`, and
+`apply_lifecycle_policy`'s `Expiration` rule. None of this touches CI:
+`tests/test_storage.py`'s own docstring already explains its automated
+coverage runs against moto's in-process S3 mock, never a live
+MinIO/Garage container, so this was always a local-dev-only swap — full
+187-test suite green twice regardless, `ruff`/`mypy` clean.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
