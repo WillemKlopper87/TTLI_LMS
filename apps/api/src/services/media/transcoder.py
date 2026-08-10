@@ -43,7 +43,7 @@ async def run_transcode(
     once every `PROGRESS_THROTTLE_SECONDS` — matching the source engine's
     `PROGRESS_PERSIST_MS`, ported to Python's step in seconds.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     args = [ffmpeg_path, "-hide_banner", "-loglevel", "warning", "-nostats", "-i", str(input_file)]
     args += build_ladder_args(rungs, probe, x264_preset=x264_preset)
 

@@ -183,7 +183,7 @@ async def test_full_eft_happy_path_issues_invoice_grants_entitlement_and_ledger(
     buyer_token, buyer_id = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
     )
-    finance_token, finance_id = await _login(
+    finance_token, _finance_id = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
     )
 
@@ -257,7 +257,7 @@ async def test_eft_reject_then_resubmit_then_approve(
     buyer_token, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
     )
-    finance_token, finance_id = await _login(
+    finance_token, _finance_id = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
     )
 

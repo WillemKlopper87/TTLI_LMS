@@ -375,7 +375,7 @@ async def test_transcript_lists_only_completed_lessons_and_is_owner_only(
 async def test_list_own_enrolments(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
-    token, buyer_id = await _enrol_via_eft(
+    token, _buyer_id = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
 

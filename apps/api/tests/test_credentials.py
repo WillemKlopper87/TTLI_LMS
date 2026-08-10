@@ -582,7 +582,7 @@ async def test_badge_visibility_is_owner_only_and_linkedin_share_reconstructs_ur
 
         row = await _certificate_row(tenant_session_factory, tenant_id, enrolment_id)
         assert row is not None
-        certificate_id, token_encrypted, _, _, certificate_number = row
+        _certificate_id, token_encrypted, _, _, certificate_number = row
         raw_token = crypto.decrypt(token_encrypted)
         expected_url = f"{settings.public_web_url}/verify/{raw_token}"
 

@@ -1,9 +1,12 @@
 -r requirements.txt
 pytest==9.1.1
 pytest-asyncio==1.4.0
-pytest-cov==6.0.0
+pytest-cov==7.1.0
 httpx==0.28.1
-ruff==0.8.6
+ruff==0.16.2
+# mypy stays pinned here — its own dependency-upgrade sprint (Sprint D)
+# flips two real defaults (--local-partial-types, --strict-bytes per PEP
+# 688) that need a dedicated fixup pass across `src/`, not a drive-by bump.
 mypy==1.14.1
 moto[s3]==5.2.2
 # CI dependency scanning (04 §3, §10) — apps/api/openapi.json workflow step.

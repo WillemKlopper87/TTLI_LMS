@@ -4,17 +4,28 @@
 # fixed CVE (35 findings total; see HANDOFF.md's pass note). Re-verified:
 # full test suite, mypy, and a live smoke test including a real multipart
 # file upload through the upgraded python-multipart.
+#
+# sqlalchemy/asyncpg/alembic/psycopg2-binary/pydantic/pydantic-settings/
+# structlog/argon2-cffi bumped in the dependency-upgrade sprint's low-risk
+# batch (Sprint B) — no breaking changes in any of their release notes
+# that touch how this project uses them (checked uvicorn's own
+# setup_event_loop/reload_delay changes specifically since those move the
+# most; this project never subclasses uvicorn.Config/Server, only invokes
+# it via the CLI, so neither applies). redis stays pinned here — its
+# client bump is paired with the Redis server major-version bump instead
+# (Sprints C/F), since redis-py 8 changes RESP3 becomes the default wire
+# protocol and needs auditing real call sites, not just a number change.
 fastapi==0.141.1
-uvicorn[standard]==0.34.0
-sqlalchemy[asyncio]==2.0.36
-asyncpg==0.30.0
-alembic==1.14.0
-psycopg2-binary==2.9.10
-pydantic[email]==2.10.4
-pydantic-settings==2.7.0
-structlog==24.4.0
+uvicorn[standard]==0.52.1
+sqlalchemy[asyncio]==2.0.51
+asyncpg==0.31.0
+alembic==1.19.1
+psycopg2-binary==2.9.12
+pydantic[email]==2.13.4
+pydantic-settings==2.15.0
+structlog==26.1.0
 PyJWT==2.13.0
-argon2-cffi==23.1.0
+argon2-cffi==25.1.0
 cryptography==50.0.0
 redis==5.2.1
 python-multipart==0.0.32

@@ -208,10 +208,11 @@ async def _upload_and_wait_ready(
     inline (rather than requiring a live arq worker in the test process) —
     the same real ffmpeg invocation the worker would make, just awaited
     directly so the test doesn't need to poll."""
+    video_bytes = await asyncio.to_thread(sample_video.read_bytes)
     resp = await client.post(
         "/api/v1/video-assets",
         headers={"Authorization": f"Bearer {author_token}"},
-        files={"file": ("lesson.mp4", sample_video.read_bytes(), "video/mp4")},
+        files={"file": ("lesson.mp4", video_bytes, "video/mp4")},
     )
     assert resp.status_code == 201, resp.text
     video_asset_id = resp.json()["id"]
@@ -441,7 +442,7 @@ async def test_hls_route_rejects_an_invalid_token(client) -> None:  # type: igno
 
 
 def test_rewrite_manifest_handles_ext_x_map_and_plain_lines() -> None:
-    content = "#EXTM3U\n" '#EXT-X-MAP:URI="init_0.mp4"\n' "#EXTINF:6.0,\n" "seg_0_00000.m4s\n"
+    content = '#EXTM3U\n#EXT-X-MAP:URI="init_0.mp4"\n#EXTINF:6.0,\nseg_0_00000.m4s\n'
     rewritten = playback.rewrite_manifest(content, token="tok123")
     assert '#EXT-X-MAP:URI="init_0.mp4?access_token=tok123"' in rewritten
     assert "seg_0_00000.m4s?access_token=tok123" in rewritten
