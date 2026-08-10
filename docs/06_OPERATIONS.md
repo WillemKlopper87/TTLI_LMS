@@ -12,7 +12,7 @@ Audience: developers and site administrators.
 
 | Service | Image | Host port | Why non-default |
 |---|---|---:|---|
-| Postgres | `postgres:16-alpine` | **5452** | 5432 is taken; worksorder holds 5442, collab 5433, Internal_Booking 55532 |
+| Postgres | `postgres:18-alpine` | **5452** | 5432 is taken; worksorder holds 5442, collab 5433, Internal_Booking 55532 |
 | Redis | `redis:7-alpine` | **6399** | 6379 taken; worksorder 6389, collab 6380 |
 | Garage S3 API | `dxflrs/garage:v2.3.0` | **9140** | 9000 taken; worksorder 9110, collab 9002 |
 | Garage admin API | | **9141** | |
@@ -29,6 +29,8 @@ Health checks on every service except Garage, whose distroless image ships only 
 ### 1.2 Postgres bootstrap
 
 `infra/postgres-init/01-extensions.sql` enables `citext` (case-insensitive email domains and slugs), `pg_trgm` (catalogue search before a dedicated search service is justified), and `pgcrypto`. Row-level security is enabled per table by the migrations that create them, not here.
+
+PG18 (dependency-upgrade sprint E, bumped from 16) changed the official image's own data directory to a version-specific path (`/var/lib/postgresql/18/docker`) and its declared volume to the `/var/lib/postgresql` parent — `infra/docker-compose.yml`'s volume mount targets that parent now, not a fixed `/data` path, so a future major bump mounting the same volume creates its cluster alongside this one rather than colliding with it. Migrated via `pg_dump`/`pg_restore`, not `pg_upgrade` in-place — the data format isn't binary-compatible across majors, and a clean restore into a fresh volume is simpler and safer than running two majors' binaries in one container. `app_user` and its per-table grants come from replaying the full Alembic migration history, not from the dump (a single-database `pg_dump` never captures role definitions) — restoring the dump on top of a database that already has the role in place is what makes `GRANT`s in the dump apply cleanly.
 
 ### 1.3 Configuration contract
 

@@ -3,8 +3,28 @@
 name: ttli
 
 services:
+  # Dependency-upgrade sprint E: bumped from postgres:16-alpine. PG18
+  # changed the image's own PGDATA default to be version-specific
+  # (/var/lib/postgresql/18/docker, confirmed hands-on) and its declared
+  # VOLUME to the /var/lib/postgresql parent — so the mount below targets
+  # the parent, not a fixed /data path, matching the upstream image's own
+  # forward-compatible layout (a future postgres:19 mounting this same
+  # volume would create its cluster alongside this one at .../19/docker,
+  # not overwrite it). Migrated via dump/restore, not pg_upgrade in-place
+  # — a fresh volume (ttli-postgres-18, not a reused ttli-postgres) plus
+  # a full pg_dump -Fc/pg_restore round-trip, since the on-disk format
+  # isn't binary-compatible across majors and this is a small dev
+  # database where a clean restore is simpler and safer than juggling
+  # two majors' binaries in one container for `pg_upgrade --link`.
+  # citext/pg_trgm/pgcrypto all restored and re-verified against a live
+  # PG18 server, not assumed compatible — the one real PG18 behaviour
+  # change relevant to pg_trgm (full-text search now honours the
+  # cluster's own collation provider instead of always libc) only
+  # matters for non-libc providers; this cluster's default `initdb`
+  # provider is libc, checked via `SHOW default_text_search_config`/
+  # cluster locale, not assumed.
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: ttli-postgres
     environment:
       POSTGRES_USER: ttli
@@ -13,7 +33,7 @@ services:
     ports:
       - "5452:5432"
     volumes:
-      - ttli-postgres:/var/lib/postgresql/data
+      - ttli-postgres-18:/var/lib/postgresql
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ttli -d ttli"]
@@ -133,7 +153,7 @@ services:
       start_period: 5m
 
 volumes:
-  ttli-postgres:
+  ttli-postgres-18:
   ttli-redis:
   ttli-garage-meta:
   ttli-garage-data:

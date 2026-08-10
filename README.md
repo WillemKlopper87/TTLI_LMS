@@ -30,7 +30,7 @@ A multi-tenant platform for selling and delivering executive and leadership trai
 | Web | Next.js 15 App Router, TypeScript, Tailwind — public site, storefront, learner and admin portals |
 | API | FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2 — the system of record |
 | Type contract | `openapi.json` → `openapi-typescript` → `packages/api-client`, with a CI drift gate |
-| Database | PostgreSQL 16, row-level security for tenant isolation |
+| Database | PostgreSQL 18, row-level security for tenant isolation |
 | Queue and cache | arq + Redis 7 |
 | Identity | Self-issued JWT, Argon2id, magic links, TOTP; per-tenant SAML/OIDC via `msal` |
 | Object storage | S3 / Azure Blob / local adapter — Garage in development |

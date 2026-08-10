@@ -15,7 +15,12 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        # PG18's PGDATA-path change (dependency-upgrade sprint E,
+        # infra/docker-compose.yml has the detail) doesn't apply here —
+        # GH Actions service containers use the image's own ephemeral
+        # storage with no custom volume mount, so there's nothing for
+        # the new versioned path to conflict with.
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: ttli
           POSTGRES_PASSWORD: ttli_ci

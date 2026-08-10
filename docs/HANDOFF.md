@@ -1752,6 +1752,68 @@ coverage runs against moto's in-process S3 mock, never a live
 MinIO/Garage container, so this was always a local-dev-only swap — full
 187-test suite green twice regardless, `ruff`/`mypy` clean.
 
+Sprint E (PostgreSQL 16 → 18.4) is the last of this dependency-upgrade
+sequence, and the highest-risk — a real data-format migration, not a
+version-pin bump — so it got the most hands-on verification of any
+sprint here, plus one real mistake caught and fixed before it shipped.
+
+The official image changed its own data directory to a version-specific
+path in 18 (`/var/lib/postgresql/18/docker`, seen directly in the
+container's boot log) and its declared volume to the `/var/lib/postgresql`
+parent, so `infra/docker-compose.yml`'s postgres service mounts a fresh
+`ttli-postgres-18` volume at that parent now, not the old fixed `/data`
+path — matches the upstream image's own intent, that a future major
+mounting the same volume creates its cluster alongside this one instead
+of colliding. Chose `pg_dump`/`pg_restore` over `pg_upgrade --link`
+deliberately: the on-disk format isn't binary-compatible across majors,
+and for a small dev database, restoring into a clean volume is simpler
+and safer than running two majors' server binaries in the same
+container (which the stock single-version official image doesn't
+support anyway without extra tooling).
+
+The real mistake: the first restore attempt used `pg_restore --no-owner
+--no-privileges` (to sidestep a role, `app_user`, that didn't exist yet
+in the fresh cluster) and then just... didn't have `app_user` or any of
+its per-table `GRANT`s afterward. `pg_dump` of a single database never
+captures role definitions — `app_user` is created inside Alembic
+migration `0001`, not `infra/postgres-init/`, and skipping straight to
+`pg_restore` skipped that role-creation step along with it. Caught by
+checking `\du` after the restore rather than assuming the app could
+connect — it couldn't have. Fixed properly, not patched around: dropped
+back to an empty database, replayed the full 19-migration Alembic
+history against PG18 from scratch (which both recreates `app_user` and
+every grant exactly as the real migration history intends, *and*
+re-verifies the entire chain replays cleanly on the new major version —
+two birds), then restored the dump a second time — this time *with*
+owner/privilege info included — on top of a database that already had
+the role, so its `GRANT`s applied cleanly instead of erroring.
+
+Verified live, not assumed, at every step that mattered: `citext`/
+`pg_trgm`/`pgcrypto` all restored at their correct versions; the
+cluster's collation provider checked directly (`datlocprovider = 'c'`,
+i.e. libc) to confirm PG18's one real `pg_trgm`-adjacent release-note
+change (full-text search now honouring the cluster's own non-libc
+provider) doesn't apply here; RLS tested as an actual query under
+`app_user`, not just confirming the policy object still exists —
+querying `enrolments` with no tenant context set returns 0 rows, the
+correct tenant's context returns all 2,422 rows, a wrong tenant's
+context still returns 0. All of this ran with the real accumulated dev
+database intact throughout (10,699 users, 2 tenants, 2,422 enrolments,
+46 MB), not a throwaway fixture — dumped safely to the scratchpad before
+touching anything, per this session's standing rule about investigating
+before discarding local state. Full suite (187 tests) green twice
+against the live restored database, migration round-trip clean,
+`alembic check` clean, `ruff`/`mypy` clean. `.github/workflows/api.yml`'s
+service container bumped too — PG18's data-directory change is a no-op
+there, since GH Actions service containers use ephemeral storage with
+no custom volume mount to begin with.
+
+One thing this sprint surfaced but didn't fix, recorded rather than
+silently dropped: `clamav/clamav-debian:stable` was flagged in the same
+original CVE-scan finding as MinIO and Postgres (§10's older security-scan
+section) but was never actually scoped into any of Sprints A–G. Still
+open — see STATUS.md §10.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

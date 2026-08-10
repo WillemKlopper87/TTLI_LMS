@@ -2,7 +2,7 @@
 
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (field protection, policies)
 
-PostgreSQL 16 is the system of record. Nothing else holds durable state.
+PostgreSQL 18 is the system of record. Nothing else holds durable state.
 
 ---
 
