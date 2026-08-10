@@ -1292,8 +1292,11 @@ back to `assigned=0` → members list shows the new employee as a
 `member`. All four new page routes confirmed rendering (HTTP 200) with
 no console/server errors in the dev-server logs.
 
-Not yet done: STATUS/HANDOFF updates for this pass are this entry
-itself; commit/push/CI verification is next.
+Committed as `74f4183`, pushed to `main`; CI green on both jobs on
+the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31405256087
+(quality 3m43s, web 1m1s), including the migration round-trip check
+passing in a clean environment (confirms the `0016` downgrade fix
+holds outside the local dev database it was diagnosed against).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
