@@ -1185,11 +1185,13 @@ all gitignored, all regenerate on the next command that needs them.
 Verified: full suite 158 tests / 0 skipped (159 minus the removed
 Mailhog test), run after every change in this pass, not just at the
 end. `ruff`/`mypy`/`alembic check` clean. `apps/web` `typecheck`/`build`
-clean, including the header fixes. Not yet committed at the point this
-note was written — folded into whatever commit finishes this pass,
-since none of it is safe to leave half-applied (a docker-compose.yml
-that still references a since-deleted image, or a test file mid-edit,
-would be worse than the CVEs this fixed).
+clean, including the header fixes. Pushed as `9ddd5fa`, separately from
+the in-progress Phase 5 organisations schema work (which touches
+different files and wasn't feature-complete enough to commit yet) —
+green on both jobs on the first try, confirming the CI service
+container's own removal of Mailhog works, not just the local compose
+file — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31394330419
+(quality 3m37s, web 55s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
