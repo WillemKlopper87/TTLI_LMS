@@ -899,7 +899,10 @@ confirmed instead. `apps/web` gained `credentials-panel.tsx` (wired into
 `/learn/[enrolmentId]`) and the public `app/verify/[token]/page.tsx` — 16
 routes now, up from 15. `typecheck`/`build` both clean. `npm audit` clean
 on both packages. `packages/api-client`'s `schema.gen.ts` regenerated
-from a freshly-exported `openapi.json` and typechecked clean.
+from a freshly-exported `openapi.json` and typechecked clean. Pushed as
+`0fdad37`; green on both jobs on the first try —
+https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31375456707
+(quality 3m19s, web 57s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are

@@ -41,7 +41,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Real certificate PDF+QR generation, public verification, revocation, badge/certificate visibility, LinkedIn sharing | **PASS** — `tests/test_credentials.py`; live smoke test through the actual running dev servers and the real BFF, including the `/verify/[token]` page itself (see HANDOFF.md's latest pass) |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | Pending re-run after this sprint's push — updated here once green |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31375456707](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31375456707) (quality 3m19s, web 57s) |
 
 **Headline:** 157 tests (0 skipped), 56 endpoints, 52 tables (events partitioned monthly ×14), 14 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 16 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, and certificates/badges with a real reportlab-rendered PDF, an embedded scannable QR code, encrypted+blind-indexed public verification, and LinkedIn sharing.
 
