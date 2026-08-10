@@ -55,7 +55,7 @@ apps/
 packages/
   api-client/              generated types + thin client; drift-gated    ✅
 infra/
-  docker-compose.yml       Postgres, Redis, MinIO, Mailhog               ✅
+  docker-compose.yml       Postgres, Redis, MinIO, ClamAV                ✅
   postgres-init/           extensions bootstrap                          ✅
 docs/                      the documentation set                         ✅
   source/                  preserved planning material                   ✅
@@ -102,8 +102,6 @@ Several projects share this machine. Every port below was checked against `Agent
 | Redis | 6399 | 6379 |
 | MinIO API | 9140 | 9000 |
 | MinIO console | 9141 | 9001 |
-| Mailhog SMTP | 1145 | 1025 |
-| Mailhog web | 8145 | 8025 |
 | ClamAV (clamd) | 3410 | 3310 |
 | API | 8010 | 8000 |
 | Web | 3010 | 3000 |

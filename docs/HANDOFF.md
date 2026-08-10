@@ -1067,6 +1067,130 @@ typechecked clean. Pushed as `595a673`; green on both jobs on the first
 try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31386541830
 (quality 4m6s, web 52s).
 
+**Seventeenth pass: an independent security scan (OWASP ZAP + Trivy),
+requested mid-Phase-5.** Not a sprint — a detour, at the user's explicit
+request, to run tools neither `pip-audit` nor `npm audit` overlap with:
+dynamic scanning against the actually-running app, and container-image
+scanning against what `infra/docker-compose.yml` pulls from Docker Hub.
+
+**ZAP baseline against `apps/web`, dev server first: 10 WARN, 0 FAIL.**
+Three of the ten — "Dangerous JS Functions" (`eval(`), "Suspicious
+Comments", "Timestamp Disclosure" — turned out to be dev-server-only
+artifacts of webpack's `eval()`-based HMR source maps, not present in a
+real build. Confirmed rather than assumed: `grep -rl "eval(" .next/
+static/chunks/*.js` against a real `next build` returned zero matches,
+and a full re-scan against `next build && next start` made all three
+findings disappear on their own. The other three real, fixable findings
+— `X-Content-Type-Options`/`Permissions-Policy` missing on static
+assets, and `X-Powered-By: Next.js` leaking the framework — were fixed:
+the two headers moved into `next.config.ts`'s `headers()` config for
+`_next/static`/`_next/image`/`icon.png` specifically (rather than
+widening `proxy.ts`'s matcher to run the CSP-nonce middleware on every
+static asset, which would cost real overhead for headers that don't
+need per-request randomness), and `poweredByHeader: false` was added.
+Re-scanning the production build after the fix: 4 WARN remain, all
+reviewed and accepted rather than fixed — `style-src 'unsafe-inline'`
+(`proxy.ts`'s own docstring already justifies this), a COEP header
+deliberately not added (no current feature needs the cross-origin
+isolation it provides, and adding it without CORP-tagging every
+resource risks silently breaking a future cross-origin embed, e.g. a
+card-checkout iframe), and two purely informational findings. ZAP
+against `apps/api` came back essentially clean (1 trivial WARN about
+cacheable 404s).
+
+**Trivy `fs` (vuln + secret + misconfig) against the repository: clean.**
+Zero vulnerabilities in the three dependency manifests it found
+(`requirements.txt`, both `package-lock.json` files) — an independent
+confirmation of what `pip-audit`/`npm audit` already report, from a
+different scanner and a different vulnerability database. Zero secrets
+in tracked source. Getting a *clean run* took three attempts, and the
+retries are worth recording: the first two attempts hit Trivy's
+internal analysis timeout scanning `apps/api/var/storage` — 105 MB and
+868 directories of leftover local video-transcode test artifacts from
+every media/caption smoke test this session ever ran, gitignored but
+never cleaned up, silently accumulating. Excluding it (`--skip-dirs`)
+alongside `node_modules`/`.venv`/`.next`/`.mypy_cache` (already covered
+by `pip-audit`/`npm audit`, no reason to re-scan them here) and a
+longer `--timeout` got a scan to actually finish.
+
+**Trivy `image` against every service in `infra/docker-compose.yml`:**
+`postgres:16-alpine` 1 CRITICAL/14 HIGH (almost entirely a bundled Go
+entrypoint helper, never exposed to network input), `redis:7-alpine`
+clean, `minio/minio:latest` 6 CRITICAL/76 HIGH, `mailhog/mailhog:latest`
+**109 CRITICAL/1250 HIGH** — MailHog has been unmaintained upstream for
+years, still shipping on an EOL Alpine 3.12 base, and it shows.
+`clamav/clamav-debian:stable` 5 CRITICAL/23 HIGH. Fixed the one with
+both the worst numbers and the lowest switching cost: mailhog/mailhog
+→ `axllent/mailpit:v1.24`, an actively-maintained, protocol-compatible
+successor. Verified rather than assumed compatible — sent a real
+message through it and inspected the actual response: Mailpit's API is
+`/api/v1/messages`, not MailHog's `/api/v2/messages` its docs claim
+"compatibility" for, and the message shape differs too (`To` is a list
+of `{Name, Address}` objects, `Subject` is a plain string, not
+MailHog's nested `Content.Headers` shape). `tests/test_workers.py` was
+updated to the real shape, not the assumed one, and re-run against the
+actual container to confirm. `minio`/`clamav`/`postgres` CVEs were
+**not** version-bumped blindly — all three are functionally load-bearing
+(storage, virus scanning, the primary database) unlike Mailhog, and an
+untested version jump risks breaking something worse than the CVEs
+themselves; tracked as an open item in STATUS.md §10 instead, for a
+controlled upgrade-and-test pass.
+
+**Then, a follow-up request: remove Mailhog/Mailpit entirely** — local
+SMTP delivery verification judged non-essential right now. This looked
+trivial and almost wasn't: `.github/workflows/api.yml`'s "Assert
+integration tests ran" step hard-fails the build on *any* skipped
+test (`if skipped: sys.exit(...)` — the same zero-skip discipline that
+has caught real problems all session). `tests/test_workers.py::
+test_send_email_job_delivers_via_smtp` already had a graceful
+`pytest.skip(...)` fallback for "Mailhog/Mailpit not reachable" — safe
+for a laptop that hasn't run `docker compose up` yet, fatal for a CI
+job that will never have it reachable again once the service container
+is deleted. Removed the test outright, not left skipping — the other
+worker test (`test_send_sync_raises_on_unreachable_smtp_host`) already
+covers the "SMTP unreachable" failure mode `send_sync`'s retry contract
+depends on, and needs nothing running to do it. `services/email.py`'s
+actual send path (`send_email()` only ever enqueues, never blocks a
+request on SMTP) is completely unaffected — what's genuinely lost is
+the one automated check that a real send reaches a real inbox, which is
+now a documented gap (STATUS.md §10), not a silent one.
+
+**A process note, not a code finding.** Partway through, another
+Claude Code session — a different, unrelated project on this same
+machine — turned out to be running its own Trivy scans concurrently,
+into the same generic `/c/tmp/security-scan` directory this session had
+carelessly reused instead of its own isolated scratchpad (the harness
+provides one specifically to avoid exactly this). The collision
+surfaced as an unfamiliar shell script scanning Docker images that
+share nothing with this project — `pgvector`, `nats`, `neo4j`,
+`ollama` — which is worth pausing on for anyone reading this later:
+that pattern (unexplained files, referencing infrastructure that isn't
+this project's) is exactly what a real prompt-injection or supply-chain
+compromise would also look like. It was investigated before being
+touched — traced to running containers named `itsm-*` for what was
+evidently a different in-progress session — confirmed as directory
+collision, not tampering, and only then was this session's own output
+moved to its correct isolated path and re-run cleanly. The instinct to
+stop and verify before trusting or deleting unfamiliar files in a
+shared path was the right one regardless of how it turned out this
+time.
+
+**Housekeeping in the same pass** (the user's own follow-up ask, once
+the scan surfaced how much had accumulated): removed `apps/api/var/
+storage` (105 MB), `.mypy_cache` (72 MB), `.ruff_cache`, `.coverage`,
+stray `__pycache__` directories, and `apps/web/tsconfig.tsbuildinfo` —
+all gitignored, all regenerate on the next command that needs them.
+`apps/api/.env` was of course never touched.
+
+Verified: full suite 158 tests / 0 skipped (159 minus the removed
+Mailhog test), run after every change in this pass, not just at the
+end. `ruff`/`mypy`/`alembic check` clean. `apps/web` `typecheck`/`build`
+clean, including the header fixes. Not yet committed at the point this
+note was written — folded into whatever commit finishes this pass,
+since none of it is safe to leave half-applied (a docker-compose.yml
+that still references a since-deleted image, or a test file mid-edit,
+would be worse than the CVEs this fixed).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

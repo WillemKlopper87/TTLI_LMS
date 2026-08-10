@@ -1,5 +1,5 @@
 # Ports are deliberately non-default. Other projects on this machine already own
-# 5432/6379/9000/1025 — see README.md for the full reservation table.
+# 5432/6379/9000 — see README.md for the full reservation table.
 name: ttli
 
 services:
@@ -52,13 +52,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-
-  mailhog:
-    image: mailhog/mailhog:latest
-    container_name: ttli-mailhog
-    ports:
-      - "1145:1025"
-      - "8145:8025"
 
   # Virus scanning before an upload becomes readable (04 §3, REQ-BYPASS-08)
   # — src/services/antivirus.py talks to clamd over this port. First boot

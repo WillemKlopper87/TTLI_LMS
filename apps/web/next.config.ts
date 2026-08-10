@@ -4,6 +4,38 @@ const nextConfig: NextConfig = {
   // The client package ships TypeScript source, not compiled JS — Next
   // transpiles it as part of this app's build.
   transpilePackages: ["@ttli/api-client"],
+  // Found by a ZAP baseline scan: Next sends this by default, leaking
+  // the framework identity to every response for no functional benefit.
+  poweredByHeader: false,
+  // proxy.ts's matcher deliberately skips static assets — a per-request
+  // CSP nonce is pointless on a JS chunk that never executes an inline
+  // script. But a ZAP baseline scan correctly flagged those same assets
+  // as missing X-Content-Type-Options/Permissions-Policy, which cost
+  // nothing to set and don't need per-request randomness — set here,
+  // at the config level, rather than paying middleware overhead on
+  // every static-asset request just to add two static header values.
+  async headers() {
+    return [
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      {
+        source: "/_next/image",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      {
+        source: "/icon.png",
+        headers: [{ key: "X-Content-Type-Options", value: "nosniff" }],
+      },
+    ];
+  },
 };
 
 // Next 16 defaults dev/build to Turbopack (package.json scripts pass

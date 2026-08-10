@@ -27,7 +27,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 122 files |
 | `mypy src` (strict) | **PASS** — 87 source files |
-| `pytest` | **PASS** — 159 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
+| `pytest` | **PASS** — 158 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
 | `alembic upgrade head` | **PASS** — at `0015` |
@@ -46,7 +46,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31386541830](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31386541830) (quality 4m6s, web 52s) |
 
-**Headline:** 159 tests (0 skipped), 58 endpoints, 52 tables (events partitioned monthly ×14), 15 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 17 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, an installable PWA with a real offline shell, and a WCAG 2.1 AA-verified colour system.
+**Headline:** 158 tests (0 skipped), 58 endpoints, 52 tables (events partitioned monthly ×14), 15 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 17 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, an installable PWA with a real offline shell, and a WCAG 2.1 AA-verified colour system.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -81,7 +81,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Event write path: `events` table now actually receives rows (login, magic-link, password-reset, token reuse, lead capture) | `src/services/events.py` | covered in `tests/test_leads.py` |
 | Real TTLI brand (name, logo, `#8E151C`/`#BC222A`) replacing the placeholder navy/gold, extracted from ttli.co.za with documented provenance | `0008`, [docs/brand/ttli-brand-identity.md](brand/ttli-brand-identity.md), `apps/web/public/brand/` | migration round-trip; `apps/web` build/typecheck; HTTP smoke test against both demo tenants confirming `acme` is untouched |
 | Admin lead view: paginated, tenant-scoped, gated on `analytics:view` | `src/services/leads.py::list_leads`, `/leads` (GET), `apps/web/app/admin/leads/` | 2 tests in `tests/test_leads.py`; HTTP smoke test through the real BFF against a logged-in admin |
-| Guest account provisioning: unique-per-lead, time-limited, magic-link-only; expiry enforced at both magic-link consumption and refresh rotation | `src/services/guest_access.py`, `/guest-access` | 8 tests in `tests/test_guest_access.py`; HTTP smoke test confirmed real Mailhog delivery via the arq worker |
+| Guest account provisioning: unique-per-lead, time-limited, magic-link-only; expiry enforced at both magic-link consumption and refresh rotation | `src/services/guest_access.py`, `/guest-access` | 8 tests in `tests/test_guest_access.py`; HTTP smoke test confirmed real SMTP delivery via the arq worker (against Mailhog at the time; see §10 for why that's no longer a running service or a test dependency) |
 | Commerce foundation + EFT purchase path: server-resolved price/tax, data-driven tax engine, sequential gapless invoicing, append-only ledger, entitlements, the finance approval queue | `0009`, `src/services/{tax,orders,invoicing,ledger,entitlements,catalogue}.py`, `/products`, `/orders`, `/payments` | 12 tests in `tests/test_commerce.py`; HTTP smoke test — full EFT flow, reject/resubmit, 5x rapid order creation with no reference collisions |
 | Real `apps/web` build: the prototype's design system (Charter serif, stone/surface palette, button/card/tag components) applied to every page; real TTLI copy, team photos and client logos from ttli.co.za (not placeholder content); routing restructured (`/` is now the marketing landing page, login moved to `/login`) | `apps/web/app/{globals.css,page.tsx,login/,guest-access/,catalogue/,checkout/,admin/payments/}`, `docs/brand/ttli-brand-identity.md` | `typecheck`/`build` clean, 11 routes; HTTP smoke test of the full journey — landing → guest-access → catalogue → checkout → EFT proof upload → finance approval → invoice, over the real BFF |
 | BFF binary-body fix: the proxy forwarded every non-GET body through `request.text()`, which silently corrupts binary content (multipart file uploads) on the UTF-8 round-trip | `apps/web/app/api/bff/[...path]/route.ts` | Verified with an actual JPEG proof-of-payment upload through the real BFF: stored file is byte-identical to the original (same size, same MD5) |
@@ -327,7 +327,41 @@ Installable PWA, offline shell, WCAG 2.1 AA audit and remediation (01 §5.9/§6.
 
 ---
 
-## 10. Known gaps in what is already written
+## 10. Independent security scan (OWASP ZAP + Trivy)
+
+Run mid-Phase-5 at the user's request — a second, independent pass alongside the existing `pip-audit`/`npm audit` CI gates, using tools neither of those overlaps with (dynamic scanning, container-image scanning, filesystem secret scanning).
+
+| Scan | Target | Result |
+|---|---|---|
+| ZAP baseline | `apps/web` (dev server) | 0 FAIL, 10 WARN |
+| ZAP baseline | `apps/web` (production build, post-fix) | 0 FAIL, 4 WARN |
+| ZAP baseline | `apps/api` | 0 FAIL, 1 trivial WARN (cacheable 404s) |
+| Trivy `fs` (vuln + secret + misconfig) | Repository source, excluding dependency trees `pip-audit`/`npm audit` already cover | Clean — 0 vulnerabilities, 0 secrets, 0 misconfigs |
+| Trivy `image` | Every image in `infra/docker-compose.yml` | See below |
+
+**Fixed:**
+- `mailhog/mailhog:latest` carried 109 CRITICAL / 1250 HIGH CVEs — the upstream project has been unmaintained for years, still on an EOL Alpine 3.12 base. Swapped for `axllent/mailpit:v1.24`, its actively-maintained successor, verified end-to-end against a real captured message (its `/api/v1` shape differs from MailHog's `/api/v2` — `tests/test_workers.py` was updated to match, not assumed compatible). **Then removed outright** (a follow-up request, once local SMTP delivery was judged non-essential right now): the service, its CI container, and the one test that exercised real SMTP delivery are all gone — `services/email.py`'s enqueue-only path (never blocks a request on SMTP) is unaffected, but there is no longer an automated check that a real send actually reaches an inbox. `SMTP_HOST`/`SMTP_PORT` still point at `localhost:1145` by default for anyone who wants to run their own local catcher.
+- ZAP found `X-Content-Type-Options`/`Permissions-Policy` missing on `_next/static`/`_next/image`/`icon.png` — `proxy.ts`'s matcher deliberately skips static assets (a per-request CSP nonce is pointless on a JS chunk), so these two static, non-nonce headers moved to `next.config.ts`'s `headers()` instead of broadening the middleware matcher.
+- `X-Powered-By: Next.js` — `poweredByHeader: false` added.
+- ZAP's "Dangerous JS Functions" (`eval(`), "Suspicious Comments" and "Timestamp Disclosure" findings were confirmed to be **dev-server-only artifacts** (webpack's `eval()`-based HMR source maps) — verified by grepping the actual production bundle (`grep -rl "eval(" .next/static/chunks/*.js` → 0 matches) and re-scanning a real `next build && next start`, where all three disappeared.
+
+**Reviewed and accepted, not fixed:**
+- `style-src 'unsafe-inline'` in the CSP — `proxy.ts`'s own docstring already documents why (pervasive literal-only inline `style` props, never user-controlled data).
+- `Cross-Origin-Embedder-Policy` missing — adding COEP without CORP-tagging every resource risks silently breaking future cross-origin embeds (a card-checkout iframe, once that ships); this app has no current feature that needs the cross-origin isolation COEP provides, so it's deferred rather than added speculatively.
+- Docker image CVEs in `minio/minio:latest` (6 CRITICAL / 76 HIGH), `clamav/clamav-debian:stable` (5 CRITICAL / 23 HIGH), `postgres:16-alpine` (1 CRITICAL / 14 HIGH, almost entirely in a bundled Go entrypoint helper never exposed to network input) — not blindly version-bumped without a controlled upgrade-and-test cycle, since these are functionally load-bearing (storage, virus scanning, primary database), unlike Mailhog. Tracked as a real, open item below, not silently accepted.
+- `redis:7-alpine` — clean, 0 findings.
+
+**A process note, not a code finding:** a concurrent Claude Code session for a different, unrelated project on this same machine was also running Trivy scans at the same time, into the same generic `/c/tmp/security-scan` path this session initially (mistakenly) reused instead of its own isolated scratchpad. The collision surfaced as an unfamiliar script scanning images that don't exist in this project (`pgvector`, `nats`, `neo4j`, `ollama`) — investigated and confirmed harmless (a different session's own working files, not anything injected), then all of this session's scan output was moved to its proper isolated path and re-run cleanly.
+
+**Housekeeping, same pass:** `apps/api/var/storage` (105 MB of leftover local video-transcode test artifacts, already gitignored), `.mypy_cache` (72 MB), `.ruff_cache`, `.coverage`, stray `__pycache__` directories, and `apps/web/tsconfig.tsbuildinfo` were removed — all regenerate on the next relevant command and were never tracked by git.
+
+**Open:**
+- [ ] `minio/minio`, `clamav/clamav-debian`, `postgres:16-alpine` — schedule a controlled version bump + full regression pass; not urgent (all three are on non-`:latest` or soon-to-be-pinned tags, reachable only from the local dev network, not the public internet)
+- [ ] No automated ZAP/Trivy gate wired into CI yet — this was a one-time, manually-triggered pass, not a regression gate
+
+---
+
+## 11. Known gaps in what is already written
 
 ### Closed since the source material
 
@@ -362,7 +396,7 @@ Installable PWA, offline shell, WCAG 2.1 AA audit and remediation (01 §5.9/§6.
 
 ---
 
-## 11. Recommended next three steps
+## 12. Recommended next three steps
 
 1. **Put the decision register to the customer.** All ten items in [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off), as one document, for signature. Nothing else can start.
 2. **Get the content inventory.** Video count, total duration, source formats. It feeds the transcode sizing *and* the cost model, and the cost model gates every price in [05_COMMERCIAL.md](05_COMMERCIAL.md).
@@ -378,7 +412,7 @@ git rev-parse --show-toplevel             # repository isolation
 
 ---
 
-## 12. Schedule reality
+## 13. Schedule reality
 
 The source material claims 9–14 months for the full ecosystem while its own gate durations sum to 52–83 weeks. Neither figure survived review.
 
