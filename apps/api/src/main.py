@@ -35,6 +35,7 @@ from src.routers import (
     orders,
     organisations,
     tenant,
+    workshops,
 )
 
 log = get_logger(__name__)
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(orders.router, prefix="/api/v1")
     app.include_router(organisations.router, prefix="/api/v1")
     app.include_router(courses.router, prefix="/api/v1")
+    app.include_router(workshops.router, prefix="/api/v1")
     app.include_router(learning.router, prefix="/api/v1")
     app.include_router(media.router, prefix="/api/v1")
     app.include_router(assessment.router, prefix="/api/v1")

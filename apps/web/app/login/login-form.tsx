@@ -9,7 +9,7 @@ import { setAccessToken } from "@/lib/session";
 // permissions already gating the working admin screens (Leads, Payments).
 // Everyone else is a learner/buyer: send them to their own courses, not an
 // admin shell with nothing they can do in it.
-const STAFF_PERMISSIONS = ["analytics:view", "payment:approve"];
+const STAFF_PERMISSIONS = ["analytics:view", "payment:approve", "workshop:manage", "workshop:facilitate"];
 
 async function postLoginRedirect(router: ReturnType<typeof useRouter>, token: string) {
   const resp = await fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${token}` } });

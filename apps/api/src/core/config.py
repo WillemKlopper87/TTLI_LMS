@@ -104,6 +104,15 @@ class Settings(BaseSettings):
     smtp_port: int = 1145
     email_from: str = "no-reply@ttli.local"
 
+    # --- Workshops (02 §9, REQ-WS-05/06) ---
+    # Real values need an Azure AD app registration nobody has done yet —
+    # blocked on external credentials, same class of gap as Phase 3's
+    # Payfast/Netcash sandbox accounts (01 §1.4). `services/meeting/teams.py`
+    # checks these and refuses cleanly rather than pretending to work.
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
+    graph_tenant_id: str = ""
+
     # --- Observability ---
     sentry_dsn: str = ""
     log_level: str = "INFO"

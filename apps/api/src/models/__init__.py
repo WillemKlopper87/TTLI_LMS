@@ -60,16 +60,34 @@ from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.tenant import Tenant, TenantDomain
 from src.models.theme import TenantTheme
 from src.models.user import User
+from src.models.workshop import (
+    AttendanceRecord,
+    AttendanceStatus,
+    Booking,
+    BookingStatus,
+    Facilitator,
+    FacilitatorAvailability,
+    MeetingLink,
+    MeetingProvider,
+    Workshop,
+    WorkshopSession,
+    WorkshopSessionStatus,
+    WorkshopSessionType,
+)
 
 __all__ = [
     "AccessLevel",
     "Assignment",
     "AssignmentSubmission",
+    "AttendanceRecord",
+    "AttendanceStatus",
     "AuditAction",
     "AuditEvent",
     "Badge",
     "BadgeTemplate",
     "Base",
+    "Booking",
+    "BookingStatus",
     "Certificate",
     "CertificateTemplate",
     "ConsentRecord",
@@ -81,6 +99,8 @@ __all__ = [
     "Enrolment",
     "Entitlement",
     "Event",
+    "Facilitator",
+    "FacilitatorAvailability",
     "Invoice",
     "InvoiceItem",
     "InvoiceNumberCounter",
@@ -91,6 +111,8 @@ __all__ = [
     "LessonState",
     "MagicLink",
     "ManagerVisibility",
+    "MeetingLink",
+    "MeetingProvider",
     "MfaRecoveryCode",
     "Module",
     "Order",
@@ -126,4 +148,8 @@ __all__ = [
     "VideoAsset",
     "VideoHeartbeat",
     "VideoProgress",
+    "Workshop",
+    "WorkshopSession",
+    "WorkshopSessionStatus",
+    "WorkshopSessionType",
 ]

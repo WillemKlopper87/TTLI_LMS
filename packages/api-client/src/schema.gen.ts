@@ -656,6 +656,146 @@ export interface paths {
         patch: operations["update_manager_visibility_api_v1_courses__course_id__manager_visibility_patch"];
         trace?: never;
     };
+    "/api/v1/facilitators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Facilitators */
+        get: operations["list_facilitators_api_v1_facilitators_get"];
+        put?: never;
+        /** Create Facilitator */
+        post: operations["create_facilitator_api_v1_facilitators_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/facilitators/{facilitator_id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Availability */
+        get: operations["list_availability_api_v1_facilitators__facilitator_id__availability_get"];
+        put?: never;
+        /** Add Availability */
+        post: operations["add_availability_api_v1_facilitators__facilitator_id__availability_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workshops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workshops */
+        get: operations["list_workshops_api_v1_workshops_get"];
+        put?: never;
+        /** Create Workshop */
+        post: operations["create_workshop_api_v1_workshops_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workshops/{workshop_id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sessions */
+        get: operations["list_sessions_api_v1_workshops__workshop_id__sessions_get"];
+        put?: never;
+        /** Create Session */
+        post: operations["create_session_api_v1_workshops__workshop_id__sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/book": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Book Session */
+        post: operations["book_session_api_v1_sessions__session_id__book_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings/{booking_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Booking */
+        post: operations["cancel_booking_api_v1_bookings__booking_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Attendance */
+        post: operations["mark_attendance_api_v1_sessions__session_id__attendance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Roster */
+        get: operations["list_roster_api_v1_sessions__session_id__roster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enrolments": {
         parameters: {
             query?: never;
@@ -1238,6 +1378,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AddAvailabilityRequest */
+        AddAvailabilityRequest: {
+            /** Day Of Week */
+            day_of_week: number;
+            /** Start Time */
+            start_time: string;
+            /** End Time */
+            end_time: string;
+        };
         /** AssignSeatsRequest */
         AssignSeatsRequest: {
             /** Course Id */
@@ -1313,6 +1462,22 @@ export interface components {
             /** Rejected Reason */
             rejected_reason: string | null;
         };
+        /** AvailabilityPage */
+        AvailabilityPage: {
+            /** Items */
+            items: components["schemas"]["AvailabilityWindowResponse"][];
+        };
+        /** AvailabilityWindowResponse */
+        AvailabilityWindowResponse: {
+            /** Id */
+            id: string;
+            /** Day Of Week */
+            day_of_week: number;
+            /** Start Time */
+            start_time: string;
+            /** End Time */
+            end_time: string;
+        };
         /** BadgeResponse */
         BadgeResponse: {
             /** Id */
@@ -1353,6 +1518,19 @@ export interface components {
         Body_upload_video_asset_api_v1_video_assets_post: {
             /** File */
             file: string;
+        };
+        /** BookingResponse */
+        BookingResponse: {
+            /** Id */
+            id: string;
+            /** Session Id */
+            session_id: string;
+            /** User Id */
+            user_id: string;
+            /** Status */
+            status: string;
+            /** Join Url */
+            join_url: string | null;
         };
         /** CertificatePdfResponse */
         CertificatePdfResponse: {
@@ -1396,6 +1574,13 @@ export interface components {
             /** Items */
             items: components["schemas"]["CourseResponse"][];
         };
+        /** CreateFacilitatorRequest */
+        CreateFacilitatorRequest: {
+            /** Email */
+            email: string;
+            /** Bio */
+            bio?: string | null;
+        };
         /** CreateOrderRequest */
         CreateOrderRequest: {
             /** Currency */
@@ -1411,6 +1596,37 @@ export interface components {
         CreateOrganisationRequest: {
             /** Name */
             name: string;
+        };
+        /** CreateSessionRequest */
+        CreateSessionRequest: {
+            /** Facilitator Id */
+            facilitator_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Capacity */
+            capacity: number;
+        };
+        /** CreateWorkshopRequest */
+        CreateWorkshopRequest: {
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Session Type */
+            session_type: string;
+            /**
+             * Default Duration Minutes
+             * @default 60
+             */
+            default_duration_minutes: number;
         };
         /** EftCheckoutResponse */
         EftCheckoutResponse: {
@@ -1453,6 +1669,24 @@ export interface components {
             course_title: string;
             /** Lessons */
             lessons: components["schemas"]["LessonProgressResponse"][];
+        };
+        /** FacilitatorResponse */
+        FacilitatorResponse: {
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Bio */
+            bio: string | null;
+            /** Timezone */
+            timezone: string;
+        };
+        /** FacilitatorsPage */
+        FacilitatorsPage: {
+            /** Items */
+            items: components["schemas"]["FacilitatorResponse"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1681,6 +1915,13 @@ export interface components {
         ManagerVisibilitySettingResponse: {
             /** Allow Manager Individual Results */
             allow_manager_individual_results: boolean;
+        };
+        /** MarkAttendanceRequest */
+        MarkAttendanceRequest: {
+            /** User Id */
+            user_id: string;
+            /** Status */
+            status: string;
         };
         /** MeResponse */
         MeResponse: {
@@ -2068,6 +2309,24 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RosterResponse */
+        RosterResponse: {
+            /** Items */
+            items: components["schemas"]["RosterRowResponse"][];
+        };
+        /** RosterRowResponse */
+        RosterRowResponse: {
+            /** Booking Id */
+            booking_id: string;
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Booking Status */
+            booking_status: string;
+            /** Attendance Status */
+            attendance_status: string;
+        };
         /** SeatAssignmentResultResponse */
         SeatAssignmentResultResponse: {
             /** Email */
@@ -2094,6 +2353,38 @@ export interface components {
             assigned: number;
             /** Available */
             available: number;
+        };
+        /** SessionResponse */
+        SessionResponse: {
+            /** Id */
+            id: string;
+            /** Workshop Id */
+            workshop_id: string;
+            /** Facilitator Id */
+            facilitator_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Capacity */
+            capacity: number;
+            /** Status */
+            status: string;
+            /** Registered */
+            registered: number;
+            /** Waitlisted */
+            waitlisted: number;
+        };
+        /** SessionsPage */
+        SessionsPage: {
+            /** Items */
+            items: components["schemas"]["SessionResponse"][];
         };
         /** SurveyAnswer */
         SurveyAnswer: {
@@ -2297,6 +2588,24 @@ export interface components {
             text: string;
             /** Opacity */
             opacity: number;
+        };
+        /** WorkshopResponse */
+        WorkshopResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Session Type */
+            session_type: string;
+            /** Default Duration Minutes */
+            default_duration_minutes: number;
+        };
+        /** WorkshopsPage */
+        WorkshopsPage: {
+            /** Items */
+            items: components["schemas"]["WorkshopResponse"][];
         };
     };
     responses: never;
@@ -3448,6 +3757,370 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CourseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_facilitators_api_v1_facilitators_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilitatorsPage"];
+                };
+            };
+        };
+    };
+    create_facilitator_api_v1_facilitators_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFacilitatorRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacilitatorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_availability_api_v1_facilitators__facilitator_id__availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                facilitator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_availability_api_v1_facilitators__facilitator_id__availability_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                facilitator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddAvailabilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailabilityWindowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workshops_api_v1_workshops_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkshopsPage"];
+                };
+            };
+        };
+    };
+    create_workshop_api_v1_workshops_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkshopRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkshopResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sessions_api_v1_workshops__workshop_id__sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_session_api_v1_workshops__workshop_id__sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    book_session_api_v1_sessions__session_id__book_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_booking_api_v1_bookings__booking_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_attendance_api_v1_sessions__session_id__attendance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkAttendanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterRowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roster_api_v1_sessions__session_id__roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterResponse"];
                 };
             };
             /** @description Validation Error */

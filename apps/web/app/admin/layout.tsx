@@ -18,6 +18,7 @@ import { AdminContext, type Me } from "./admin-context";
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Payments", href: "/admin/payments" },
+  { label: "Workshops", href: "/admin/workshops" },
   { label: "Settings", href: "/admin/settings" },
 ];
 const INERT_SECTIONS = ["Courses", "Learners", "Reports"];

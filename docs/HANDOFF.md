@@ -1369,6 +1369,93 @@ Committed as `7c88fe3`, pushed to `main`; CI green on both jobs on
 the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31407990708
 (quality 3m53s, web 57s).
 
+**Twentieth pass: Phase 5 sprint 3 — workshops, facilitators, booking
+(02 §9, REQ-WS-01 through REQ-WS-09).** `0018` creates exactly the
+table set 02 §9 already named — `facilitators`,
+`facilitator_availability`, `workshops`, `workshop_sessions`,
+`bookings`, `meeting_links`, `attendance_records` — plus a new
+`facilitator` RBAC role and `workshop:manage`/`workshop:facilitate`
+permissions, closing the loop `0002`'s own seed migration opened:
+"corporate roles arrive with the corporate phase; the permission
+strings above already anticipate them."
+
+Two enforcement rules given real teeth, not just modelled as columns:
+availability and double-booking. `services/workshops.py::create_session`
+checks the requested window against every one of the facilitator's
+weekly `facilitator_availability` rows (day-of-week plus start/end
+time) and separately checks for an overlapping `scheduled` session for
+that same facilitator — two distinct refusal messages, both tested
+directly (`test_session_rejected_outside_facilitator_availability`,
+`test_session_rejected_on_facilitator_double_booking`).
+
+The waitlist (REQ-WS-03) is the sprint's most fiddly piece of state and
+got its own dedicated test rather than an assertion tacked onto
+something else: book two learners against a capacity-1 session (first
+`registered`, second `waitlisted`), cancel the first booking, then
+confirm the *same* waitlisted booking row — not a new one — flips to
+`registered`. `services/workshops.py::cancel_booking` finds the
+earliest still-waitlisted booking for that session (`ORDER BY
+created_at`) and promotes it, updating both the booking and its
+attendance record together.
+
+The meeting-provider abstraction (REQ-WS-06) is a real `Protocol`
+(`src/services/meeting/base.py`) with two implementations:
+`ManualMeetingProvider`, fully working (no automated provisioning
+means nothing can fail the way a real API call can — `join_url` starts
+`None` for the facilitator to fill in by hand), and
+`TeamsMeetingProvider`, structured against the same interface but
+checking `settings.graph_client_id`/`graph_client_secret`/
+`graph_tenant_id` and refusing cleanly with `MeetingProviderUnavailable`
+when they're unset — which they are, since no Azure AD app registration
+exists. Same fail-closed shape `services/antivirus.py` uses for an
+unreachable scanner, and the same "real interface, blocked on external
+creds" class of gap as Phase 3's Payfast/Netcash — not a fabricated
+integration pretending Graph succeeded.
+
+Attendance (REQ-WS-08): `attendance_records.source` is
+`'provider_report'` or `'facilitator_manual'` — this sprint only ever
+writes the latter (no provider integration reports attendance yet),
+but the column exists now so a future Teams/Zoom webhook has somewhere
+to write without a schema change, and a facilitator's manual call is
+documented as always winning regardless of what a provider says.
+
+Two things deliberately deferred, each written into `0018`'s own
+migration docstring rather than left as a silent gap: REQ-WS-04
+(credit-based booking — `entitlements.kind` already anticipates
+`workshop_credit`/`coaching_credit` per 02 §6.3's field list, but
+consuming a credit needs quantity-decrement semantics `entitlements`
+doesn't have — today's `revoked_at` is all-or-nothing; sessions are
+open-enrolment this sprint instead) and REQ-WS-09 (post-workshop
+survey — reuses the `surveys` engine already built in Phase 4 sprint 3
+rather than a new `workshop_feedback` table duplicating it).
+
+Frontend: `/admin/workshops` — facilitator registration and weekly
+availability management, workshop/session creation for
+`workshop:manage` holders, a "Book" button for any authenticated user,
+and a roster/attendance panel gated the same way the API gates it (a
+non-facilitator viewer's roster fetch 403s, shown as an inline error,
+same pattern every other admin screen already uses). `workshop:manage`
+and `workshop:facilitate` were added to `apps/web/app/login/
+login-form.tsx`'s `STAFF_PERMISSIONS` — without that, a pure-facilitator-
+role user would land on `/learn` after login and never see the screen
+meant for them, a real bug caught by tracing the routing logic before
+testing rather than after.
+
+Full gate sweep clean: `ruff check`/`format --check` (144 files),
+`mypy src` (103 files, strict), `pytest -q -rs` run twice for
+determinism (178 passed, 0 skipped — up from 173), `apps/web`
+`typecheck`/`build` clean (23 routes, +1), migration round-trip verified
+immediately after writing `0018` rather than discovered broken later.
+Live smoke test seeded a facilitator-role user and a learner via the
+actual service layer, then drove the whole flow through the real BFF:
+registered the facilitator → added a Monday 09:00–17:00 UTC
+availability window → created a workshop → scheduled a capacity-1
+session inside that window → a learner booked it (manual meeting link
+provisioned, `join_url: null` as designed) → the facilitator viewed the
+roster (a stranger's identical request correctly 403'd) → the
+facilitator marked the booking `attended`. `/admin/workshops` confirmed
+rendering with no console/server errors.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
