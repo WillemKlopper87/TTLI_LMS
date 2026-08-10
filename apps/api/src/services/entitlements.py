@@ -6,6 +6,12 @@ own docstring); for `kind="course"` it is the real `courses.id` (Phase 4),
 resolved from `Product.course_id` by the caller
 (services/orders.py::approve_eft), not the product's own id used as a
 stand-in before courses existed.
+
+`user_id` is nullable (02 §4.7: "organisation-level entitlements exist
+before seat assignment") — an organisation's seat purchase grants a
+pool entitlement with `user_id=None`, and `services/organisations.py::
+assign_seat` grants a second, `user_id`-set entitlement per employee,
+drawn from it.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ async def grant(
     session: AsyncSession,
     *,
     tenant_id: uuid.UUID,
-    user_id: uuid.UUID,
+    user_id: uuid.UUID | None,
     source_order_id: uuid.UUID,
     kind: str,
     target_id: uuid.UUID,

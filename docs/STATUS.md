@@ -1,6 +1,6 @@
 # STATUS
 
-**Updated:** 2026-08-10 (Phase 4.5 — PWA and WCAG 2.1 AA — built and closed out; Phase 4 now fully closed)
+**Updated:** 2026-08-10 (Phase 5 sprint 1 — organisations, seat-pool purchasing, PO checkout — built and verified)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
@@ -19,18 +19,18 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
 | 4 | Core LMS, anti-bypass, credentials | Sprints 1–4 plus REQ-LMS-06/07 (transcript, captions), picked up in the 4.5 pass. Content model, the completion rule engine, enrolments, a real ported VOD transcode pipeline with signed HLS playback, heartbeat validation and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real PDF+QR/public verification/LinkedIn sharing, and a printable transcript. Only course/lesson/template *authoring UI* remains | ~95% |
 | 4.5 | PWA and accessibility | Installable PWA (manifest, icons, service worker, offline shell), a real WCAG 2.1 AA contrast/labels/status-messages pass across `apps/web`. Push notifications deliberately deferred — no VAPID/content decision exists, same class of gap as Phase 3's payment-gateway sandbox creds | ~90% |
-| 5 | Corporate, workshops, marketing | Not started | 0% |
+| 5 | Corporate, workshops, marketing | Sprint 1: organisations, seat-pool entitlements, PO checkout (closes Phase 3's deferred PO gap too). Sprints 2–4 (manager visibility, workshops, CRM/marketing) not started | ~15% |
 | 6 | AI insights | Not started | 0% |
 | 7 | Hardening and cloud | Not started | 0% |
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 122 files |
-| `mypy src` (strict) | **PASS** — 87 source files |
-| `pytest` | **PASS** — 159 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailpit, ClamAV *and* real ffmpeg) |
+| `ruff check` / `ruff format --check` | **PASS** — 128 files |
+| `mypy src` (strict) | **PASS** — 91 source files |
+| `pytest` | **PASS** — 167 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailpit, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
-| `alembic upgrade head` | **PASS** — at `0015` |
+| `alembic upgrade head` | **PASS** — at `0016` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
@@ -46,7 +46,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31395568160](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31395568160) (quality 3m39s, web 52s) |
 
-**Headline:** 159 tests (0 skipped), 58 endpoints, 52 tables (events partitioned monthly ×14), 15 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 17 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, an installable PWA with a real offline shell, and a WCAG 2.1 AA-verified colour system.
+**Headline:** 167 tests (0 skipped), 68 endpoints, 54 tables (events partitioned monthly ×14), 16 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 20 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, an installable PWA with a real offline shell, a WCAG 2.1 AA-verified colour system, and a real organisation seat-pool purchasing flow (PO checkout → finance approval → seat pool → bulk invite/CSV import → revoke-and-reassign).
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -95,10 +95,10 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Printable transcript (REQ-LMS-06): completed lessons only, real `completed_at` timestamps, owner-only | `src/services/enrolment.py::get_transcript`, `/enrolments/{id}/transcript`, `apps/web/app/learn/[enrolmentId]/transcript/page.tsx` (browser print, not a generated PDF) | 1 test in `tests/test_learning.py`; live smoke test — real course completion, transcript empty before and fully populated after, the actual print page returning 200 |
 | WCAG 2.1 AA: computed contrast audit (not eyeballed) found and fixed two real palette failures; form labels added where only a placeholder existed (login, quiz/survey free-text, assignment upload, admin reject-reason); `role="alert"` on 16 dynamic status messages; table header `scope`; heading-hierarchy fix | `apps/web/app/globals.css`, `login-form.tsx`, `quiz-player.tsx`, `survey-form.tsx`, `assignment-upload.tsx`, `admin/payments/page.tsx`, `admin/leads/page.tsx`, `catalogue/page.tsx` | Contrast ratios verified with the actual WCAG relative-luminance formula; `typecheck`/`build` clean |
 | Installable PWA: dynamic per-tenant manifest, 192/512/maskable icons generated from the real TTLI brand mark, a service worker with a genuine offline-shell fallback (not fabricated offline data sync) | `apps/web/app/manifest.ts`, `register-sw.tsx`, `public/sw.js`, `public/offline.html` | Live-verified against the running dev server: `/manifest.webmanifest` resolves the real tenant theme, `/sw.js` and `/offline.html` serve correctly, `<link rel="manifest">`/`theme-color` confirmed in rendered HTML |
+| Organisations and seat-pool entitlements (02 §4.5, REQ-TEN-02) + PO checkout (closes Phase 3's deferred PO gap): self-service org creation, a null-`user_id` pool entitlement vs a set-`user_id` assigned seat, "available" always computed rather than tracked as a drifting counter | `0016`, `src/services/organisations.py`, `src/routers/organisations.py`, `_fulfil_order()` shared helper in `src/services/orders.py` | 8 tests in `tests/test_organisations.py`; live smoke test through the real BFF — org created, PO submitted with its document in one step, finance approved, seat pool activated, one seat invited then revoked and its capacity confirmed free for reassignment |
+| Real `apps/web` UI: `/organisations` (list/create), `/organisations/[id]` (members, seat summary per course, invite-by-email, CSV import, per-course seat-holder list with revoke), `/organisations/[id]/buy-seats` (programme + quantity → PO number/document in one step, mirroring `/checkout`'s EFT flow) | `apps/web/app/organisations/**` | `typecheck`/`build` clean, 3 new routes; live smoke test drove every screen's underlying call through the real BFF end to end |
 
-### Endpoints live
-
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /enrolments/{id}/credentials` · `GET /enrolments/{id}/transcript` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `GET /surveys/{id}` · `GET /certificates/{id}/pdf` · `GET /verify/{token}` · `GET /badges/{id}/share/linkedin` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` · `POST /video-assets/{id}/captions` · `POST /quizzes` · `POST /quizzes/{id}/questions` · `POST /lessons/{id}/quiz` · `POST /quizzes/{id}/attempts` · `POST /quiz-attempts/{id}/submit` · `POST /quiz-answers/{id}/grade` · `POST /surveys` · `POST /surveys/{id}/questions` · `POST /lessons/{id}/survey` · `POST /surveys/{id}/responses` · `POST /assignments` · `POST /lessons/{id}/assignment` · `POST /assignments/{id}/submissions` · `POST /assignment-submissions/{id}/review` · `POST /certificates/{id}/revoke` · `PATCH /certificates/{id}` · `PATCH /badges/{id}` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /enrolments/{id}/credentials` · `GET /enrolments/{id}/transcript` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `GET /surveys/{id}` · `GET /certificates/{id}/pdf` · `GET /verify/{token}` · `GET /badges/{id}/share/linkedin` · `GET /organisations` · `GET /organisations/{id}` · `GET /organisations/{id}/members` · `GET /organisations/{id}/seats` · `GET /organisations/{id}/seats/{course_id}/assignments` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/checkout/po` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` · `POST /video-assets/{id}/captions` · `POST /quizzes` · `POST /quizzes/{id}/questions` · `POST /lessons/{id}/quiz` · `POST /quizzes/{id}/attempts` · `POST /quiz-attempts/{id}/submit` · `POST /quiz-answers/{id}/grade` · `POST /surveys` · `POST /surveys/{id}/questions` · `POST /lessons/{id}/survey` · `POST /surveys/{id}/responses` · `POST /assignments` · `POST /lessons/{id}/assignment` · `POST /assignments/{id}/submissions` · `POST /assignment-submissions/{id}/review` · `POST /certificates/{id}/revoke` · `POST /organisations` · `POST /organisations/{id}/seats/invite` · `POST /organisations/{id}/seats/import` · `POST /organisations/{id}/seats/{entitlement_id}/revoke` · `PATCH /certificates/{id}` · `PATCH /badges/{id}` (non-health routes under `/api/v1`)
 
 ---
 
@@ -317,11 +317,36 @@ Installable PWA, offline shell, WCAG 2.1 AA audit and remediation (01 §5.9/§6.
 
 ---
 
-## 9. Phases 5–7 (0%)
+## 9. Phase 5 — Corporate, workshops, marketing (~15%)
+
+Organisations and seat-pool purchasing, manager visibility, workshops/facilitators/booking, CRM and marketing engine.
+
+### Done — sprint 1: organisations, seat-pool entitlements, PO checkout
+
+- [x] `organisations`, `organisation_members` (`0016`, 02 §4.5) — FK constraints added via `op.create_foreign_key()` to the `entitlements.organisation_id`/`role_assignments.organisation_id` columns that already existed, bare and unconstrained, since `0001`/`0009`: the data model documented this design years before `organisations` itself existed to point at. `organisation_members.relationship` (`member`/`manager`/`admin`) is a distinct concept from RBAC `role_assignments` — org standing, not platform permissions
+- [x] Seat pool model: a null-`user_id` entitlement is the purchased pool, a set-`user_id` entitlement drawn from it is one assigned seat, "available seats" is `sum(pool.quantity) − count(active assigned)` computed on read, never a separately tracked counter that could drift
+- [x] Self-service organisation creation (REQ-TEN-02) — any authenticated user can start one and becomes its first admin; no separate signup flow exists yet, so the realistic actor already has an account from an earlier individual purchase
+- [x] PO checkout (`POST /orders/{id}/checkout/po`, 0016's own worked example from 01 §4.3 workflow 5): PO number and document captured together in one multipart call, unlike EFT — a purchase order document exists from the moment it's raised, so there's no "reference now, proof later" split. `_fulfil_order()` extracted as a shared helper in `services/orders.py`, used by both `approve_eft` and the new `approve_po`; branches on `order.organisation_id` to grant a pool entitlement instead of a direct user entitlement+enrolment
+- [x] Bulk seat assignment: `POST /organisations/{id}/seats/invite` (typed emails) and `POST /organisations/{id}/seats/import` (CSV upload) both find-or-create the employee's account and grant a real entitlement+enrolment, refusing cleanly once the pool is exhausted rather than over-allocating
+- [x] Seat revocation (`POST /organisations/{id}/seats/{entitlement_id}/revoke`) frees capacity for reassignment without retroactively removing the enrolment already granted — REQ-TEN-02 asks for reassignment, not a course-access-revocation flow
+- [x] `GET /organisations/{id}/seats/{course_id}/assignments` — the per-seat holder list the revoke UI needs, added alongside the aggregate `/seats` summary once the frontend build surfaced that gap; admin-gated like invite/import/revoke since it carries real emails, unlike the membership roster which any member can read
+- [x] Real `apps/web` UI: `/organisations` (list/create), `/organisations/[id]` (members, seat summary, invite, CSV import, per-course seat-holder list with revoke), `/organisations/[id]/buy-seats` (PO checkout flow); `/admin/payments` extended to show PO vs EFT and the PO number
+- [x] Migration round-trip bug found and fixed: `downgrade()` dropped `organisations` without first nulling `entitlements.organisation_id`/`role_assignments.organisation_id`, so a downgrade after real seat-purchase test data existed left orphaned FK values that broke the next `upgrade head`. Fixed by nulling both columns before dropping the constraints; round-trip (`downgrade -1` → `upgrade head` → `alembic check`) now verified clean
+
+### Outstanding — sprints 2–4
+
+- [ ] Sprint 2: manager visibility (REQ-TEN-03) — `courses.manager_visibility` (`aggregate_only`/`individual_enabled`/`disabled`) already exists from an earlier migration; the demo target itself
+- [ ] Sprint 3: workshops, facilitators, booking, a pluggable meeting-provider abstraction
+- [ ] Sprint 4: CRM (deals/tasks/notes) and the marketing engine (campaigns/ESP integration)
+
+**Demo target:** a manager who cannot see individual scores until an admin enables it for one course. **Not yet met** — that's sprint 2, not built in this pass.
+
+---
+
+## 9a. Phases 6–7 (0%)
 
 | Phase | Demo target |
 |---|---|
-| 5 Corporate and workshops | A manager who cannot see individual scores until an admin enables it for one course |
 | 6 AI insights | 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log |
 | 7 Hardening and cloud | Load test at 100 concurrent; restore drill completed; POPIA matrix delivered |
 

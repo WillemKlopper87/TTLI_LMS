@@ -1,14 +1,17 @@
-"""Orders and the EFT purchase path (03 §5.1/5.3/5.4/5.6, REQ-PAY-03).
+"""Orders and the EFT/PO purchase paths (03 §5.1/5.3/5.4/5.6, REQ-PAY-03,
+0016's PO checkout).
 
 Buyer-facing actions (create, checkout, upload proof) are gated on the
-caller owning the order — this is a learner acting on their own purchase,
-not an admin action. Approval and rejection are gated on `payment:approve`
-instead — that is finance acting on someone else's order, and REQ-PAY-03
-requires a human in that loop; there is no automated approval path.
+caller owning the order — this is a learner (or, for a seat purchase,
+an organisation admin buying on the org's behalf) acting on their own
+purchase, not an admin action. Approval and rejection are gated on
+`payment:approve` instead — that is finance acting on someone else's
+order, and REQ-PAY-03 requires a human in that loop; there is no
+automated approval path, for either payment method.
 
-Card checkout (Payfast/Netcash) and PO capture are not built here — see
-`alembic/versions/0009_commerce_foundation.py`'s docstring for why this
-migration only builds the EFT path.
+Card checkout (Payfast/Netcash) is still not built here — blocked on
+live sandbox credentials (01 §1.4's Phase 0 outstanding list), not a
+design gap the way PO checkout was.
 
 03 §1.6 requires `Idempotency-Key` handling on `POST /orders` and
 `POST /payments/*` — deferred this sprint (tracked in STATUS.md), since it
@@ -26,7 +29,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
@@ -40,6 +43,7 @@ from src.schemas.commerce import (
     OrderResponse,
     PendingPaymentsPage,
     PendingPaymentSummary,
+    PoCheckoutResponse,
     PriceSummary,
     ProductsPage,
     ProductSummary,
@@ -47,6 +51,7 @@ from src.schemas.commerce import (
 )
 from src.services import antivirus, catalogue
 from src.services import orders as orders_service
+from src.services import organisations as organisations_service
 from src.services.storage import Container
 
 router = APIRouter(tags=["commerce"])
@@ -85,6 +90,8 @@ async def _order_response(session: SessionDep, order: Order) -> OrderResponse:
         tax_total=order.tax_total,
         grand_total=order.grand_total,
         payment_reference=order.payment_reference,
+        po_number=order.po_number,
+        organisation_id=str(order.organisation_id) if order.organisation_id else None,
         items=[
             OrderItemResponse(
                 product_id=str(item.product_id),
@@ -130,6 +137,19 @@ async def create_order(
     principal: PrincipalDep,
     session: SessionDep,
 ) -> OrderResponse:
+    organisation_id = None
+    if body.organisation_id is not None:
+        organisation_id = _parse_uuid(body.organisation_id)
+        # Only that organisation's own admin can spend its money — the
+        # same ownership discipline every other buyer-facing endpoint in
+        # this file uses, just scoped to an org instead of a single user.
+        await organisations_service.require_admin(
+            session,
+            tenant_id=principal.tenant_id,
+            organisation_id=organisation_id,
+            user_id=principal.user_id,
+        )
+
     lines = [
         orders_service.OrderLineRequest(price_id=_parse_uuid(line.price_id), quantity=line.quantity)
         for line in body.lines
@@ -141,6 +161,7 @@ async def create_order(
         currency=body.currency.upper(),
         customer_type=body.customer_type,
         lines=lines,
+        organisation_id=organisation_id,
     )
     return await _order_response(session, order)
 
@@ -164,6 +185,53 @@ async def checkout_eft(
         account_name=settings.eft_account_name,
         account_number=settings.eft_account_number,
         branch_code=settings.eft_branch_code,
+        amount=payment.amount,
+        currency=payment.currency,
+    )
+
+
+@router.post("/orders/{order_id}/checkout/po", response_model=PoCheckoutResponse)
+async def checkout_po(
+    order_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    po_number: str = Form(...),
+    file: UploadFile = File(...),
+) -> PoCheckoutResponse:
+    """01 §4.3 workflow 5: the PO number and its document arrive together
+    — unlike EFT proof, which can only exist after a bank transfer, a
+    purchase order document exists from the moment it's raised."""
+    order = await _get_own_order(session, principal, order_id)
+    data = await file.read()
+
+    # Same fail-closed virus-scanning rule as EFT proof (REQ-BYPASS-08) —
+    # a PO document is exactly the kind of upload it protects against.
+    try:
+        result = await antivirus.scan(data, settings=settings)
+    except antivirus.ScanUnavailable as exc:
+        raise ServiceUnavailable("The virus scanner is unavailable. Try again shortly.") from exc
+    if not result.clean:
+        raise AppError(
+            "That file was rejected by the virus scanner and was not stored.",
+            {"signature": result.signature},
+        )
+
+    key = f"{principal.tenant_id}/{order.id}/{uuid.uuid4().hex}-{file.filename or 'po'}"
+    await storage.ensure_container(Container.USER_UPLOADS)
+    await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)
+
+    payment = await orders_service.checkout_po(
+        session,
+        tenant_id=principal.tenant_id,
+        order=order,
+        po_number=po_number,
+        po_document_key=key,
+    )
+    return PoCheckoutResponse(
+        payment_id=str(payment.id),
+        po_number=order.po_number or "",
         amount=payment.amount,
         currency=payment.currency,
     )
@@ -229,7 +297,7 @@ async def list_pending_payments(
     offset: int = Query(default=0, ge=0),
 ) -> PendingPaymentsPage:
     principal.require("payment:approve")
-    items, total = await orders_service.list_pending_eft_payments(
+    items, total = await orders_service.list_pending_payments(
         session, crypto, tenant_id=principal.tenant_id, limit=limit, offset=offset
     )
     return PendingPaymentsPage(
@@ -241,6 +309,8 @@ async def list_pending_payments(
                 amount=row.amount,
                 currency=row.currency,
                 payment_reference=row.payment_reference,
+                provider=row.provider,
+                po_number=row.po_number,
                 proof_uploaded=row.proof_uploaded,
                 created_at=row.created_at,
             )
@@ -265,7 +335,10 @@ async def approve_payment(
         raise NotFound("No such payment.")
     order = await _get_order(session, str(payment.order_id))
 
-    invoice = await orders_service.approve_eft(
+    approve_fn = (
+        orders_service.approve_po if payment.provider == "po" else orders_service.approve_eft
+    )
+    invoice = await approve_fn(
         session,
         tenant_id=principal.tenant_id,
         order=order,
@@ -302,7 +375,8 @@ async def reject_payment(
         raise NotFound("No such payment.")
     order = await _get_order(session, str(payment.order_id))
 
-    await orders_service.reject_eft(session, order=order, payment=payment, reason=body.reason)
+    reject_fn = orders_service.reject_po if payment.provider == "po" else orders_service.reject_eft
+    await reject_fn(session, order=order, payment=payment, reason=body.reason)
 
 
 __all__ = ["router"]

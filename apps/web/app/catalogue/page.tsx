@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -58,6 +59,13 @@ export default function CataloguePage() {
       <h1 className="serif mt-2" style={{ fontSize: "1.75rem" }}>
         Browse the catalogue
       </h1>
+      <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+        Buying for a team?{" "}
+        <Link href="/organisations" style={{ color: "var(--brand-ink)" }}>
+          Manage your organisation
+        </Link>
+        .
+      </p>
 
       {error ? (
         <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>

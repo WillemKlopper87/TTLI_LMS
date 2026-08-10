@@ -168,6 +168,13 @@ class Order(Base, TimestampMixin):
     po_number: Mapped[str | None] = mapped_column(Text, nullable=True)
     po_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_reference: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Set only for an organisation's seat purchase (0016) — an individual
+    # order leaves this null, and services/orders.py branches fulfilment
+    # on exactly this: null grants an entitlement to the buyer directly,
+    # set grants seat capacity to the organisation instead.
+    organisation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 class OrderItem(Base):
@@ -354,7 +361,12 @@ class Entitlement(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
     )
-    organisation_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    # Nullable — 02 §4.7: "organisation-level entitlements exist before
+    # seat assignment." A null user_id + set organisation_id is the seat
+    # pool itself (0016); a set user_id is one assigned seat drawn from it.
+    organisation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True
+    )
     source_order_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("orders.id", ondelete="RESTRICT"), nullable=True
     )

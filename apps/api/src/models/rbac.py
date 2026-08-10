@@ -72,8 +72,10 @@ class RoleAssignment(Base, TimestampMixin):
     role_code: Mapped[str] = mapped_column(
         String(48), ForeignKey("roles.code", ondelete="RESTRICT"), nullable=False
     )
-    # Scope. Both null means the assignment applies tenant-wide.
-    organisation_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    # Scope. Null means the assignment applies tenant-wide.
+    organisation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 __all__ = ["Permission", "Role", "RoleAssignment", "RolePermission"]

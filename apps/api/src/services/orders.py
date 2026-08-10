@@ -56,6 +56,7 @@ async def create_order(
     currency: str,
     customer_type: str,
     lines: list[OrderLineRequest],
+    organisation_id: uuid.UUID | None = None,
 ) -> Order:
     if not lines:
         raise OrderError("An order needs at least one line item.")
@@ -92,6 +93,7 @@ async def create_order(
         id=uuid7(),
         tenant_id=tenant_id,
         user_id=user_id,
+        organisation_id=organisation_id,
         status="draft",
         currency=currency,
         subtotal=Decimal("0"),
@@ -177,7 +179,41 @@ async def submit_proof(
     await session.flush()
 
 
-async def approve_eft(
+async def checkout_po(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    order: Order,
+    po_number: str,
+    po_document_key: str,
+) -> Payment:
+    """01 §4.3 workflow 5's "PO number and document captured" step — a
+    purchase order arrives as a document from the start, unlike EFT
+    proof which only exists after a bank transfer, so this is one call
+    straight to `po_pending_approval` rather than two steps."""
+    if order.status != "pending_payment":
+        raise OrderError(f"Order is {order.status!r}, not ready for PO checkout.")
+    if not po_number.strip():
+        raise OrderError("A purchase order number is required.")
+
+    order.po_number = po_number
+    order.po_document_key = po_document_key
+    order.status = "po_pending_approval"
+    payment = Payment(
+        id=uuid7(),
+        tenant_id=tenant_id,
+        order_id=order.id,
+        provider="po",
+        amount=order.grand_total,
+        currency=order.currency,
+        status="pending",
+    )
+    session.add(payment)
+    await session.flush()
+    return payment
+
+
+async def _fulfil_order(
     session: AsyncSession,
     *,
     tenant_id: uuid.UUID,
@@ -186,9 +222,19 @@ async def approve_eft(
     approved_by_user_id: uuid.UUID,
     supplier_vat_number: str | None,
 ) -> Invoice:
-    if order.status != "eft_pending_approval":
-        raise OrderError(f"Order is {order.status!r}, not awaiting EFT approval.")
+    """Shared by `approve_eft` and `approve_po` — invoice issuance,
+    entitlement/enrolment granting and the ledger entries that record
+    both, identical regardless of which payment method got the order
+    here. The two callers differ only in which status they're leaving
+    (`eft_pending_approval` vs `po_pending_approval`) and what payment
+    metadata that implies — never in what fulfilment itself means.
 
+    `order.organisation_id` set (02 §4.7) means this order bought seat
+    capacity, not a direct entitlement for `order.user_id` — the buyer
+    is the organisation admin who placed the order, not necessarily a
+    learner. Seats are assigned to specific employees afterward via
+    `services/organisations.py::assign_seat`, drawing from the pool this
+    creates."""
     payment.status = "manually_approved"
     payment.approved_by_user_id = approved_by_user_id
     payment.approved_at = datetime.now(UTC)
@@ -218,6 +264,21 @@ async def approve_eft(
             target_id = product.course_id
         else:
             target_id = product.id
+
+        if order.organisation_id is not None:
+            # The seat pool itself — no user_id, drawn from later by
+            # assign_seat (0016's migration docstring).
+            entitlement = await entitlements.grant(
+                session,
+                tenant_id=tenant_id,
+                user_id=None,
+                source_order_id=order.id,
+                kind=product.kind,
+                target_id=target_id,
+                quantity=item.quantity,
+            )
+            entitlement.organisation_id = order.organisation_id
+            continue
 
         entitlement = await entitlements.grant(
             session,
@@ -267,12 +328,66 @@ async def approve_eft(
     return invoice
 
 
+async def approve_eft(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    order: Order,
+    payment: Payment,
+    approved_by_user_id: uuid.UUID,
+    supplier_vat_number: str | None,
+) -> Invoice:
+    if order.status != "eft_pending_approval":
+        raise OrderError(f"Order is {order.status!r}, not awaiting EFT approval.")
+    return await _fulfil_order(
+        session,
+        tenant_id=tenant_id,
+        order=order,
+        payment=payment,
+        approved_by_user_id=approved_by_user_id,
+        supplier_vat_number=supplier_vat_number,
+    )
+
+
+async def approve_po(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    order: Order,
+    payment: Payment,
+    approved_by_user_id: uuid.UUID,
+    supplier_vat_number: str | None,
+) -> Invoice:
+    if order.status != "po_pending_approval":
+        raise OrderError(f"Order is {order.status!r}, not awaiting PO approval.")
+    return await _fulfil_order(
+        session,
+        tenant_id=tenant_id,
+        order=order,
+        payment=payment,
+        approved_by_user_id=approved_by_user_id,
+        supplier_vat_number=supplier_vat_number,
+    )
+
+
 async def reject_eft(session: AsyncSession, *, order: Order, payment: Payment, reason: str) -> None:
     if order.status != "eft_pending_approval":
         raise OrderError(f"Order is {order.status!r}, not awaiting EFT approval.")
     payment.status = "eft_rejected"
     payment.rejection_reason = reason
     order.status = "eft_rejected"
+    await session.flush()
+
+
+async def reject_po(session: AsyncSession, *, order: Order, payment: Payment, reason: str) -> None:
+    # No po_rejected state exists in order_status (0009) — unlike EFT,
+    # a PO doesn't get resubmitted with corrected proof; "cancelled" is
+    # the real terminal state a rejected PO lands in.
+    if order.status != "po_pending_approval":
+        raise OrderError(f"Order is {order.status!r}, not awaiting PO approval.")
+    payment.status = "po_rejected"
+    payment.rejection_reason = reason
+    order.status = "cancelled"
     await session.flush()
 
 
@@ -284,22 +399,27 @@ class PendingPayment:
     amount: Decimal
     currency: str
     payment_reference: str | None
+    provider: str
+    po_number: str | None
     proof_uploaded: bool
     created_at: datetime
 
 
-async def list_pending_eft_payments(
+async def list_pending_payments(
     session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID, limit: int, offset: int
 ) -> tuple[list[PendingPayment], int]:
-    """The finance queue (REQ-PAY-03): EFT payments whose order is
-    `eft_pending_approval` — proof uploaded, awaiting a human decision.
-    There is no automated approval path.
+    """The finance queue (REQ-PAY-03): EFT and PO payments awaiting a
+    human decision — proof uploaded or PO document captured. There is
+    no automated approval path for either.
     """
     base = (
         select(Payment, Order, User)
         .join(Order, Order.id == Payment.order_id)
         .join(User, User.id == Order.user_id)
-        .where(Order.tenant_id == tenant_id, Order.status == "eft_pending_approval")
+        .where(
+            Order.tenant_id == tenant_id,
+            Order.status.in_(("eft_pending_approval", "po_pending_approval")),
+        )
     )
     total = len((await session.execute(base)).all())
 
@@ -314,7 +434,10 @@ async def list_pending_eft_payments(
             amount=payment.amount,
             currency=payment.currency,
             payment_reference=order.payment_reference,
-            proof_uploaded=payment.proof_object_key is not None,
+            provider=payment.provider,
+            po_number=order.po_number,
+            proof_uploaded=payment.proof_object_key is not None
+            or order.po_document_key is not None,
             created_at=payment.created_at,
         )
         for payment, order, user in rows
@@ -327,9 +450,12 @@ __all__ = [
     "OrderLineRequest",
     "PendingPayment",
     "approve_eft",
+    "approve_po",
     "checkout_eft",
+    "checkout_po",
     "create_order",
-    "list_pending_eft_payments",
+    "list_pending_payments",
     "reject_eft",
+    "reject_po",
     "submit_proof",
 ]

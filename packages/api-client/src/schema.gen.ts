@@ -342,6 +342,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/checkout/po": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checkout Po
+         * @description 01 §4.3 workflow 5: the PO number and its document arrive together
+         *     — unlike EFT proof, which can only exist after a bank transfer, a
+         *     purchase order document exists from the moment it's raised.
+         */
+        post: operations["checkout_po_api_v1_orders__order_id__checkout_po_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/orders/{order_id}/payment-proof": {
         parameters: {
             query?: never;
@@ -404,6 +426,149 @@ export interface paths {
         put?: never;
         /** Reject Payment */
         post: operations["reject_payment_api_v1_payments__payment_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Own Organisations */
+        get: operations["list_own_organisations_api_v1_organisations_get"];
+        put?: never;
+        /** Create Organisation */
+        post: operations["create_organisation_api_v1_organisations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Organisation */
+        get: operations["get_organisation_api_v1_organisations__organisation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Members */
+        get: operations["list_members_api_v1_organisations__organisation_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/seats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Seats */
+        get: operations["list_seats_api_v1_organisations__organisation_id__seats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/seats/{course_id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assigned Seats */
+        get: operations["list_assigned_seats_api_v1_organisations__organisation_id__seats__course_id__assignments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/seats/invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Invite Members */
+        post: operations["invite_members_api_v1_organisations__organisation_id__seats_invite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/seats/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Members Csv
+         * @description CSV import — REQ-TEN-02's second bulk-invite path. Expects one
+         *     email address per row (a header row, if present, is skipped:
+         *     anything that doesn't parse as an email-shaped string is dropped
+         *     rather than crashing the whole import).
+         */
+        post: operations["import_members_csv_api_v1_organisations__organisation_id__seats_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/seats/{entitlement_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Seat */
+        post: operations["revoke_seat_api_v1_organisations__organisation_id__seats__entitlement_id__revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -992,6 +1157,34 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AssignSeatsRequest */
+        AssignSeatsRequest: {
+            /** Course Id */
+            course_id: string;
+            /** Emails */
+            emails: string[];
+        };
+        /** AssignSeatsResponse */
+        AssignSeatsResponse: {
+            /** Items */
+            items: components["schemas"]["SeatAssignmentResultResponse"][];
+        };
+        /** AssignedSeatResponse */
+        AssignedSeatResponse: {
+            /** Entitlement Id */
+            entitlement_id: string;
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Granted At */
+            granted_at: string;
+        };
+        /** AssignedSeatsResponse */
+        AssignedSeatsResponse: {
+            /** Items */
+            items: components["schemas"]["AssignedSeatResponse"][];
+        };
         /** AssignmentCreateRequest */
         AssignmentCreateRequest: {
             /** Title */
@@ -1047,6 +1240,18 @@ export interface components {
             visibility: string;
             /** Evidence Url */
             evidence_url?: string | null;
+        };
+        /** Body_checkout_po_api_v1_orders__order_id__checkout_po_post */
+        Body_checkout_po_api_v1_orders__order_id__checkout_po_post: {
+            /** Po Number */
+            po_number: string;
+            /** File */
+            file: string;
+        };
+        /** Body_import_members_csv_api_v1_organisations__organisation_id__seats_import_post */
+        Body_import_members_csv_api_v1_organisations__organisation_id__seats_import_post: {
+            /** File */
+            file: string;
         };
         /** Body_submit_assignment_api_v1_assignments__assignment_id__submissions_post */
         Body_submit_assignment_api_v1_assignments__assignment_id__submissions_post: {
@@ -1104,6 +1309,13 @@ export interface components {
             customer_type: string;
             /** Lines */
             lines: components["schemas"]["OrderLine"][];
+            /** Organisation Id */
+            organisation_id?: string | null;
+        };
+        /** CreateOrganisationRequest */
+        CreateOrganisationRequest: {
+            /** Name */
+            name: string;
         };
         /** EftCheckoutResponse */
         EftCheckoutResponse: {
@@ -1365,6 +1577,20 @@ export interface components {
             /** Permissions */
             permissions: string[];
         };
+        /** MemberResponse */
+        MemberResponse: {
+            /** User Id */
+            user_id: string;
+            /** Email */
+            email: string;
+            /** Relationship */
+            relationship: string;
+        };
+        /** MembersResponse */
+        MembersResponse: {
+            /** Items */
+            items: components["schemas"]["MemberResponse"][];
+        };
         /** MfaEnrollConfirmRequest */
         MfaEnrollConfirmRequest: {
             /** Enrollment Token */
@@ -1432,8 +1658,19 @@ export interface components {
             grand_total: string;
             /** Payment Reference */
             payment_reference: string | null;
+            /** Po Number */
+            po_number: string | null;
+            /** Organisation Id */
+            organisation_id: string | null;
             /** Items */
             items: components["schemas"]["OrderItemResponse"][];
+        };
+        /** OrganisationResponse */
+        OrganisationResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** OwnEnrolmentResponse */
         OwnEnrolmentResponse: {
@@ -1477,6 +1714,10 @@ export interface components {
             currency: string;
             /** Payment Reference */
             payment_reference: string | null;
+            /** Provider */
+            provider: string;
+            /** Po Number */
+            po_number: string | null;
             /** Proof Uploaded */
             proof_uploaded: boolean;
             /**
@@ -1508,6 +1749,17 @@ export interface components {
              */
             expires_at: string;
             watermark: components["schemas"]["WatermarkPayload"];
+        };
+        /** PoCheckoutResponse */
+        PoCheckoutResponse: {
+            /** Payment Id */
+            payment_id: string;
+            /** Po Number */
+            po_number: string;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
         };
         /** PriceSummary */
         PriceSummary: {
@@ -1680,6 +1932,33 @@ export interface components {
         RevokeCertificateRequest: {
             /** Reason */
             reason: string;
+        };
+        /** SeatAssignmentResultResponse */
+        SeatAssignmentResultResponse: {
+            /** Email */
+            email: string;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /** SeatSummariesResponse */
+        SeatSummariesResponse: {
+            /** Items */
+            items: components["schemas"]["SeatSummaryResponse"][];
+        };
+        /** SeatSummaryResponse */
+        SeatSummaryResponse: {
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Purchased */
+            purchased: number;
+            /** Assigned */
+            assigned: number;
+            /** Available */
+            available: number;
         };
         /** SurveyAnswer */
         SurveyAnswer: {
@@ -2457,6 +2736,41 @@ export interface operations {
             };
         };
     };
+    checkout_po_api_v1_orders__order_id__checkout_po_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_checkout_po_api_v1_orders__order_id__checkout_po_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoCheckoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
         parameters: {
             query?: never;
@@ -2567,6 +2881,286 @@ export interface operations {
                 "application/json": components["schemas"]["RejectPaymentRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_own_organisations_api_v1_organisations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganisationResponse"][];
+                };
+            };
+        };
+    };
+    create_organisation_api_v1_organisations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrganisationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganisationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organisation_api_v1_organisations__organisation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganisationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_members_api_v1_organisations__organisation_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_seats_api_v1_organisations__organisation_id__seats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeatSummariesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assigned_seats_api_v1_organisations__organisation_id__seats__course_id__assignments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignedSeatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_members_api_v1_organisations__organisation_id__seats_invite_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignSeatsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignSeatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_members_csv_api_v1_organisations__organisation_id__seats_import_post: {
+        parameters: {
+            query: {
+                course_id: string;
+            };
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_members_csv_api_v1_organisations__organisation_id__seats_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignSeatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_seat_api_v1_organisations__organisation_id__seats__entitlement_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+                entitlement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {

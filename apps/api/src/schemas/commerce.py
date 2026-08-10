@@ -18,6 +18,9 @@ class CreateOrderRequest(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     customer_type: str
     lines: list[OrderLine] = Field(min_length=1, max_length=20)
+    # Set only for an organisation's seat purchase — the caller must be
+    # that organisation's admin (checked in the router, not here).
+    organisation_id: str | None = None
 
 
 class OrderItemResponse(BaseModel):
@@ -36,6 +39,8 @@ class OrderResponse(BaseModel):
     tax_total: Decimal
     grand_total: Decimal
     payment_reference: str | None
+    po_number: str | None
+    organisation_id: str | None
     items: list[OrderItemResponse]
 
 
@@ -46,6 +51,13 @@ class EftCheckoutResponse(BaseModel):
     account_name: str
     account_number: str
     branch_code: str
+    amount: Decimal
+    currency: str
+
+
+class PoCheckoutResponse(BaseModel):
+    payment_id: str
+    po_number: str
     amount: Decimal
     currency: str
 
@@ -92,6 +104,8 @@ class PendingPaymentSummary(BaseModel):
     amount: Decimal
     currency: str
     payment_reference: str | None
+    provider: str
+    po_number: str | None
     proof_uploaded: bool
     created_at: datetime
 
@@ -113,6 +127,7 @@ __all__ = [
     "OrderResponse",
     "PendingPaymentSummary",
     "PendingPaymentsPage",
+    "PoCheckoutResponse",
     "PriceSummary",
     "ProductSummary",
     "ProductsPage",

@@ -11,6 +11,8 @@ interface PendingPayment {
   amount: string;
   currency: string;
   payment_reference: string | null;
+  provider: string;
+  po_number: string | null;
   proof_uploaded: boolean;
   created_at: string;
 }
@@ -115,12 +117,18 @@ export default function PaymentsScreen() {
                 <div>
                   <p style={{ fontWeight: 600, fontSize: "0.875rem" }}>{payment.buyer_email}</p>
                   <p className="mono" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                    {payment.payment_reference} &middot; {payment.currency} {payment.amount}
+                    {payment.provider === "po" ? payment.po_number : payment.payment_reference}
+                    &middot; {payment.currency} {payment.amount}
                   </p>
                 </div>
-                <span className={`tag ${payment.proof_uploaded ? "tag--live" : "tag--mute"}`}>
-                  {payment.proof_uploaded ? "Proof uploaded" : "Awaiting proof"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="tag tag--mute">{payment.provider === "po" ? "PO" : "EFT"}</span>
+                  {payment.provider === "po" ? null : (
+                    <span className={`tag ${payment.proof_uploaded ? "tag--live" : "tag--mute"}`}>
+                      {payment.proof_uploaded ? "Proof uploaded" : "Awaiting proof"}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button

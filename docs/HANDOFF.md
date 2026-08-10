@@ -1208,6 +1208,93 @@ point in either direction. Pushed as `5850134`; green on both jobs on
 the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31395568160
 (quality 3m39s, web 52s).
 
+**Eighteenth pass: Phase 5 sprint 1 — organisations, seat-pool
+entitlements, PO checkout.** `0016` adds `organisations`/
+`organisation_members` and finally puts real FK constraints on
+`entitlements.organisation_id`/`role_assignments.organisation_id` —
+both columns already existed, bare and unconstrained, since
+`0001`/`0009`; 02 §4.5 documented this design years before
+`organisations` itself existed to point at. The seat model: a
+null-`user_id` entitlement is the purchased pool, a set-`user_id`
+entitlement drawn from it is one assigned seat, and "available" is
+always `sum(pool.quantity) − count(active assigned)` computed on read
+— never a separately tracked counter that could drift out of sync
+with reality. PO checkout (`POST /orders/{id}/checkout/po`) captures
+the PO number and its document together in one multipart call, unlike
+EFT — a purchase order document exists from the moment it's raised,
+so there's no "reference now, proof later" split. `_fulfil_order()`
+was extracted out of `approve_eft`'s body in `services/orders.py` as a
+shared helper, now used by both `approve_eft` and the new
+`approve_po`; it branches on whether the order has an
+`organisation_id` to decide between a direct user
+entitlement+enrolment and a pool entitlement.
+
+Two real bugs surfaced and were fixed before this was called done, not
+after:
+
+1. **Migration round-trip failure.** `0016`'s `downgrade()` dropped
+   `organisations` without first nulling
+   `entitlements.organisation_id`/`role_assignments.organisation_id`.
+   Once `tests/test_organisations.py` had run against a DB at head and
+   created real entitlement rows with `organisation_id` set, a
+   `downgrade -1` left those values orphaned (the FK constraint was
+   already gone, so nothing caught it), and the next `upgrade head`
+   failed re-creating the constraint against a freshly-empty
+   `organisations` table. Fixed by nulling both columns before
+   `drop_constraint` in `downgrade()`; round-trip (`downgrade -1` →
+   `upgrade head` → `alembic check`) now verified clean against real
+   orphaned data, not just a fresh database.
+2. **No way to revoke a specific seat from the UI.** The aggregate
+   `GET /organisations/{id}/seats` endpoint returns per-course totals
+   only — no entitlement IDs, so the revoke button the frontend needed
+   had nothing to call. Added `GET
+   /organisations/{id}/seats/{course_id}/assignments`
+   (`services/organisations.py::list_assigned_seats`), admin-gated
+   like invite/import/revoke since it returns real email addresses,
+   unlike the membership roster which any member can read. Covered by
+   a new test (`test_assigned_seats_endpoint_lists_holder_and_drops_
+   after_revoke`) verifying both that a fresh assignment appears
+   immediately and that a revoke drops it immediately — same
+   live-computed discipline as the aggregate summary.
+
+Frontend: `/organisations` (list/create — creation is self-service,
+REQ-TEN-02, any authenticated user can start one and becomes its first
+admin), `/organisations/[id]` (members, seat summary, invite-by-email,
+CSV import, a per-course expandable seat-holder list with a working
+revoke button), `/organisations/[id]/buy-seats` (programme + quantity
+→ PO number/document in one step, structurally identical to
+`/checkout`'s EFT flow but PO-only and organisation-scoped).
+`/admin/payments` extended to show `PO`/`EFT` and the PO number
+instead of a payment reference when the provider is `po`. No new
+component library was introduced — every page reuses the existing
+plain-CSS-class system (`.card`/`.btn`/`.field`/`.input`/`.tag`/
+`.table-wrap`) and the BFF-proxy-plus-raw-`fetch` pattern already
+established by `/checkout` and `/admin/payments` — organisations were
+deliberately not put under `/admin`, since that layout is gated on
+staff permissions (`analytics:view`/`payment:approve`) and org
+adminship is a per-organisation `organisation_members.relationship`,
+not a platform role.
+
+Full gate sweep re-run clean after both fixes: `ruff check` (128
+files), `mypy src` (91 files, strict), `pytest -q -rs` run twice for
+determinism (167 passed, 0 skipped — up from 159), `apps/web`
+`typecheck`/`build` clean (20 routes now, +3), `packages/api-client`
+regenerated and typechecked against the new endpoints. Live smoke test
+ran the entire flow through the real BFF exactly as the browser would:
+seed two real users (org admin, finance) via the actual service layer
+(not fixtures) → login → create organisation → create a 2-seat order
+with `organisation_id` set → PO checkout with a real small PDF → PO
+number and amount confirmed in the response → finance approves →
+`INV-*` issued → seat summary confirms `purchased=2, assigned=0` →
+invite one employee → summary flips to `assigned=1` → holder list
+shows the real email and its entitlement ID → revoke → summary drops
+back to `assigned=0` → members list shows the new employee as a
+`member`. All four new page routes confirmed rendering (HTTP 200) with
+no console/server errors in the dev-server logs.
+
+Not yet done: STATUS/HANDOFF updates for this pass are this entry
+itself; commit/push/CI verification is next.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
