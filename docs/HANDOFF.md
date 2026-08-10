@@ -1585,6 +1585,12 @@ running servers (including, this sprint, a real background worker for
 actual email delivery), real docs updated in the same pass as the
 code, real CI green before moving on.
 
+Committed as `63552a1`, pushed to `main`; CI green on both jobs on
+the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31414239299
+(quality 3m57s, web 1m2s) — a clean CI runner with no leftover worker
+process confirms the full suite passes deterministically outside the
+local environment where the stray-arq-worker issue above was found.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
