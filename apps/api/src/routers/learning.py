@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 
-from src.core.deps import PrincipalDep, SessionDep, SettingsDep
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep
 from src.core.errors import NotFound
 from src.schemas.learning import (
     EnrolmentProgressResponse,
@@ -67,10 +67,11 @@ async def list_own_enrolments(
     summary="Per-lesson progress for one of the caller's enrolments",
 )
 async def get_progress(
-    enrolment_id: str, principal: PrincipalDep, session: SessionDep
+    enrolment_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
 ) -> EnrolmentProgressResponse:
     enrolment, course, lessons = await enrolment_service.get_progress(
         session,
+        crypto,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         enrolment_id=_parse_uuid(enrolment_id),
@@ -87,6 +88,9 @@ async def get_progress(
                 position=row.position,
                 activity_type=row.activity_type,
                 video_asset_id=str(row.video_asset_id) if row.video_asset_id else None,
+                quiz_id=str(row.quiz_id) if row.quiz_id else None,
+                survey_id=str(row.survey_id) if row.survey_id else None,
+                assignment_id=str(row.assignment_id) if row.assignment_id else None,
                 state=row.state,
                 unmet_requirements=row.unmet_requirements,
             )
@@ -116,10 +120,11 @@ async def start_lesson(lesson_id: str, principal: PrincipalDep, session: Session
     summary="Complete a lesson — the server-side rule engine decides, not the caller",
 )
 async def complete_lesson(
-    lesson_id: str, principal: PrincipalDep, session: SessionDep
+    lesson_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
 ) -> LessonCompleteResponse:
     completion, next_lesson = await enrolment_service.complete_lesson(
         session,
+        crypto,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         lesson_id=_parse_uuid(lesson_id),

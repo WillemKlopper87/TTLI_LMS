@@ -5,6 +5,18 @@ Every model must be imported here. Alembic's autogenerate compares against
 is how `alembic check` starts passing while the schema quietly drifts.
 """
 
+from src.models.assessment import (
+    Assignment,
+    AssignmentSubmission,
+    Quiz,
+    QuizAnswer,
+    QuizAttempt,
+    QuizQuestion,
+    Survey,
+    SurveyQuestion,
+    SurveyResponse,
+    SurveyResponseMode,
+)
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
@@ -42,6 +54,8 @@ from src.models.user import User
 
 __all__ = [
     "AccessLevel",
+    "Assignment",
+    "AssignmentSubmission",
     "AuditAction",
     "AuditEvent",
     "Base",
@@ -71,11 +85,19 @@ __all__ = [
     "Permission",
     "Price",
     "Product",
+    "Quiz",
+    "QuizAnswer",
+    "QuizAttempt",
+    "QuizQuestion",
     "RefreshToken",
     "Role",
     "RoleAssignment",
     "RolePermission",
     "SoftDeleteMixin",
+    "Survey",
+    "SurveyQuestion",
+    "SurveyResponse",
+    "SurveyResponseMode",
     "TaxRule",
     "Tenant",
     "TenantDomain",

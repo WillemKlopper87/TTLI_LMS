@@ -99,6 +99,17 @@ class Lesson(Base, TimestampMixin):
     video_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("video_assets.id", ondelete="SET NULL"), nullable=True
     )
+    # quizzes/surveys/assignments.id for the matching activity_type
+    # (Phase 4 sprint 3) — same one-nullable-FK-per-subsystem pattern.
+    quiz_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("quizzes.id", ondelete="SET NULL"), nullable=True
+    )
+    survey_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("surveys.id", ondelete="SET NULL"), nullable=True
+    )
+    assignment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("assignments.id", ondelete="SET NULL"), nullable=True
+    )
     # Lesson-level override of the course default (02 §5.2) — absent
     # fields fall through to the course's completion_rules, never a null
     # that silently disables the course-level rule.

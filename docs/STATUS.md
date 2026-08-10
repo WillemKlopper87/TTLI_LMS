@@ -17,7 +17,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | 1 | Foundation | Built end-to-end, published, CI green | ~98% |
 | 2 | Public site and content funnel | Leads, consent, events, guest access, the admin lead view, a real marketing landing page, a working contact form and a dedicated book page all built. Only Podcasts/"Cultivate with Intent" remain, blocked on missing content | ~70% |
 | 3 | Commerce | Sprint 1: catalogue, orders, tax engine, the full EFT purchase path (now with a real UI, not just the API), sequential invoicing, the append-only ledger, the finance approval queue. Card (Payfast/Netcash) and PO checkout not started | ~40% |
-| 4 | Core LMS, anti-bypass, credentials | Sprints 1–2: content model, the completion rule engine, enrolments, and a real ported VOD transcode pipeline with signed HLS playback and heartbeat validation | ~40% |
+| 4 | Core LMS, anti-bypass, credentials | Sprints 1–3: content model, the completion rule engine, enrolments, a real ported VOD transcode pipeline with signed HLS playback and heartbeat validation, and quizzes/surveys/assignments with real auto-grading, anonymous-survey pseudonymisation and virus-scanned submissions | ~55% |
 | 4.5 | PWA and accessibility | Not started | 0% |
 | 5 | Corporate, workshops, marketing | Not started | 0% |
 | 6 | AI insights | Not started | 0% |
@@ -25,23 +25,24 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 
 | Gate | Status |
 |---|---|
-| `ruff check` / `ruff format --check` | **PASS** — 107 files |
-| `mypy src` (strict) | **PASS** — 77 source files |
-| `pytest` | **PASS** — 143 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
+| `ruff check` / `ruff format --check` | **PASS** — 115 files |
+| `mypy src` (strict) | **PASS** — 83 source files |
+| `pytest` | **PASS** — 152 passed, **0 skipped** (against real Postgres, Redis, MinIO, Mailhog, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements-dev.txt` | **PASS** — 0 known vulnerabilities (35 found and fixed in the hardening pass — see §4 below) |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
-| `alembic upgrade head` | **PASS** — at `0012` |
+| `alembic upgrade head` | **PASS** — at `0013` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
 | S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
 | Real ffmpeg transcode → real HLS ladder → real playback through the BFF | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth pass) |
+| Real quiz auto-grading, anonymous-survey pseudonymisation, virus-scanned assignment submissions | **PASS** — `tests/test_assessment.py`; live smoke test end to end (see HANDOFF.md's Fourteenth pass) |
 | Source extraction fidelity | **PASS** — `python docs/source/extract.py --check` |
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
-| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs, [run 31337009510](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31337009510) (quality 2m53s, web 47s) — first run with real ffmpeg on the Actions runner (`ubuntu-latest` doesn't ship it; the first attempt correctly failed loud instead of skipping, fixed with an `apt-get install` step) |
+| CI (`.github/workflows/api.yml`), `quality` + `web` jobs | pending this push |
 
-**Headline:** 143 tests (0 skipped), 32 endpoints, 38 tables (events partitioned monthly ×14), 12 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress including real video-watch percentage, and a real ported VOD transcode pipeline with signed HLS playback.
+**Headline:** 152 tests (0 skipped), 41 endpoints, 47 tables (events partitioned monthly ×14), 13 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 15 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback, and quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -82,10 +83,12 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | BFF binary-body fix: the proxy forwarded every non-GET body through `request.text()`, which silently corrupts binary content (multipart file uploads) on the UTF-8 round-trip | `apps/web/app/api/bff/[...path]/route.ts` | Verified with an actual JPEG proof-of-payment upload through the real BFF: stored file is byte-identical to the original (same size, same MD5) |
 | Security hardening: real ClamAV virus scan (REQ-BYPASS-08) before a payment-proof upload is stored, fail-closed if the scanner is unreachable; CSP with a per-request nonce + security headers on every `apps/web` response; `pip-audit`/`npm audit` wired into CI as real gates (35 CVEs found and fixed — see `requirements.txt`'s comment) | `src/services/antivirus.py`, `apps/web/proxy.ts`, `.github/workflows/api.yml` | `tests/test_antivirus.py` (real clamd: clean file, EICAR, unreachable-host); `tests/test_commerce.py::test_infected_payment_proof_is_refused_and_order_does_not_advance`; full gate sweep re-run clean after each dependency bump |
 | Course content model (global, not tenant-scoped) + the server-side completion rule engine + enrolments sourced from an entitlement | `0011`, `src/services/{completion,enrolment}.py`, `/enrolments`, `/lessons/{id}/start`, `/lessons/{id}/complete` | 7 tests in `tests/test_learning.py`; live HTTP smoke test against a running server — real refusal (`"0s spent of 30s required"`) then a real completion after waiting past the threshold, next lesson correctly unlocked |
+| Ported VOD transcode pipeline (real ffmpeg) + signed HLS playback with token-rewritten manifests + heartbeat-validated watch progress | `0012`, `src/services/media/{ffmpeg,transcoder,pipeline,playback}.py`, `src/services/video_progress.py`, `/video-assets`, `/media/{id}/playback`, `/media/{id}/hls/{filename}`, `/lessons/{id}/heartbeat` | 18 tests in `tests/test_media.py`/`test_media_ffmpeg.py` (real ffmpeg, not mocked); live smoke test — real transcode, playback through the actual BFF, MD5-identical segment delivery, seek-beyond-furthest-position refused |
+| Quizzes (auto-graded + manually-graded), anonymous/identified surveys, virus-scanned assignments, all wired into the completion rule engine | `0013`, `src/services/{quiz,survey,assignment}.py`, `/quizzes`, `/surveys`, `/assignments` and their sub-routes | 9 tests in `tests/test_assessment.py`; live smoke test — real quiz with mixed auto/manual grading, anonymous survey response verified `user_id IS NULL` at the database level, infected assignment submission refused, clean one approved |
 
 ### Endpoints live
 
-`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` (non-health routes under `/api/v1`)
+`GET /health` · `GET /health/ready` · `GET /auth/me` · `GET /tenant/theme` · `GET /leads` · `GET /orders/{id}` · `GET /products` · `GET /payments` · `GET /enrolments` · `GET /enrolments/{id}/progress` · `GET /video-assets/{id}` · `GET /media/{id}/playback` · `GET /media/{id}/hls/{filename}` · `GET /surveys/{id}` · `POST /auth/login` · `POST /auth/magic-link` · `POST /auth/magic-link/consume` · `POST /auth/mfa/verify` · `POST /auth/mfa/enroll` · `POST /auth/mfa/enroll/confirm` · `POST /auth/refresh` · `POST /auth/password-reset` · `POST /auth/password-reset/confirm` · `POST /leads` · `POST /guest-access` · `POST /orders` · `POST /orders/{id}/checkout/eft` · `POST /orders/{id}/payment-proof` · `POST /payments/{id}/approve` · `POST /payments/{id}/reject` · `POST /lessons/{id}/start` · `POST /lessons/{id}/complete` · `POST /lessons/{id}/heartbeat` · `POST /video-assets` · `POST /lessons/{id}/video` · `POST /quizzes` · `POST /quizzes/{id}/questions` · `POST /lessons/{id}/quiz` · `POST /quizzes/{id}/attempts` · `POST /quiz-attempts/{id}/submit` · `POST /quiz-answers/{id}/grade` · `POST /surveys` · `POST /surveys/{id}/questions` · `POST /lessons/{id}/survey` · `POST /surveys/{id}/responses` · `POST /assignments` · `POST /lessons/{id}/assignment` · `POST /assignments/{id}/submissions` · `POST /assignment-submissions/{id}/review` (non-health routes under `/api/v1`)
 
 ---
 
@@ -213,7 +216,7 @@ Catalogue, cart, checkout, Payfast and Netcash sandboxes, EFT with proof upload 
 
 ---
 
-## 7. Phase 4 — Core LMS, anti-bypass, credentials (~40%)
+## 7. Phase 4 — Core LMS, anti-bypass, credentials (~55%)
 
 Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat validation, the server-side completion rule engine, quizzes, surveys with per-survey anonymity, certificates with public verification, badges with LinkedIn sharing.
 
@@ -240,13 +243,21 @@ Course authoring, the ported media ladder, signed HLS, watermarking, heartbeat v
 - [x] `video_watch_percentage` graduated out of the rule engine's "not available yet" list — real watch data now backs it
 - [x] Real `apps/web` video player (`app/learn/[enrolmentId]/video-player.tsx`, hls.js) with a real watermark overlay and heartbeat pings every 5s
 
+### Done — sprint 3: quizzes, surveys with per-survey anonymity, assignments
+
+- [x] `quizzes`, `quiz_questions`, `quiz_attempts`, `quiz_answers`, `surveys`, `survey_questions`, `survey_responses`, `assignments`, `assignment_submissions` (`0013`) — question banks global like `courses`; attempts/responses/submissions tenant-scoped/RLS like `enrolments`
+- [x] Quiz-taking (REQ-ASSESS-01/02/03, REQ-BYPASS-05/06): server-side randomised question/option order persisted per attempt, attempt limits and time limits enforced server-side, correct answers never sent to the client before submission. `single_choice`/`multiple_choice`/`true_false` auto-grade at submission; `short_text`/`long_text` stay ungraded (`passed=null`, genuinely unknown, not failed) until a `quiz:grade` holder grades them, which re-finalises the attempt's score
+- [x] Anonymous surveys (REQ-ASSESS-05): `respondent_reference` is `CryptoBox.blind_index(f"{survey_id}:{enrolment_id}")` — the same mechanism `contacts.email_blind_index` already uses — so duplicate submissions are rejected and the completion rule engine can confirm *this enrolment* responded, without `user_id` ever being written for an anonymous response. Verified directly at the database level, not just via the API: `user_id` is genuinely `NULL`, and a matching `audit_events` row (`actor_user_id=NULL`) proves anonymisation happened at submission time
+- [x] Assignments (REQ-BYPASS-08): submissions virus-scanned through the same `services/antivirus.py` payment-proof/video-source uploads use, fail-closed; `POST /assignment-submissions/{id}/review` approves or rejects, gated on `quiz:grade` (no dedicated `assignment:review` permission exists yet — the facilitator role that would naturally hold one is Phase 5)
+- [x] `quiz_pass_score`, `survey_required`, `assignment_approval_required` graduated out of the rule engine's "not available yet" list — real data now backs all three, joining `video_watch_percentage` from sprint 2. Only `live_attendance_required` (Phase 5) remains unbacked
+- [x] Real `apps/web` UI: `quiz-player.tsx` (question rendering by type, submit, score/passed display), `survey-form.tsx` (anonymous surveys say so on screen), `assignment-upload.tsx` (file picker, virus-rejection message), all wired into `/learn/[enrolmentId]` by `activity_type`
+
 ### Outstanding — the rest of Phase 4
 
-- [ ] Quizzes with question banks, surveys with per-survey anonymity, assignments (virus-scanned, reusing `services/antivirus.py`) (sprint 3)
 - [ ] Certificates with public QR verification, badges with LinkedIn sharing (sprint 4)
-- [ ] Course/lesson authoring UI — content is migration-seeded, same precedent as Phase 3 sprint 1's seeded product; a content-author *screen* doesn't exist yet, though the API endpoints a real one would call now do
+- [ ] Course/lesson authoring UI — content and question banks are migration-seeded or built via narrow authoring endpoints this sprint, same precedent as Phase 3 sprint 1's seeded product; a content-author *screen* doesn't exist yet, though the API endpoints a real one would call now do
 
-**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone. **First two-thirds met** — verified live over real HTTP against running servers (not just the test suite): started a lesson, got refused early with `"0s spent of 30s required"`, waited the real threshold, completed it, watched the next lesson unlock; separately, uploaded a real video, watched a real ffmpeg transcode complete, played it back through signed HLS end to end through the actual BFF with byte-identical (MD5-verified) segment delivery, and confirmed a seek beyond the furthest watched position is refused. Certificate verification is sprint 4.
+**Demo target:** attempt to skip a lesson and be refused with the specific unmet requirements listed; complete properly; verify the certificate from a phone. **First two-thirds met, more thoroughly now** — verified live over real HTTP against running servers (not just the test suite): started a lesson, got refused early with `"0s spent of 30s required"`, waited the real threshold, completed it, watched the next lesson unlock; uploaded a real video, watched a real ffmpeg transcode complete, played it back through signed HLS end to end through the actual BFF with byte-identical (MD5-verified) segment delivery, and confirmed a seek beyond the furthest watched position is refused; took a real quiz with a mix of auto-graded and manually-graded questions, watched the score/passed state update correctly at each stage; submitted an anonymous survey response and confirmed anonymity at the database level; submitted a real assignment, had an infected one refused by the virus scanner, and approved a clean one. Certificate verification is sprint 4.
 
 ---
 

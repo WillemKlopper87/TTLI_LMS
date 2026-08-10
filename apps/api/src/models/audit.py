@@ -71,6 +71,10 @@ class AuditAction:
     ROLE_REVOKED = "rbac.role.revoked"
     LESSON_COMPLETED = "lesson.completed"
     LESSON_COMPLETION_REFUSED = "lesson.completion_refused"
+    QUIZ_ATTEMPT_SUBMITTED = "quiz.attempt.submitted"
+    SURVEY_RESPONSE_SUBMITTED = "survey.response.submitted"
+    ASSIGNMENT_SUBMITTED = "assignment.submitted"
+    ASSIGNMENT_REVIEWED = "assignment.reviewed"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

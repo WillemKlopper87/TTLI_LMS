@@ -20,14 +20,18 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
+from src.core.crypto import CryptoBox
 from src.core.errors import Forbidden, LessonLocked, NotFound
 from src.core.ids import uuid7
+from src.models.assessment import Assignment, AssignmentSubmission, QuizAttempt, Survey
 from src.models.audit import AuditAction
 from src.models.course import Course, Lesson, Module
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import VideoAsset
 from src.services import audit
+from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
 from src.services.completion import evaluate, merge_rules
 
@@ -55,6 +59,9 @@ class LessonProgressRow:
     position: int
     activity_type: str
     video_asset_id: uuid.UUID | None
+    quiz_id: uuid.UUID | None
+    survey_id: uuid.UUID | None
+    assignment_id: uuid.UUID | None
     state: str
     unmet_requirements: list[str]
 
@@ -107,6 +114,51 @@ async def has_access_to_video(
         Enrolment.course_id.in_(course_ids),
     )
     return (await session.execute(enrolment_stmt)).first() is not None
+
+
+async def _course_for_lesson_fk(
+    session: AsyncSession, column: InstrumentedAttribute[uuid.UUID | None], value: uuid.UUID
+) -> Course:
+    """Shared by the quiz/survey/assignment enrolment resolvers below —
+    each activity is reachable only through the one lesson that
+    references it, same as `has_access_to_video`'s video_asset_id walk."""
+    stmt = (
+        select(Course)
+        .join(Module, Module.course_id == Course.id)
+        .join(Lesson, Lesson.module_id == Module.id)
+        .where(column == value)
+    )
+    course = (await session.execute(stmt)).scalars().first()
+    if course is None:
+        raise NotFound("No lesson references this activity.")
+    return course
+
+
+async def resolve_enrolment_for_quiz(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, quiz_id: uuid.UUID
+) -> Enrolment:
+    course = await _course_for_lesson_fk(session, Lesson.quiz_id, quiz_id)
+    return await get_own_enrolment(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+    )
+
+
+async def resolve_enrolment_for_survey(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, survey_id: uuid.UUID
+) -> Enrolment:
+    course = await _course_for_lesson_fk(session, Lesson.survey_id, survey_id)
+    return await get_own_enrolment(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+    )
+
+
+async def resolve_enrolment_for_assignment(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, assignment_id: uuid.UUID
+) -> Enrolment:
+    course = await _course_for_lesson_fk(session, Lesson.assignment_id, assignment_id)
+    return await get_own_enrolment(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+    )
 
 
 async def get_or_create_enrolment(
@@ -230,6 +282,95 @@ async def _video_watch_percentage(
     )
 
 
+async def _quiz_passed(
+    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
+) -> bool | None:
+    if lesson.quiz_id is None:
+        return None
+    stmt = (
+        select(QuizAttempt)
+        .where(
+            QuizAttempt.enrolment_id == enrolment_id,
+            QuizAttempt.quiz_id == lesson.quiz_id,
+            QuizAttempt.invalidated_at.is_(None),
+            QuizAttempt.submitted_at.isnot(None),
+        )
+        .order_by(QuizAttempt.attempt_number.desc())
+    )
+    latest = (await session.execute(stmt)).scalars().first()
+    return latest.passed if latest is not None else None
+
+
+async def _survey_responded(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    lesson: Lesson,
+    user_id: uuid.UUID,
+    enrolment_id: uuid.UUID,
+) -> bool:
+    if lesson.survey_id is None:
+        return False
+    survey = await session.get(Survey, lesson.survey_id)
+    if survey is None:  # pragma: no cover - FK guarantees this
+        return False
+    return await survey_service.has_responded(
+        session, crypto, survey=survey, user_id=user_id, enrolment_id=enrolment_id
+    )
+
+
+async def _assignment_approved(
+    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
+) -> bool:
+    if lesson.assignment_id is None:
+        return False
+    assignment = await session.get(Assignment, lesson.assignment_id)
+    if assignment is None:  # pragma: no cover - FK guarantees this
+        return False
+    stmt = (
+        select(AssignmentSubmission)
+        .where(
+            AssignmentSubmission.enrolment_id == enrolment_id,
+            AssignmentSubmission.assignment_id == lesson.assignment_id,
+        )
+        .order_by(AssignmentSubmission.version.desc())
+    )
+    latest = (await session.execute(stmt)).scalars().first()
+    if latest is None:
+        return False
+    return latest.approved_at is not None if assignment.approval_required else True
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletionContext:
+    video_watched_percentage: float | None
+    quiz_passed: bool | None
+    survey_responded: bool
+    assignment_approved: bool
+
+
+async def _completion_context(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    lesson: Lesson,
+    user_id: uuid.UUID,
+    enrolment_id: uuid.UUID,
+) -> _CompletionContext:
+    return _CompletionContext(
+        video_watched_percentage=await _video_watch_percentage(
+            session, lesson=lesson, enrolment_id=enrolment_id
+        ),
+        quiz_passed=await _quiz_passed(session, lesson=lesson, enrolment_id=enrolment_id),
+        survey_responded=await _survey_responded(
+            session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment_id
+        ),
+        assignment_approved=await _assignment_approved(
+            session, lesson=lesson, enrolment_id=enrolment_id
+        ),
+    )
+
+
 async def resolve_enrolment_for_lesson(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, lesson_id: uuid.UUID
 ) -> tuple[Enrolment, Lesson]:
@@ -271,7 +412,12 @@ async def start_lesson(
 
 
 async def complete_lesson(
-    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, lesson_id: uuid.UUID
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    lesson_id: uuid.UUID,
 ) -> tuple[LessonCompletion, Lesson | None]:
     """03 §6.4 — runs the merged rule set server-side; the client's opinion
     is never consulted (REQ-BYPASS-01). Returns the completed row plus the
@@ -292,9 +438,16 @@ async def complete_lesson(
         )
 
     rules = merge_rules(course.completion_rules, lesson.completion_rules)
-    watched_pct = await _video_watch_percentage(session, lesson=lesson, enrolment_id=enrolment.id)
+    ctx = await _completion_context(
+        session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment.id
+    )
     result = evaluate(
-        rules, first_seen_at=completion.first_seen_at, video_watched_percentage=watched_pct
+        rules,
+        first_seen_at=completion.first_seen_at,
+        video_watched_percentage=ctx.video_watched_percentage,
+        quiz_passed=ctx.quiz_passed,
+        survey_responded=ctx.survey_responded,
+        assignment_approved=ctx.assignment_approved,
     )
     completion.rule_evaluation = result.as_json()
 
@@ -334,7 +487,12 @@ async def complete_lesson(
 
 
 async def get_progress(
-    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, enrolment_id: uuid.UUID
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    enrolment_id: uuid.UUID,
 ) -> tuple[Enrolment, Course, list[LessonProgressRow]]:
     """03 §6.1 — the UI renders its checklist from `unmet_requirements`; it
     does not compute it."""
@@ -360,13 +518,16 @@ async def get_progress(
             state = completion.state
             if state != "completed":
                 rules = merge_rules(course.completion_rules, lesson.completion_rules)
-                watched_pct = await _video_watch_percentage(
-                    session, lesson=lesson, enrolment_id=enrolment.id
+                ctx = await _completion_context(
+                    session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment.id
                 )
                 result = evaluate(
                     rules,
                     first_seen_at=completion.first_seen_at,
-                    video_watched_percentage=watched_pct,
+                    video_watched_percentage=ctx.video_watched_percentage,
+                    quiz_passed=ctx.quiz_passed,
+                    survey_responded=ctx.survey_responded,
+                    assignment_approved=ctx.assignment_approved,
                 )
                 unmet = [c.reason for c in result.checks if not c.met]
         elif previous_completed:
@@ -383,6 +544,9 @@ async def get_progress(
                 position=lesson.position,
                 activity_type=lesson.activity_type,
                 video_asset_id=lesson.video_asset_id,
+                quiz_id=lesson.quiz_id,
+                survey_id=lesson.survey_id,
+                assignment_id=lesson.assignment_id,
                 state=state,
                 unmet_requirements=unmet,
             )
@@ -401,6 +565,9 @@ __all__ = [
     "get_progress",
     "has_access_to_video",
     "list_own_enrolments",
+    "resolve_enrolment_for_assignment",
     "resolve_enrolment_for_lesson",
+    "resolve_enrolment_for_quiz",
+    "resolve_enrolment_for_survey",
     "start_lesson",
 ]

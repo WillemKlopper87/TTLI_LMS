@@ -6,6 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
+import { AssignmentUpload } from "./assignment-upload";
+import { QuizPlayer } from "./quiz-player";
+import { SurveyForm } from "./survey-form";
 import { VideoPlayer } from "./video-player";
 
 interface LessonProgress {
@@ -15,6 +18,9 @@ interface LessonProgress {
   position: number;
   activity_type: string;
   video_asset_id: string | null;
+  quiz_id: string | null;
+  survey_id: string | null;
+  assignment_id: string | null;
   state: string;
   unmet_requirements: string[];
 }
@@ -140,6 +146,24 @@ export default function LearnEnrolmentPage() {
             lesson.video_asset_id &&
             (lesson.state === "in_progress" || lesson.state === "requirements_met") ? (
               <VideoPlayer lessonId={lesson.lesson_id} videoAssetId={lesson.video_asset_id} />
+            ) : null}
+
+            {lesson.activity_type === "quiz" &&
+            lesson.quiz_id &&
+            (lesson.state === "in_progress" || lesson.state === "requirements_met") ? (
+              <QuizPlayer quizId={lesson.quiz_id} onGraded={load} />
+            ) : null}
+
+            {lesson.activity_type === "survey" &&
+            lesson.survey_id &&
+            (lesson.state === "in_progress" || lesson.state === "requirements_met") ? (
+              <SurveyForm surveyId={lesson.survey_id} onSubmitted={load} />
+            ) : null}
+
+            {lesson.activity_type === "assignment" &&
+            lesson.assignment_id &&
+            (lesson.state === "in_progress" || lesson.state === "requirements_met") ? (
+              <AssignmentUpload assignmentId={lesson.assignment_id} />
             ) : null}
 
             {lesson.unmet_requirements.length > 0 ? (

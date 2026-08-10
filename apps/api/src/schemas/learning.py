@@ -21,6 +21,9 @@ class LessonProgressResponse(BaseModel):
     position: int
     activity_type: str
     video_asset_id: str | None
+    quiz_id: str | None
+    survey_id: str | None
+    assignment_id: str | None
     state: str
     unmet_requirements: list[str]
 

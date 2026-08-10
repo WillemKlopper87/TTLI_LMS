@@ -660,6 +660,122 @@ an actual GitHub Actions runner —
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31337009510
 (quality 2m53s, web 47s).
 
+**Fourteenth pass: Phase 4 sprint 3 — quizzes, surveys with per-survey
+anonymity, assignments.** `0013` adds nine tables: `quizzes`/
+`quiz_questions`/`surveys`/`survey_questions`/`assignments` global like
+`courses` (a question bank belongs to a lesson, which belongs to a
+globally-shared course); `quiz_attempts`/`quiz_answers`/
+`survey_responses`/`assignment_submissions` tenant-scoped/RLS like
+`enrolments`. `lessons` gains `quiz_id`/`survey_id`/`assignment_id`,
+the same one-nullable-FK-per-subsystem pattern sprint 2's
+`video_asset_id` established.
+
+**Quizzes** (`src/services/quiz.py`, REQ-ASSESS-01/02/03,
+REQ-BYPASS-05/06): question order is shuffled and persisted server-side
+at attempt creation, not re-derived per fetch — REQ-BYPASS-05 means the
+randomisation decision has to be the server's, once, not re-rolled in a
+way a client could exploit. Attempt limits (REQ-BYPASS-06) are enforced
+by counting non-invalidated attempts against `quiz.max_attempts` before a
+new one is allowed to start, not trusted from the client. `single_choice`/
+`multiple_choice`/`true_false` auto-grade at submission by comparing
+selected option IDs against the question's own `correct` flags — never
+sent to the client before submission (03 §6.5), verified by an assertion
+that walks every returned question's options and confirms `"correct"` is
+absent as a key, not just false. `short_text`/`long_text` stay ungraded
+(`points_awarded=None`) until `POST /quiz-answers/{id}/grade`
+(`quiz:grade`-gated) — REQ-ASSESS-03's "auto-grading with manual grading
+for open-ended responses" built as two real stages, not one that fakes
+grading open text. `passed` stays `None`, not `False`, while anything is
+ungraded — a quiz genuinely awaiting a grader is not the same state as a
+quiz someone failed, and the rule engine (below) treats them with
+different messages even though both currently block completion.
+
+**Anonymous surveys** (`src/services/survey.py`, REQ-ASSESS-05,
+REQ-BYPASS-07) are the piece worth understanding before touching this
+code: the spec requires *both* "no `user_id` stored" and "duplicate
+submissions rejected" and "the completion rule engine can tell whether
+this learner responded" — three requirements that look like they need
+identity to satisfy the second and third while the first forbids exactly
+that. The resolution reuses `core/crypto.py`'s existing
+`CryptoBox.blind_index` — the same mechanism `contacts.email_blind_index`
+already uses to look up encrypted emails — applied to
+`f"{survey_id}:{enrolment_id}"` instead of an email. That produces a
+stable pseudonym: deterministic for the same enrolment answering the same
+survey twice (so duplicates and completion-gating both work), but not
+reversible back to the enrolment without the blind-index key (so
+anonymity holds). No `survey_answers` table — `SurveyResponse.answers` is
+a jsonb list, matching 02 §7.6's own table list, which names
+`survey_responses` and nothing else. Verified past the API response, at
+the database row itself: `user_id IS NULL` (genuinely absent, not
+null-by-coincidence), `respondent_reference` is a real blind-index hash,
+and a matching `audit_events` row (`actor_user_id=NULL`) proves
+anonymisation happened at submission time — 02 §7.6's own stated bar for
+what makes this guarantee defensible later, not just claimed.
+
+**Assignments** (`src/services/assignment.py`, REQ-BYPASS-08) reuse
+`services/antivirus.py` exactly as payment-proof and video-source uploads
+already do — scanned before storage, fail-closed on an unreachable
+scanner. `POST /assignment-submissions/{id}/review` approves or rejects;
+gated on `quiz:grade` since no dedicated `assignment:review` permission
+exists and the facilitator role that would naturally hold one is Phase 5
+— documented as a deliberate reuse, not an oversight, so nobody "fixes"
+it into a new permission without checking whether Phase 5 already plans
+to replace it.
+
+**Rule engine wiring** (`src/services/completion.py`,
+`src/services/enrolment.py::_completion_context`): `quiz_pass_score`,
+`survey_required`, `assignment_approval_required` graduate out of "not
+available yet", joining `video_watch_percentage` from sprint 2 — only
+`live_attendance_required` (Phase 5) is still unbacked. Each new check
+resolves through the same lesson → activity-subsystem lookup pattern
+(`_quiz_passed`/`_survey_responded`/`_assignment_approved`), gathered
+once per evaluation via `_completion_context` rather than four separate
+awaits duplicated at both call sites (`complete_lesson`, `get_progress`).
+
+**Three real bugs this pass, one of them in a test, not the product** —
+worth recording because it's a different failure mode than the previous
+two passes' bugs: (1) `submit_quiz_attempt`
+(`routers/assessment.py`) originally read `enrolment_id` back off the
+attempt row itself before passing it into `quiz_service.submit_attempt`,
+which made that function's ownership check
+(`existing.enrolment_id == enrolment_id`) tautological — any caller who
+knew another learner's `attempt_id` could submit answers on their behalf.
+Caught on a second read of my own code, not by a test; fixed by deriving
+`enrolment_id` independently from the caller's own identity via
+`resolve_enrolment_for_quiz`, so the ownership check inside
+`get_own_attempt` is a real comparison. (2) The `lessons`/`options`/
+`question_order` JSONB columns needed `list[dict[str, Any]]`/`list[str]`
+typing, not `list[object]`, before mypy strict would allow indexing into
+them — a lesson worth remembering for the next JSONB column this project
+adds: type it for how it's actually read, not the loosest thing that
+satisfies the column definition. (3) **The test bug**: an early version
+of `test_completion_rule_engine_gates_on_quiz_survey_and_assignment`
+directly `UPDATE`d the shared seeded lesson's `completion_rules` to test
+gating, and didn't restore it — `lessons` is global, shared by every test
+file in the suite, and the very next full-suite run broke
+`test_learning.py`'s assertions about that same lesson's
+`minimum_time_seconds` rule. Fixed with a `try`/`finally` that reads the
+original value first and restores it unconditionally; the polluted dev
+database itself also needed a manual `UPDATE` to recover, since the
+first failing run predated the fix. Full suite re-run twice after, clean
+both times, to confirm the fix actually holds and isn't itself flaky.
+
+Verified: 9 new tests in `tests/test_assessment.py`, full suite 152 tests
+/ 0 skipped (run twice for determinism after the test-pollution fix
+above). Live smoke test against actually running servers: created a real
+quiz with a `single_choice`, a `true_false` and a `long_text` question,
+took it as a real enrolled buyer, watched `passed=null` while the text
+answer was ungraded, graded it, watched score/passed finalise to
+100%/true; created an anonymous survey, submitted a response, confirmed
+`user_id IS NULL` and the audit row directly via SQL, confirmed a second
+submission is refused; submitted a real assignment file, had an EICAR one
+refused with the real signature name, approved the clean one. `apps/web`
+gained `quiz-player.tsx`/`survey-form.tsx`/`assignment-upload.tsx`, wired
+into `/learn/[enrolmentId]` by `activity_type`; `typecheck`/`build` both
+clean (still 15 routes — no new pages, only new components inside the
+existing lesson page). `npm audit` clean on both packages. Not yet pushed
+as of this note.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

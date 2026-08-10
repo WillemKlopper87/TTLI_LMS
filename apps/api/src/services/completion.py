@@ -4,14 +4,14 @@ The frontend may display progress; this module is the only thing that
 decides whether a lesson is actually complete — no client assertion is
 ever trusted, and every timestamp used here is server-assigned.
 
-A rule field whose subsystem doesn't exist yet — quiz, survey, assignment,
-live attendance (Phase 4 sprint 3, Phase 5) — evaluates as **not met**,
-with a specific reason, rather than being silently ignored. An absent
-subsystem is not the same as an absent rule: a lesson authored with
-`quiz_pass_score` set must not complete just because no quiz engine exists
-to check it against. `video_watch_percentage` graduated out of this list
-in Phase 4 sprint 2 — real watch data now backs it
-(services/video_progress.py), so it's evaluated for real below.
+A rule field whose subsystem doesn't exist yet — only live attendance now
+(Phase 5) — evaluates as **not met**, with a specific reason, rather than
+being silently ignored. An absent subsystem is not the same as an absent
+rule: a lesson authored with a rule set for a subsystem that doesn't
+exist must not complete just because there's nothing to check it against.
+`video_watch_percentage` graduated out of this list in Phase 4 sprint 2;
+`quiz_pass_score`/`survey_required`/`assignment_approval_required`
+graduate in sprint 3 — real data now backs all of them, evaluated below.
 """
 
 from __future__ import annotations
@@ -72,9 +72,6 @@ class RuleEvaluation:
 # always fails the check, with a reason naming what's missing — never a
 # silent pass.
 _NOT_YET_AVAILABLE = {
-    "quiz_pass_score": "Quizzes are not available yet (Phase 4 sprint 3).",
-    "survey_required": "Surveys are not available yet (Phase 4 sprint 3).",
-    "assignment_approval_required": "Assignments are not available yet (Phase 4 sprint 3).",
     "live_attendance_required": "Workshop attendance tracking is not available yet (Phase 5).",
 }
 
@@ -85,6 +82,9 @@ def evaluate(
     first_seen_at: datetime,
     now: datetime | None = None,
     video_watched_percentage: float | None = None,
+    quiz_passed: bool | None = None,
+    survey_responded: bool | None = None,
+    assignment_approved: bool | None = None,
 ) -> RuleEvaluation:
     now = now or datetime.now(UTC)
     checks: list[RuleCheck] = []
@@ -118,6 +118,54 @@ def evaluate(
                     "Video watch requirement met."
                     if met
                     else f"{watched:.0f}% watched of {rules.video_watch_percentage}% required."
+                ),
+            )
+        )
+
+    if rules.quiz_pass_score is not None:
+        # quiz_passed is None while ungraded (services/quiz.py) or if no
+        # attempt has been submitted at all — both are "not met", but
+        # distinguished in the reason so a learner isn't told to retake a
+        # quiz that's merely awaiting a grader.
+        met = quiz_passed is True
+        checks.append(
+            RuleCheck(
+                rule="quiz_pass_score",
+                met=met,
+                reason=(
+                    "Quiz passed."
+                    if met
+                    else (
+                        "Awaiting manual grading of open-ended answers."
+                        if quiz_passed is None
+                        else f"Quiz not yet passed (pass mark: {rules.quiz_pass_score}%)."
+                    )
+                ),
+            )
+        )
+
+    if rules.survey_required:
+        met = bool(survey_responded)
+        checks.append(
+            RuleCheck(
+                rule="survey_required",
+                met=met,
+                reason="Survey completed."
+                if met
+                else "The required survey has not been completed.",
+            )
+        )
+
+    if rules.assignment_approval_required:
+        met = bool(assignment_approved)
+        checks.append(
+            RuleCheck(
+                rule="assignment_approval_required",
+                met=met,
+                reason=(
+                    "Assignment approved."
+                    if met
+                    else "The assignment has not been submitted and approved yet."
                 ),
             )
         )
