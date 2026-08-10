@@ -1680,6 +1680,18 @@ real call sites that talk to Redis (`core/tenancy.py`'s tenant cache,
 session tracking, `services/rate_limit.py`) are all exercised by that
 suite over the real container, not mocked.
 
+Sprint D (mypy 1.14.1 → 2.3.0) had been scoped expecting a real fixup
+pass — two defaults were believed to flip, `--local-partial-types` and
+`--strict-bytes` (PEP 688) — but checking rather than assuming found
+`mypy src` reports zero new issues either way. `--local-partial-types`
+turned out to have no toggle left at all in 2.3.0 (it's mandatory now,
+the flag is gone from `--help` entirely, nothing to fix around), and
+`--strict-bytes` is on by default with `--no-strict-bytes` as the new
+opt-out — this codebase doesn't mix `bytes`/`bytearray`/`memoryview` in
+a way either default would catch. A clean version bump, confirmed by
+running the tool against the real codebase rather than trusting the
+release-note estimate that scoped this sprint in the first place.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

@@ -4,10 +4,14 @@ pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 httpx==0.28.1
 ruff==0.16.2
-# mypy stays pinned here — its own dependency-upgrade sprint (Sprint D)
-# flips two real defaults (--local-partial-types, --strict-bytes per PEP
-# 688) that need a dedicated fixup pass across `src/`, not a drive-by bump.
-mypy==1.14.1
+# Dependency-upgrade sprint D: bumped from 1.14.1. Checked both defaults
+# this jump was expected to flip: --local-partial-types has no toggle
+# left at all in 2.3.0 (mandatory now, nothing to fix around), and
+# --strict-bytes is on by default with --no-strict-bytes as the opt-out
+# — `mypy src` reports zero new issues against this codebase either way,
+# so no fixup pass was actually needed. Full gate sweep + suite re-run
+# confirmed clean, not just inferred from the changelog.
+mypy==2.3.0
 moto[s3]==5.2.2
 # CI dependency scanning (04 §3, §10) — apps/api/openapi.json workflow step.
 pip-audit==2.10.1
