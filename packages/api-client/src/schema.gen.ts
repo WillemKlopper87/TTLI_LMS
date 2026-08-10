@@ -1617,7 +1617,9 @@ export interface components {
             /** Kind */
             kind: string;
             /** Detail */
-            detail: Record<string, never>;
+            detail: {
+                [key: string]: unknown;
+            };
             /**
              * Created At
              * Format: date-time
@@ -2755,7 +2757,9 @@ export interface components {
             /** Name */
             name: string;
             /** Criteria */
-            criteria: Record<string, never>;
+            criteria: {
+                [key: string]: unknown;
+            };
         };
         /** SegmentsPage */
         SegmentsPage: {
@@ -3102,7 +3106,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
