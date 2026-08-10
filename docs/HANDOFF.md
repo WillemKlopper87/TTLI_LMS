@@ -1063,7 +1063,9 @@ real rendered HTML. `apps/web` gained `manifest.ts`, `register-sw.tsx`,
 `/learn/[enrolmentId]/transcript/page.tsx` — 17 routes now, up from 16.
 `typecheck`/`build` both clean. `npm audit` clean on both packages.
 `packages/api-client` regenerated from a fresh `openapi.json` and
-typechecked clean.
+typechecked clean. Pushed as `595a673`; green on both jobs on the first
+try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31386541830
+(quality 4m6s, web 52s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
