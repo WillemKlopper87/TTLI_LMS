@@ -1365,6 +1365,10 @@ console/server errors. Toggles were reset back to their safe defaults
 after the smoke test so the dev database doesn't carry stray state
 into the next session.
 
+Committed as `7c88fe3`, pushed to `main`; CI green on both jobs on
+the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31407990708
+(quality 3m53s, web 57s).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
