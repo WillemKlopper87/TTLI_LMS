@@ -1204,7 +1204,9 @@ confirm the restoration actually works rather than trusting the diff:
 4/4 tests in `tests/test_workers.py` pass. Net position after both
 changes: 159 tests (back up from 158), the CVEs from the original
 image are still gone, nothing about `services/email.py` changed at any
-point in either direction.
+point in either direction. Pushed as `5850134`; green on both jobs on
+the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31395568160
+(quality 3m39s, web 52s).
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
