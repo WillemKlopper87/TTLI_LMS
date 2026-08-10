@@ -62,8 +62,12 @@ services:
   # MailHog's `/api/v2` — tests/test_workers.py was written against the
   # real, verified response shape (sent a real message and inspected the
   # actual payload), not assumed MailHog-compatible.
+  #
+  # v1.29.2 (bumped from v1.24, dependency-upgrade sprint A): fixes
+  # CVE-2026-27808, where the Link Check API could be used to probe
+  # internal network IPs.
   mailhog:
-    image: axllent/mailpit:v1.24
+    image: axllent/mailpit:v1.29.2
     container_name: ttli-mailhog
     ports:
       - "1145:1025"

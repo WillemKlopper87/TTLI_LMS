@@ -1,6 +1,6 @@
 # STATUS
 
-**Updated:** 2026-08-10 (Phase 5 sprint 4 — CRM and marketing engine — built and verified; **Phase 5 complete**)
+**Updated:** 2026-08-10 (Phase 5 complete; dependency-upgrade sprint A — Mailpit CVE fix — in progress, see §10)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
@@ -420,8 +420,20 @@ Run mid-Phase-5 at the user's request — a second, independent pass alongside t
 **Housekeeping, same pass:** `apps/api/var/storage` (105 MB of leftover local video-transcode test artifacts, already gitignored), `.mypy_cache` (72 MB), `.ruff_cache`, `.coverage`, stray `__pycache__` directories, and `apps/web/tsconfig.tsbuildinfo` were removed — all regenerate on the next relevant command and were never tracked by git.
 
 **Open:**
-- [ ] `minio/minio`, `clamav/clamav-debian`, `postgres:16-alpine` — schedule a controlled version bump + full regression pass; not urgent (all three are on non-`:latest` or soon-to-be-pinned tags, reachable only from the local dev network, not the public internet)
+- [ ] `minio/minio`, `clamav/clamav-debian`, `postgres:16-alpine` — schedule a controlled version bump + full regression pass; not urgent (all three are on non-`:latest` or soon-to-be-pinned tags, reachable only from the local dev network, not the public internet). **In progress** — see "Dependency-upgrade sprint" below, which is that controlled pass
 - [ ] No automated ZAP/Trivy gate wired into CI yet — this was a one-time, manually-triggered pass, not a regression gate
+
+### Dependency-upgrade sprint (in progress)
+
+A full audit of every major package/language/image against its actual latest, requested outside the Phase 1–5 roadmap. Scoped as a sequence of small, independently-verified passes — same discipline as every phase sprint (gate sweep, real tests, docs updated in the same pass, commit → push → CI green before the next one) — rather than one large bump.
+
+- [x] **Sprint A — Mailpit `v1.24` → `v1.29.2`.** Fixes a real vulnerability, CVE-2026-27808 (the Link Check API could be used to probe internal network IPs). `infra/docker-compose.yml` and `.github/workflows/api.yml`'s service container both bumped. Verified: `/api/v1/messages` shape unchanged (checked directly, not assumed), `tests/test_workers.py`'s real-delivery test passes, full suite (187 tests) green
+- [ ] Sprint B — low-risk Python patch/minor batch (SQLAlchemy, alembic, uvicorn, pydantic/pydantic-settings, argon2-cffi, structlog, asyncpg, psycopg2-binary, ruff, pytest-cov) — no known breaking changes in any of them
+- [ ] Sprint C + F — redis-py 5→8 client and Redis server 7→8, together (redis-py 8's RESP3-by-default response-shape change needs auditing every real call site: `services/rate_limit.py`, the tenant-config cache, arq's own Redis usage — not just a version-number swap). Redis relicensed back to AGPLv3 with 8.0 GA, so the earlier SSPL/RSAL licensing concern no longer applies
+- [ ] Sprint D — mypy 1.14→2.3 (two defaults flip: `--local-partial-types`, `--strict-bytes` per PEP 688; expect real fixups across `mypy src`'s ~110 files, not a rubber-stamp)
+- [ ] Sprint G — migrate local dev storage from `minio/minio` (community binaries discontinued Oct 2025, repo archived twice since — no further security patches will ever land) to **Garage**, evaluated directly against this project's actual `services/storage/s3.py` API surface: presigned URLs, `CopyObject`, `ListObjectsV2` pagination and the `Expiration` lifecycle action are all supported; object versioning (Garage's one real gap) isn't used here. Real adjustments needed: Garage has no env-var root-user bootstrap (needs its own `garage key create`/`garage bucket create` init step) and ships a distroless image with no shell (the current `mc ready local` healthcheck needs to become a TCP/HTTP check)
+- [ ] Sprint E — PostgreSQL 16→18 (dump/restore, not in-place — the data format isn't binary-compatible across majors; the official image also moved to a versioned data-directory path in 18, so the compose volume mount needs updating too; verify `citext`/`pg_trgm`/`pgcrypto` against PG18 before committing)
+- [ ] TypeScript 5.9→7.0 — deliberately **not** scoped as a sprint. 7.0's Go-rewritten compiler has no stable programmatic API until 7.1 (the thing that breaks `typescript-eslint`/`ts-morph` elsewhere); this repo has no such tooling today, but Next 16's build-time type-checking against it hasn't been spiked yet. Revisit later, don't fold into this pass
 
 ---
 

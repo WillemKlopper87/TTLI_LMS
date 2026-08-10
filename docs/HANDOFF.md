@@ -1591,6 +1591,49 @@ the first try — https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31414
 process confirms the full suite passes deterministically outside the
 local environment where the stray-arq-worker issue above was found.
 
+**Twenty-second pass: dependency-upgrade sprint A — Mailpit CVE fix.**
+Requested outside the Phase 1–5 roadmap: a full audit of every major
+package/language/image this project depends on against its actual
+latest, since none of them had been looked at as a set before (each
+was bumped individually, only when a specific CVE or feature forced
+it). Findings and the resulting sprint scope are in STATUS.md's
+"Dependency-upgrade sprint" subsection under §10 — worth reading in
+full before continuing this work, since it orders the remaining
+sprints by real risk (Postgres/Redis major-version bumps and the MinIO
+migration are genuinely bigger undertakings than a patch bump, and
+TypeScript 7.0 is deliberately not scoped yet, not forgotten).
+
+Sprint A itself: `axllent/mailpit:v1.24` → `v1.29.2`, fixing a real
+vulnerability (CVE-2026-27808 — the Link Check API could be used to
+probe internal network IPs) in the exact image this session already
+hardened once during the earlier Mailhog→Mailpit swap. Bumped in both
+`infra/docker-compose.yml` and `.github/workflows/api.yml`'s service
+container. Verified properly, not assumed: hit `/api/v1/messages`
+directly to confirm the response shape didn't change between
+versions, ran `tests/test_workers.py`'s real-delivery test (all 4
+pass), then the full 187-test suite. Docker Desktop had stopped
+between sessions (the same recurring container-instability pattern
+documented earlier this session) and needed restarting before any of
+this could run.
+
+Sprint G's scoping did real due diligence before recommending Garage
+as the MinIO replacement, rather than taking the first alternative
+named in research at face value: read `services/storage/s3.py` and
+`base.py` directly to enumerate the *exact* S3 operations this project
+actually calls (presigned URLs for both GET and PUT, `CopyObject` with
+`MetadataDirective=REPLACE` for `set_metadata`'s self-copy trick,
+paginated `ListObjectsV2`, and the `Expiration` lifecycle action for
+`apply_lifecycle_policy`), then checked Garage's own S3-compatibility
+reference page against that exact list rather than a generic "is it
+S3-compatible" claim. All four are supported; Garage's one real gap
+(object versioning) isn't used anywhere in this codebase. Real
+adjustments the eventual sprint will need, found by reading the
+current `infra/docker-compose.yml` minio service definition: Garage
+has no `MINIO_ROOT_USER`-style env-var bootstrap (needs its own
+`garage key create`/`garage bucket create` init step) and ships a
+distroless image with no shell, so the current `mc ready local`
+healthcheck can't carry over as-is.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

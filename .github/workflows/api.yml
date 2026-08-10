@@ -40,7 +40,7 @@ jobs:
       # reasoning for why it's not mailhog/mailhog) — no health-cmd, no
       # launch args, so it starts serving as soon as the container is up.
       mailhog:
-        image: axllent/mailpit:v1.24
+        image: axllent/mailpit:v1.29.2
         ports: ["1145:1025", "8145:8025"]
 
       # No health-cmd: the image ships no CLI to probe with, and it needs
