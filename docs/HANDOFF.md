@@ -778,6 +778,129 @@ existing lesson page). `npm audit` clean on both packages. Pushed as
 https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31359802592
 (quality 3m5s, web 57s).
 
+**Fifteenth pass: Phase 4 sprint 4 — certificates, badges, public
+verification. The final Phase 4 sprint.** `0014` adds five tables:
+`certificate_templates`/`badge_templates` global like `courses`;
+`certificates`/`badges`/`credential_verifications` tenant-scoped/RLS like
+`enrolments`. `courses` gains `certificate_template_id`/`badge_template_id`
+— 02 §5.1 described these as already present, but `0011` deliberately
+deferred them until the tables they point at existed.
+
+**Issuance has no direct endpoint** (REQ-CRED-01): there is deliberately
+no `POST /certificates`, for the same reason `POST /invoices` doesn't
+exist — `services/credentials.py::issue_for_completed_enrolment` is
+called only from `services/enrolment.py::complete_lesson`, in the same
+request that just set `enrolment.completed_at`, so issuance is provably
+tied to the rule engine's own confirmation rather than a second,
+unaudited path to the same effect. A course with neither template
+attached issues nothing; calling it twice for the same enrolment is a
+no-op (checked by an existing-certificate lookup before insert).
+
+**A real, caught-before-commit design bug, worth recording in full
+because of how it was caught.** The first draft of `0014` gave
+`certificates.verification_token` the exact same treatment as a
+magic-link or refresh token: `core/security.py::new_token()`/
+`hash_token()`, a one-way SHA-256 hash. That's correct for a token used
+once and never needed again — wrong here, because the same token has to
+be *reconstructed* later for `GET /badges/{id}/share/linkedin`'s
+`certUrl` field, and a one-way hash can never support that. The gap
+surfaced while writing that router endpoint: the first draft tried to
+substitute `certificate.certificate_number` into the share URL instead
+of the real token, which is not the same value — `certificate_number`
+is a public, unguessable-but-not-secret serial (02 §8.1), not the secret
+verification token. Caught on review before anything was committed, not
+after a bug report. Fixed by redesigning the column as
+`verification_token_encrypted` (`CryptoBox.encrypt`, reversible) plus
+`verification_token_blind_index` (`CryptoBox.blind_index`, deterministic)
+— the exact pattern `contacts.email_encrypted`/`email_blind_index`
+already established two phases ago, reused rather than reinvented. The
+migration had already been applied once to the local dev database with
+the old column names before the fix; reconciling meant a real
+`alembic downgrade -1` / `upgrade head` round-trip, not just editing the
+file, run twice to confirm both the schema and `alembic check` held
+clean afterward.
+
+**A second real gap, found the same way — by trying to use the code, not
+by reading it.** `certificate_templates` only had `signatory_name` (the
+person who signs, e.g. "Dr. Thandeka Themba") — no separate field for
+the issuing *organisation*. The snapshot code was putting the signatory's
+name into LinkedIn's `organizationName` field, which reads as a person
+being credited as the issuing institution. `badge_templates` already
+modelled this correctly (its own `issuer_name` column, separate from
+nothing since badges have no signatory concept); `certificate_templates`
+now has `issuer_name` too, distinct from `signatory_name`/
+`signatory_title`. The PDF's "Signed:" line uses the signatory; a new
+"Issued by:" line and LinkedIn's `organizationName` use the issuer.
+Caught while writing the live smoke test below, by actually reading the
+LinkedIn payload it produced rather than asserting on shape alone.
+
+**A third gap, found while building the frontend, not the API:** there
+was no way for a learner's own client to discover the certificate/badge
+IDs every other endpoint in this file needs — `GET /certificates/{id}/pdf`
+etc. all take an ID the frontend had no way to obtain. Added
+`GET /enrolments/{id}/credentials`, owner-only, returning both
+(nullable) for a given enrolment — the one lookup keyed by something the
+client already has.
+
+**A fourth gap, REQ-CRED-07 specifically:** "learner controls credential
+visibility" was only wired for badges (`PATCH /badges/{id}`) even though
+`GET /verify/{token}` already gates on a *certificate's own* `visibility`
+field — there was no way to ever change it off the `private` default.
+Added `PATCH /certificates/{id}`, sharing a `VisibilityRequest` schema
+with the badge endpoint since the three-way choice (`private`/`public`/
+`link_only`) and the ownership check are identical.
+
+**PDF + QR** (`services/credentials.py::render_certificate_pdf`, REQ-CRED-02):
+`reportlab` draws a landscape A4 certificate directly — no template
+engine, the layout is fixed and small — with a `qrcode`-generated QR
+embedded via `ImageReader`, pointing at an *absolute* URL
+(`settings.public_web_url`, new setting, default `http://localhost:3010`)
+since a phone camera resolving a QR code has no notion of the BFF's
+relative-path convention every other frontend call uses. New pinned
+deps `reportlab==5.0.0`, `qrcode[pil]==8.2`, `Pillow==12.3.0` — verified
+clean via `pip-audit`, and added to `pyproject.toml`'s
+`ignore_missing_imports` override (same precedent as `argon2`/`boto3`)
+since neither ships type stubs.
+
+**Public verification** (`GET /verify/{token}`, REQ-CRED-03): rate-limited
+20/hour/IP the same way `POST /leads` is, and every lookup is logged —
+hit or miss — so the log doubles as abuse detection. A `private`
+certificate behaves identically to an unknown token, which matters more
+than it looks: visibility has to gate the page itself, not just whatever
+listing might reference it, or a "private" certificate would still leak
+through direct URL guessing.
+
+Verified: 5 tests in `tests/test_credentials.py` covering issuance
+(with and without templates attached), the private-by-default → public
+visibility toggle reflected live in `GET /verify/{token}`, revocation
+(permission-gated, reason required, reflected in verification status),
+badge-visibility ownership enforcement, and LinkedIn share field
+correctness including the corrected `organizationName`. Full suite: 157
+tests / 0 skipped, run twice for determinism. Migration round-tripped
+twice (once after the token redesign, once after the `issuer_name` fix)
+— `alembic check` clean both times. `mypy src` clean (87 files, up from
+83). Live smoke test against the actual running dev servers (API and
+`apps/web`, not the test suite) — driven through the real BFF exactly as
+the frontend calls it, including a mid-test discovery that the BFF only
+forwarded `GET`/`POST` and needed `PATCH` added before the visibility
+toggles could work at all: completed a real course, had a real
+certificate+badge issued, fetched both via
+`GET /enrolments/{id}/credentials`, downloaded the actual PDF (confirmed
+`%PDF` header, since local dev storage returns a `file://` URL rather
+than an HTTP one — read directly rather than fetched), toggled both
+certificate and badge visibility from private to public through the
+exact `PATCH` calls the UI makes, fetched the LinkedIn share fields and
+confirmed `organizationName` read the institution rather than the
+signatory, and loaded the actual public `/verify/[token]` page (200,
+real HTML). One honest limitation: no browser automation tool was
+available this pass, so the hydrated DOM was not visually inspected —
+the underlying JSON contract and the page's initial HTML shell were
+confirmed instead. `apps/web` gained `credentials-panel.tsx` (wired into
+`/learn/[enrolmentId]`) and the public `app/verify/[token]/page.tsx` — 16
+routes now, up from 15. `typecheck`/`build` both clean. `npm audit` clean
+on both packages. `packages/api-client`'s `schema.gen.ts` regenerated
+from a freshly-exported `openapi.json` and typechecked clean.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

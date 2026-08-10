@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
+from src.core.config import Settings
 from src.core.crypto import CryptoBox
 from src.core.errors import Forbidden, LessonLocked, NotFound
 from src.core.ids import uuid7
@@ -31,9 +32,11 @@ from src.models.course import Course, Lesson, Module
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import VideoAsset
 from src.services import audit
+from src.services import credentials as credentials_service
 from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
 from src.services.completion import evaluate, merge_rules
+from src.services.storage import Container, StorageService
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,6 +417,8 @@ async def start_lesson(
 async def complete_lesson(
     session: AsyncSession,
     crypto: CryptoBox,
+    storage: StorageService,
+    settings: Settings,
     *,
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -482,6 +487,33 @@ async def complete_lesson(
     next_lesson = await _next_lesson(session, course_id=course.id, current_lesson_id=lesson.id)
     if next_lesson is None:
         enrolment.completed_at = datetime.now(UTC)
+        await session.flush()
+        # REQ-CRED-01: issued only here, at the exact moment the rule
+        # engine has confirmed the whole course is done — never from a
+        # direct API call (services/credentials.py's own docstring).
+        issued = await credentials_service.issue_for_completed_enrolment(
+            session,
+            crypto,
+            tenant_id=tenant_id,
+            enrolment=enrolment,
+            course_title=course.title,
+            certificate_template_id=course.certificate_template_id,
+            badge_template_id=course.badge_template_id,
+        )
+        if issued.certificate is not None and issued.raw_verification_token is not None:
+            verification_url = f"{settings.public_web_url}/verify/{issued.raw_verification_token}"
+            pdf_bytes = credentials_service.render_certificate_pdf(
+                snapshot=issued.certificate.snapshot,
+                certificate_number=issued.certificate.certificate_number,
+                verification_url=verification_url,
+            )
+            pdf_key = f"{tenant_id}/certificates/{issued.certificate.id}.pdf"
+            await storage.ensure_container(Container.GENERATED_DOCUMENTS)
+            await storage.upload_object(
+                Container.GENERATED_DOCUMENTS, pdf_key, pdf_bytes, content_type="application/pdf"
+            )
+            issued.certificate.pdf_object_key = pdf_key
+            await session.flush()
     await session.flush()
     return completion, next_lesson
 

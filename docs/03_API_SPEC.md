@@ -263,9 +263,11 @@ Entitlement is checked before the URL is minted; the URL is bound to the user an
 
 | Endpoint | Notes |
 |---|---|
+| `GET /enrolments/{id}/credentials` | Owner-only. Returns the certificate/badge (if issued) for this enrolment — how the learner's client discovers the IDs every other endpoint below needs |
 | `GET /certificates/{id}/pdf` | Owner or `certificate:issue` holder |
 | `GET /verify/{token}` | **Public, unauthenticated.** Returns holder, course, dates, status, issuer. Rate-limited and logged |
 | `POST /certificates/{id}/revoke` | `certificate:revoke`. Reason required. Audited |
+| `PATCH /certificates/{id}` | Learner sets `visibility` (REQ-CRED-07) |
 | `PATCH /badges/{id}` | Learner sets `visibility` (REQ-CRED-07) |
 | `GET /badges/{id}/share/linkedin` | Returns the share URL and the *Add to Certification* field set: name, issuing organisation, issue date, expiry, credential ID, credential URL |
 

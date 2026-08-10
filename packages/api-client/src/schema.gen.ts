@@ -835,6 +835,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/enrolments/{enrolment_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Enrolment Credentials */
+        get: operations["get_enrolment_credentials_api_v1_enrolments__enrolment_id__credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/certificates/{certificate_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Certificate Pdf */
+        get: operations["get_certificate_pdf_api_v1_certificates__certificate_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/verify/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Verify Credential */
+        get: operations["verify_credential_api_v1_verify__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/certificates/{certificate_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Certificate */
+        post: operations["revoke_certificate_api_v1_certificates__certificate_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/certificates/{certificate_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Certificate Visibility */
+        patch: operations["update_certificate_visibility_api_v1_certificates__certificate_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/badges/{badge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Badge Visibility */
+        patch: operations["update_badge_visibility_api_v1_badges__badge_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/badges/{badge_id}/share/linkedin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Linkedin Share */
+        get: operations["get_linkedin_share_api_v1_badges__badge_id__share_linkedin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -886,6 +1005,15 @@ export interface components {
             /** Rejected Reason */
             rejected_reason: string | null;
         };
+        /** BadgeResponse */
+        BadgeResponse: {
+            /** Id */
+            id: string;
+            /** Visibility */
+            visibility: string;
+            /** Evidence Url */
+            evidence_url?: string | null;
+        };
         /** Body_submit_assignment_api_v1_assignments__assignment_id__submissions_post */
         Body_submit_assignment_api_v1_assignments__assignment_id__submissions_post: {
             /** File */
@@ -900,6 +1028,34 @@ export interface components {
         Body_upload_video_asset_api_v1_video_assets_post: {
             /** File */
             file: string;
+        };
+        /** CertificatePdfResponse */
+        CertificatePdfResponse: {
+            /** Pdf Url */
+            pdf_url: string;
+        };
+        /** CertificateResponse */
+        CertificateResponse: {
+            /** Id */
+            id: string;
+            /** Certificate Number */
+            certificate_number: string;
+            /** Status */
+            status: string;
+            /** Visibility */
+            visibility: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Revoked Reason */
+            revoked_reason?: string | null;
+            /**
+             * Pdf Available
+             * @default false
+             */
+            pdf_available: boolean;
         };
         /** CreateOrderRequest */
         CreateOrderRequest: {
@@ -928,6 +1084,18 @@ export interface components {
             amount: string;
             /** Currency */
             currency: string;
+        };
+        /**
+         * EnrolmentCredentialsResponse
+         * @description `GET /enrolments/{id}/credentials` — how a learner's own client
+         *     discovers the certificate/badge IDs it needs for every other endpoint
+         *     in this file. Both null until the completion rule engine issues them
+         *     (services/enrolment.py::complete_lesson), which is the normal state
+         *     for any course still in progress.
+         */
+        EnrolmentCredentialsResponse: {
+            certificate?: components["schemas"]["CertificateResponse"] | null;
+            badge?: components["schemas"]["BadgeResponse"] | null;
         };
         /** EnrolmentProgressResponse */
         EnrolmentProgressResponse: {
@@ -1110,6 +1278,17 @@ export interface components {
             state: string;
             /** Unmet Requirements */
             unmet_requirements: string[];
+        };
+        /** LinkedInShareResponse */
+        LinkedInShareResponse: {
+            /** Share Url */
+            share_url: string;
+            /** Add To Profile Url */
+            add_to_profile_url: string;
+            /** Credential Id */
+            credential_id: string;
+            /** Credential Url */
+            credential_url: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1456,6 +1635,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RevokeCertificateRequest */
+        RevokeCertificateRequest: {
+            /** Reason */
+            reason: string;
+        };
         /** SurveyAnswer */
         SurveyAnswer: {
             /** Question Id */
@@ -1575,6 +1759,21 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VerificationResponse */
+        VerificationResponse: {
+            /** Found */
+            found: boolean;
+            /** Holder Name */
+            holder_name?: string | null;
+            /** Course Title */
+            course_title?: string | null;
+            /** Issued At */
+            issued_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Status */
+            status?: string | null;
+        };
         /** VideoAssetResponse */
         VideoAssetResponse: {
             /** Id */
@@ -1583,6 +1782,15 @@ export interface components {
             state: string;
             /** Duration Seconds */
             duration_seconds: number | null;
+        };
+        /**
+         * VisibilityRequest
+         * @description Shared by `PATCH /certificates/{id}` and `PATCH /badges/{id}` —
+         *     REQ-CRED-07 gives the learner the same three-way control over both.
+         */
+        VisibilityRequest: {
+            /** Visibility */
+            visibility: string;
         };
         /** WatermarkPayload */
         WatermarkPayload: {
@@ -3082,6 +3290,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentSubmissionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_enrolment_credentials_api_v1_enrolments__enrolment_id__credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentCredentialsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_certificate_pdf_api_v1_certificates__certificate_id__pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certificate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertificatePdfResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_credential_api_v1_verify__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_certificate_api_v1_certificates__certificate_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certificate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeCertificateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertificateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_certificate_visibility_api_v1_certificates__certificate_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certificate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertificateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_badge_visibility_api_v1_badges__badge_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                badge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_linkedin_share_api_v1_badges__badge_id__share_linkedin_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                badge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkedInShareResponse"];
                 };
             };
             /** @description Validation Error */

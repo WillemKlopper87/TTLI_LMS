@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     debug: bool = False
     api_port: int = 8010
     secret_key: str = ""
+    # The web app's own origin — needed wherever an absolute, scannable
+    # URL must be embedded outside a browser context (certificate QR
+    # codes, REQ-CRED-02) rather than a relative one the BFF would resolve.
+    public_web_url: str = "http://localhost:3010"
 
     # --- Database ---
     database_url: str

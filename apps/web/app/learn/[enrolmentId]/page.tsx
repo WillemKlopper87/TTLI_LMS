@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getAccessToken } from "@/lib/session";
 
 import { AssignmentUpload } from "./assignment-upload";
+import { CredentialsPanel } from "./credentials-panel";
 import { QuizPlayer } from "./quiz-player";
 import { SurveyForm } from "./survey-form";
 import { VideoPlayer } from "./video-player";
@@ -197,6 +198,8 @@ export default function LearnEnrolmentPage() {
           </li>
         ))}
       </ul>
+
+      <CredentialsPanel enrolmentId={enrolmentId} />
     </main>
   );
 }

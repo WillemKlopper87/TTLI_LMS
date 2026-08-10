@@ -43,6 +43,14 @@ from src.models.course import (
     ManagerVisibility,
     Module,
 )
+from src.models.credential import (
+    Badge,
+    BadgeTemplate,
+    Certificate,
+    CertificateTemplate,
+    CredentialStatus,
+    CredentialVerification,
+)
 from src.models.event import Event
 from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
@@ -58,11 +66,17 @@ __all__ = [
     "AssignmentSubmission",
     "AuditAction",
     "AuditEvent",
+    "Badge",
+    "BadgeTemplate",
     "Base",
+    "Certificate",
+    "CertificateTemplate",
     "ConsentRecord",
     "Contact",
     "Course",
     "CourseTenantAssignment",
+    "CredentialStatus",
+    "CredentialVerification",
     "Enrolment",
     "Entitlement",
     "Event",

@@ -53,6 +53,17 @@ class Course(Base, TimestampMixin):
     completion_rules: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'")
     )
+    # Phase 4 sprint 4 — nullable since not every course certifies or
+    # badges completion; deferred from 0011 because the target tables
+    # didn't exist yet.
+    certificate_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("certificate_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    badge_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("badge_templates.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class Module(Base, TimestampMixin):

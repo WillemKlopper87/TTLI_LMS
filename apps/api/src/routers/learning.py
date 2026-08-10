@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 
-from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import NotFound
 from src.schemas.learning import (
     EnrolmentProgressResponse,
@@ -120,11 +120,18 @@ async def start_lesson(lesson_id: str, principal: PrincipalDep, session: Session
     summary="Complete a lesson — the server-side rule engine decides, not the caller",
 )
 async def complete_lesson(
-    lesson_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+    lesson_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    storage: StorageDep,
+    settings: SettingsDep,
 ) -> LessonCompleteResponse:
     completion, next_lesson = await enrolment_service.complete_lesson(
         session,
         crypto,
+        storage,
+        settings,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         lesson_id=_parse_uuid(lesson_id),

@@ -22,3 +22,9 @@ pyotp==2.10.0
 boto3==1.43.67
 azure-storage-blob==12.30.0
 arq==0.28.0
+# Certificate PDF generation + QR codes (Phase 4 sprint 4, REQ-CRED-02).
+# No pure-stdlib equivalent for either — unlike the ClamAV wire protocol,
+# PDF/QR encoding isn't small enough to hand-roll reasonably.
+reportlab==5.0.0
+qrcode[pil]==8.2
+Pillow==12.3.0
