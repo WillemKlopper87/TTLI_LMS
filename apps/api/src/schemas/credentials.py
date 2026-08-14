@@ -63,10 +63,73 @@ class EnrolmentCredentialsResponse(BaseModel):
     badge: BadgeResponse | None = None
 
 
+class CertificateTemplateCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    issuer_name: str = Field(min_length=1)
+    signatory_name: str = Field(min_length=1)
+    signatory_title: str = Field(min_length=1)
+    cpd_points: int | None = None
+
+
+class CertificateTemplateUpdateRequest(BaseModel):
+    title: str | None = None
+    issuer_name: str | None = None
+    signatory_name: str | None = None
+    signatory_title: str | None = None
+    cpd_points: int | None = None
+
+
+class CertificateTemplateResponse(BaseModel):
+    id: str
+    title: str
+    issuer_name: str
+    signatory_name: str
+    signatory_title: str
+    cpd_points: int | None = None
+
+
+class CertificateTemplatesPageResponse(BaseModel):
+    items: list[CertificateTemplateResponse]
+
+
+class BadgeTemplateCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    criteria: str = Field(min_length=1)
+    issuer_name: str = Field(min_length=1)
+    level: str | None = None
+
+
+class BadgeTemplateUpdateRequest(BaseModel):
+    title: str | None = None
+    criteria: str | None = None
+    issuer_name: str | None = None
+    level: str | None = None
+
+
+class BadgeTemplateResponse(BaseModel):
+    id: str
+    title: str
+    criteria: str
+    issuer_name: str
+    level: str | None = None
+
+
+class BadgeTemplatesPageResponse(BaseModel):
+    items: list[BadgeTemplateResponse]
+
+
 __all__ = [
     "BadgeResponse",
+    "BadgeTemplateCreateRequest",
+    "BadgeTemplateResponse",
+    "BadgeTemplateUpdateRequest",
+    "BadgeTemplatesPageResponse",
     "CertificatePdfResponse",
     "CertificateResponse",
+    "CertificateTemplateCreateRequest",
+    "CertificateTemplateResponse",
+    "CertificateTemplateUpdateRequest",
+    "CertificateTemplatesPageResponse",
     "EnrolmentCredentialsResponse",
     "LinkedInShareResponse",
     "RevokeCertificateRequest",

@@ -5,12 +5,14 @@ completion helpers as test_learning.py/test_assessment.py), and let
 `services/enrolment.py::complete_lesson` issue the certificate/badge as a
 side effect of the *last* lesson's completion, exactly as production does.
 
-There is no authoring endpoint yet for `certificate_templates`/
-`badge_templates` or for wiring a course to them (STATUS.md tracks that
-gap, same class as test_assessment.py's completion_rules note) — tests
-that need templates wire them with direct SQL and restore the course's
-prior state in `finally`, since `courses` is global and shared with every
-other test file.
+`POST /certificate-templates`/`POST /badge-templates` (test_courses.py's
+sibling authoring surface) now exist, but the tests below still wire
+templates with direct SQL and restore the course's prior state in
+`finally` — `courses` is global and shared with every other test file,
+so mutating the seeded course's template links needs the same
+restore-after discipline regardless of how the template rows themselves
+get created. Template CRUD itself is covered separately, at the bottom
+of this file.
 """
 
 from __future__ import annotations
@@ -228,9 +230,13 @@ async def _complete_all_lessons(
 async def _wire_templates(
     tenant_session_factory, course_id: uuid.UUID, *, with_badge: bool
 ) -> tuple[uuid.UUID, uuid.UUID | None]:  # type: ignore[no-untyped-def]
-    """No authoring endpoint exists yet for templates or for attaching them
-    to a course — direct SQL is the same class of test-setup-only gap
-    test_assessment.py already documents for lesson completion_rules."""
+    """Direct SQL rather than `POST /certificate-templates`/`POST
+    /badge-templates` (which exist, see the bottom of this file) because
+    this helper also wires the template onto the *seeded* course — there
+    is no authoring endpoint for attaching a template to an arbitrary
+    existing course's fields other than the general `PATCH /courses/{id}`
+    course-update endpoint, and using it here would make this a course-
+    authoring test rather than a certificate/badge issuance one."""
     cert_template_id = uuid.uuid4()
     badge_template_id = uuid.uuid4() if with_badge else None
     async with tenant_session_factory(None) as s:
@@ -601,3 +607,100 @@ async def test_badge_visibility_is_owner_only_and_linkedin_share_reconstructs_ur
         )
     finally:
         await _restore_course_templates(tenant_session_factory, course_id)
+
+
+async def test_certificate_and_badge_template_crud_is_course_edit_gated(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    resp = await client.post(
+        "/api/v1/certificate-templates",
+        json={
+            "title": "Should not be created",
+            "issuer_name": "TTLI",
+            "signatory_name": "Someone",
+            "signatory_title": "Director",
+        },
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert resp.status_code == 403
+
+    resp = await client.post(
+        "/api/v1/badge-templates",
+        json={"title": "Should not be created", "criteria": "x", "issuer_name": "TTLI"},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_certificate_template_create_list_and_update(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    title = f"Cert Template {uuid.uuid4().hex[:8]}"
+    created = await client.post(
+        "/api/v1/certificate-templates",
+        json={
+            "title": title,
+            "issuer_name": "TTLI",
+            "signatory_name": "Dr. Jane Doe",
+            "signatory_title": "Programme Director",
+            "cpd_points": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    template_id = created.json()["id"]
+
+    listed = await client.get(
+        "/api/v1/certificate-templates", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert listed.status_code == 200
+    assert any(t["id"] == template_id for t in listed.json()["items"])
+
+    updated = await client.patch(
+        f"/api/v1/certificate-templates/{template_id}",
+        json={"cpd_points": 10},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["cpd_points"] == 10
+    assert updated.json()["title"] == title
+
+
+async def test_badge_template_create_list_and_update(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    title = f"Badge Template {uuid.uuid4().hex[:8]}"
+    created = await client.post(
+        "/api/v1/badge-templates",
+        json={"title": title, "criteria": "Complete the course", "issuer_name": "TTLI"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    template_id = created.json()["id"]
+
+    listed = await client.get(
+        "/api/v1/badge-templates", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert listed.status_code == 200
+    assert any(t["id"] == template_id for t in listed.json()["items"])
+
+    updated = await client.patch(
+        f"/api/v1/badge-templates/{template_id}",
+        json={"level": "advanced"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["level"] == "advanced"
+    assert updated.json()["title"] == title

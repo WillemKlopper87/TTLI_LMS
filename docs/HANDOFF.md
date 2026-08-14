@@ -1862,6 +1862,99 @@ cannot act on. ZAP dynamic scanning was explicitly left out of this —
 it needs a running app and meaningfully more CI time, a bigger decision
 than a report-only image scan, so it stays manual/occasional as before.
 
+**Closing Phase 4: course/module/lesson/template authoring.** The last
+real gap the project had — `Course`/`Module`/`Lesson`/`CertificateTemplate`/
+`BadgeTemplate` all had models since `0011`/`0014` but zero creation
+endpoints; content was migration-seeded or wired via direct SQL in
+tests. Planned properly first (`EnterPlanMode`, explored the existing
+`workshops.py`/`assessment.py` patterns before writing anything), then
+built backend-first, fully tested, before touching the frontend at all
+— the same sequencing every prior sprint here used.
+
+New `src/services/courses.py` follows `services/workshops.py`'s
+service-module pattern (real invariants: position auto-increment,
+`completion_rules` validation, "can't publish an empty course," "can't
+assign an unpublished course to a tenant") rather than assessment.py's
+inline-in-router style, which fits flat CRUD with no invariants — that's
+also why certificate/badge template endpoints stayed inline in
+`credentials.py`. Every write reuses `course:edit`/`course:publish`,
+already seeded and already precedented by `assessment.py`'s quiz/survey/
+assignment creation — no new RBAC permission, no new permission
+migration. `activity_type` and the quiz/survey/assignment/video FKs on
+`Lesson` were deliberately kept out of this surface's reach entirely —
+a lesson created here is always `"document"` until the existing,
+unmodified attach endpoints from sprints 2/3 wire in real content;
+verified live that a `PATCH /lessons/{id}` body trying to smuggle
+`activity_type`/`quiz_id` through is a no-op on those fields, not just
+assumed from the schema's shape.
+
+One thing scoped in beyond the literal STATUS.md bullet, with reasoning
+recorded rather than silently expanding scope: `POST /courses/{id}/
+tenant-assignments` + `GET /tenant-assignments`, wiring `Course
+TenantAssignment` (`0011`'s own table, zero endpoints until now).
+Without it, "authoring" would produce a course no tenant could ever see
+— a real functional gap, not a nice-to-have. Refuses assigning a
+non-published course, upserts idempotently, uses `principal.tenant_id`
+server-side rather than trusting a body-supplied tenant (an admin can
+only assign into their own tenant).
+
+**A real, caught-live bug**: the first test run against `POST /courses`
+failed with a genuine Postgres `permission denied for table courses` —
+`0011` had deliberately left `courses`/`modules`/`lessons` `SELECT`-only
+since nothing wrote to them through the app yet, and `0012`/`0014` each
+added exactly one narrow `UPDATE` grant as one narrow endpoint needed it
+(video attach, manager-visibility), never `INSERT`. The RBAC permission
+string (`course:edit`) and the underlying database `GRANT` are two
+independent layers — this sprint had only wired the first before the
+live test caught the second. Fixed with a new migration, `0020`, adding
+exactly the missing grants (`INSERT` on `courses`/`lessons`, both on
+`modules`) rather than something broader — no schema change, no new
+RLS policy, since these tables are global with none to begin with.
+
+Verification went beyond pytest deliberately: after the full backend
+gate (ruff/mypy/migration round-trip/alembic check/200 tests × 2) and
+frontend gate (typecheck/build, 28 routes) were both green, ran a full
+walkthrough through the *actual running dev servers* and the real BFF
+proxy path the browser calls — not pytest's `ASGITransport` — logging
+in, creating templates, authoring a course/module/two lessons,
+attaching an existing quiz to the second lesson through the unmodified
+sprint-3 endpoint, publishing, assigning to the demo tenant. Then went
+one step further to prove the content is functionally *live*, not just
+persisted: enrolled a real learner (direct SQL for the
+entitlement/enrolment rows — self-serve checkout against an arbitrary
+new course needs a `Product` wrapper, which is Phase 3's own separate,
+already-tracked gap, not something to build here) and called the real
+`POST /lessons/{id}/start`/`.../complete` — `services/completion.py`
+correctly unlocked the quiz-attached second lesson. No browser-
+automation tool was available this session to visually confirm the two
+new admin screens actually render and behave correctly for a human —
+same limitation already recorded for Phase 4.5's accessibility pass —
+so `/admin/courses` and `/admin/templates` are typecheck/build-clean
+and exercised via the live API path they call, but not visually
+confirmed.
+
+**A real mistake, disclosed rather than cleaned up quietly**: a cleanup
+query meant to delete two test users' role assignments had a broken
+`WHERE` clause — `user_id IN (SELECT ... WHERE email_blind_index IN
+(SELECT email_blind_index FROM users))`, a self-referential tautology
+matching every row instead of two specific ones — and it deleted all
+4,477 `role_assignments` rows in the local dev database, not just mine.
+Assessed the actual damage rather than assuming the worst or shrugging
+it off: `users`/`tenants`/`courses` counts were unaffected (checked
+before/after); the automated test suite was completely unaffected,
+confirmed by re-running the full 200-test suite afterward — every
+test's own `_login` helper creates a fresh user *and* a fresh
+`RoleAssignment` per test, never depending on one that already existed.
+The one real, non-test loss was the original migration-seeded
+break-glass admin's role assignment — its `users` row survived, but the
+email in current `.env` didn't match any existing user (already
+diverged from whatever `.env` held when `0002` last seeded it, before
+this session), so there was no live account left to recover a role
+onto. Fixed by creating a fresh `local-dev-admin@example.com` rather
+than chasing a recovery that wasn't there — confirmed it can log in and
+call `GET /courses` successfully. Zero impact on CI, which runs against
+its own separate, ephemeral database every time.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

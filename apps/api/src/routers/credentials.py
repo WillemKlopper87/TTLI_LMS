@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, status
+from sqlalchemy import select
 
 from src.core.deps import (
     CryptoDep,
@@ -23,12 +24,21 @@ from src.core.deps import (
     TenantDep,
 )
 from src.core.errors import Forbidden, NotFound, TooManyAttempts
-from src.models.credential import Badge, Certificate
+from src.core.ids import uuid7
+from src.models.credential import Badge, BadgeTemplate, Certificate, CertificateTemplate
 from src.models.learning import Enrolment
 from src.schemas.credentials import (
     BadgeResponse,
+    BadgeTemplateCreateRequest,
+    BadgeTemplateResponse,
+    BadgeTemplatesPageResponse,
+    BadgeTemplateUpdateRequest,
     CertificatePdfResponse,
     CertificateResponse,
+    CertificateTemplateCreateRequest,
+    CertificateTemplateResponse,
+    CertificateTemplatesPageResponse,
+    CertificateTemplateUpdateRequest,
     EnrolmentCredentialsResponse,
     LinkedInShareResponse,
     RevokeCertificateRequest,
@@ -240,6 +250,147 @@ async def get_linkedin_share(
         certificate=certificate, badge=badge, verification_url=url
     )
     return LinkedInShareResponse(**fields)
+
+
+# --- Certificate/badge template authoring (Phase 4's authoring gap) -----
+#
+# `course:edit` gates writes here, not a template-specific permission —
+# same reuse of the one content-authoring permission `routers/courses.py`
+# and `routers/assessment.py` already apply across course/quiz/survey/
+# assignment content. Templates are global, not tenant-scoped (same as
+# `Course` itself), so there is no tenant filter on any of these.
+
+
+def _certificate_template_response(template: CertificateTemplate) -> CertificateTemplateResponse:
+    return CertificateTemplateResponse(
+        id=str(template.id),
+        title=template.title,
+        issuer_name=template.issuer_name,
+        signatory_name=template.signatory_name,
+        signatory_title=template.signatory_title,
+        cpd_points=template.cpd_points,
+    )
+
+
+def _badge_template_response(template: BadgeTemplate) -> BadgeTemplateResponse:
+    return BadgeTemplateResponse(
+        id=str(template.id),
+        title=template.title,
+        criteria=template.criteria,
+        issuer_name=template.issuer_name,
+        level=template.level,
+    )
+
+
+@router.post(
+    "/certificate-templates",
+    response_model=CertificateTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_certificate_template(
+    body: CertificateTemplateCreateRequest, principal: PrincipalDep, session: SessionDep
+) -> CertificateTemplateResponse:
+    principal.require("course:edit")
+    template = CertificateTemplate(
+        id=uuid7(),
+        title=body.title,
+        issuer_name=body.issuer_name,
+        signatory_name=body.signatory_name,
+        signatory_title=body.signatory_title,
+        cpd_points=body.cpd_points,
+    )
+    session.add(template)
+    await session.flush()
+    return _certificate_template_response(template)
+
+
+@router.get("/certificate-templates", response_model=CertificateTemplatesPageResponse)
+async def list_certificate_templates(
+    principal: PrincipalDep, session: SessionDep
+) -> CertificateTemplatesPageResponse:
+    principal.require("course:view")
+    stmt = select(CertificateTemplate).order_by(CertificateTemplate.title)
+    templates = (await session.execute(stmt)).scalars().all()
+    return CertificateTemplatesPageResponse(
+        items=[_certificate_template_response(t) for t in templates]
+    )
+
+
+@router.patch("/certificate-templates/{template_id}", response_model=CertificateTemplateResponse)
+async def update_certificate_template(
+    template_id: str,
+    body: CertificateTemplateUpdateRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> CertificateTemplateResponse:
+    principal.require("course:edit")
+    template = await session.get(CertificateTemplate, _parse_uuid(template_id))
+    if template is None:
+        raise NotFound("No such certificate template.")
+    if body.title is not None:
+        template.title = body.title
+    if body.issuer_name is not None:
+        template.issuer_name = body.issuer_name
+    if body.signatory_name is not None:
+        template.signatory_name = body.signatory_name
+    if body.signatory_title is not None:
+        template.signatory_title = body.signatory_title
+    if body.cpd_points is not None:
+        template.cpd_points = body.cpd_points
+    await session.flush()
+    return _certificate_template_response(template)
+
+
+@router.post(
+    "/badge-templates", response_model=BadgeTemplateResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_badge_template(
+    body: BadgeTemplateCreateRequest, principal: PrincipalDep, session: SessionDep
+) -> BadgeTemplateResponse:
+    principal.require("course:edit")
+    template = BadgeTemplate(
+        id=uuid7(),
+        title=body.title,
+        criteria=body.criteria,
+        issuer_name=body.issuer_name,
+        level=body.level,
+    )
+    session.add(template)
+    await session.flush()
+    return _badge_template_response(template)
+
+
+@router.get("/badge-templates", response_model=BadgeTemplatesPageResponse)
+async def list_badge_templates(
+    principal: PrincipalDep, session: SessionDep
+) -> BadgeTemplatesPageResponse:
+    principal.require("course:view")
+    stmt = select(BadgeTemplate).order_by(BadgeTemplate.title)
+    templates = (await session.execute(stmt)).scalars().all()
+    return BadgeTemplatesPageResponse(items=[_badge_template_response(t) for t in templates])
+
+
+@router.patch("/badge-templates/{template_id}", response_model=BadgeTemplateResponse)
+async def update_badge_template(
+    template_id: str,
+    body: BadgeTemplateUpdateRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> BadgeTemplateResponse:
+    principal.require("course:edit")
+    template = await session.get(BadgeTemplate, _parse_uuid(template_id))
+    if template is None:
+        raise NotFound("No such badge template.")
+    if body.title is not None:
+        template.title = body.title
+    if body.criteria is not None:
+        template.criteria = body.criteria
+    if body.issuer_name is not None:
+        template.issuer_name = body.issuer_name
+    if body.level is not None:
+        template.level = body.level
+    await session.flush()
+    return _badge_template_response(template)
 
 
 __all__ = ["router"]
