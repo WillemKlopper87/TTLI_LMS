@@ -199,6 +199,35 @@ jobs:
         working-directory: packages/api-client
         run: npm audit --audit-level=high
 
+      # Container image scan (04 §3, §10 — the same images independently
+      # reviewed there). Installed via the official GPG-signed apt repo,
+      # not the aquasecurity/trivy-action GitHub Action: that action had a
+      # real supply-chain compromise in March 2026 (76 of 77 version tags
+      # force-pushed to credential-stealing malware) — pinning a third-party
+      # Action by a mutable tag would reintroduce exactly the kind of risk
+      # this step exists to catch. `trivy image` doesn't fail on findings by
+      # default (no `--exit-code` passed) — deliberately report-only, not a
+      # gate: these are fixed upstream base images this project doesn't
+      # control the code of, and at least one already-reviewed finding
+      # (clamav-debian's bundled Debian packages, docs/STATUS.md §10) has no
+      # upstream fix available at all, so failing the build on it would turn
+      # every unrelated PR red for something engineering can't act on.
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://get.trivy.dev/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://get.trivy.dev/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Container image scan (report-only)
+        run: |
+          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.29.2 clamav/clamav-debian:stable; do
+            echo "::group::Trivy: $img"
+            trivy image --severity CRITICAL,HIGH "$img"
+            echo "::endgroup::"
+          done
+
   web:
     runs-on: ubuntu-latest
     defaults:

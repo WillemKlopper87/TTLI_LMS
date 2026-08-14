@@ -1839,6 +1839,29 @@ publishes. Closed out as reviewed-and-accepted in STATUS.md §10, same
 category as the ZAP CSP/COEP findings there, not silently dropped and
 not forced into an unjustified image swap either.
 
+Last item from this "continue with cleanup" pass: wired Trivy image
+scanning into CI as a recurring, report-only step (asked the user to
+choose the cadence/blast-radius tradeoff first via `AskUserQuestion`
+rather than picking silently — they chose inline-on-every-push over a
+separate scheduled workflow or leaving it manual). Before wiring it in,
+checked how to install `trivy` in CI rather than reaching for the
+obvious `aquasecurity/trivy-action` GitHub Action — a web search turned
+up a real, documented supply-chain compromise: in March 2026, 76 of 77
+of that Action's version tags were force-pushed to credential-stealing
+malware. Pinning a compromised-history third-party Action by a mutable
+tag to add a *security* scanning step would have been a bad trade, so
+`trivy` is installed directly via Aqua's own GPG-signed apt repository
+instead (`get.trivy.dev/deb`) — cryptographically verified, no Action
+dependency at all. The scan step deliberately does not pass
+`--exit-code` to `trivy image`, so it never fails the build: these are
+fixed upstream base images this project doesn't control the code of,
+and the ClamAV review two entries up already found at least one
+CRITICAL/HIGH finding with no upstream fix available — a blocking gate
+on that would turn every unrelated PR red for something engineering
+cannot act on. ZAP dynamic scanning was explicitly left out of this —
+it needs a running app and meaningfully more CI time, a bigger decision
+than a report-only image scan, so it stays manual/occasional as before.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
