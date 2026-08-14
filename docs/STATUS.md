@@ -27,14 +27,14 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 154 files |
 | `mypy src` (strict) | **PASS** — 110 source files |
-| `pytest` | **PASS** — 187 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, MinIO, Mailpit, ClamAV *and* real ffmpeg) |
+| `pytest` | **PASS** — 187 passed, **0 skipped**, run twice for determinism (against real Postgres, Redis, Garage, Mailpit, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
 | `alembic upgrade head` | **PASS** — at `0019` |
 | Migration round-trip | **PASS** — every revision downgrades and re-upgrades |
 | `alembic check` | **PASS** — no model drift |
 | `api-client` drift check | **PASS** — generated client committed, gate wired in CI |
-| S3 adapter vs real MinIO | **PASS** — manual round-trip on port 9140 |
+| S3 adapter vs real Garage | **PASS** — manual round-trip on port 9140 (Sprint G, MinIO → Garage) |
 | Real ClamAV virus scan (clean + EICAR + unreachable-host) | **PASS** — `tests/test_antivirus.py`, real `clamd` on port 3410 |
 | Real ffmpeg transcode → real HLS ladder → real playback through the BFF, incl. WebVTT captions | **PASS** — `tests/test_media.py`; live smoke test end to end (see HANDOFF.md's Thirteenth and latest passes) |
 | Real quiz auto-grading, anonymous-survey pseudonymisation, virus-scanned assignment submissions | **PASS** — `tests/test_assessment.py`; live smoke test end to end (see HANDOFF.md's Fourteenth pass) |

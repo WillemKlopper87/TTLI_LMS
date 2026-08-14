@@ -86,7 +86,7 @@ maintenance jobs.
 Verification:
 
 ```bash
-cd apps/api && pytest                     # 85 tests; needs the compose stack up
+cd apps/api && pytest                     # 187 tests; needs the compose stack up
 python docs/source/extract.py --check     # verify the extracted source against the export
 python docs/check_links.py                # every doc link resolves
 ```
@@ -113,7 +113,7 @@ Several projects share this machine. Every port below was checked against `Agent
 
 ## Current status
 
-**Phase 0 of 7, blocked.** Ten decisions sit with the customer and nothing may start until they are signed — the list is at [docs/01_PRD.md §1.4](docs/01_PRD.md#14-open-decisions-blocking-phase-0-sign-off).
+**Phases 1 and 5 complete; 2–4.5 substantially built; Phase 0 sign-off still open.** The ten decisions in [docs/01_PRD.md §1.4](docs/01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) remain with the customer, but the engineering work that doesn't depend on any of them was deliberately brought forward rather than left idle — see [docs/STATUS.md §1](docs/STATUS.md#1-summary) for the real per-phase breakdown and gate status.
 
 > The blockers that matter most: the accountants' position on VAT for international digital services, whether signed HLS plus watermarking is accepted as "industry standard" in place of full DRM at launch, and whether prompt data may leave South Africa after redaction. Each of those changes the build, not just the schedule.
 >
