@@ -1811,8 +1811,33 @@ no custom volume mount to begin with.
 One thing this sprint surfaced but didn't fix, recorded rather than
 silently dropped: `clamav/clamav-debian:stable` was flagged in the same
 original CVE-scan finding as MinIO and Postgres (§10's older security-scan
-section) but was never actually scoped into any of Sprints A–G. Still
-open — see STATUS.md §10.
+section) but was never actually scoped into any of Sprints A–G.
+
+Followed up on that directly rather than leaving it open indefinitely:
+Docker Desktop had dropped every `ttli-*` container between sessions
+(the same recurring instability documented earlier), so bringing the
+stack back up was the first step — confirmed the named volumes (in
+particular the new `ttli-postgres-18` one from Sprint E) survived the
+restart with all data intact before touching anything else. Re-pulled
+`clamav/clamav-debian:stable` and re-scanned with Trivy: still 5
+CRITICAL / 24 HIGH, essentially the same as the original scan — the
+re-pull didn't help because `:stable` is already a floating tag (there
+was no pin to bump), and the findings turned out to be in bundled
+Debian OS packages (`perl-base`, `ncurses-*`, `util-linux`, `login`,
+`mount`), several explicitly marked `fix_deferred`/`affected` upstream
+with no patch available at all yet — not something any image choice
+fixes. Checked, rather than assumed, that this image isn't in the same
+abandoned state MinIO was: Cisco (ClamAV's own maintainer) rebuilds it
+weekly specifically for base-image security fixes, confirmed from its
+Docker Hub publish history, so there's no better-maintained alternative
+the way Garage was for MinIO. Also checked exposure directly instead of
+asserting it: only `clamd` itself listens on the container's published
+port (3310, per `clamd.conf`'s `TCPSocket` directive) — the flagged
+packages are filesystem-resident utilities used by init/update scripts,
+never started as network-facing services on any port this container
+publishes. Closed out as reviewed-and-accepted in STATUS.md §10, same
+category as the ZAP CSP/COEP findings there, not silently dropped and
+not forced into an unjustified image swap either.
 
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
