@@ -1996,6 +1996,28 @@ byte-identical — verified that directly by re-running both existing
 survey-response tests after the change, not by reasoning about the diff
 and assuming they'd still pass.
 
+**A ZAP re-run, requested by name after item 1 shipped.** Used the
+locally installed ZAP desktop (`C:\Program Files\ZAP`), not a fresh
+Docker pull — the user redirected to it specifically when the first
+attempt reached for `docker run`. Two passes, not one, because the
+first (an unauthenticated baseline spider against `apps/web`) turned
+out not to actually test anything new: it never got past `/login`, so
+`/admin/courses`/`/admin/templates` were never reached — worth stating
+plainly rather than reporting "0 High" as if it covered the new work. A
+second, targeted pass used ZAP's `requestor` job (Automation Framework)
+with a real bearer token to hit the two new pages and their six
+underlying BFF endpoints directly, since the JWT-bearer-in-memory auth
+scheme has no cookie for ZAP's spider to carry, and the admin pages are
+client-rendered (no server-rendered links for a non-JS-executing spider
+to follow regardless). Both passes: 0 High, 1 Medium (the same
+already-reviewed `style-src 'unsafe-inline'` CSP finding, unchanged),
+0 Low. No new findings on the actual new surface. Full detail in
+STATUS.md §10. One operational note for next time: ZAP's default
+512MB heap OOM'd scanning Next dev mode's large unminified `webpack.js`
+chunks during the first run — bumped to 1536MB via a local
+`.ZAP_JVM.properties` (outside the repo, a machine-local ZAP setting,
+not something to commit).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
