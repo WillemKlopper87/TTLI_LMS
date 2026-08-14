@@ -1955,6 +1955,47 @@ than chasing a recovery that wasn't there — confirmed it can log in and
 call `GET /courses` successfully. Zero impact on CI, which runs against
 its own separate, ephemeral database every time.
 
+**Frontend completeness audit, then item 1 of its backlog.** Asked to
+"build the full frontend" next; that was broad enough to genuinely need
+clarifying rather than guessing — asked, and the answer was "audit
+first." Ran three parallel read-only agents (admin portal, public/
+learner surface, a full 121-endpoint-to-frontend-caller cross-reference)
+and published the combined findings as an artifact rather than dumping
+three long agent reports into chat. Real numbers, not impressions:
+87/121 backend endpoints had a frontend caller; the gaps clustered into
+five unbuilt subsystems (quiz/survey/assignment authoring, video asset
+management, grading/review, session/account recovery, course→commerce
+linking) rather than scattered polish, plus a repeated silent-failure
+UX pattern across the admin portal. Full detail in `docs/STATUS.md`
+§9b, which now tracks this as a five-item backlog.
+
+Item 1 (quiz/survey/assignment authoring) is done — detail in STATUS.md
+§9b, worth restating here because it's the kind of thing a future
+session could get wrong by assuming the audit's "endpoints already
+exist" meant this was pure frontend wiring: it wasn't. Building the
+authoring UI required first discovering (via a dedicated Explore pass,
+not assumed) that there was no way to *list or view* an existing quiz/
+survey/assignment at all, and that led to the security-critical finding
+that shaped the whole backend addition — the seeded `learner` role
+holds `course:view`, so a naive `GET /quizzes/{id}` gated at
+`course:view` would have let every learner see every quiz's answer key.
+Caught in planning, not in review: gated the new endpoints at
+`course:edit` instead, and wrote a test that logs in as the *real*
+seeded `learner` role specifically (not `role=None`) to prove
+`course:view` alone can't see answers — a weaker test using no role at
+all would have passed just as easily while proving nothing about the
+actual risk.
+
+A second, smaller correction happened live rather than in planning:
+`GET /surveys/{id}` already existed but was gated on the caller having
+an enrolment in the survey's course — fine for the learner-facing form
+it was built for, wrong for an admin authoring screen, since admins
+don't enrol in the courses they author. Patched in place (a `course:edit` fast-path ahead of the enrolment check) rather than forking a
+second endpoint, specifically to keep the already-tested learner path
+byte-identical — verified that directly by re-running both existing
+survey-response tests after the change, not by reasoning about the diff
+and assuming they'd still pass.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

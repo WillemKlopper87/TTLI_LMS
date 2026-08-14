@@ -57,6 +57,27 @@ async def _question_bank(session: AsyncSession, quiz_id: uuid.UUID) -> list[Quiz
     return list((await session.execute(stmt)).scalars())
 
 
+async def list_quizzes(session: AsyncSession) -> list[tuple[Quiz, int]]:
+    """(quiz, question_count) pairs, ordered by title — same global-content
+    shape as `courses_service.list_courses`, no tenant filter."""
+    stmt = (
+        select(Quiz, func.count(QuizQuestion.id))
+        .outerjoin(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
+        .group_by(Quiz.id)
+        .order_by(Quiz.title)
+    )
+    return [(q, count) for q, count in (await session.execute(stmt)).all()]
+
+
+async def get_quiz_detail(
+    session: AsyncSession, *, quiz_id: uuid.UUID
+) -> tuple[Quiz, list[QuizQuestion]]:
+    quiz = await session.get(Quiz, quiz_id)
+    if quiz is None:
+        raise NotFound("No such quiz.")
+    return quiz, await _question_bank(session, quiz_id)
+
+
 async def start_attempt(
     session: AsyncSession, *, tenant_id: uuid.UUID, enrolment_id: uuid.UUID, quiz_id: uuid.UUID
 ) -> QuizAttempt:
@@ -260,7 +281,9 @@ __all__ = [
     "AttemptLimitExceeded",
     "TimeLimitExceeded",
     "get_own_attempt",
+    "get_quiz_detail",
     "grade_text_answer",
+    "list_quizzes",
     "question_view",
     "start_attempt",
     "submit_attempt",

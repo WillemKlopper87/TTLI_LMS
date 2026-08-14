@@ -1,6 +1,6 @@
 # STATUS
 
-**Updated:** 2026-08-14 (Phases 4 and 5 complete; dependency-upgrade sprint — A/B/D/E/F/G shipped, C blocked/deferred — see §10; ClamAV CVEs reviewed and accepted, Trivy image scan wired into CI)
+**Updated:** 2026-08-14 (Phases 4 and 5 complete; dependency-upgrade sprint — A/B/D/E/F/G shipped, C blocked/deferred — see §10; ClamAV CVEs reviewed and accepted, Trivy image scan wired into CI; frontend completeness backlog — item 1/5 (quiz/survey/assignment authoring) shipped — see §9b)
 **Scope reference:** [01_PRD.md](01_PRD.md) (requirements) · [02_DATA_MODEL.md](02_DATA_MODEL.md) (schema) · [03_API_SPEC.md](03_API_SPEC.md) (endpoints) · [04_SECURITY_AND_COMPLIANCE.md](04_SECURITY_AND_COMPLIANCE.md) (controls) · [05_COMMERCIAL.md](05_COMMERCIAL.md) (packaging) · [06_OPERATIONS.md](06_OPERATIONS.md) (infra)
 
 ---
@@ -27,7 +27,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 |---|---|
 | `ruff check` / `ruff format --check` | **PASS** — 154 files |
 | `mypy src` (strict) | **PASS** — 110 source files |
-| `pytest` | **PASS** — 200 passed, **0 skipped**, run three times for determinism (against real Postgres, Redis, Garage, Mailpit, ClamAV *and* real ffmpeg) |
+| `pytest` | **PASS** — 206 passed, **0 skipped**, run four times for determinism (against real Postgres, Redis, Garage, Mailpit, ClamAV *and* real ffmpeg) |
 | `pip-audit -r requirements.txt` | **PASS** — 0 known vulnerabilities |
 | `npm audit` (`packages/api-client`, `apps/web`) | **PASS** — 0 vulnerabilities in both |
 | `alembic upgrade head` | **PASS** — at `0020` |
@@ -46,7 +46,7 @@ Running the previously-blocked gates exposed that **Sprint 1's tenant isolation 
 | Documentation link integrity | **PASS** — `python docs/check_links.py` |
 | CI (`.github/workflows/api.yml`), `quality` + `web` jobs | **PASS** — green on both jobs on the first try, [run 31414239299](https://github.com/WillemKlopper87/TTLI_LMS/actions/runs/31414239299) (quality 3m57s, web 1m2s) |
 
-**Headline:** 200 tests (0 skipped), 121 endpoints, 71 tables (events partitioned monthly ×14), 20 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 28 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, real course/module/lesson/template authoring (backend + admin UI), an installable PWA with a real offline shell, a WCAG 2.1 AA-verified colour system, a real organisation seat-pool purchasing flow (PO checkout → finance approval → seat pool → bulk invite/CSV import → revoke-and-reassign), manager visibility gated on all three of REQ-TEN-03's conditions at once, real workshop booking (facilitator availability, capacity/waitlist, facilitator-overridable attendance, a pluggable meeting provider), and a real CRM/marketing engine (deal-centric pipeline with an append-only activity trail, segments computed from lead attributes, campaign sends gated on both marketing consent and the suppression list, and a working one-click unsubscribe link) — closing out Phases 4 and 5.
+**Headline:** 206 tests (0 skipped), 126 endpoints, 71 tables (events partitioned monthly ×14), 20 migrations, typed TS client with a CI drift gate, email delivery through the arq worker with retries, 28 `apps/web` routes, CSP + security headers on every `apps/web` response, virus-scanned uploads, dependency scanning (`pip-audit`, `npm audit`) wired into CI, a server-side completion rule engine gating real course progress across video/quiz/survey/assignment, a real ported VOD transcode pipeline with signed HLS playback and WebVTT captions, quizzes/surveys/assignments with real auto-grading and anonymous-survey pseudonymisation, certificates/badges with a real reportlab-rendered PDF and encrypted+blind-indexed public verification, a printable transcript, real course/module/lesson/template authoring (backend + admin UI), an installable PWA with a real offline shell, a WCAG 2.1 AA-verified colour system, a real organisation seat-pool purchasing flow (PO checkout → finance approval → seat pool → bulk invite/CSV import → revoke-and-reassign), manager visibility gated on all three of REQ-TEN-03's conditions at once, real workshop booking (facilitator availability, capacity/waitlist, facilitator-overridable attendance, a pluggable meeting provider), and a real CRM/marketing engine (deal-centric pipeline with an append-only activity trail, segments computed from lead attributes, campaign sends gated on both marketing consent and the suppression list, and a working one-click unsubscribe link) — closing out Phases 4 and 5.
 
 > Published: `https://github.com/WillemKlopper87/TTLI_LMS` (private). CI's first-ever run failed on a `psql` URI-parsing bug in a step unchanged since Sprint 1 — never executed before, so never caught; fixed, and the second run passed every step end to end. Still open: CI does not yet build/typecheck `apps/web` ([HANDOFF.md](HANDOFF.md)).
 
@@ -398,6 +398,30 @@ Organisations and seat-pool purchasing, manager visibility, workshops/facilitato
 |---|---|
 | 6 AI insights | 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log |
 | 7 Hardening and cloud | Load test at 100 concurrent; restore drill completed; POPIA matrix delivered |
+
+---
+
+## 9b. Frontend completeness backlog
+
+A full read-only audit of `apps/web` against every backend endpoint it could call (three independent passes: admin portal, public/learner surface, full 121-endpoint cross-reference), run after Phase 4 closed. Found 87/121 endpoints wired, clustering into five genuinely unbuilt subsystems rather than scattered polish. Full findings published as an artifact; this section tracks the backlog it produced.
+
+1. **[x] Quiz/survey/assignment authoring** — done, see below.
+2. **[ ] Video asset management** — no UI to upload a video, add captions, check transcode status, or attach one to a lesson.
+3. **[ ] Grading/review** — no admin screen to grade manually-graded quiz answers or review assignment submissions.
+4. **[ ] Session & account recovery** — in-memory-only access token, no refresh flow, no logout, no password reset, and the magic-link URL every guest-access/login email sends has no landing page (clicking it 404s today).
+5. **[ ] Course → commerce link** — no way to make a newly-authored course purchasable; checkout is hardwired to the one pre-seeded demo product.
+
+### Done — item 1: quiz/survey/assignment authoring
+
+- [x] The creation/attach endpoints (`POST /quizzes`, `/surveys`, `/assignments` and their question-add/lesson-attach siblings) already existed and worked — the entire gap was frontend. Closing it surfaced two real, confirmed backend gaps of its own: there was no way to list or view an existing quiz/survey/assignment at all, and `GET /surveys/{id}` was gated on learner enrolment only, so an admin who wasn't enrolled in a course couldn't review a survey attached to it.
+- [x] New endpoints, all `course:edit`-gated: `GET /quizzes`, `GET /quizzes/{id}` (with a new `QuizQuestionAdminView`/`QuizDetailResponse` pair — unlike the learner-facing `QuizQuestionView`, this one *does* include which option is `correct`), `GET /surveys`, `GET /assignments`, `GET /assignments/{id}`.
+- [x] **Security-critical constraint, verified by test, not just stated**: the seeded `learner` role holds `course:view` (`0002`'s seed), so any endpoint revealing quiz answers had to be gated at `course:edit`, not `course:view` — the weaker permission would let every learner see every quiz's answer key. `test_quiz_list_and_detail_require_course_edit` logs in as the real seeded `learner` role (not `role=None`) and asserts 403 on both new quiz endpoints — that's what actually proves `course:view` alone can't see answers, not just "no permissions fails."
+- [x] `GET /surveys/{survey_id}` patched in place rather than forked into a second endpoint: a `course:edit` fast-path now bypasses the enrolment check before it runs, so an admin without an enrolment succeeds instead of 403/404ing. A learner token never carries `course:edit`, so the existing learner path (`test_anonymous_survey_response_never_stores_user_id`/`test_identified_survey_response_stores_user_id`) is byte-identical to before — re-ran both explicitly as the regression check, not assumed safe from reading the diff.
+- [x] No alembic migration — no schema changes, `course:edit` already seeded.
+- [x] Frontend: new `apps/web/app/admin/courses/lesson-activity-panel.tsx`, opened via a "Manage content" button per lesson row in the existing courses admin screen. A 3-way quiz/survey/assignment tab, each with "attach an existing one" (dropdown + attach) and "create new" (metadata form) paths, plus a question builder for quiz/survey (type select, prompt, points, dynamic option rows with radio/checkbox correctness marking for quizzes, no correctness concept for surveys) that round-trips against the new detail endpoints.
+- [x] `packages/api-client/src/schema.gen.ts` regenerated to match (CI's drift gate needs this even though the new UI talks to the BFF directly, same as every other admin page).
+- [x] Verified live through the actual running dev servers and the real BFF proxy path the browser uses, not just pytest: authored a quiz with a mixed-correct multiple-choice question, confirmed `correct` round-tripped through `GET /quizzes/{id}` exactly as written, attached it to a lesson; authored a survey and confirmed the `course:edit` fast-path lets an unenrolled admin view it; authored and attached an assignment. All three attach operations correctly updated the lesson's `activity_type`.
+- [x] Backend gate: `ruff`/`mypy` clean, `alembic check` clean (no-op, no schema change), full suite (206 tests, up from 200) green twice. Frontend gate: `typecheck`/`build` clean, 28 routes (no new route — this is a sibling component of the existing courses page, not a new page).
 
 ---
 

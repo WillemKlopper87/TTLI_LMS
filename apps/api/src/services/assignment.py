@@ -114,4 +114,18 @@ async def review(
     return submission
 
 
-__all__ = ["latest_submission", "review", "submit"]
+async def list_assignments(session: AsyncSession) -> list[Assignment]:
+    """Ordered by title — same global-content shape as
+    `courses_service.list_courses`, no tenant filter."""
+    stmt = select(Assignment).order_by(Assignment.title)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_assignment(session: AsyncSession, *, assignment_id: uuid.UUID) -> Assignment:
+    assignment = await session.get(Assignment, assignment_id)
+    if assignment is None:
+        raise NotFound("No such assignment.")
+    return assignment
+
+
+__all__ = ["get_assignment", "latest_submission", "list_assignments", "review", "submit"]

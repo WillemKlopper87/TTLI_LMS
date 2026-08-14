@@ -367,6 +367,57 @@ async def test_text_answer_grading_finalises_score_and_passed(
     assert row[1] is True
 
 
+async def test_quiz_list_and_detail_expose_correct_answers_to_authors(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz_id = await _create_quiz(client, author_token)
+    await _add_choice_question(client, author_token, quiz_id, position=0)
+
+    listed = await client.get(
+        "/api/v1/quizzes", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert listed.status_code == 200, listed.text
+    item = next(q for q in listed.json()["items"] if q["id"] == quiz_id)
+    assert item["question_count"] == 1
+
+    detail = await client.get(
+        f"/api/v1/quizzes/{quiz_id}", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert detail.status_code == 200, detail.text
+    question = detail.json()["questions"][0]
+    correct_options = [o for o in question["options"] if o["correct"]]
+    assert [o["id"] for o in correct_options] == ["b"]
+
+
+async def test_quiz_list_and_detail_require_course_edit(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz_id = await _create_quiz(client, author_token)
+
+    # role="learner" — the real seeded role holding course:view, not
+    # role=None. This is the test that actually proves course:view alone
+    # can't see quiz answers, not just "no permissions at all fails."
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    listed = await client.get(
+        "/api/v1/quizzes", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert listed.status_code == 403
+    detail = await client.get(
+        f"/api/v1/quizzes/{quiz_id}", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert detail.status_code == 403
+
+
 # =============================================================== Surveys ===
 
 
@@ -489,6 +540,52 @@ async def test_identified_survey_response_stores_user_id(
     assert row[0] == buyer_id
 
 
+async def test_survey_list_requires_course_edit(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get("/api/v1/surveys", headers={"Authorization": f"Bearer {learner_token}"})
+    assert resp.status_code == 403
+
+
+async def test_admin_can_view_survey_without_enrolment(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    survey = await client.post(
+        "/api/v1/surveys",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Admin Review", "response_mode": "identified"},
+    )
+    survey_id = survey.json()["id"]
+    q = await client.post(
+        f"/api/v1/surveys/{survey_id}/questions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"question_type": "long_text", "prompt": "Thoughts?", "options": [], "position": 0},
+    )
+    assert q.status_code == 204
+
+    listed = await client.get(
+        "/api/v1/surveys", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert listed.status_code == 200, listed.text
+    item = next(s for s in listed.json()["items"] if s["id"] == survey_id)
+    assert item["question_count"] == 1
+
+    # The content_author never enrolled in any course — proves the
+    # course:edit fast-path bypasses the enrolment check that would
+    # otherwise 403/404 an unenrolled caller.
+    detail = await client.get(
+        f"/api/v1/surveys/{survey_id}", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["questions"][0]["prompt"] == "Thoughts?"
+
+
 # ============================================================ Assignments ===
 
 
@@ -573,6 +670,50 @@ async def test_assignment_submission_approval_flow(
     )
     assert review.status_code == 200
     assert review.json()["approved_at"] is not None
+
+
+async def test_assignment_list_and_detail(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    created = await client.post(
+        "/api/v1/assignments",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={
+            "title": "Case Study",
+            "instructions": "Write it up.",
+            "max_score": 50,
+            "approval_required": False,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assignment_id = created.json()["id"]
+
+    listed = await client.get(
+        "/api/v1/assignments", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert listed.status_code == 200, listed.text
+    item = next(a for a in listed.json()["items"] if a["id"] == assignment_id)
+    assert item["max_score"] == 50
+    assert item["approval_required"] is False
+
+    detail = await client.get(
+        f"/api/v1/assignments/{assignment_id}", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["instructions"] == "Write it up."
+
+
+async def test_assignment_list_requires_course_edit(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        "/api/v1/assignments", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert resp.status_code == 403
 
 
 # ===================================================== Completion gating ===

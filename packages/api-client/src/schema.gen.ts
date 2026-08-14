@@ -1396,10 +1396,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Quizzes */
+        get: operations["list_quizzes_api_v1_quizzes_get"];
         put?: never;
         /** Create Quiz */
         post: operations["create_quiz_api_v1_quizzes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quizzes/{quiz_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quiz */
+        get: operations["get_quiz_api_v1_quizzes__quiz_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1498,7 +1516,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Surveys */
+        get: operations["list_surveys_api_v1_surveys_get"];
         put?: never;
         /** Create Survey */
         post: operations["create_survey_api_v1_surveys_post"];
@@ -1583,10 +1602,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Assignments */
+        get: operations["list_assignments_api_v1_assignments_get"];
         put?: never;
         /** Create Assignment */
         post: operations["create_assignment_api_v1_assignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assignment */
+        get: operations["get_assignment_api_v1_assignments__assignment_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1907,6 +1944,30 @@ export interface components {
              */
             approval_required: boolean;
         };
+        /** AssignmentDetailResponse */
+        AssignmentDetailResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Instructions */
+            instructions: string | null;
+            /** Max Score */
+            max_score: number;
+            /** Approval Required */
+            approval_required: boolean;
+        };
+        /** AssignmentListItem */
+        AssignmentListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Max Score */
+            max_score: number;
+            /** Approval Required */
+            approval_required: boolean;
+        };
         /** AssignmentResponse */
         AssignmentResponse: {
             /** Id */
@@ -1936,6 +1997,11 @@ export interface components {
             approved_at: string | null;
             /** Rejected Reason */
             rejected_reason: string | null;
+        };
+        /** AssignmentsPageResponse */
+        AssignmentsPageResponse: {
+            /** Items */
+            items: components["schemas"]["AssignmentListItem"][];
         };
         /** AvailabilityPage */
         AvailabilityPage: {
@@ -3077,10 +3143,65 @@ export interface components {
             /** Time Limit Seconds */
             time_limit_seconds?: number | null;
         };
+        /** QuizDetailResponse */
+        QuizDetailResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Randomise Questions */
+            randomise_questions: boolean;
+            /** Randomise Options */
+            randomise_options: boolean;
+            /** Pass Score */
+            pass_score: number;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Time Limit Seconds */
+            time_limit_seconds: number | null;
+            /** Questions */
+            questions: components["schemas"]["QuizQuestionAdminView"][];
+        };
         /** QuizGradeRequest */
         QuizGradeRequest: {
             /** Points Awarded */
             points_awarded: number | string;
+        };
+        /** QuizListItem */
+        QuizListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Pass Score */
+            pass_score: number;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Time Limit Seconds */
+            time_limit_seconds: number | null;
+            /** Question Count */
+            question_count: number;
+        };
+        /**
+         * QuizQuestionAdminView
+         * @description Authoring-facing — unlike `QuizQuestionView`, this DOES include
+         *     which option is `correct`. Gated at `course:edit`, never `course:view`
+         *     — the seeded `learner` role holds `course:view`, so this must never
+         *     be reachable with only that permission.
+         */
+        QuizQuestionAdminView: {
+            /** Question Id */
+            question_id: string;
+            /** Question Type */
+            question_type: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options: components["schemas"]["QuizQuestionOption"][];
+            /** Position */
+            position: number;
+            /** Points */
+            points: number;
         };
         /** QuizQuestionCreateRequest */
         QuizQuestionCreateRequest: {
@@ -3139,6 +3260,11 @@ export interface components {
         QuizSubmitRequest: {
             /** Answers */
             answers: components["schemas"]["QuizAnswerSubmission"][];
+        };
+        /** QuizzesPageResponse */
+        QuizzesPageResponse: {
+            /** Items */
+            items: components["schemas"]["QuizListItem"][];
         };
         /** RecordBounceRequest */
         RecordBounceRequest: {
@@ -3283,6 +3409,19 @@ export interface components {
              */
             minimum_group_size: number;
         };
+        /** SurveyListItem */
+        SurveyListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Response Mode */
+            response_mode: string;
+            /** Minimum Group Size */
+            minimum_group_size: number;
+            /** Question Count */
+            question_count: number;
+        };
         /** SurveyQuestionCreateRequest */
         SurveyQuestionCreateRequest: {
             /** Question Type */
@@ -3338,6 +3477,11 @@ export interface components {
             response_mode: string;
             /** Questions */
             questions: components["schemas"]["SurveyQuestionView"][];
+        };
+        /** SurveysPageResponse */
+        SurveysPageResponse: {
+            /** Items */
+            items: components["schemas"]["SurveyListItem"][];
         };
         /** TaskResponse */
         TaskResponse: {
@@ -6382,6 +6526,26 @@ export interface operations {
             };
         };
     };
+    list_quizzes_api_v1_quizzes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizzesPageResponse"];
+                };
+            };
+        };
+    };
     create_quiz_api_v1_quizzes_post: {
         parameters: {
             query?: never;
@@ -6402,6 +6566,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuizResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quiz_api_v1_quizzes__quiz_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quiz_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6578,6 +6773,26 @@ export interface operations {
             };
         };
     };
+    list_surveys_api_v1_surveys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveysPageResponse"];
+                };
+            };
+        };
+    };
     create_survey_api_v1_surveys_post: {
         parameters: {
             query?: never;
@@ -6739,6 +6954,26 @@ export interface operations {
             };
         };
     };
+    list_assignments_api_v1_assignments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentsPageResponse"];
+                };
+            };
+        };
+    };
     create_assignment_api_v1_assignments_post: {
         parameters: {
             query?: never;
@@ -6759,6 +6994,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assignment_api_v1_assignments__assignment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentDetailResponse"];
                 };
             };
             /** @description Validation Error */

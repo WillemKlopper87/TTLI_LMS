@@ -74,6 +74,44 @@ class QuizGradeRequest(BaseModel):
     points_awarded: Decimal = Field(ge=0)
 
 
+class QuizListItem(BaseModel):
+    id: str
+    title: str
+    pass_score: int
+    max_attempts: int
+    time_limit_seconds: int | None
+    question_count: int
+
+
+class QuizzesPageResponse(BaseModel):
+    items: list[QuizListItem]
+
+
+class QuizQuestionAdminView(BaseModel):
+    """Authoring-facing — unlike `QuizQuestionView`, this DOES include
+    which option is `correct`. Gated at `course:edit`, never `course:view`
+    — the seeded `learner` role holds `course:view`, so this must never
+    be reachable with only that permission."""
+
+    question_id: str
+    question_type: str
+    prompt: str
+    options: list[QuizQuestionOption]
+    position: int
+    points: int
+
+
+class QuizDetailResponse(BaseModel):
+    id: str
+    title: str
+    randomise_questions: bool
+    randomise_options: bool
+    pass_score: int
+    max_attempts: int
+    time_limit_seconds: int | None
+    questions: list[QuizQuestionAdminView]
+
+
 # --- Surveys ---
 class SurveyQuestionOption(BaseModel):
     id: str
@@ -122,6 +160,18 @@ class SurveyResponseSubmitRequest(BaseModel):
     answers: list[SurveyAnswer]
 
 
+class SurveyListItem(BaseModel):
+    id: str
+    title: str
+    response_mode: str
+    minimum_group_size: int
+    question_count: int
+
+
+class SurveysPageResponse(BaseModel):
+    items: list[SurveyListItem]
+
+
 # --- Assignments ---
 class AssignmentCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
@@ -148,27 +198,55 @@ class AssignmentReviewRequest(BaseModel):
     rejected_reason: str | None = None
 
 
+class AssignmentListItem(BaseModel):
+    id: str
+    title: str
+    max_score: int
+    approval_required: bool
+
+
+class AssignmentsPageResponse(BaseModel):
+    items: list[AssignmentListItem]
+
+
+class AssignmentDetailResponse(BaseModel):
+    id: str
+    title: str
+    instructions: str | None
+    max_score: int
+    approval_required: bool
+
+
 __all__ = [
     "AssignmentCreateRequest",
+    "AssignmentDetailResponse",
+    "AssignmentListItem",
     "AssignmentResponse",
     "AssignmentReviewRequest",
     "AssignmentSubmissionResponse",
+    "AssignmentsPageResponse",
     "QuizAnswerSubmission",
     "QuizAttemptResponse",
     "QuizAttemptResult",
     "QuizCreateRequest",
+    "QuizDetailResponse",
     "QuizGradeRequest",
+    "QuizListItem",
+    "QuizQuestionAdminView",
     "QuizQuestionCreateRequest",
     "QuizQuestionOption",
     "QuizQuestionView",
     "QuizResponse",
     "QuizSubmitRequest",
+    "QuizzesPageResponse",
     "SurveyAnswer",
     "SurveyCreateRequest",
+    "SurveyListItem",
     "SurveyQuestionCreateRequest",
     "SurveyQuestionOption",
     "SurveyQuestionView",
     "SurveyResponseSubmitRequest",
     "SurveyResponse_",
     "SurveyView",
+    "SurveysPageResponse",
 ]

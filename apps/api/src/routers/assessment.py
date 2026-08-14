@@ -31,22 +31,32 @@ from src.models.assessment import (
 from src.models.course import Lesson
 from src.schemas.assessment import (
     AssignmentCreateRequest,
+    AssignmentDetailResponse,
+    AssignmentListItem,
     AssignmentResponse,
     AssignmentReviewRequest,
+    AssignmentsPageResponse,
     AssignmentSubmissionResponse,
     QuizAttemptResponse,
     QuizAttemptResult,
     QuizCreateRequest,
+    QuizDetailResponse,
     QuizGradeRequest,
+    QuizListItem,
+    QuizQuestionAdminView,
     QuizQuestionCreateRequest,
+    QuizQuestionOption,
     QuizQuestionView,
     QuizResponse,
     QuizSubmitRequest,
+    QuizzesPageResponse,
     SurveyCreateRequest,
+    SurveyListItem,
     SurveyQuestionCreateRequest,
     SurveyQuestionView,
     SurveyResponse_,
     SurveyResponseSubmitRequest,
+    SurveysPageResponse,
     SurveyView,
 )
 from src.services import antivirus
@@ -68,6 +78,55 @@ def _parse_uuid(value: str) -> uuid.UUID:
 
 
 # ============================================================ Quizzes ===
+
+
+@router.get("/quizzes", response_model=QuizzesPageResponse)
+async def list_quizzes(principal: PrincipalDep, session: SessionDep) -> QuizzesPageResponse:
+    principal.require("course:edit")
+    rows = await quiz_service.list_quizzes(session)
+    return QuizzesPageResponse(
+        items=[
+            QuizListItem(
+                id=str(q.id),
+                title=q.title,
+                pass_score=q.pass_score,
+                max_attempts=q.max_attempts,
+                time_limit_seconds=q.time_limit_seconds,
+                question_count=count,
+            )
+            for q, count in rows
+        ]
+    )
+
+
+@router.get("/quizzes/{quiz_id}", response_model=QuizDetailResponse)
+async def get_quiz(
+    quiz_id: str, principal: PrincipalDep, session: SessionDep
+) -> QuizDetailResponse:
+    # course:edit, not course:view — questions include `correct`, and the
+    # seeded learner role holds course:view, so this must stay narrower.
+    principal.require("course:edit")
+    quiz, questions = await quiz_service.get_quiz_detail(session, quiz_id=_parse_uuid(quiz_id))
+    return QuizDetailResponse(
+        id=str(quiz.id),
+        title=quiz.title,
+        randomise_questions=quiz.randomise_questions,
+        randomise_options=quiz.randomise_options,
+        pass_score=quiz.pass_score,
+        max_attempts=quiz.max_attempts,
+        time_limit_seconds=quiz.time_limit_seconds,
+        questions=[
+            QuizQuestionAdminView(
+                question_id=str(q.id),
+                question_type=q.question_type,
+                prompt=q.prompt,
+                options=[QuizQuestionOption(**o) for o in q.options],
+                position=q.position,
+                points=q.points,
+            )
+            for q in questions
+        ],
+    )
 
 
 @router.post("/quizzes", response_model=QuizResponse, status_code=status.HTTP_201_CREATED)
@@ -224,6 +283,24 @@ async def grade_quiz_answer(
 # ============================================================ Surveys ===
 
 
+@router.get("/surveys", response_model=SurveysPageResponse)
+async def list_surveys(principal: PrincipalDep, session: SessionDep) -> SurveysPageResponse:
+    principal.require("course:edit")
+    rows = await survey_service.list_surveys(session)
+    return SurveysPageResponse(
+        items=[
+            SurveyListItem(
+                id=str(s.id),
+                title=s.title,
+                response_mode=s.response_mode,
+                minimum_group_size=s.minimum_group_size,
+                question_count=count,
+            )
+            for s, count in rows
+        ]
+    )
+
+
 @router.post("/surveys", response_model=SurveyResponse_, status_code=status.HTTP_201_CREATED)
 async def create_survey(
     body: SurveyCreateRequest, principal: PrincipalDep, session: SessionDep
@@ -289,9 +366,19 @@ async def get_survey(survey_id: str, principal: PrincipalDep, session: SessionDe
     # Fetching the form doesn't submit anything, so this only needs to
     # confirm the caller is enrolled in the course it belongs to — it
     # never touches the anonymity mechanism the actual submission uses.
-    await enrolment_service.resolve_enrolment_for_survey(
-        session, tenant_id=principal.tenant_id, user_id=principal.user_id, survey_id=survey_uuid
-    )
+    #
+    # An authoring-capable caller doesn't need — and generally won't
+    # have — an enrolment in whatever course this survey happens to be
+    # attached to. course:edit is a strictly wider grant than "enrolled
+    # learner" for read purposes here (no answer-key-equivalent field
+    # exists on a survey question, unlike quizzes), so it takes
+    # precedence over the enrolment check instead of requiring both. A
+    # learner token never carries course:edit, so this is a no-op for
+    # every existing learner-facing call site.
+    if "course:edit" not in principal.permissions:
+        await enrolment_service.resolve_enrolment_for_survey(
+            session, tenant_id=principal.tenant_id, user_id=principal.user_id, survey_id=survey_uuid
+        )
     survey = await session.get(Survey, survey_uuid)
     if survey is None:  # pragma: no cover
         raise NotFound("No such survey.")
@@ -347,6 +434,40 @@ async def submit_survey_response(
 
 
 # ========================================================= Assignments ===
+
+
+@router.get("/assignments", response_model=AssignmentsPageResponse)
+async def list_assignments(principal: PrincipalDep, session: SessionDep) -> AssignmentsPageResponse:
+    principal.require("course:edit")
+    assignments = await assignment_service.list_assignments(session)
+    return AssignmentsPageResponse(
+        items=[
+            AssignmentListItem(
+                id=str(a.id),
+                title=a.title,
+                max_score=a.max_score,
+                approval_required=a.approval_required,
+            )
+            for a in assignments
+        ]
+    )
+
+
+@router.get("/assignments/{assignment_id}", response_model=AssignmentDetailResponse)
+async def get_assignment(
+    assignment_id: str, principal: PrincipalDep, session: SessionDep
+) -> AssignmentDetailResponse:
+    principal.require("course:edit")
+    assignment = await assignment_service.get_assignment(
+        session, assignment_id=_parse_uuid(assignment_id)
+    )
+    return AssignmentDetailResponse(
+        id=str(assignment.id),
+        title=assignment.title,
+        instructions=assignment.instructions,
+        max_score=assignment.max_score,
+        approval_required=assignment.approval_required,
+    )
 
 
 @router.post("/assignments", response_model=AssignmentResponse, status_code=status.HTTP_201_CREATED)

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getAccessToken } from "@/lib/session";
 
 import { useAdmin } from "../admin-context";
+import { LessonActivityPanel } from "./lesson-activity-panel";
 
 interface CourseItem {
   id: string;
@@ -21,13 +22,16 @@ interface ModuleItem {
   position: number;
 }
 
-interface LessonItem {
+export interface LessonItem {
   id: string;
   module_id: string;
   title: string;
   position: number;
   activity_type: string;
   access_level: string;
+  quiz_id: string | null;
+  survey_id: string | null;
+  assignment_id: string | null;
 }
 
 const ACCESS_LEVELS = ["public", "gated", "guest", "paid", "corporate"];
@@ -43,10 +47,12 @@ const STATE_TAG: Record<string, string> = {
  * authoring gap. Content, publishing and tenant-assignment are all
  * `course:edit`/`course:publish`-gated server-side, mirrored here only
  * to hide forms a caller can't use, same convention as `/workshops`.
- * Quiz/survey/assignment/video attachment stay out of scope here — a
- * lesson created on this screen is always a plain "document" lesson;
- * attaching real content to it happens through the existing quiz/survey/
- * assignment/media authoring surfaces, not this one.
+ * A lesson created here always starts as a plain "document" lesson;
+ * `LessonActivityPanel` (opened via each lesson's "Manage content"
+ * button) is where quiz/survey/assignment content actually gets
+ * authored and attached. Video attachment stays out of scope — that's
+ * a separate, still-unbuilt subsystem (no video-asset-upload UI exists
+ * anywhere yet).
  */
 export default function CoursesScreen() {
   const { me } = useAdmin();
@@ -71,6 +77,7 @@ export default function CoursesScreen() {
   const [lessonAccessLevel, setLessonAccessLevel] = useState(ACCESS_LEVELS[3]);
   const [lessonBody, setLessonBody] = useState("");
   const [lessonBusy, setLessonBusy] = useState(false);
+  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
 
   const [publishBusy, setPublishBusy] = useState(false);
   const [assignBespoke, setAssignBespoke] = useState(false);
@@ -145,7 +152,17 @@ export default function CoursesScreen() {
   async function selectModule(moduleId: string) {
     setSelectedModuleId(moduleId);
     setLessons(null);
+    setSelectedLessonId(null);
     const resp = await authedFetch(`/api/bff/modules/${moduleId}/lessons`);
+    if (resp.ok) setLessons((await resp.json()).items);
+  }
+
+  async function refreshLessons() {
+    // Re-fetches without resetting selectedLessonId — unlike selectModule,
+    // this keeps the activity panel open after an attach/create so the
+    // admin sees the lesson's updated activity_type without losing place.
+    if (!selectedModuleId) return;
+    const resp = await authedFetch(`/api/bff/modules/${selectedModuleId}/lessons`);
     if (resp.ok) setLessons((await resp.json()).items);
   }
 
@@ -417,6 +434,7 @@ export default function CoursesScreen() {
                         <th scope="col">Position</th>
                         <th scope="col">Type</th>
                         <th scope="col">Access</th>
+                        <th scope="col"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -430,11 +448,30 @@ export default function CoursesScreen() {
                           <td className="mono" style={{ fontSize: "0.75rem" }}>
                             {l.access_level}
                           </td>
+                          <td>
+                            <button
+                              type="button"
+                              className={`btn ${selectedLessonId === l.id ? "btn--primary" : "btn--ghost"}`}
+                              onClick={() =>
+                                setSelectedLessonId(selectedLessonId === l.id ? null : l.id)
+                              }
+                            >
+                              {selectedLessonId === l.id ? "Close" : "Manage content"}
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+
+                {selectedLessonId ? (
+                  <LessonActivityPanel
+                    lesson={(lessons ?? []).find((l) => l.id === selectedLessonId)!}
+                    canEdit={canEdit}
+                    onChanged={refreshLessons}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -11,13 +11,13 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
 from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
-from src.models.assessment import Survey, SurveyResponse
+from src.models.assessment import Survey, SurveyQuestion, SurveyResponse
 from src.models.audit import AuditAction
 from src.services import audit
 
@@ -107,4 +107,16 @@ async def submit_response(
     return response
 
 
-__all__ = ["has_responded", "submit_response"]
+async def list_surveys(session: AsyncSession) -> list[tuple[Survey, int]]:
+    """(survey, question_count) pairs, ordered by title — same global-content
+    shape as `courses_service.list_courses`, no tenant filter."""
+    stmt = (
+        select(Survey, func.count(SurveyQuestion.id))
+        .outerjoin(SurveyQuestion, SurveyQuestion.survey_id == Survey.id)
+        .group_by(Survey.id)
+        .order_by(Survey.title)
+    )
+    return [(s, count) for s, count in (await session.execute(stmt)).all()]
+
+
+__all__ = ["has_responded", "list_surveys", "submit_response"]
