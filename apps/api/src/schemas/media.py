@@ -12,6 +12,10 @@ class VideoAssetResponse(BaseModel):
     has_captions: bool = False
 
 
+class VideoAssetsPageResponse(BaseModel):
+    items: list[VideoAssetResponse]
+
+
 class WatermarkPayload(BaseModel):
     text: str
     opacity: float
@@ -24,4 +28,9 @@ class PlaybackResponse(BaseModel):
     watermark: WatermarkPayload
 
 
-__all__ = ["PlaybackResponse", "VideoAssetResponse", "WatermarkPayload"]
+__all__ = [
+    "PlaybackResponse",
+    "VideoAssetResponse",
+    "VideoAssetsPageResponse",
+    "WatermarkPayload",
+]

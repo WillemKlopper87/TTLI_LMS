@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, File, Query, Request, Response, UploadFile, status
+from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
@@ -24,7 +25,12 @@ from src.core.queue import get_queue
 from src.models.course import Lesson
 from src.models.media import VideoAsset
 from src.models.user import User
-from src.schemas.media import PlaybackResponse, VideoAssetResponse, WatermarkPayload
+from src.schemas.media import (
+    PlaybackResponse,
+    VideoAssetResponse,
+    VideoAssetsPageResponse,
+    WatermarkPayload,
+)
 from src.services import antivirus
 from src.services import enrolment as enrolment_service
 from src.services.media import playback
@@ -45,6 +51,28 @@ def _parse_uuid(value: str) -> uuid.UUID:
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+@router.get(
+    "/video-assets", response_model=VideoAssetsPageResponse, summary="List uploaded video assets"
+)
+async def list_video_assets(
+    principal: PrincipalDep, session: SessionDep
+) -> VideoAssetsPageResponse:
+    principal.require("course:edit")
+    stmt = select(VideoAsset).order_by(VideoAsset.id.desc())
+    assets = (await session.execute(stmt)).scalars().all()
+    return VideoAssetsPageResponse(
+        items=[
+            VideoAssetResponse(
+                id=str(a.id),
+                state=a.state,
+                duration_seconds=a.duration_seconds,
+                has_captions=a.caption_object_key is not None,
+            )
+            for a in assets
+        ]
+    )
 
 
 @router.post(
@@ -153,10 +181,10 @@ async def get_video_asset(
 async def attach_video_to_lesson(
     lesson_id: str, video_asset_id: str, principal: PrincipalDep, session: SessionDep
 ) -> None:
-    # A narrow, single-field write — not general lesson authoring, which
-    # doesn't exist yet (STATUS.md notes course/lesson CRUD as deferred).
-    # This exists because the upload endpoint above is otherwise
-    # unreachable in any real end-to-end flow.
+    # A narrow, single-field write, same as the quiz/survey/assignment
+    # attach endpoints in routers/assessment.py — general lesson CRUD
+    # lives in routers/courses.py, this stays a separate, focused
+    # primitive rather than folding video attachment into that surface.
     principal.require("course:edit")
     lesson = await session.get(Lesson, _parse_uuid(lesson_id))
     if lesson is None:

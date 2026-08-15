@@ -29,6 +29,7 @@ export interface LessonItem {
   position: number;
   activity_type: string;
   access_level: string;
+  video_asset_id: string | null;
   quiz_id: string | null;
   survey_id: string | null;
   assignment_id: string | null;
@@ -49,10 +50,8 @@ const STATE_TAG: Record<string, string> = {
  * to hide forms a caller can't use, same convention as `/workshops`.
  * A lesson created here always starts as a plain "document" lesson;
  * `LessonActivityPanel` (opened via each lesson's "Manage content"
- * button) is where quiz/survey/assignment content actually gets
- * authored and attached. Video attachment stays out of scope — that's
- * a separate, still-unbuilt subsystem (no video-asset-upload UI exists
- * anywhere yet).
+ * button) is where quiz/survey/assignment/video content actually gets
+ * authored (or uploaded, for video) and attached.
  */
 export default function CoursesScreen() {
   const { me } = useAdmin();

@@ -286,6 +286,46 @@ async def test_video_upload_requires_course_edit_permission(
     assert resp.status_code == 403
 
 
+async def test_list_video_assets_returns_uploaded_assets(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+
+    listed = await client.get(
+        "/api/v1/video-assets", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert listed.status_code == 200, listed.text
+    # VideoAsset is global, like Course/Quiz/Survey/Assignment — other
+    # tests' assets are present too, so assert by membership, not equality.
+    item = next(v for v in listed.json()["items"] if v["id"] == video_asset_id)
+    assert item["state"] == "ready"
+    assert item["duration_seconds"] == 3
+    assert item["has_captions"] is False
+
+
+async def test_video_asset_list_requires_course_edit_permission(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    # The real seeded learner role (course:view + lesson:complete), not
+    # role=None — VideoAsset carries no answer-key-equivalent secret the
+    # way a quiz's `correct` flags do, but an arbitrary learner still
+    # shouldn't be able to browse the admin's video-asset inventory.
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        "/api/v1/video-assets", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert resp.status_code == 403
+
+
 async def test_playback_requires_a_real_enrolment(
     client, tenant_session_factory, crypto, sample_video
 ) -> None:  # type: ignore[no-untyped-def]

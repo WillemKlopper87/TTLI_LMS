@@ -1294,7 +1294,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List uploaded video assets */
+        get: operations["list_video_assets_api_v1_video_assets_get"];
         put?: never;
         /** Upload a source video for transcoding */
         post: operations["upload_video_asset_api_v1_video_assets_post"];
@@ -3661,6 +3662,11 @@ export interface components {
              * @default false
              */
             has_captions: boolean;
+        };
+        /** VideoAssetsPageResponse */
+        VideoAssetsPageResponse: {
+            /** Items */
+            items: components["schemas"]["VideoAssetResponse"][];
         };
         /**
          * VisibilityRequest
@@ -6329,6 +6335,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_video_assets_api_v1_video_assets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoAssetsPageResponse"];
                 };
             };
         };

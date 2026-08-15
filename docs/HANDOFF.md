@@ -2018,6 +2018,48 @@ chunks during the first run — bumped to 1536MB via a local
 `.ZAP_JVM.properties` (outside the repo, a machine-local ZAP setting,
 not something to commit).
 
+**Item 2 of the frontend backlog (video asset management), done.**
+Unlike item 1, nearly the whole backend already existed and worked
+(real ClamAV-scanned upload, real async ffmpeg transcode via `arq`,
+real signed-HLS playback) — the actual gap was almost entirely
+frontend, plus one small confirmed backend hole: no way to list
+existing video assets, needed for an "attach an existing video" path.
+Added `GET /video-assets` (`course:edit`-gated, same discipline as
+item 1's list endpoints and its real-`learner`-role permission test)
+and a fourth "video" tab in `lesson-activity-panel.tsx`.
+
+Two design points worth restating for whoever touches this next.
+First, a real bug caught at design time, not discovered live: the
+existing tab-switch effect resets several fields when you switch tabs,
+but `videoPhase` wasn't among them — switching away from the video tab
+mid-transcode would have left a stale 4-second poll `setInterval`
+running forever. Fixed by adding it to that reset explicitly, not by
+trusting the effect's own unmount cleanup to be enough (it isn't — a
+tab switch doesn't unmount the component). Second, video/caption
+uploads are the only `authedFetch` callers in this codebase that must
+build a `FormData` body and deliberately send **no** `Content-Type`
+header — every other caller sends `application/json` explicitly. This
+is safe only because the BFF proxy forwards the incoming content-type
+verbatim and reads the body via `arrayBuffer()`, not `text()` — already
+proven by the payment-proof upload path, not newly assumed here.
+
+Verified live against the real API and a real background worker, not
+mocked: uploaded a real ffmpeg-generated MP4, watched it move
+`uploaded → transcoding → ready` by polling exactly as the frontend
+does, uploaded a real `.vtt` file, attached the asset to a real seeded
+lesson and confirmed `activity_type`/`video_asset_id` updated. One
+environment gap found and fixed along the way, not papered over: the
+local `arq` worker (`python -m arq src.workers.main.WorkerSettings`)
+simply wasn't running, so the freshly uploaded asset sat in `uploaded`
+indefinitely until it was started by hand — a dev-machine setup gap,
+since CI's own test suite drives the transcode job directly rather
+than depending on a long-running worker process. The frontend admin
+screens were not visually confirmed in an actual browser — no
+browser-automation tool is available in this environment, same
+disclosed limitation already on record for `/admin/courses` and
+`/admin/templates` from item 1 and the Phase 4.5 accessibility pass.
+Full detail in `docs/STATUS.md` §9b.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
 import type { LessonItem } from "./page";
 
-type ActivityKind = "quiz" | "survey" | "assignment";
+type ActivityKind = "quiz" | "survey" | "assignment" | "video";
+type VideoUploadPhase = "idle" | "uploading" | "polling" | "ready" | "failed";
 
 const QUESTION_TYPES = [
   { value: "single_choice", label: "Single choice" },
@@ -79,6 +80,13 @@ interface AssignmentListItem {
   approval_required: boolean;
 }
 
+interface VideoAssetListItem {
+  id: string;
+  state: string;
+  duration_seconds: number | null;
+  has_captions: boolean;
+}
+
 function newOptionRow(): OptionRow {
   return { id: crypto.randomUUID(), text: "", correct: false };
 }
@@ -115,7 +123,9 @@ export function LessonActivityPanel({
       ? "survey"
       : lesson.activity_type === "assignment"
         ? "assignment"
-        : "quiz";
+        : lesson.activity_type === "video"
+          ? "video"
+          : "quiz";
   const [tab, setTab] = useState<ActivityKind>(initialTab);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,6 +133,7 @@ export function LessonActivityPanel({
   const [quizzes, setQuizzes] = useState<QuizListItem[] | null>(null);
   const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
   const [assignments, setAssignments] = useState<AssignmentListItem[] | null>(null);
+  const [videos, setVideos] = useState<VideoAssetListItem[] | null>(null);
   const [attachExistingId, setAttachExistingId] = useState("");
 
   // --- the entity currently open for editing (freshly created, or picked
@@ -153,6 +164,17 @@ export function LessonActivityPanel({
   const [assignmentApprovalRequired, setAssignmentApprovalRequired] = useState(true);
   const [createAssignmentBusy, setCreateAssignmentBusy] = useState(false);
 
+  // --- video upload/transcode state machine ---
+  // idle -> uploading -> polling -> ready | failed. No fine-grained
+  // progress % exists anywhere in the API (only TranscodeJob.progress_pct,
+  // never exposed via a route) — state alone drives this UI.
+  const [videoPhase, setVideoPhase] = useState<VideoUploadPhase>("idle");
+  const [uploadingAssetId, setUploadingAssetId] = useState<string | null>(null);
+  const [videoDetail, setVideoDetail] = useState<VideoAssetListItem | null>(null);
+  const [captionsBusy, setCaptionsBusy] = useState(false);
+  const [captionsError, setCaptionsError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // --- add-question form (quiz/survey tabs) ---
   const [qType, setQType] = useState(QUESTION_TYPES[0].value);
   const [qPrompt, setQPrompt] = useState("");
@@ -172,9 +194,12 @@ export function LessonActivityPanel({
     } else if (kind === "survey") {
       const resp = await authedFetch("/api/bff/surveys");
       if (resp.ok) setSurveys((await resp.json()).items);
-    } else {
+    } else if (kind === "assignment") {
       const resp = await authedFetch("/api/bff/assignments");
       if (resp.ok) setAssignments((await resp.json()).items);
+    } else {
+      const resp = await authedFetch("/api/bff/video-assets");
+      if (resp.ok) setVideos((await resp.json()).items);
     }
   }
 
@@ -184,9 +209,38 @@ export function LessonActivityPanel({
     setSurveyDetail(null);
     setAttachExistingId("");
     setError(null);
+    // Stops any running poll: this changes videoPhase, and the poll
+    // effect's own cleanup (keyed on videoPhase) tears the interval down
+    // in response — switching tabs mid-poll must not leave it running.
+    setVideoPhase("idle");
+    setUploadingAssetId(null);
+    setVideoDetail(null);
+    setCaptionsError(null);
     loadExisting(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  useEffect(() => {
+    if (videoPhase !== "polling" || !uploadingAssetId) return;
+    const id = uploadingAssetId;
+    pollRef.current = setInterval(async () => {
+      const resp = await authedFetch(`/api/bff/video-assets/${id}`);
+      if (!resp.ok) return; // transient error — try again next tick
+      const data: VideoAssetListItem = await resp.json();
+      if (data.state === "ready") {
+        setVideoDetail(data);
+        setVideoPhase("ready");
+      } else if (data.state === "failed") {
+        setVideoPhase("failed");
+      }
+      // "uploaded"/"transcoding" — keep polling, no state change.
+    }, 4000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoPhase, uploadingAssetId]);
 
   function resetQuestionForm(nextType = QUESTION_TYPES[0].value) {
     setQType(nextType);
@@ -215,7 +269,17 @@ export function LessonActivityPanel({
     if (!attachExistingId) return;
     if (tab === "quiz") await openQuiz(attachExistingId);
     else if (tab === "survey") await openSurvey(attachExistingId);
-    else setWorkingId(attachExistingId);
+    else if (tab === "video") {
+      const picked = (videos ?? []).find((v) => v.id === attachExistingId);
+      setWorkingId(attachExistingId);
+      setUploadingAssetId(attachExistingId);
+      if (picked?.state === "ready") {
+        setVideoDetail(picked);
+        setVideoPhase("ready");
+      } else {
+        setVideoPhase("polling");
+      }
+    } else setWorkingId(attachExistingId);
   }
 
   async function createQuiz() {
@@ -297,11 +361,63 @@ export function LessonActivityPanel({
     setWorkingId(created.id);
   }
 
+  async function uploadVideo(file: File) {
+    setVideoPhase("uploading");
+    setError(null);
+    // FormData, no explicit Content-Type — the browser sets the multipart
+    // boundary itself. The BFF proxy forwards the incoming content-type
+    // verbatim and reads the body via arrayBuffer(), the same mechanism
+    // already proven for payment-proof uploads, so this is safe end to end.
+    const form = new FormData();
+    form.append("file", file);
+    const resp = await authedFetch("/api/bff/video-assets", { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not upload that video.");
+      setVideoPhase("idle");
+      return;
+    }
+    const created: VideoAssetListItem = await resp.json();
+    setUploadingAssetId(created.id);
+    setWorkingId(created.id);
+    setVideoPhase("polling");
+  }
+
+  async function uploadCaptions(file: File) {
+    // The server rejects anything not literally starting with "WEBVTT" —
+    // check client-side first to avoid a pointless round trip on the
+    // common mistake (wrong file picked). Doesn't replicate the server's
+    // lstrip() on leading whitespace; real .vtt files don't have any, and
+    // the server stays the source of truth regardless.
+    const head = await file.slice(0, 6).text();
+    if (head !== "WEBVTT") {
+      setCaptionsError("That file doesn't look like a WebVTT (.vtt) track — it must start with WEBVTT.");
+      return;
+    }
+    if (!workingId) return;
+    setCaptionsBusy(true);
+    setCaptionsError(null);
+    const form = new FormData();
+    form.append("file", file);
+    const resp = await authedFetch(`/api/bff/video-assets/${workingId}/captions`, {
+      method: "POST",
+      body: form,
+    });
+    setCaptionsBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setCaptionsError(body?.error?.message ?? "Could not upload that caption file.");
+      return;
+    }
+    setVideoDetail((prev) => (prev ? { ...prev, has_captions: true } : prev));
+  }
+
   async function attachToLesson() {
     if (!workingId) return;
     setAttachBusy(true);
     setError(null);
-    const resp = await authedFetch(`/api/bff/lessons/${lesson.id}/${tab}?${tab}_id=${workingId}`, {
+    const param = tab === "video" ? "video_asset_id" : `${tab}_id`;
+    const resp = await authedFetch(`/api/bff/lessons/${lesson.id}/${tab}?${param}=${workingId}`, {
       method: "POST",
     });
     setAttachBusy(false);
@@ -386,7 +502,7 @@ export function LessonActivityPanel({
       </div>
 
       <div className="mt-3 flex gap-2">
-        {(["quiz", "survey", "assignment"] as ActivityKind[]).map((k) => (
+        {(["quiz", "survey", "assignment", "video"] as ActivityKind[]).map((k) => (
           <button
             key={k}
             type="button"
@@ -429,6 +545,14 @@ export function LessonActivityPanel({
               (assignments ?? []).map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.title}
+                </option>
+              ))}
+            {tab === "video" &&
+              (videos ?? []).map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.id.slice(0, 8)}… — {v.state}
+                  {v.duration_seconds != null ? ` — ${v.duration_seconds}s` : ""}
+                  {v.has_captions ? " — captions" : ""}
                 </option>
               ))}
           </select>
@@ -619,6 +743,39 @@ export function LessonActivityPanel({
               </label>
             </>
           ) : null}
+
+          {tab === "video" && videoPhase === "idle" ? (
+            <>
+              <b style={{ fontSize: "0.8125rem" }}>Upload a new video</b>
+              <input
+                type="file"
+                accept="video/*"
+                className="input mt-2"
+                onChange={(e) => e.target.files?.[0] && uploadVideo(e.target.files[0])}
+              />
+            </>
+          ) : null}
+          {tab === "video" && videoPhase === "uploading" ? (
+            <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>Uploading…</p>
+          ) : null}
+          {tab === "video" && videoPhase === "failed" ? (
+            <>
+              <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>
+                Transcoding failed for this video.
+              </p>
+              <button
+                type="button"
+                className="btn btn--ghost mt-2"
+                onClick={() => {
+                  setVideoPhase("idle");
+                  setWorkingId(null);
+                  setUploadingAssetId(null);
+                }}
+              >
+                Upload a different file
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -629,16 +786,57 @@ export function LessonActivityPanel({
               {tab === "quiz" && quizDetail ? quizDetail.title : null}
               {tab === "survey" && surveyDetail ? surveyDetail.title : null}
               {tab === "assignment" ? "Selected assignment" : null}
+              {tab === "video" ? `Video — ${videoPhase}` : null}
             </b>
             <button
               type="button"
               className="btn btn--primary"
-              disabled={attachBusy}
+              disabled={attachBusy || (tab === "video" && videoPhase !== "ready")}
               onClick={attachToLesson}
             >
               Attach to lesson
             </button>
           </div>
+
+          {tab === "video" && (videoPhase === "uploading" || videoPhase === "polling") ? (
+            <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+              {videoPhase === "uploading"
+                ? "Uploading…"
+                : "Transcoding — this can take a few minutes…"}
+            </p>
+          ) : null}
+
+          {tab === "video" && videoPhase === "ready" && videoDetail ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                {videoDetail.duration_seconds != null
+                  ? `Duration: ${videoDetail.duration_seconds}s`
+                  : "Duration: unknown"}
+                {" — "}
+                {videoDetail.has_captions ? "Captions attached" : "No captions"}
+              </p>
+              {canEdit ? (
+                <label className="field">
+                  <b>{videoDetail.has_captions ? "Replace captions (.vtt)" : "Upload captions (.vtt)"}</b>
+                  <input
+                    type="file"
+                    accept=".vtt,text/vtt"
+                    className="input"
+                    disabled={captionsBusy}
+                    onChange={(e) => e.target.files?.[0] && uploadCaptions(e.target.files[0])}
+                  />
+                </label>
+              ) : null}
+              {captionsBusy ? (
+                <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>Uploading captions…</p>
+              ) : null}
+              {captionsError ? (
+                <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>
+                  {captionsError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {(tab === "quiz" || tab === "survey") && (
             <div className="mt-3 flex flex-col gap-1">
