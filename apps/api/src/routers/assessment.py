@@ -22,6 +22,7 @@ from src.core.errors import AppError, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
 from src.models.assessment import (
     Assignment,
+    AssignmentSubmission,
     Quiz,
     QuizAttempt,
     QuizQuestion,
@@ -37,6 +38,8 @@ from src.schemas.assessment import (
     AssignmentReviewRequest,
     AssignmentsPageResponse,
     AssignmentSubmissionResponse,
+    PendingSubmissionItem,
+    PendingSubmissionsResponse,
     QuizAttemptResponse,
     QuizAttemptResult,
     QuizCreateRequest,
@@ -50,6 +53,7 @@ from src.schemas.assessment import (
     QuizResponse,
     QuizSubmitRequest,
     QuizzesPageResponse,
+    SubmissionDownloadResponse,
     SurveyCreateRequest,
     SurveyListItem,
     SurveyQuestionCreateRequest,
@@ -58,6 +62,8 @@ from src.schemas.assessment import (
     SurveyResponseSubmitRequest,
     SurveysPageResponse,
     SurveyView,
+    UngradedQuizAnswerItem,
+    UngradedQuizAnswersResponse,
 )
 from src.services import antivirus
 from src.services import assignment as assignment_service
@@ -277,6 +283,31 @@ async def grade_quiz_answer(
         tenant_id=principal.tenant_id,
         answer_id=_parse_uuid(answer_id),
         points_awarded=body.points_awarded,
+    )
+
+
+@router.get("/quiz-answers/ungraded", response_model=UngradedQuizAnswersResponse)
+async def list_ungraded_quiz_answers(
+    principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> UngradedQuizAnswersResponse:
+    principal.require("quiz:grade")
+    rows = await quiz_service.list_ungraded_answers(session, crypto, tenant_id=principal.tenant_id)
+    return UngradedQuizAnswersResponse(
+        items=[
+            UngradedQuizAnswerItem(
+                answer_id=str(r.answer_id),
+                attempt_id=str(r.attempt_id),
+                quiz_id=str(r.quiz_id),
+                quiz_title=r.quiz_title,
+                question_id=str(r.question_id),
+                prompt=r.prompt,
+                text_answer=r.text_answer,
+                points_possible=r.points_possible,
+                learner_email=r.learner_email,
+                submitted_at=r.submitted_at,
+            )
+            for r in rows
+        ]
     )
 
 
@@ -590,6 +621,45 @@ async def review_assignment_submission(
         approved_at=submission.approved_at,
         rejected_reason=submission.rejected_reason,
     )
+
+
+@router.get("/assignment-submissions/pending", response_model=PendingSubmissionsResponse)
+async def list_pending_assignment_submissions(
+    principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> PendingSubmissionsResponse:
+    principal.require("quiz:grade")
+    rows = await assignment_service.list_pending_submissions(
+        session, crypto, tenant_id=principal.tenant_id
+    )
+    return PendingSubmissionsResponse(
+        items=[
+            PendingSubmissionItem(
+                submission_id=str(r.submission_id),
+                assignment_id=str(r.assignment_id),
+                assignment_title=r.assignment_title,
+                learner_email=r.learner_email,
+                version=r.version,
+                submitted_at=r.submitted_at,
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.get(
+    "/assignment-submissions/{submission_id}/download", response_model=SubmissionDownloadResponse
+)
+async def download_assignment_submission(
+    submission_id: str, principal: PrincipalDep, session: SessionDep, storage: StorageDep
+) -> SubmissionDownloadResponse:
+    principal.require("quiz:grade")
+    submission = await session.get(AssignmentSubmission, _parse_uuid(submission_id))
+    if submission is None or submission.tenant_id != principal.tenant_id:
+        raise NotFound("No such submission.")
+    url = await storage.generate_signed_url(
+        Container.USER_UPLOADS, submission.object_key, expires_in=300
+    )
+    return SubmissionDownloadResponse(download_url=url)
 
 
 __all__ = ["router"]

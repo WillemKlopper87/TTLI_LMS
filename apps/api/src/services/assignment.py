@@ -9,16 +9,30 @@ already known clean, which is what `scanned_at`/`scan_result` record.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.crypto import CryptoBox
 from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
 from src.models.assessment import Assignment, AssignmentSubmission
 from src.models.audit import AuditAction
+from src.models.learning import Enrolment
+from src.models.user import User
 from src.services import audit
+
+
+@dataclass(frozen=True, slots=True)
+class PendingSubmissionRow:
+    submission_id: uuid.UUID
+    assignment_id: uuid.UUID
+    assignment_title: str
+    learner_email: str
+    version: int
+    submitted_at: datetime
 
 
 async def latest_submission(
@@ -114,6 +128,40 @@ async def review(
     return submission
 
 
+async def list_pending_submissions(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID
+) -> list[PendingSubmissionRow]:
+    """Submissions never yet reviewed (neither approved nor rejected) —
+    the discovery half of `review()`. A rejected submission drops off this
+    queue: the expected next step is the learner resubmitting a new
+    `version`, which creates a fresh pending row, not re-reviewing the old
+    one indefinitely."""
+    stmt = (
+        select(AssignmentSubmission, Assignment, User)
+        .join(Assignment, Assignment.id == AssignmentSubmission.assignment_id)
+        .join(Enrolment, Enrolment.id == AssignmentSubmission.enrolment_id)
+        .join(User, User.id == Enrolment.user_id)
+        .where(
+            AssignmentSubmission.tenant_id == tenant_id,
+            AssignmentSubmission.approved_at.is_(None),
+            AssignmentSubmission.rejected_reason.is_(None),
+        )
+        .order_by(AssignmentSubmission.submitted_at)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        PendingSubmissionRow(
+            submission_id=submission.id,
+            assignment_id=assignment.id,
+            assignment_title=assignment.title,
+            learner_email=crypto.decrypt(user.email_encrypted),
+            version=submission.version,
+            submitted_at=submission.submitted_at,
+        )
+        for submission, assignment, user in rows
+    ]
+
+
 async def list_assignments(session: AsyncSession) -> list[Assignment]:
     """Ordered by title — same global-content shape as
     `courses_service.list_courses`, no tenant filter."""
@@ -128,4 +176,12 @@ async def get_assignment(session: AsyncSession, *, assignment_id: uuid.UUID) -> 
     return assignment
 
 
-__all__ = ["get_assignment", "latest_submission", "list_assignments", "review", "submit"]
+__all__ = [
+    "PendingSubmissionRow",
+    "get_assignment",
+    "latest_submission",
+    "list_assignments",
+    "list_pending_submissions",
+    "review",
+    "submit",
+]

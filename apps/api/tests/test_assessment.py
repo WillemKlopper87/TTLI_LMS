@@ -367,6 +367,88 @@ async def test_text_answer_grading_finalises_score_and_passed(
     assert row[1] is True
 
 
+async def test_list_ungraded_quiz_answers_then_grading_removes_it(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz_id = await _create_quiz(client, author_token)
+    text_q = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/questions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={
+            "question_type": "long_text",
+            "prompt": "Reflect.",
+            "options": [],
+            "position": 1,
+            "points": 1,
+        },
+    )
+    assert text_q.status_code == 204
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    buyer_me = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    buyer_email = buyer_me.json()["email"]
+    attempt = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    question_id = attempt.json()["questions"][0]["question_id"]
+    await client.post(
+        f"/api/v1/quiz-attempts/{attempt.json()['attempt_id']}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "text_answer": "My reflection."}]},
+    )
+
+    queue = await client.get(
+        "/api/v1/quiz-answers/ungraded", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert queue.status_code == 200, queue.text
+    row = next(r for r in queue.json()["items"] if r["quiz_id"] == quiz_id)
+    assert row["prompt"] == "Reflect."
+    assert row["text_answer"] == "My reflection."
+    assert row["points_possible"] == 1
+    assert row["learner_email"] == buyer_email
+
+    grade = await client.post(
+        f"/api/v1/quiz-answers/{row['answer_id']}/grade",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"points_awarded": 1},
+    )
+    assert grade.status_code == 204
+
+    queue_after = await client.get(
+        "/api/v1/quiz-answers/ungraded", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert all(r["quiz_id"] != quiz_id for r in queue_after.json()["items"])
+
+
+async def test_list_ungraded_quiz_answers_requires_quiz_grade_permission(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    # role="learner" — the real seeded role, not role=None, to actually
+    # prove a learner can't browse other learners' ungraded answers.
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        "/api/v1/quiz-answers/ungraded", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert resp.status_code == 403
+
+
 async def test_quiz_list_and_detail_expose_correct_answers_to_authors(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
@@ -670,6 +752,99 @@ async def test_assignment_submission_approval_flow(
     )
     assert review.status_code == 200
     assert review.json()["approved_at"] is not None
+
+
+async def test_list_pending_assignment_submissions_then_review_removes_it(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    if not _clamav_reachable(settings.clamav_host, settings.clamav_port):
+        pytest.skip(
+            "no ClamAV on the configured CLAMAV_HOST/PORT — run: "
+            "docker compose -f infra/docker-compose.yml up -d clamav"
+        )
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    assignment = await client.post(
+        "/api/v1/assignments",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Essay", "approval_required": True},
+    )
+    assignment_id = assignment.json()["id"]
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/assignment?assignment_id={assignment_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    buyer_me = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    buyer_email = buyer_me.json()["email"]
+    submit = await client.post(
+        f"/api/v1/assignments/{assignment_id}/submissions",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("essay.txt", b"a real essay", "text/plain")},
+    )
+    assert submit.status_code == 201, submit.text
+    submission_id = submit.json()["id"]
+
+    pending = await client.get(
+        "/api/v1/assignment-submissions/pending",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert pending.status_code == 200, pending.text
+    row = next(r for r in pending.json()["items"] if r["submission_id"] == submission_id)
+    assert row["assignment_id"] == assignment_id
+    assert row["assignment_title"] == "Essay"
+    assert row["learner_email"] == buyer_email
+    assert row["version"] == 1
+
+    download = await client.get(
+        f"/api/v1/assignment-submissions/{submission_id}/download",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert download.status_code == 200, download.text
+    assert download.json()["download_url"]
+
+    review = await client.post(
+        f"/api/v1/assignment-submissions/{submission_id}/review",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"approve": True},
+    )
+    assert review.status_code == 200
+
+    pending_after = await client.get(
+        "/api/v1/assignment-submissions/pending",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert all(r["submission_id"] != submission_id for r in pending_after.json()["items"])
+
+
+async def test_pending_assignment_submissions_require_quiz_grade_permission(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    # role="learner" — the real seeded role, not role=None, to actually
+    # prove a learner can't browse other learners' submissions.
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        "/api/v1/assignment-submissions/pending",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert resp.status_code == 403
+    download = await client.get(
+        f"/api/v1/assignment-submissions/{uuid.uuid4()}/download",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert download.status_code == 403
 
 
 async def test_assignment_list_and_detail(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]

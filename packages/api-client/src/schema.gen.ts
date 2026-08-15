@@ -1510,6 +1510,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quiz-answers/ungraded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Ungraded Quiz Answers */
+        get: operations["list_ungraded_quiz_answers_api_v1_quiz_answers_ungraded_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/surveys": {
         parameters: {
             query?: never;
@@ -1676,6 +1693,40 @@ export interface paths {
         put?: never;
         /** Review Assignment Submission */
         post: operations["review_assignment_submission_api_v1_assignment_submissions__submission_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignment-submissions/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pending Assignment Submissions */
+        get: operations["list_pending_assignment_submissions_api_v1_assignment_submissions_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignment-submissions/{submission_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Assignment Submission */
+        get: operations["download_assignment_submission_api_v1_assignment_submissions__submission_id__download_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3009,6 +3060,29 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** PendingSubmissionItem */
+        PendingSubmissionItem: {
+            /** Submission Id */
+            submission_id: string;
+            /** Assignment Id */
+            assignment_id: string;
+            /** Assignment Title */
+            assignment_title: string;
+            /** Learner Email */
+            learner_email: string;
+            /** Version */
+            version: number;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /** PendingSubmissionsResponse */
+        PendingSubmissionsResponse: {
+            /** Items */
+            items: components["schemas"]["PendingSubmissionItem"][];
+        };
         /** PlaybackResponse */
         PlaybackResponse: {
             /** Playlist Url */
@@ -3391,6 +3465,11 @@ export interface components {
             /** Items */
             items: components["schemas"]["SessionResponse"][];
         };
+        /** SubmissionDownloadResponse */
+        SubmissionDownloadResponse: {
+            /** Download Url */
+            download_url: string;
+        };
         /** SurveyAnswer */
         SurveyAnswer: {
             /** Question Id */
@@ -3610,6 +3689,37 @@ export interface components {
             certificate_number: string | null;
             /** Lessons */
             lessons: components["schemas"]["TranscriptLessonResponse"][];
+        };
+        /** UngradedQuizAnswerItem */
+        UngradedQuizAnswerItem: {
+            /** Answer Id */
+            answer_id: string;
+            /** Attempt Id */
+            attempt_id: string;
+            /** Quiz Id */
+            quiz_id: string;
+            /** Quiz Title */
+            quiz_title: string;
+            /** Question Id */
+            question_id: string;
+            /** Prompt */
+            prompt: string;
+            /** Text Answer */
+            text_answer: string;
+            /** Points Possible */
+            points_possible: number;
+            /** Learner Email */
+            learner_email: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+        };
+        /** UngradedQuizAnswersResponse */
+        UngradedQuizAnswersResponse: {
+            /** Items */
+            items: components["schemas"]["UngradedQuizAnswerItem"][];
         };
         /** UpdateDealStageRequest */
         UpdateDealStageRequest: {
@@ -6799,6 +6909,26 @@ export interface operations {
             };
         };
     };
+    list_ungraded_quiz_answers_api_v1_quiz_answers_ungraded_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UngradedQuizAnswersResponse"];
+                };
+            };
+        };
+    };
     list_surveys_api_v1_surveys_get: {
         parameters: {
             query?: never;
@@ -7152,6 +7282,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentSubmissionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_assignment_submissions_api_v1_assignment_submissions_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingSubmissionsResponse"];
+                };
+            };
+        };
+    };
+    download_assignment_submission_api_v1_assignment_submissions__submission_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionDownloadResponse"];
                 };
             };
             /** @description Validation Error */

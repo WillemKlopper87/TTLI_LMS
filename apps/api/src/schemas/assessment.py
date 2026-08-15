@@ -112,6 +112,23 @@ class QuizDetailResponse(BaseModel):
     questions: list[QuizQuestionAdminView]
 
 
+class UngradedQuizAnswerItem(BaseModel):
+    answer_id: str
+    attempt_id: str
+    quiz_id: str
+    quiz_title: str
+    question_id: str
+    prompt: str
+    text_answer: str
+    points_possible: int
+    learner_email: str
+    submitted_at: datetime
+
+
+class UngradedQuizAnswersResponse(BaseModel):
+    items: list[UngradedQuizAnswerItem]
+
+
 # --- Surveys ---
 class SurveyQuestionOption(BaseModel):
     id: str
@@ -217,6 +234,23 @@ class AssignmentDetailResponse(BaseModel):
     approval_required: bool
 
 
+class PendingSubmissionItem(BaseModel):
+    submission_id: str
+    assignment_id: str
+    assignment_title: str
+    learner_email: str
+    version: int
+    submitted_at: datetime
+
+
+class PendingSubmissionsResponse(BaseModel):
+    items: list[PendingSubmissionItem]
+
+
+class SubmissionDownloadResponse(BaseModel):
+    download_url: str
+
+
 __all__ = [
     "AssignmentCreateRequest",
     "AssignmentDetailResponse",
@@ -225,6 +259,8 @@ __all__ = [
     "AssignmentReviewRequest",
     "AssignmentSubmissionResponse",
     "AssignmentsPageResponse",
+    "PendingSubmissionItem",
+    "PendingSubmissionsResponse",
     "QuizAnswerSubmission",
     "QuizAttemptResponse",
     "QuizAttemptResult",
@@ -239,6 +275,7 @@ __all__ = [
     "QuizResponse",
     "QuizSubmitRequest",
     "QuizzesPageResponse",
+    "SubmissionDownloadResponse",
     "SurveyAnswer",
     "SurveyCreateRequest",
     "SurveyListItem",
@@ -249,4 +286,6 @@ __all__ = [
     "SurveyResponse_",
     "SurveyView",
     "SurveysPageResponse",
+    "UngradedQuizAnswerItem",
+    "UngradedQuizAnswersResponse",
 ]

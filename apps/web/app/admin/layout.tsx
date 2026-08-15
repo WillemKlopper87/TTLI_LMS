@@ -14,8 +14,9 @@ import { AdminContext, type Me } from "./admin-context";
 // yet, and proof of who is signed in. Sections fill in with their phase —
 // "Leads" (Phase 2), "Payments" (Phase 3, REQ-PAY-03's finance queue),
 // "Settings" (Phase 5 sprint 2, REQ-TEN-03's manager-visibility toggles),
-// and "Courses"/"Templates" (Phase 4's authoring gap, closed after Phase 5)
-// are the ones that do so far.
+// "Courses"/"Templates" (Phase 4's authoring gap, closed after Phase 5),
+// and "Grading" (frontend-completeness backlog item 3) are the ones that
+// do so far.
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Deals", href: "/admin/deals" },
@@ -23,6 +24,7 @@ const WORKING_SECTIONS = [
   { label: "Payments", href: "/admin/payments" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
+  { label: "Grading", href: "/admin/grading" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },
 ];

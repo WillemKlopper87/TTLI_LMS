@@ -22,10 +22,13 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.crypto import CryptoBox
 from src.core.errors import AppError, Forbidden, NotFound
 from src.core.ids import uuid7
 from src.models.assessment import Quiz, QuizAnswer, QuizAttempt, QuizQuestion
 from src.models.audit import AuditAction
+from src.models.learning import Enrolment
+from src.models.user import User
 from src.services import audit
 
 AUTO_GRADED_TYPES = frozenset({"single_choice", "multiple_choice", "true_false"})
@@ -48,6 +51,20 @@ class AnswerSubmission:
     question_id: uuid.UUID
     selected_option_ids: list[str] | None
     text_answer: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class UngradedAnswerRow:
+    answer_id: uuid.UUID
+    attempt_id: uuid.UUID
+    quiz_id: uuid.UUID
+    quiz_title: str
+    question_id: uuid.UUID
+    prompt: str
+    text_answer: str
+    points_possible: int
+    learner_email: str
+    submitted_at: datetime
 
 
 async def _question_bank(session: AsyncSession, quiz_id: uuid.UUID) -> list[QuizQuestion]:
@@ -273,6 +290,49 @@ async def grade_text_answer(
     return answer
 
 
+async def list_ungraded_answers(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID
+) -> list[UngradedAnswerRow]:
+    """Free-text answers awaiting `grade_text_answer` — the discovery half
+    of REQ-ASSESS-03's manual grading. `submitted_at` is the attempt's, not
+    the answer's — answers are written all at once when their attempt is
+    submitted, so ordering by it gives a real FIFO grading queue."""
+    stmt = (
+        select(QuizAnswer, QuizQuestion, QuizAttempt, Quiz, User)
+        .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+        .join(QuizAttempt, QuizAttempt.id == QuizAnswer.attempt_id)
+        .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
+        .join(Enrolment, Enrolment.id == QuizAttempt.enrolment_id)
+        .join(User, User.id == Enrolment.user_id)
+        .where(
+            QuizAnswer.tenant_id == tenant_id,
+            QuizAnswer.points_awarded.is_(None),
+            QuizAnswer.text_answer.is_not(None),
+        )
+        .order_by(QuizAttempt.submitted_at)
+    )
+    rows = (await session.execute(stmt)).all()
+    out = []
+    for answer, question, attempt, quiz, user in rows:
+        if attempt.submitted_at is None:  # pragma: no cover - answers exist only post-submission
+            continue
+        out.append(
+            UngradedAnswerRow(
+                answer_id=answer.id,
+                attempt_id=attempt.id,
+                quiz_id=quiz.id,
+                quiz_title=quiz.title,
+                question_id=question.id,
+                prompt=question.prompt,
+                text_answer=answer.text_answer or "",
+                points_possible=question.points,
+                learner_email=crypto.decrypt(user.email_encrypted),
+                submitted_at=attempt.submitted_at,
+            )
+        )
+    return out
+
+
 __all__ = [
     "ALL_QUESTION_TYPES",
     "AUTO_GRADED_TYPES",
@@ -280,10 +340,12 @@ __all__ = [
     "AnswerSubmission",
     "AttemptLimitExceeded",
     "TimeLimitExceeded",
+    "UngradedAnswerRow",
     "get_own_attempt",
     "get_quiz_detail",
     "grade_text_answer",
     "list_quizzes",
+    "list_ungraded_answers",
     "question_view",
     "start_attempt",
     "submit_attempt",

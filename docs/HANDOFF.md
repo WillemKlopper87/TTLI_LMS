@@ -2060,6 +2060,44 @@ disclosed limitation already on record for `/admin/courses` and
 `/admin/templates` from item 1 and the Phase 4.5 accessibility pass.
 Full detail in `docs/STATUS.md` §9b.
 
+**Item 3 of the frontend backlog (grading/review), done — user asked to
+push through the remaining three items in one sitting.** The actual
+grading *actions* (`grade_text_answer`, `AssignmentSubmission.review()`)
+already existed and worked; the whole gap was discovery — nothing let a
+grader find an ungraded `answer_id`/`submission_id` at all, and nothing
+let them view a submitted file before deciding. Added three `quiz:grade`-
+gated `GET` endpoints (`/quiz-answers/ungraded`, `/assignment-submissions/
+pending`, `/assignment-submissions/{id}/download`) and a new top-level
+`apps/web/app/admin/grading/page.tsx` — a real page, not a tab inside
+`lesson-activity-panel.tsx`, since grading queues span every course, not
+one lesson's authoring context.
+
+One scoping call worth recording for whoever revisits this: the pending-
+submissions queue only shows submissions with *neither* `approved_at`
+nor `rejected_reason` set. A rejected submission intentionally drops off
+the queue rather than staying there for indefinite re-review — the
+existing `review()` service function's own docstring/behaviour treats a
+resubmission (a new `version`) as the correction path, not re-reviewing
+the same rejected file. If that assumption turns out wrong in practice,
+this is the query to revisit (`services/assignment.py::list_pending_submissions`).
+
+Live-verified against real dev-DB data end to end, not faked: created a
+quiz with a free-text question, ran a learner through the *actual* EFT
+purchase flow (order → checkout → payment-proof → finance approval) to
+get a real enrolment — `Enrolment` has a non-nullable FK to
+`entitlements` specifically so it can't be created any other way, a
+constraint worth respecting rather than working around with a bare
+insert. Took a real attempt, confirmed the free-text answer surfaced in
+the ungraded queue with the right prompt/response/learner email, graded
+it, confirmed it dropped off. Same live cycle for a real assignment
+submission end to end, including a real signed download URL. Along the
+way, a leftover `arq` worker process from item 2's live verification
+(still connected to the same dev Redis instance the test suite's queue
+uses) caused one flaky `pytest` failure on a second full-suite run by
+racing the suite's own in-process job execution — not a code bug, killed
+the stray process and reran clean twice. Full detail in `docs/STATUS.md`
+§9b.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
