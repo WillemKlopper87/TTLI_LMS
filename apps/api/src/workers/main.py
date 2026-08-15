@@ -49,6 +49,22 @@ async def purge_expired_auth(ctx: dict[str, Any]) -> int:
     return int(purged)
 
 
+async def revoke_lapsed_subscriptions(ctx: dict[str, Any]) -> int:
+    """Formal bookkeeping closure for lapsed subscriptions — access itself
+    already lapses live the moment an entitlement's `expires_at` (which
+    already has services/subscriptions.py::GRACE_DAYS baked in) passes;
+    this just flips `Subscription.status` to 'cancelled' and marks the
+    entitlement `revoked_at` so records don't sit in a stale 'active'
+    state indefinitely."""
+    factory = get_sessionmaker()
+    async with factory() as session, session.begin():
+        revoked = (
+            await session.execute(text("SELECT revoke_lapsed_subscriptions(3)"))
+        ).scalar_one()
+    log.info("lapsed_subscriptions_revoked", revoked=revoked)
+    return int(revoked)
+
+
 async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
     """Raises on any SMTP failure so arq retries with backoff (max_tries
     below) instead of the message being silently dropped — the one thing
@@ -91,6 +107,7 @@ class WorkerSettings:
     functions: ClassVar[list[Any]] = [
         extend_event_partitions,
         purge_expired_auth,
+        revoke_lapsed_subscriptions,
         func(send_email_job, max_tries=5),
         # max_tries=1: a failed transcode already leaves video_assets/
         # transcode_jobs in a clean 'failed' state with the real error
@@ -103,6 +120,7 @@ class WorkerSettings:
         # runway, so a missed run is survivable for a long time.
         cron(extend_event_partitions, day=1, hour=2, minute=0),
         cron(purge_expired_auth, hour=3, minute=30),
+        cron(revoke_lapsed_subscriptions, hour=4, minute=0),
     ]
     on_startup = startup
     on_shutdown = shutdown
@@ -113,6 +131,7 @@ __all__ = [
     "WorkerSettings",
     "extend_event_partitions",
     "purge_expired_auth",
+    "revoke_lapsed_subscriptions",
     "send_email_job",
     "transcode_video_job",
 ]

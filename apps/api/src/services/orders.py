@@ -19,16 +19,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
+from cryptography.exceptions import InvalidTag
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
 from src.core.errors import AppError
 from src.core.ids import uuid7
+from src.core.logging import get_logger
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
 from src.models.user import User
 from src.services import enrolment as enrolment_service
 from src.services import entitlements, invoicing, ledger, tax
+from src.services import subscriptions as subscriptions_service
+
+log = get_logger(__name__)
 
 
 class OrderError(AppError):
@@ -57,6 +62,7 @@ async def create_order(
     customer_type: str,
     lines: list[OrderLineRequest],
     organisation_id: uuid.UUID | None = None,
+    subscription_id: uuid.UUID | None = None,
 ) -> Order:
     if not lines:
         raise OrderError("An order needs at least one line item.")
@@ -94,6 +100,7 @@ async def create_order(
         tenant_id=tenant_id,
         user_id=user_id,
         organisation_id=organisation_id,
+        subscription_id=subscription_id,
         status="draft",
         currency=currency,
         subtotal=Decimal("0"),
@@ -251,6 +258,17 @@ async def _fulfil_order(
         if product is None:
             raise OrderError("Order references a product that no longer exists.")
 
+        if product.kind == "subscription":
+            # A subscription period funds itself entirely differently from
+            # a course/seat purchase — no single Entitlement/Enrolment
+            # pair, but one per bundled course, each expiring at the new
+            # period end (services/subscriptions.py). Nothing below this
+            # branch applies to it.
+            await subscriptions_service.fulfil_subscription_order(
+                session, tenant_id=tenant_id, order=order, product=product
+            )
+            continue
+
         # Product.kind is "course" for everything sold so far — target_id
         # resolves to the real course now (Phase 4), not the product's own
         # id used as a stand-in before courses existed (see git history on
@@ -403,6 +421,7 @@ class PendingPayment:
     po_number: str | None
     proof_uploaded: bool
     created_at: datetime
+    subscription_id: uuid.UUID | None
 
 
 async def list_pending_payments(
@@ -426,22 +445,33 @@ async def list_pending_payments(
     rows = (
         await session.execute(base.order_by(Payment.created_at.desc()).limit(limit).offset(offset))
     ).all()
-    items = [
-        PendingPayment(
-            payment_id=payment.id,
-            order_id=order.id,
-            buyer_email=crypto.decrypt(user.email_encrypted),
-            amount=payment.amount,
-            currency=payment.currency,
-            payment_reference=order.payment_reference,
-            provider=payment.provider,
-            po_number=order.po_number,
-            proof_uploaded=payment.proof_object_key is not None
-            or order.po_document_key is not None,
-            created_at=payment.created_at,
+    items = []
+    for payment, order, user in rows:
+        try:
+            buyer_email = crypto.decrypt(user.email_encrypted)
+        except InvalidTag:
+            # A row encrypted under a since-rotated key can't crash the
+            # whole finance queue over one bad email — surfaced instead of
+            # silently dropped, since finance still needs to act on the
+            # payment itself.
+            log.error("buyer_email_undecryptable", order_id=str(order.id), user_id=str(user.id))
+            buyer_email = "(email unreadable — key rotated since this order was placed)"
+        items.append(
+            PendingPayment(
+                payment_id=payment.id,
+                order_id=order.id,
+                buyer_email=buyer_email,
+                amount=payment.amount,
+                currency=payment.currency,
+                payment_reference=order.payment_reference,
+                provider=payment.provider,
+                po_number=order.po_number,
+                proof_uploaded=payment.proof_object_key is not None
+                or order.po_document_key is not None,
+                created_at=payment.created_at,
+                subscription_id=order.subscription_id,
+            )
         )
-        for payment, order, user in rows
-    ]
     return items, total
 
 

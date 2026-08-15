@@ -165,6 +165,15 @@ export default function CoursesScreen() {
     if (resp.ok) setLessons((await resp.json()).items);
   }
 
+  async function updateLessonAccessLevel(lessonId: string, accessLevel: string) {
+    const resp = await authedFetch(`/api/bff/lessons/${lessonId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_level: accessLevel }),
+    });
+    if (resp.ok) await refreshLessons();
+  }
+
   async function createLesson() {
     if (!selectedModuleId || !lessonTitle.trim()) return;
     setLessonBusy(true);
@@ -444,8 +453,25 @@ export default function CoursesScreen() {
                           <td>
                             <span className="tag tag--mute">{l.activity_type}</span>
                           </td>
-                          <td className="mono" style={{ fontSize: "0.75rem" }}>
-                            {l.access_level}
+                          <td>
+                            {canEdit ? (
+                              <select
+                                className="input"
+                                style={{ fontSize: "0.75rem", padding: "0.15rem 0.3rem" }}
+                                value={l.access_level}
+                                onChange={(e) => updateLessonAccessLevel(l.id, e.target.value)}
+                              >
+                                {ACCESS_LEVELS.map((level) => (
+                                  <option key={level} value={level}>
+                                    {level}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="mono" style={{ fontSize: "0.75rem" }}>
+                                {l.access_level}
+                              </span>
+                            )}
                           </td>
                           <td>
                             <button

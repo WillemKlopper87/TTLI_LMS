@@ -72,6 +72,12 @@ from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
+from src.models.subscription import (
+    Subscription,
+    SubscriptionPlan,
+    SubscriptionPlanCourse,
+    SubscriptionStatus,
+)
 from src.models.tenant import Tenant, TenantDomain
 from src.models.theme import TenantTheme
 from src.models.user import User
@@ -159,6 +165,10 @@ __all__ = [
     "RolePermission",
     "Segment",
     "SoftDeleteMixin",
+    "Subscription",
+    "SubscriptionPlan",
+    "SubscriptionPlanCourse",
+    "SubscriptionStatus",
     "Suppression",
     "Survey",
     "SurveyQuestion",

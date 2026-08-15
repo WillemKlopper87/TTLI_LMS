@@ -19,7 +19,7 @@ import uuid
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from src.core.deps import PrincipalDep, SessionDep
+from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
 from src.models.course import Course, Lesson, Module
 from src.schemas.courses import (
@@ -35,6 +35,10 @@ from src.schemas.courses import (
     ModuleResponse,
     ModulesPageResponse,
     ModuleUpdateRequest,
+    PublicCurriculumResponse,
+    PublicLessonPreviewResponse,
+    PublicLessonRow,
+    PublicModuleRow,
     TenantAssignmentCreateRequest,
     TenantAssignmentResponse,
     TenantAssignmentRow,
@@ -302,6 +306,65 @@ async def list_tenant_assignments(
             )
             for assignment, course in rows
         ]
+    )
+
+
+@router.get(
+    "/public/courses/{course_id}/curriculum",
+    response_model=PublicCurriculumResponse,
+    summary="A published course's curriculum shape, no auth required",
+)
+async def get_public_curriculum(
+    course_id: str, session: SessionDep, tenant: TenantDep
+) -> PublicCurriculumResponse:
+    course, modules = await courses_service.get_public_curriculum(
+        session, tenant_id=tenant.id, course_id=_parse_uuid(course_id)
+    )
+    return PublicCurriculumResponse(
+        course_id=str(course.id),
+        title=course.title,
+        description=course.description,
+        modules=[
+            PublicModuleRow(
+                id=str(module.id),
+                title=module.title,
+                position=module.position,
+                lessons=[
+                    PublicLessonRow(
+                        id=str(lesson.id),
+                        title=lesson.title,
+                        position=lesson.position,
+                        activity_type=lesson.activity_type,
+                        access_level=lesson.access_level,
+                    )
+                    for lesson in lessons
+                ],
+            )
+            for module, lessons in modules
+        ],
+    )
+
+
+@router.get(
+    "/public/lessons/{lesson_id}/preview",
+    response_model=PublicLessonPreviewResponse,
+    summary="A free-preview lesson's content, no auth required",
+)
+async def get_public_lesson_preview(
+    lesson_id: str, session: SessionDep, tenant: TenantDep
+) -> PublicLessonPreviewResponse:
+    lesson = await courses_service.get_public_lesson_preview(
+        session, tenant_id=tenant.id, lesson_id=_parse_uuid(lesson_id)
+    )
+    return PublicLessonPreviewResponse(
+        id=str(lesson.id),
+        title=lesson.title,
+        activity_type=lesson.activity_type,
+        body=lesson.body,
+        video_asset_id=str(lesson.video_asset_id) if lesson.video_asset_id else None,
+        quiz_id=str(lesson.quiz_id) if lesson.quiz_id else None,
+        survey_id=str(lesson.survey_id) if lesson.survey_id else None,
+        assignment_id=str(lesson.assignment_id) if lesson.assignment_id else None,
     )
 
 

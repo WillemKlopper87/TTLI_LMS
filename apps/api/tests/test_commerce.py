@@ -479,6 +479,52 @@ async def test_pending_payments_lists_only_awaiting_approval(
     assert match["amount"] == "5175.00"
 
 
+async def test_pending_payments_survives_an_undecryptable_buyer_email(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """A row encrypted under a since-rotated key (a real incident found
+    live in this environment: 94/95 dev-DB orders had exactly this after
+    an earlier key rotation) must not crash the whole finance queue —
+    every other payment still has to be visible and actionable."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    buyer_token, buyer_id = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+
+    order = await _create_order(client, buyer_token, price_id)
+    checkout = await client.post(
+        f"/api/v1/orders/{order['id']}/checkout/eft",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    payment_reference = checkout.json()["payment_reference"]
+    await client.post(
+        f"/api/v1/orders/{order['id']}/payment-proof",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("proof.pdf", b"proof", "application/pdf")},
+    )
+
+    # Corrupt the ciphertext in place — the same failure shape a rotated
+    # encryption key produces (AES-GCM's auth tag no longer verifies).
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text("UPDATE users SET email_encrypted = :garbage WHERE id = :u"),
+            {"garbage": b"\x00" * 44, "u": buyer_id},
+        )
+
+    resp = await client.get(
+        "/api/v1/payments", headers={"Authorization": f"Bearer {finance_token}"}
+    )
+    assert resp.status_code == 200, resp.text
+    match = next(
+        row for row in resp.json()["items"] if row["payment_reference"] == payment_reference
+    )
+    assert "unreadable" in match["buyer_email"]
+
+
 # The EICAR standard antivirus test file (https://www.eicar.org/) — every
 # real antivirus engine, including ClamAV, is configured to flag it by
 # convention. Not an actual virus.

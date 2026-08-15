@@ -18,7 +18,7 @@ from fastapi import APIRouter, File, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
-from src.core.errors import AppError, NotFound, ServiceUnavailable
+from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
 from src.models.assessment import (
     Assignment,
@@ -46,6 +46,7 @@ from src.schemas.assessment import (
     QuizDetailResponse,
     QuizGradeRequest,
     QuizListItem,
+    QuizPreviewResponse,
     QuizQuestionAdminView,
     QuizQuestionCreateRequest,
     QuizQuestionOption,
@@ -130,6 +131,30 @@ async def get_quiz(
                 position=q.position,
                 points=q.points,
             )
+            for q in questions
+        ],
+    )
+
+
+@router.get("/quizzes/{quiz_id}/preview", response_model=QuizPreviewResponse)
+async def preview_quiz(
+    quiz_id: str, principal: PrincipalDep, session: SessionDep
+) -> QuizPreviewResponse:
+    """Any logged-in account, no purchase — gated on the quiz's lesson
+    being a free preview (`access_level="public"`), not course:edit.
+    Learner-shaped (no `correct`) and creates no `QuizAttempt`, unlike the
+    real attempt flow."""
+    quiz_uuid = _parse_uuid(quiz_id)
+    if not await enrolment_service.has_view_access_to_quiz(
+        session, tenant_id=principal.tenant_id, user_id=principal.user_id, quiz_id=quiz_uuid
+    ):
+        raise Forbidden("This quiz is not available for preview.")
+    quiz, questions = await quiz_service.get_quiz_detail(session, quiz_id=quiz_uuid)
+    return QuizPreviewResponse(
+        id=str(quiz.id),
+        title=quiz.title,
+        questions=[
+            QuizQuestionView(**question_view(q, randomise_options=quiz.randomise_options))
             for q in questions
         ],
     )
@@ -406,10 +431,17 @@ async def get_survey(survey_id: str, principal: PrincipalDep, session: SessionDe
     # precedence over the enrolment check instead of requiring both. A
     # learner token never carries course:edit, so this is a no-op for
     # every existing learner-facing call site.
-    if "course:edit" not in principal.permissions:
-        await enrolment_service.resolve_enrolment_for_survey(
+    #
+    # has_view_access_to_survey, not resolve_enrolment_for_survey: this is
+    # the one place a free-preview lesson's survey must also be readable
+    # without a real enrolment (services/enrolment.py's own docstring).
+    if (
+        "course:edit" not in principal.permissions
+        and not await enrolment_service.has_view_access_to_survey(
             session, tenant_id=principal.tenant_id, user_id=principal.user_id, survey_id=survey_uuid
         )
+    ):
+        raise Forbidden("You are not enrolled in this course.")
     survey = await session.get(Survey, survey_uuid)
     if survey is None:  # pragma: no cover
         raise NotFound("No such survey.")
@@ -492,6 +524,36 @@ async def get_assignment(
     assignment = await assignment_service.get_assignment(
         session, assignment_id=_parse_uuid(assignment_id)
     )
+    return AssignmentDetailResponse(
+        id=str(assignment.id),
+        title=assignment.title,
+        instructions=assignment.instructions,
+        max_score=assignment.max_score,
+        approval_required=assignment.approval_required,
+    )
+
+
+@router.get("/assignments/{assignment_id}/preview", response_model=AssignmentDetailResponse)
+async def preview_assignment(
+    assignment_id: str, principal: PrincipalDep, session: SessionDep
+) -> AssignmentDetailResponse:
+    """Any logged-in account, no purchase — gated on the assignment's
+    lesson being a free preview. Same response shape as the course:edit
+    -gated detail endpoint above; the gate is what differs, not the data
+    (an assignment carries no answer-key-equivalent field to withhold).
+    A side effect worth noting, not a scope expansion: this is also the
+    first endpoint letting an *enrolled* learner read an assignment's
+    instructions at all — nothing previously exposed that outside
+    authoring."""
+    assignment_uuid = _parse_uuid(assignment_id)
+    if not await enrolment_service.has_view_access_to_assignment(
+        session,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        assignment_id=assignment_uuid,
+    ):
+        raise Forbidden("This assignment is not available for preview.")
+    assignment = await assignment_service.get_assignment(session, assignment_id=assignment_uuid)
     return AssignmentDetailResponse(
         id=str(assignment.id),
         title=assignment.title,

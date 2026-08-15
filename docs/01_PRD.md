@@ -46,7 +46,7 @@ Engineering does not start until these are closed. Each is unanswered in the sou
 | 2 | **VAT on international digital services** | The tax engine cannot be built on a guess. The blueprint itself defers to the accountants. | Customer's accountants |
 | 3 | **Is signed HLS + watermarking accepted as "industry standard" for launch?** | If not, a DRM provider joins the critical path and the cost model changes. See §5.8. | Customer |
 | 4 | **AI provider and DPA** — may prompt data leave South Africa after redaction? | Determines whether AI insights ship at all under the residency requirement. | Customer + legal |
-| 5 | **Subscriptions in or out?** | "An option" is not a decision. Affects commerce schema and dunning. | Customer |
+| 5 | ~~Subscriptions in or out?~~ **Resolved: in.** Multi-tier, course-bundle plans built, funded through the existing EFT/PO checkout (no automatic card charging — no Payfast/Netcash integration exists). See [05 §5](05_COMMERCIAL.md#5-commercial-terms) and REQ-PAY-12. | — | Customer |
 | 6 | **Guest access expiry: 7 or 14 days?** | Both offered in the source, neither chosen. | Customer |
 | 7 | **CPD/accreditation body** | Determines mandatory certificate fields and whether points are tracked. | Customer |
 | 8 | **Brand and design system** | Recorded as TBA. Blocks all UI work. | Customer |
@@ -132,7 +132,7 @@ Requirement IDs are referenced from the data model, API spec and STATUS. Traceab
 | REQ-PAY-09 | **Sequential, gapless invoice numbering.** Invoices are never deleted — only voided by credit note |
 | REQ-PAY-10 | Append-only financial ledger; physical deletion of ledger rows is impossible by construction |
 | REQ-PAY-11 | Exportable tax report with tax code and reason code per line |
-| REQ-PAY-12 | Subscriptions behind a feature flag — pending decision §1.4 #5 |
+| REQ-PAY-12 | Subscriptions behind a feature flag (`settings.subscriptions_enabled`, default on) — §1.4 #5 resolved in; multi-tier, course-bundle plans, EFT/PO-funded renewals |
 
 ### 3.4 Learning delivery
 

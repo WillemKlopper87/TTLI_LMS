@@ -112,6 +112,16 @@ class QuizDetailResponse(BaseModel):
     questions: list[QuizQuestionAdminView]
 
 
+class QuizPreviewResponse(BaseModel):
+    """A free-preview lesson's quiz, learner-shaped (no `correct`, same as
+    `QuizQuestionView`) and with no `QuizAttempt` created — view-only,
+    same as the survey/assignment preview paths."""
+
+    id: str
+    title: str
+    questions: list[QuizQuestionView]
+
+
 class UngradedQuizAnswerItem(BaseModel):
     answer_id: str
     attempt_id: str
@@ -268,6 +278,7 @@ __all__ = [
     "QuizDetailResponse",
     "QuizGradeRequest",
     "QuizListItem",
+    "QuizPreviewResponse",
     "QuizQuestionAdminView",
     "QuizQuestionCreateRequest",
     "QuizQuestionOption",

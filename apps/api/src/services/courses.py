@@ -286,6 +286,64 @@ async def list_tenant_assignments(
     return list((await session.execute(stmt)).tuples().all())
 
 
+async def _visible_course(
+    session: AsyncSession, *, tenant_id: uuid.UUID, course_id: uuid.UUID
+) -> Course:
+    """A published course this tenant has actually been assigned — the
+    same visibility a learner's own catalogue browsing would respect, just
+    without requiring the caller to be logged in yet (REQ-STORE-05's
+    unauthenticated curriculum-outline surface)."""
+    stmt = (
+        select(Course)
+        .join(CourseTenantAssignment, CourseTenantAssignment.course_id == Course.id)
+        .where(
+            Course.id == course_id,
+            Course.state == "published",
+            CourseTenantAssignment.tenant_id == tenant_id,
+        )
+    )
+    course = (await session.execute(stmt)).scalars().first()
+    if course is None:
+        raise NotFound("No such course.")
+    return course
+
+
+async def get_public_curriculum(
+    session: AsyncSession, *, tenant_id: uuid.UUID, course_id: uuid.UUID
+) -> tuple[Course, list[tuple[Module, list[Lesson]]]]:
+    """No lesson `body`/activity FKs — an anonymous visitor sees the shape
+    of a course (what modules and lessons exist, and which are free
+    previews via `access_level`), never content that isn't actually
+    public (that's `get_public_lesson_preview`'s job, gated per-lesson)."""
+    course = await _visible_course(session, tenant_id=tenant_id, course_id=course_id)
+    modules = await list_modules(session, course_id=course_id)
+    result: list[tuple[Module, list[Lesson]]] = []
+    for module in modules:
+        result.append((module, await list_lessons(session, module_id=module.id)))
+    return course, result
+
+
+async def get_public_lesson_preview(
+    session: AsyncSession, *, tenant_id: uuid.UUID, lesson_id: uuid.UUID
+) -> Lesson:
+    stmt = (
+        select(Lesson)
+        .join(Module, Module.id == Lesson.module_id)
+        .join(Course, Course.id == Module.course_id)
+        .join(CourseTenantAssignment, CourseTenantAssignment.course_id == Course.id)
+        .where(
+            Lesson.id == lesson_id,
+            Lesson.access_level == "public",
+            Course.state == "published",
+            CourseTenantAssignment.tenant_id == tenant_id,
+        )
+    )
+    lesson = (await session.execute(stmt)).scalars().first()
+    if lesson is None:
+        raise NotFound("No such preview lesson.")
+    return lesson
+
+
 __all__ = [
     "CourseAuthoringError",
     "assign_course_to_tenant",
@@ -293,6 +351,8 @@ __all__ = [
     "create_lesson",
     "create_module",
     "get_course",
+    "get_public_curriculum",
+    "get_public_lesson_preview",
     "list_courses",
     "list_lessons",
     "list_modules",

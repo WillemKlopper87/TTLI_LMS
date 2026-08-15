@@ -20,6 +20,8 @@ interface ProductSummary {
   description: string | null;
   kind: string;
   prices: PriceSummary[];
+  subscription_plan_id: string | null;
+  bundled_courses: string[] | null;
 }
 
 /**
@@ -51,6 +53,14 @@ export default function CataloguePage() {
       return;
     }
     router.push(`/checkout?price=${priceId}`);
+  }
+
+  function subscribe(planId: string) {
+    if (!getAccessToken()) {
+      router.push("/login");
+      return;
+    }
+    router.push(`/account/subscription?plan=${planId}`);
   }
 
   return (
@@ -92,6 +102,11 @@ export default function CataloguePage() {
                   {product.description}
                 </p>
               ) : null}
+              {product.kind === "subscription" && product.bundled_courses?.length ? (
+                <p className="mt-2" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Includes: {product.bundled_courses.join(", ")}
+                </p>
+              ) : null}
               {product.prices.map((price) => (
                 <div key={price.id} className="mt-4 flex items-center justify-between">
                   <span className="serif" style={{ fontSize: "1.0625rem" }}>
@@ -99,11 +114,22 @@ export default function CataloguePage() {
                     <small style={{ fontSize: "0.6875rem", color: "var(--muted)", fontWeight: 400 }}>
                       {" "}
                       {price.tax_behaviour === "exclusive" ? "excl. VAT" : "incl. VAT"}
+                      {product.kind === "subscription" ? " / period" : ""}
                     </small>
                   </span>
-                  <button type="button" className="btn btn--primary" onClick={() => enrol(price.id)}>
-                    Enrol now
-                  </button>
+                  {product.kind === "subscription" && product.subscription_plan_id ? (
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      onClick={() => subscribe(product.subscription_plan_id as string)}
+                    >
+                      Subscribe
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn--primary" onClick={() => enrol(price.id)}>
+                      Enrol now
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

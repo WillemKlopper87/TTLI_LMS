@@ -22,7 +22,7 @@
 
 ### 1.2 Billing models
 
-One-time course purchase · optional subscription (behind a flag, pending [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5) · corporate seat-based annual billing · invoice, EFT and purchase order · live workshop credits · one-on-one session credits · enterprise setup fee plus recurring licence.
+One-time course purchase · multi-tier subscription (built — [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5 resolved, see §5's subscription note below) · corporate seat-based annual billing · invoice, EFT and purchase order · live workshop credits · one-on-one session credits · enterprise setup fee plus recurring licence.
 
 ### 1.3 Currency and tax
 
@@ -182,7 +182,7 @@ Legend: ✅ included · ➕ optional add-on · ❌ not included · **Ph** = the 
 | Support | — | Self-service | Email | Priority email | Priority + onboarding | Dedicated | Account manager |
 | SLA | — | ❌ | ❌ | ❌ | Basic | Enhanced | Enterprise |
 
-`3*` — subscriptions are schema-ready in Phase 3 but disabled until [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5 is answered.
+`3*` — subscriptions are built (multi-tier, course-bundle plans, EFT/PO-funded renewals — see §5's subscription note); [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5 is resolved.
 `—` — deferred by design; see [01 §9](01_PRD.md#9-explicitly-out-of-scope).
 
 ### What is sellable, and when
@@ -227,7 +227,7 @@ Nothing is sellable before Phase 4. Commerce without a course player takes money
 
 **Refunds.** Suggested: 7-day refund on individual digital purchases where less than 20% is complete. Corporate subject to contract. Workshops subject to cancellation policy. One-on-one sessions require 48 hours' notice. The 20% threshold is enforceable because completion is server-side and auditable.
 
-**Subscriptions**, if enabled: auto-renewal clearly disclosed, proration on upgrade, downgrade at next cycle, grace period on failed payment, cancellation stops future billing while access runs to period end.
+**Subscriptions**: multi-tier, each plan a course bundle with its own price and billing interval. Renewals are funded through the existing EFT/PO manual-approval checkout, not automatic card charging (no Payfast/Netcash integration exists yet — see [03 §5](03_API_SPEC.md)). Upgrading is immediate and always a new full-price order for a full new period (the remainder of the old period is forfeited, disclosed at confirmation) — never prorated, since this codebase has no credit-note mechanism. Downgrading (including cancellation) is deferred to the next renewal: access continues at the current tier through `current_period_end` plus a 3-day grace period, then lapses automatically (a daily sweep formally closes out the record). A per-subscription cooldown, equal to the current plan's billing interval, blocks another plan change immediately after one — the anti-abuse control for rapid tier-hopping.
 
 **Corporate seats.** Assigned, not shared. Reassignment allowed. Unused seats non-refundable unless contracted. Minimum seat counts may apply.
 

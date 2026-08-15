@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     eft_account_number: str = "Not yet configured"
     eft_branch_code: str = "Not yet configured"
     supplier_vat_number: str = ""
+    # REQ-PAY-12: subscriptions behind a feature flag pending 01 §1.4 #5 —
+    # that decision is now made (multi-tier, EFT/PO-funded renewals, see
+    # 0021's migration docstring), so this defaults on; the flag stays so a
+    # deployment can still turn it off without a redeploy.
+    subscriptions_enabled: bool = True
 
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"

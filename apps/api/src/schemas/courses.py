@@ -125,6 +125,42 @@ class TenantAssignmentsPageResponse(BaseModel):
     items: list[TenantAssignmentRow]
 
 
+class PublicLessonRow(BaseModel):
+    """No `body`/quiz/survey/assignment/video FKs — an anonymous curriculum
+    view shows shape, not content (services/courses.py::get_public_curriculum)."""
+
+    id: str
+    title: str
+    position: int
+    activity_type: str
+    access_level: str
+
+
+class PublicModuleRow(BaseModel):
+    id: str
+    title: str
+    position: int
+    lessons: list[PublicLessonRow]
+
+
+class PublicCurriculumResponse(BaseModel):
+    course_id: str
+    title: str
+    description: str | None
+    modules: list[PublicModuleRow]
+
+
+class PublicLessonPreviewResponse(BaseModel):
+    id: str
+    title: str
+    activity_type: str
+    body: str | None
+    video_asset_id: str | None
+    quiz_id: str | None
+    survey_id: str | None
+    assignment_id: str | None
+
+
 __all__ = [
     "CourseCreateRequest",
     "CourseResponse",
@@ -138,6 +174,10 @@ __all__ = [
     "ModuleResponse",
     "ModuleUpdateRequest",
     "ModulesPageResponse",
+    "PublicCurriculumResponse",
+    "PublicLessonPreviewResponse",
+    "PublicLessonRow",
+    "PublicModuleRow",
     "TenantAssignmentCreateRequest",
     "TenantAssignmentResponse",
     "TenantAssignmentRow",

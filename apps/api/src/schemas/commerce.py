@@ -91,6 +91,11 @@ class ProductSummary(BaseModel):
     description: str | None
     kind: str
     prices: list[PriceSummary]
+    # Set only for kind="subscription" products — the plan-browsing surface
+    # for subscriptions is this existing public catalogue, not a separate
+    # endpoint (services/subscriptions.py's module docstring).
+    subscription_plan_id: str | None = None
+    bundled_courses: list[str] | None = None
 
 
 class ProductsPage(BaseModel):
@@ -108,6 +113,7 @@ class PendingPaymentSummary(BaseModel):
     po_number: str | None
     proof_uploaded: bool
     created_at: datetime
+    subscription_id: str | None
 
 
 class PendingPaymentsPage(BaseModel):

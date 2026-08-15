@@ -15,8 +15,14 @@ import sqlalchemy as sa
 from src.core.config import Settings, get_settings
 from src.core.db import dispose_engine, init_engine
 from src.models.auth import RefreshToken
+from src.services import identity
 from src.services.email import send_sync
-from src.workers.main import extend_event_partitions, purge_expired_auth, send_email_job
+from src.workers.main import (
+    extend_event_partitions,
+    purge_expired_auth,
+    revoke_lapsed_subscriptions,
+    send_email_job,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -129,6 +135,121 @@ async def test_send_email_job_delivers_via_smtp() -> None:  # type: ignore[no-un
     assert any(
         m["Subject"] == subject and any(addr["Address"] == to for addr in m["To"]) for m in messages
     )
+
+
+async def test_revoke_lapsed_subscriptions_respects_grace_period(
+    engine, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(None) as s:
+        tenant_id = (
+            await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'demo'"))
+        ).scalar_one()
+
+    async with tenant_session_factory(tenant_id) as s:
+        plan_id = (
+            await s.execute(
+                sa.text("SELECT id FROM subscription_plans WHERE tenant_id = :t LIMIT 1"),
+                {"t": tenant_id},
+            )
+        ).scalar_one()
+        course_id = (
+            await s.execute(
+                sa.text("SELECT id FROM courses WHERE slug = 'executive-leadership-certificate'")
+            )
+        ).scalar_one()
+        lapsed_user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"lapsed-{uuid.uuid4().hex[:10]}@example.com"
+        )
+        fresh_user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"fresh-{uuid.uuid4().hex[:10]}@example.com"
+        )
+
+    now = datetime.now(UTC)
+    # 3-day default grace: 5 days past period_end is lapsed, 1 day past is not.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO subscriptions "
+                "(id, tenant_id, user_id, plan_id, status, current_period_start, "
+                "current_period_end) VALUES (:id, :t, :u, :p, 'active', :start, :end)"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "t": tenant_id,
+                "u": lapsed_user.id,
+                "p": plan_id,
+                "start": now - timedelta(days=35),
+                "end": now - timedelta(days=5),
+            },
+        )
+        await s.execute(
+            sa.text(
+                "INSERT INTO subscriptions "
+                "(id, tenant_id, user_id, plan_id, status, current_period_start, "
+                "current_period_end) VALUES (:id, :t, :u, :p, 'active', :start, :end)"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "t": tenant_id,
+                "u": fresh_user.id,
+                "p": plan_id,
+                "start": now - timedelta(days=29),
+                "end": now + timedelta(days=1),
+            },
+        )
+        # A lapsed-with-grace-baked-in entitlement (services/subscriptions.py's
+        # GRACE_DAYS convention: expires_at already includes it) and an
+        # unexpired one.
+        lapsed_entitlement_id = uuid.uuid4()
+        fresh_entitlement_id = uuid.uuid4()
+        onetime_entitlement_id = uuid.uuid4()
+        for eid, user_id, expires_at in (
+            (lapsed_entitlement_id, lapsed_user.id, now - timedelta(hours=1)),
+            (fresh_entitlement_id, fresh_user.id, now + timedelta(days=10)),
+            (onetime_entitlement_id, lapsed_user.id, None),
+        ):
+            await s.execute(
+                sa.text(
+                    "INSERT INTO entitlements "
+                    "(id, tenant_id, user_id, kind, target_id, granted_at, expires_at) "
+                    "VALUES (:id, :t, :u, 'course', :c, now(), :e)"
+                ),
+                {"id": eid, "t": tenant_id, "u": user_id, "c": course_id, "e": expires_at},
+            )
+
+    revoked = await revoke_lapsed_subscriptions({})
+    assert revoked >= 1
+
+    async with tenant_session_factory(tenant_id) as s:
+        lapsed_status = (
+            await s.execute(
+                sa.text("SELECT status FROM subscriptions WHERE user_id = :u"),
+                {"u": lapsed_user.id},
+            )
+        ).scalar_one()
+        fresh_status = (
+            await s.execute(
+                sa.text("SELECT status FROM subscriptions WHERE user_id = :u"), {"u": fresh_user.id}
+            )
+        ).scalar_one()
+        revoked_ats = dict(
+            (
+                await s.execute(
+                    sa.text("SELECT id, revoked_at FROM entitlements WHERE id IN (:a, :b, :c)"),
+                    {
+                        "a": lapsed_entitlement_id,
+                        "b": fresh_entitlement_id,
+                        "c": onetime_entitlement_id,
+                    },
+                )
+            ).all()
+        )
+    assert lapsed_status == "cancelled"
+    assert fresh_status == "active"
+    assert revoked_ats[lapsed_entitlement_id] is not None
+    assert revoked_ats[fresh_entitlement_id] is None
+    # One-time purchases (expires_at IS NULL) are never touched by the sweep.
+    assert revoked_ats[onetime_entitlement_id] is None
 
 
 def test_send_sync_raises_on_unreachable_smtp_host() -> None:

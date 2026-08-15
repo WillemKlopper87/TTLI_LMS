@@ -2098,6 +2098,79 @@ racing the suite's own in-process job execution — not a code bug, killed
 the stray process and reran clean twice. Full detail in `docs/STATUS.md`
 §9b.
 
+**Multi-tier subscriptions + free-preview lessons — a direct question,
+not a backlog item.** Asked whether a course-purchase-to-subscription
+upgrade workflow existed and what stopped abusive tier-hopping.
+Investigated first rather than assuming: neither subscriptions nor a
+free-preview concept existed anywhere in the schema — 01 §1.4 #5 had
+been left explicitly unresolved. Rather than build a plausible-looking
+"subscription" that couldn't actually charge anyone (no Payfast/Netcash
+integration exists), the design decision — made explicitly, with the
+user, before writing code — was to fund each billing period through the
+*existing* EFT/PO manual-approval checkout, honestly, not a fake
+auto-charge. Full design writeup and locked-in decisions are in the plan
+file referenced by this session; the essentials:
+
+- **Upgrade is additive and always full price** — no proration, since
+  this codebase has no credit-note mechanism to prorate against. **Downgrade
+  (including cancel) defers to the next renewal**, applied only once that
+  period's order is actually fulfilled. A cooldown
+  (`Subscription.last_plan_change_at` + the current plan's own
+  `billing_interval_days`) blocks another plan change immediately after
+  one — the concrete answer to "what stops tier-hopping."
+- **A real correctness gap, found while implementing, not assumed away.**
+  `services/organisations.py::revoke_seat` already established, on
+  purpose, that revoking an entitlement doesn't retroactively cut off an
+  `Enrolment`'s access — so simply writing `Entitlement.expires_at` would
+  have been decorative, exactly the kind of dead column this session has
+  fixed before. `services/enrolment.py::get_own_enrolment` (and every
+  video/quiz/survey/assignment access check) now does a live check for at
+  least one *non-expired* entitlement, not just that an `Enrolment` row
+  exists — scoped narrowly enough that a one-time purchase (whose
+  entitlement never sets `expires_at`) is never affected, only a
+  genuinely lapsed subscription is. The 3-day grace period is baked into
+  the entitlement's `expires_at` at grant time, not applied later at
+  sweep time, so access lapses live and honestly the instant it's
+  checked — never waiting on the daily cron.
+- **Free-preview lessons** wire up `Lesson.access_level = "public"` (an
+  enum value that existed, unused, since Phase 4) as a real gate, applied
+  consistently across curriculum, document body, video, quiz, survey and
+  assignment — not just the endpoint that was easiest to patch. Preview
+  never touches `completion.py`, verified by an explicit regression test.
+- **A migration bug caught by actually testing the round-trip, not
+  assuming it worked**: the first `downgrade()` draft dropped the new
+  tables but left the seeded subscription `products`/`prices` rows
+  behind, so a second `upgrade()` collided on the unique slug. A follow-up
+  mistake compounded it: the first manual cleanup attempt used a database
+  session with no tenant context set, so RLS silently filtered the
+  `DELETE` down to zero rows — it reported success while doing nothing.
+  Both fixed properly (the migration's own `downgrade()` now cleans up
+  per-tenant, matching how the seed itself was written) and reverified
+  with an actual `upgrade → downgrade → upgrade → alembic check` cycle,
+  not just re-running the fixed migration once.
+- **A second real, pre-existing bug found live, unrelated to this
+  feature**: exercising the full subscribe → EFT → approve cycle against
+  the real dev database (not a synthetic one) hit a `500` on
+  `GET /payments` — 94 of 95 pending orders in this long-lived dev
+  database had buyer emails encrypted under a since-rotated key
+  (`InvalidTag` on decrypt). Not caused by this session's work, but a
+  live 500 in a finance-critical endpoint is not something to note and
+  walk past. Fixed defensively: one undecryptable row now surfaces a
+  placeholder string and a logged error instead of crashing the whole
+  queue. The 94 corrupted rows themselves were deliberately left alone —
+  purging or re-keying them is a data-hygiene decision this session
+  didn't have the context to make unilaterally.
+
+Verified live end to end against the real dev database and the real
+running dev servers: a fresh course, a fresh plan bundling it, a real
+learner subscribing, completing EFT checkout and finance approval, and
+`GET /subscriptions/me` showing `active` with the correct period end —
+and the public curriculum/preview endpoints returning real content
+through the actual BFF proxy path with no auth header at all. Frontend
+pages were not visually confirmed in a browser, same disclosed
+limitation as every other frontend item in this document. Full detail in
+`docs/STATUS.md` §9c.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

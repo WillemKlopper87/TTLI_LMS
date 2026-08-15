@@ -246,7 +246,7 @@ Append-only. `actor_user_id`, `actor_role`, `tenant_id`, `action`, `entity_type`
 
 Standard hierarchy. `courses` carries `state content_state`, `manager_visibility`, the default `completion_rules` jsonb, `certificate_template_id`, `badge_template_id`, and CPD fields (nullable pending [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #7).
 
-`lessons` carries `position`, `activity_type`, `access_level`, and its own `completion_rules` jsonb which overrides the course default when present.
+`lessons` carries `position`, `activity_type`, `access_level`, and its own `completion_rules` jsonb which overrides the course default when present. `access_level = "public"` is a real, enforced gate (added alongside subscriptions, §6.8): the lesson is viewable — video/quiz/survey/assignment content included, through the same real learner endpoints, not a separate stub — by anyone signed in, no enrolment or purchase required, and its curriculum entry and document body are reachable with no auth at all (`GET /public/courses/{id}/curriculum`, `GET /public/lessons/{id}/preview`). Preview is view-only: it never creates a `LessonCompletion` row or interacts with the completion-rule engine.
 
 ### 5.2 `completion_rules` shape
 
@@ -289,7 +289,7 @@ Mirrors the durable half of the ported `TranscodingEngine`: `state`, `progress_p
 
 ### 5.6 `resources`, `podcast_episodes`
 
-Marketing content. `access_level` decides gating (REQ-STORE-05). Podcast episodes carry transcript, show notes, and a `related_course_id` for the conversion CTA.
+Marketing content — its own tables, not built yet. `access_level` would decide gating (REQ-STORE-05) the same way it now really does for lessons (§5.1), once these tables exist. Podcast episodes carry transcript, show notes, and a `related_course_id` for the conversion CTA.
 
 ---
 
@@ -350,9 +350,17 @@ Append-only (§1.5). One row per financial event.
 | `created_by`, `created_at` | uuid, timestamptz |
 | `metadata` | jsonb |
 
-### 6.7 `subscriptions`
+### 6.7 `subscriptions`, `subscription_plans`, `subscription_plan_courses`
 
-Behind a feature flag pending [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5. Plan, interval, seat count, current period, proration state, dunning attempts, gateway token reference. **No card data.**
+Behind a feature flag (`settings.subscriptions_enabled`, default on) — [01 §1.4](01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) #5 resolved in. Additive to §6.1–6.2's one-time purchase path, never a replacement for it: `entitlements.expires_at` (dead until now) is written exclusively by subscription fulfilment, so a one-time purchase's entitlement stays permanent (`NULL`) regardless of anything a subscription does.
+
+`subscription_plans`: `slug`, `name`, `description`, `product_id` FK (the sellable wrapper, `products.kind = "subscription"`), `price_id` FK (immutable — Price rows are never mutated; a price change is a new plan), `billing_interval_days`, `is_active`.
+
+`subscription_plan_courses`: a plan's course bundle — `plan_id` FK CASCADE, `course_id` FK RESTRICT into the global `courses` table (§5.1). A plan can bundle any number of courses; multiple plans commonly bundle overlapping sets (a "Full Library" tier superset of a narrower one).
+
+`subscriptions`: one row per `(tenant_id, user_id)`, reused across cancel/reactivate cycles rather than superseded. `plan_id`, `pending_plan_id` (a queued downgrade, applied only when the next period's order is fulfilled — never immediately), `status` (`pending`, `active`, `cancelled`), `current_period_start`/`current_period_end` (the pure billing boundary), `cancel_at_period_end`, `last_plan_change_at` (the anti-abuse cooldown anchor — a plan change is blocked for the current plan's own `billing_interval_days` after the last one). **No card data, no gateway token** — renewals are funded through the existing EFT/PO manual-approval checkout (`orders.subscription_id`), not automatic charging; there is no card gateway integrated (§6.3 is still EFT/PO only).
+
+Each period's `Order` grants a fresh `Entitlement` per bundled course, with `expires_at = current_period_end + 3 days` — the grace period is baked into the entitlement's own expiry so access lapses live and honestly the moment it's checked, never dependent on a cron sweep having already run. A daily maintenance job (`revoke_lapsed_subscriptions`, same `SECURITY DEFINER` pattern as §1.5's other maintenance functions) formally flips `Subscription.status` to `cancelled` and sets the lapsed `Entitlement.revoked_at` once the grace period has genuinely passed — bookkeeping closure, not the access gate itself.
 
 ---
 

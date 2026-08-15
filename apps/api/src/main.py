@@ -36,6 +36,7 @@ from src.routers import (
     media,
     orders,
     organisations,
+    subscriptions,
     tenant,
     workshops,
 )
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(guest_access.router, prefix="/api/v1")
     app.include_router(orders.router, prefix="/api/v1")
     app.include_router(organisations.router, prefix="/api/v1")
+    app.include_router(subscriptions.router, prefix="/api/v1")
     app.include_router(courses.router, prefix="/api/v1")
     app.include_router(workshops.router, prefix="/api/v1")
     app.include_router(deals.router, prefix="/api/v1")

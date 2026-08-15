@@ -15,7 +15,8 @@ import { AdminContext, type Me } from "./admin-context";
 // "Leads" (Phase 2), "Payments" (Phase 3, REQ-PAY-03's finance queue),
 // "Settings" (Phase 5 sprint 2, REQ-TEN-03's manager-visibility toggles),
 // "Courses"/"Templates" (Phase 4's authoring gap, closed after Phase 5),
-// and "Grading" (frontend-completeness backlog item 3) are the ones that
+// "Grading" (frontend-completeness backlog item 3), and "Subscriptions"
+// (multi-tier subscription plan authoring, REQ-PAY-12) are the ones that
 // do so far.
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
@@ -25,6 +26,7 @@ const WORKING_SECTIONS = [
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
   { label: "Grading", href: "/admin/grading" },
+  { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },
 ];

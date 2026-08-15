@@ -85,6 +85,14 @@ class Product(Base, TimestampMixin):
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True
     )
+    # Set only for kind="subscription" products — the same nullable-bridge
+    # treatment as course_id above, just for the other sellable-wrapper case
+    # (0021's migration docstring).
+    subscription_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("subscription_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
 
 class Price(Base, TimestampMixin):
@@ -174,6 +182,14 @@ class Order(Base, TimestampMixin):
     # set grants seat capacity to the organisation instead.
     organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organisations.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Set only for a subscription billing-period order (0021) — same
+    # nullable-tag treatment as organisation_id above. Convention keeps
+    # these mutually exclusive (an order is either a seat purchase or a
+    # subscription period, never both), not a CHECK constraint, matching
+    # how Entitlement.user_id/organisation_id's duality is already handled.
+    subscription_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="RESTRICT"), nullable=True
     )
 
 

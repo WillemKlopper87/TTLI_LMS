@@ -33,7 +33,7 @@ from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import VideoAsset
 from src.models.user import User
-from src.services import audit, identity
+from src.services import audit, entitlements, identity
 from src.services import credentials as credentials_service
 from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
@@ -120,23 +120,40 @@ async def has_access_to_video(
 ) -> bool:
     """03 §6.7's entitlement check, run before a playback URL is ever
     minted — a video is reachable only through a lesson, whose course the
-    caller must hold a real enrolment for."""
-    course_ids_stmt = (
-        select(Course.id)
-        .join(Module, Module.course_id == Course.id)
-        .join(Lesson, Lesson.module_id == Module.id)
-        .where(Lesson.video_asset_id == video_asset_id)
-    )
-    course_ids = (await session.execute(course_ids_stmt)).scalars().all()
-    if not course_ids:
+    caller must hold a real, still-valid entitlement for (never just an
+    Enrolment row's existence — a lapsed subscription must actually cut
+    off access, services/entitlements.py::has_valid_course_entitlement),
+    unless the lesson itself is a free preview (`access_level="public"`).
+    A video_asset_id is walked to every lesson that references it (there is
+    no uniqueness constraint stopping more than one), not just the first —
+    any one of them being public, or any one of their courses being
+    validly accessible, is enough."""
+    rows = (
+        await session.execute(
+            select(Course.id, Lesson.access_level)
+            .join(Module, Module.course_id == Course.id)
+            .join(Lesson, Lesson.module_id == Module.id)
+            .where(Lesson.video_asset_id == video_asset_id)
+        )
+    ).all()
+    if not rows:
         return False
+    if any(access_level == "public" for _course_id, access_level in rows):
+        return True
 
-    enrolment_stmt = select(Enrolment.id).where(
+    course_ids = [course_id for course_id, _access_level in rows]
+    enrolled_stmt = select(Enrolment.course_id).where(
         Enrolment.tenant_id == tenant_id,
         Enrolment.user_id == user_id,
         Enrolment.course_id.in_(course_ids),
     )
-    return (await session.execute(enrolment_stmt)).first() is not None
+    enrolled_course_ids = (await session.execute(enrolled_stmt)).scalars().all()
+    for course_id in enrolled_course_ids:
+        if await entitlements.has_valid_course_entitlement(
+            session, tenant_id=tenant_id, user_id=user_id, course_id=course_id
+        ):
+            return True
+    return False
 
 
 async def _course_for_lesson_fk(
@@ -155,6 +172,73 @@ async def _course_for_lesson_fk(
     if course is None:
         raise NotFound("No lesson references this activity.")
     return course
+
+
+async def _has_view_access_via_lesson_fk(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    column: InstrumentedAttribute[uuid.UUID | None],
+    value: uuid.UUID,
+) -> bool:
+    """View-only access for a quiz/survey/assignment reached through a
+    single referencing lesson — public if the lesson is a free preview,
+    otherwise the same real-enrolment-plus-valid-entitlement check
+    `has_access_to_video` uses. Never creates an Enrolment or touches
+    completion.py — preview is view-only (module docstring)."""
+    row = (
+        await session.execute(
+            select(Course.id, Lesson.access_level)
+            .join(Module, Module.course_id == Course.id)
+            .join(Lesson, Lesson.module_id == Module.id)
+            .where(column == value)
+        )
+    ).first()
+    if row is None:
+        return False
+    course_id, access_level = row
+    if access_level == "public":
+        return True
+
+    enrolment_stmt = select(Enrolment.id).where(
+        Enrolment.tenant_id == tenant_id,
+        Enrolment.user_id == user_id,
+        Enrolment.course_id == course_id,
+    )
+    if (await session.execute(enrolment_stmt)).first() is None:
+        return False
+    return await entitlements.has_valid_course_entitlement(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course_id
+    )
+
+
+async def has_view_access_to_quiz(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, quiz_id: uuid.UUID
+) -> bool:
+    return await _has_view_access_via_lesson_fk(
+        session, tenant_id=tenant_id, user_id=user_id, column=Lesson.quiz_id, value=quiz_id
+    )
+
+
+async def has_view_access_to_survey(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, survey_id: uuid.UUID
+) -> bool:
+    return await _has_view_access_via_lesson_fk(
+        session, tenant_id=tenant_id, user_id=user_id, column=Lesson.survey_id, value=survey_id
+    )
+
+
+async def has_view_access_to_assignment(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, assignment_id: uuid.UUID
+) -> bool:
+    return await _has_view_access_via_lesson_fk(
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        column=Lesson.assignment_id,
+        value=assignment_id,
+    )
 
 
 async def resolve_enrolment_for_quiz(
@@ -255,6 +339,19 @@ async def get_own_enrolment(
     enrolment = (await session.execute(stmt)).scalar_one_or_none()
     if enrolment is None:
         raise Forbidden("You are not enrolled in this course.")
+    # A live check, not just the Enrolment row's existence — a lapsed
+    # subscription's entitlement expiring must actually cut off access to
+    # new content (services/entitlements.py::has_valid_course_entitlement),
+    # not just decorate a column nobody reads. A one-time purchase's
+    # entitlement never sets expires_at, so it always passes here — this
+    # never restricts a course bought outright, matching
+    # services/organisations.py::revoke_seat's deliberate choice not to
+    # retroactively cut off access either (revoked_at is untouched by this
+    # check on purpose, same reasoning).
+    if not await entitlements.has_valid_course_entitlement(
+        session, tenant_id=tenant_id, user_id=user_id, course_id=course_id
+    ):
+        raise Forbidden("Your access to this course has expired.")
     return enrolment
 
 

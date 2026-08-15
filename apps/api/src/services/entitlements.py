@@ -17,7 +17,9 @@ drawn from it.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.ids import uuid7
@@ -33,6 +35,7 @@ async def grant(
     kind: str,
     target_id: uuid.UUID,
     quantity: int | None = None,
+    expires_at: datetime | None = None,
 ) -> Entitlement:
     entitlement = Entitlement(
         id=uuid7(),
@@ -42,10 +45,31 @@ async def grant(
         kind=kind,
         target_id=target_id,
         quantity=quantity,
+        expires_at=expires_at,
     )
     session.add(entitlement)
     await session.flush()
     return entitlement
 
 
-__all__ = ["grant"]
+async def has_valid_course_entitlement(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, course_id: uuid.UUID
+) -> bool:
+    """True if the learner holds at least one course entitlement that is
+    neither revoked nor (if time-bound) expired. One-time-purchase
+    entitlements never set `expires_at`, so they always pass here — this
+    only ever restricts access for a *lapsed subscription*
+    (services/subscriptions.py), never a one-time course purchase."""
+    now = datetime.now(UTC)
+    stmt = select(Entitlement.id).where(
+        Entitlement.tenant_id == tenant_id,
+        Entitlement.user_id == user_id,
+        Entitlement.kind == "course",
+        Entitlement.target_id == course_id,
+        Entitlement.revoked_at.is_(None),
+        (Entitlement.expires_at.is_(None)) | (Entitlement.expires_at > now),
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+__all__ = ["grant", "has_valid_course_entitlement"]

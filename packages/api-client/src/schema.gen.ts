@@ -622,6 +622,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/subscription-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Subscription Plans */
+        get: operations["list_subscription_plans_api_v1_subscription_plans_get"];
+        put?: never;
+        /** Create Subscription Plan */
+        post: operations["create_subscription_plan_api_v1_subscription_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscription-plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Subscription Plan */
+        patch: operations["update_subscription_plan_api_v1_subscription_plans__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/subscription-plans/{plan_id}/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Plan Courses */
+        get: operations["list_plan_courses_api_v1_subscription_plans__plan_id__courses_get"];
+        put?: never;
+        /** Add Course To Plan */
+        post: operations["add_course_to_plan_api_v1_subscription_plans__plan_id__courses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscription-plans/{plan_id}/courses/{course_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Course From Plan */
+        delete: operations["remove_course_from_plan_api_v1_subscription_plans__plan_id__courses__course_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Subscribe */
+        post: operations["subscribe_api_v1_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Own Subscription */
+        get: operations["get_own_subscription_api_v1_subscriptions_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/me/change-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Plan */
+        post: operations["change_plan_api_v1_subscriptions_me_change_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/me/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Subscription */
+        post: operations["cancel_subscription_api_v1_subscriptions_me_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/me/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Subscription */
+        post: operations["resume_subscription_api_v1_subscriptions_me_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/subscriptions/me/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Renew Subscription */
+        post: operations["renew_subscription_api_v1_subscriptions_me_renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses": {
         parameters: {
             query?: never;
@@ -805,6 +977,40 @@ export interface paths {
         };
         /** List Tenant Assignments */
         get: operations["list_tenant_assignments_api_v1_tenant_assignments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/courses/{course_id}/curriculum": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A published course's curriculum shape, no auth required */
+        get: operations["get_public_curriculum_api_v1_public_courses__course_id__curriculum_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/lessons/{lesson_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A free-preview lesson's content, no auth required */
+        get: operations["get_public_lesson_preview_api_v1_public_lessons__lesson_id__preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1425,6 +1631,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quizzes/{quiz_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Quiz
+         * @description Any logged-in account, no purchase — gated on the quiz's lesson
+         *     being a free preview (`access_level="public"`), not course:edit.
+         *     Learner-shaped (no `correct`) and creates no `QuizAttempt`, unlike the
+         *     real attempt flow.
+         */
+        get: operations["preview_quiz_api_v1_quizzes__quiz_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quizzes/{quiz_id}/questions": {
         parameters: {
             query?: never;
@@ -1640,6 +1869,33 @@ export interface paths {
         };
         /** Get Assignment */
         get: operations["get_assignment_api_v1_assignments__assignment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{assignment_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Assignment
+         * @description Any logged-in account, no purchase — gated on the assignment's
+         *     lesson being a free preview. Same response shape as the course:edit
+         *     -gated detail endpoint above; the gate is what differs, not the data
+         *     (an assignment carries no answer-key-equivalent field to withhold).
+         *     A side effect worth noting, not a scope expansion: this is also the
+         *     first endpoint letting an *enrolled* learner read an assignment's
+         *     instructions at all — nothing previously exposed that outside
+         *     authoring.
+         */
+        get: operations["preview_assignment_api_v1_assignments__assignment_id__preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2268,6 +2524,15 @@ export interface components {
         CertificateTemplatesPageResponse: {
             /** Items */
             items: components["schemas"]["CertificateTemplateResponse"][];
+        };
+        /** ChangePlanRequest */
+        ChangePlanRequest: {
+            /** Plan Id */
+            plan_id: string;
+            /** Currency */
+            currency: string;
+            /** Customer Type */
+            customer_type: string;
         };
         /** CourseCreateRequest */
         CourseCreateRequest: {
@@ -3048,6 +3313,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Subscription Id */
+            subscription_id: string | null;
         };
         /** PendingPaymentsPage */
         PendingPaymentsPage: {
@@ -3082,6 +3349,23 @@ export interface components {
         PendingSubmissionsResponse: {
             /** Items */
             items: components["schemas"]["PendingSubmissionItem"][];
+        };
+        /** PlanCourseRequest */
+        PlanCourseRequest: {
+            /** Course Id */
+            course_id: string;
+        };
+        /** PlanCourseRow */
+        PlanCourseRow: {
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+        };
+        /** PlanCoursesPageResponse */
+        PlanCoursesPageResponse: {
+            /** Items */
+            items: components["schemas"]["PlanCourseRow"][];
         };
         /** PlaybackResponse */
         PlaybackResponse: {
@@ -3132,6 +3416,10 @@ export interface components {
             kind: string;
             /** Prices */
             prices: components["schemas"]["PriceSummary"][];
+            /** Subscription Plan Id */
+            subscription_plan_id?: string | null;
+            /** Bundled Courses */
+            bundled_courses?: string[] | null;
         };
         /** ProductsPage */
         ProductsPage: {
@@ -3154,6 +3442,64 @@ export interface components {
             individual_visible: boolean;
             /** Learners */
             learners: components["schemas"]["LearnerRowResponse"][];
+        };
+        /** PublicCurriculumResponse */
+        PublicCurriculumResponse: {
+            /** Course Id */
+            course_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Modules */
+            modules: components["schemas"]["PublicModuleRow"][];
+        };
+        /** PublicLessonPreviewResponse */
+        PublicLessonPreviewResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Activity Type */
+            activity_type: string;
+            /** Body */
+            body: string | null;
+            /** Video Asset Id */
+            video_asset_id: string | null;
+            /** Quiz Id */
+            quiz_id: string | null;
+            /** Survey Id */
+            survey_id: string | null;
+            /** Assignment Id */
+            assignment_id: string | null;
+        };
+        /**
+         * PublicLessonRow
+         * @description No `body`/quiz/survey/assignment/video FKs — an anonymous curriculum
+         *     view shows shape, not content (services/courses.py::get_public_curriculum).
+         */
+        PublicLessonRow: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Position */
+            position: number;
+            /** Activity Type */
+            activity_type: string;
+            /** Access Level */
+            access_level: string;
+        };
+        /** PublicModuleRow */
+        PublicModuleRow: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Position */
+            position: number;
+            /** Lessons */
+            lessons: components["schemas"]["PublicLessonRow"][];
         };
         /** QuizAnswerSubmission */
         QuizAnswerSubmission: {
@@ -3258,6 +3604,20 @@ export interface components {
             question_count: number;
         };
         /**
+         * QuizPreviewResponse
+         * @description A free-preview lesson's quiz, learner-shaped (no `correct`, same as
+         *     `QuizQuestionView`) and with no `QuizAttempt` created — view-only,
+         *     same as the survey/assignment preview paths.
+         */
+        QuizPreviewResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Questions */
+            questions: components["schemas"]["QuizQuestionView"][];
+        };
+        /**
          * QuizQuestionAdminView
          * @description Authoring-facing — unlike `QuizQuestionView`, this DOES include
          *     which option is `correct`. Gated at `course:edit`, never `course:view`
@@ -3357,6 +3717,13 @@ export interface components {
         RejectPaymentRequest: {
             /** Reason */
             reason: string;
+        };
+        /** RenewRequest */
+        RenewRequest: {
+            /** Currency */
+            currency: string;
+            /** Customer Type */
+            customer_type: string;
         };
         /** RevokeCertificateRequest */
         RevokeCertificateRequest: {
@@ -3469,6 +3836,98 @@ export interface components {
         SubmissionDownloadResponse: {
             /** Download Url */
             download_url: string;
+        };
+        /** SubscribeRequest */
+        SubscribeRequest: {
+            /** Plan Id */
+            plan_id: string;
+            /** Currency */
+            currency: string;
+            /** Customer Type */
+            customer_type: string;
+        };
+        /**
+         * SubscriptionOrderResponse
+         * @description Returned instead of / alongside `SubscriptionResponse` when the call
+         *     created a real `Order` that still needs EFT/PO checkout — `order_id`
+         *     is `None` for a queued downgrade, which creates no order at all
+         *     (applied only when the next renewal is fulfilled).
+         */
+        SubscriptionOrderResponse: {
+            subscription: components["schemas"]["SubscriptionResponse"];
+            /** Order Id */
+            order_id: string | null;
+        };
+        /** SubscriptionPlanCreateRequest */
+        SubscriptionPlanCreateRequest: {
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Currency */
+            currency: string;
+            /** Unit Amount */
+            unit_amount: number | string;
+            /**
+             * Tax Behaviour
+             * @default exclusive
+             */
+            tax_behaviour: string;
+            /**
+             * Billing Interval Days
+             * @default 30
+             */
+            billing_interval_days: number;
+        };
+        /** SubscriptionPlanResponse */
+        SubscriptionPlanResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Price Id */
+            price_id: string;
+            /** Billing Interval Days */
+            billing_interval_days: number;
+            /** Is Active */
+            is_active: boolean;
+        };
+        /** SubscriptionPlanUpdateRequest */
+        SubscriptionPlanUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+        };
+        /** SubscriptionPlansPageResponse */
+        SubscriptionPlansPageResponse: {
+            /** Items */
+            items: components["schemas"]["SubscriptionPlanResponse"][];
+        };
+        /** SubscriptionResponse */
+        SubscriptionResponse: {
+            /** Id */
+            id: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Pending Plan Id */
+            pending_plan_id: string | null;
+            /** Status */
+            status: string;
+            /** Current Period Start */
+            current_period_start: string | null;
+            /** Current Period End */
+            current_period_end: string | null;
+            /** Cancel At Period End */
+            cancel_at_period_end: boolean;
         };
         /** SurveyAnswer */
         SurveyAnswer: {
@@ -4922,6 +5381,347 @@ export interface operations {
             };
         };
     };
+    list_subscription_plans_api_v1_subscription_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPlansPageResponse"];
+                };
+            };
+        };
+    };
+    create_subscription_plan_api_v1_subscription_plans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionPlanCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_subscription_plan_api_v1_subscription_plans__plan_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionPlanUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_plan_courses_api_v1_subscription_plans__plan_id__courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanCoursesPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_course_to_plan_api_v1_subscription_plans__plan_id__courses_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_course_from_plan_api_v1_subscription_plans__plan_id__courses__course_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_api_v1_subscriptions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_own_subscription_api_v1_subscriptions_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionResponse"];
+                };
+            };
+        };
+    };
+    change_plan_api_v1_subscriptions_me_change_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_subscription_api_v1_subscriptions_me_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionResponse"];
+                };
+            };
+        };
+    };
+    resume_subscription_api_v1_subscriptions_me_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionResponse"];
+                };
+            };
+        };
+    };
+    renew_subscription_api_v1_subscriptions_me_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_courses_api_v1_courses_get: {
         parameters: {
             query?: never;
@@ -5391,6 +6191,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantAssignmentsPageResponse"];
+                };
+            };
+        };
+    };
+    get_public_curriculum_api_v1_public_courses__course_id__curriculum_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicCurriculumResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_public_lesson_preview_api_v1_public_lessons__lesson_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicLessonPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6746,6 +7608,37 @@ export interface operations {
             };
         };
     };
+    preview_quiz_api_v1_quizzes__quiz_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quiz_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_quiz_question_api_v1_quizzes__quiz_id__questions_post: {
         parameters: {
             query?: never;
@@ -7164,6 +8057,37 @@ export interface operations {
         };
     };
     get_assignment_api_v1_assignments__assignment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_assignment_api_v1_assignments__assignment_id__preview_get: {
         parameters: {
             query?: never;
             header?: never;

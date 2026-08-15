@@ -125,6 +125,10 @@ async def list_products(session: SessionDep, tenant: TenantDep) -> ProductsPage:
                     )
                     for price in p.prices
                 ],
+                subscription_plan_id=(
+                    str(p.subscription_plan_id) if p.subscription_plan_id is not None else None
+                ),
+                bundled_courses=p.bundled_courses,
             )
             for p in products
         ]
@@ -313,6 +317,7 @@ async def list_pending_payments(
                 po_number=row.po_number,
                 proof_uploaded=row.proof_uploaded,
                 created_at=row.created_at,
+                subscription_id=str(row.subscription_id) if row.subscription_id else None,
             )
             for row in items
         ],
