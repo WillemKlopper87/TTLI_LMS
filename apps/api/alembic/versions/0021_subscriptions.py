@@ -444,18 +444,36 @@ def downgrade() -> None:
 
     # The seeded subscription products/prices — deleted only now that
     # subscription_plans (which held a RESTRICT-ing product_id FK to
-    # these exact rows) is gone. Scoped tightly (kind + slug prefix) to
-    # match only what this migration's own seed inserted, matching
-    # 0016/0011's precedent of deleting exactly what was seeded, not a
-    # broader pattern that could catch real tenant-created data.
+    # these exact rows) is gone. Scoped to the exact two seeded slugs,
+    # not a `LIKE 'subscription-%'` pattern: a wildcard also matches
+    # every plan created through the real API afterward (by an admin, or
+    # by this repo's own test suite, which creates plenty).
+    #
+    # Even the exact two can be real usage by the time anyone actually
+    # downgrades this in practice — someone really did subscribe to the
+    # seeded "Leadership Track" plan, live-verifying this feature, before
+    # this migration's own round-trip was re-tested and caught it. A
+    # downgrade must never silently discard financial records, so this
+    # only deletes prices no order_item actually references; anything
+    # real is left in place, orphaned but harmless (subscription_plans is
+    # already gone, so these just become inert kind="subscription" rows
+    # with no plan to point at) rather than hitting the same RESTRICT
+    # `order_items.price_id` guard real order data is supposed to trip.
     conn.execute(
         sa.text(
             "DELETE FROM prices WHERE product_id IN "
-            "(SELECT id FROM products WHERE kind = 'subscription' AND slug LIKE 'subscription-%')"
+            "(SELECT id FROM products WHERE kind = 'subscription' "
+            "AND slug IN ('subscription-leadership-track', 'subscription-full-library')) "
+            "AND id NOT IN (SELECT DISTINCT price_id FROM order_items)"
         )
     )
     conn.execute(
-        sa.text("DELETE FROM products WHERE kind = 'subscription' AND slug LIKE 'subscription-%'")
+        sa.text(
+            "DELETE FROM products WHERE kind = 'subscription' "
+            "AND slug IN ('subscription-leadership-track', 'subscription-full-library') "
+            "AND id NOT IN (SELECT DISTINCT product_id FROM prices) "
+            "AND id NOT IN (SELECT DISTINCT product_id FROM order_items)"
+        )
     )
 
     # course_tenant_assignments/lessons/modules cascade or are removed with
