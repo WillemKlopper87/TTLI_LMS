@@ -101,7 +101,16 @@ async def subscribe(
 ) -> PushSubscription:
     """Upserts on `endpoint` — re-subscribing the same device (a common
     browser behaviour when a subscription's keys rotate) replaces the row
-    rather than accumulating dead duplicates."""
+    rather than accumulating dead duplicates.
+
+    Ownership deliberately follows the *current* caller: a shared device
+    where learner B signs in after learner A must start delivering B's
+    notifications, not A's. This is not an account-takeover surface —
+    endpoints are unguessable capability URLs minted by the push service,
+    and payloads are encrypted to the subscriber's own p256dh/auth keys,
+    so a caller who somehow held A's endpoint could at most *stop* A's
+    notifications on that device, never read them. RLS keeps the lookup
+    inside the caller's tenant."""
     existing = (
         await session.execute(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
     ).scalar_one_or_none()

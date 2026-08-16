@@ -2749,9 +2749,33 @@ console encoder on Windows with a `UnicodeEncodeError` inside the logging
 module — harmless to the job, but it hides the log line you're looking
 for; run it with `PYTHONIOENCODING=utf-8`.
 
-Verified: 10 new tests (6 `tests/test_push.py`, 4 `tests/test_workers.py`
+**Post-push security review, same day.** Two findings on
+`services/push.py`. (1) SSRF, real: the subscription `endpoint` is a URL
+the worker later POSTs to on the client's say-so, and nothing stopped
+`https://169.254.169.254/…` or `http://localhost:8010/…`. Blind (the
+response never reaches the client), but a server-side request to a
+client-chosen address all the same. `schemas/push.py` now refuses every
+shape a real push service would never mint — non-`https`, IP literals
+including loopback/link-local/private/metadata, `localhost`, single-
+label and `.local`/`.internal`/`.lan`/`.arpa` hosts, userinfo — as a
+deny-list of attack shapes, deliberately *not* an allow-list of vendor
+domains (Brave/Opera/Samsung/Vivaldi ride other vendors' services; an
+allow-list would silently break real browsers). 14 parametrised tests
+plus a live check through the real BFF (metadata IP and plain-http
+localhost → 422, FCM shape → 201). (2) "IDOR / subscription hijack": the
+upsert reassigns `user_id` when the endpoint already exists. Assessed
+and kept: endpoints are unguessable capability URLs minted by the push
+service, payloads are encrypted to the subscriber's own p256dh/auth
+keys, so a caller holding someone else's endpoint could at most *stop*
+that device's notifications, never read them — and reassignment is
+exactly the shared-device case (learner B signs in after learner A).
+Reasoning now lives in `subscribe`'s docstring so the next reviewer
+doesn't re-derive it. Docstring change alone was enough to drift
+`schema.gen.ts` — regenerated, or the CI drift gate would have failed.
+
+Verified: 24 new tests (20 `tests/test_push.py`, 4 `tests/test_workers.py`
 including an idempotency test that a second `send_workshop_reminders`
-run finds nothing new), full suite 287 / 0 skipped (up from 277),
+run finds nothing new), full suite 301 / 0 skipped (up from 277),
 `ruff`/`ruff format`/`mypy src` clean, `0027` round-tripped and `alembic
 check` clean. `apps/web` `typecheck`/`build` clean, 43 routes
 (unchanged — the opt-in is a global component), `api-client`

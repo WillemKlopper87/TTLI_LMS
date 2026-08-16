@@ -4083,7 +4083,8 @@ export interface components {
         /**
          * PushSubscribeRequest
          * @description The shape `PushSubscription.toJSON()` already produces in the
-         *     browser — passed straight through, not reshaped.
+         *     browser — passed straight through, not reshaped, beyond the endpoint
+         *     check above.
          */
         PushSubscribeRequest: {
             /** Endpoint */

@@ -126,6 +126,66 @@ async def test_subscribe_creates_and_upserts_on_repeat_endpoint(
     assert count == 1
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://push.example.com/plain-http",
+        "https://127.0.0.1/loopback",
+        "https://[::1]/loopback6",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://10.0.0.5/private",
+        "https://localhost/",
+        "https://api.internal/x",
+        "https://redis.local/x",
+        "https://user:pw@push.example.com/creds",
+        "https://ttli-api/single-label",
+    ],
+)
+async def test_subscribe_rejects_non_public_endpoints(
+    client, tenant_session_factory, crypto, endpoint
+) -> None:  # type: ignore[no-untyped-def]
+    """The worker later POSTs to this URL — an SSRF surface unless the
+    shape is constrained to what real push services actually mint."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
+    resp = await client.post(
+        "/api/v1/push-subscriptions",
+        json=_subscribe_body(endpoint),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422, resp.text
+    async with tenant_session_factory(tenant_id) as s:
+        count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM push_subscriptions WHERE endpoint = :e"),
+                {"e": endpoint},
+            )
+        ).scalar_one()
+    assert count == 0
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://fcm.googleapis.com/fcm/send/abc",
+        "https://wns2-db5p.notify.windows.com/w/?token=abc",
+        "https://updates.push.services.mozilla.com/wpush/v2/abc",
+        "https://web.push.apple.com/abc",
+    ],
+)
+async def test_subscribe_accepts_real_push_service_endpoints(
+    client, tenant_session_factory, crypto, endpoint
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
+    resp = await client.post(
+        "/api/v1/push-subscriptions",
+        json=_subscribe_body(endpoint),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201, resp.text
+
+
 async def test_unsubscribe_ignores_another_users_subscription(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
