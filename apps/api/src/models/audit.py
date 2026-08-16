@@ -75,6 +75,8 @@ class AuditAction:
     SURVEY_RESPONSE_SUBMITTED = "survey.response.submitted"
     ASSIGNMENT_SUBMITTED = "assignment.submitted"
     ASSIGNMENT_REVIEWED = "assignment.reviewed"
+    # 03 §5.7: "an invalid signature is 401 and an audit event."
+    PAYMENT_WEBHOOK_REJECTED = "payment.webhook.rejected"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

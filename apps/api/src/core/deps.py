@@ -25,6 +25,8 @@ from src.core.errors import AppError, Forbidden, TenantUnresolved, Unauthenticat
 from src.core.redis import get_redis
 from src.core.security import decode_access_token
 from src.core.tenancy import TenantContext, get_or_resolve_tenant, hostname_from_request
+from src.services.payments.base import PaymentProvider
+from src.services.payments.payfast import PayfastProvider
 from src.services.storage import StorageService, get_storage_adapter
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -101,6 +103,23 @@ def get_storage(settings: SettingsDep) -> StorageService:
 
 
 StorageDep = Annotated[StorageService, Depends(get_storage)]
+
+
+def get_payment_provider(settings: SettingsDep) -> PaymentProvider:
+    # A single, hardcoded provider today. When a second provider lands
+    # (Merchant-of-Record, per the international-payments research —
+    # see services/payments/payfast.py's module docstring), this becomes
+    # a real selection (per-tenant currency/region, most likely), not a
+    # config toggle bolted on here.
+    return PayfastProvider(
+        merchant_id=settings.payfast_merchant_id,
+        merchant_key=settings.payfast_merchant_key,
+        passphrase=settings.payfast_passphrase,
+        sandbox=settings.payfast_sandbox,
+    )
+
+
+PaymentProviderDep = Annotated[PaymentProvider, Depends(get_payment_provider)]
 
 
 @dataclass(frozen=True, slots=True)

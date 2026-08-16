@@ -9,9 +9,15 @@ purchase, not an admin action. Approval and rejection are gated on
 order, and REQ-PAY-03 requires a human in that loop; there is no
 automated approval path, for either payment method.
 
-Card checkout (Payfast/Netcash) is still not built here — blocked on
-live sandbox credentials (01 §1.4's Phase 0 outstanding list), not a
-design gap the way PO checkout was.
+Card checkout (03 §5.2) goes through `services/payments/base.py`'s
+provider-agnostic protocol, currently backed by a Payfast adapter written
+to spec but never verified against a live account — no sandbox
+merchant_id/merchant_key exists yet (01 §1.4's Phase 0 outstanding list),
+so `services.payments.payfast.PayfastProvider.initiate_checkout` refuses
+outright with no credentials configured. The webhook side lives in
+`routers/webhooks.py`, not here — it's a gateway server calling TTLI's
+server, not a browser calling the BFF, so it deliberately sits outside
+this router's `PrincipalDep`-gated shape entirely.
 
 03 §1.6's `Idempotency-Key` requirement on `POST /orders`, `POST
 /payments/{id}/{approve,reject}` and `POST /orders/{id}/refund` is enforced
@@ -31,10 +37,19 @@ import uuid
 from fastapi import APIRouter, File, Form, Query, UploadFile, status
 from sqlalchemy import select
 
-from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
+from src.core.deps import (
+    CryptoDep,
+    PaymentProviderDep,
+    PrincipalDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+    TenantDep,
+)
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.models.commerce import Order, OrderItem, Payment
 from src.schemas.commerce import (
+    CardCheckoutResponse,
     CreateOrderRequest,
     EftCheckoutResponse,
     InvoiceResponse,
@@ -193,6 +208,35 @@ async def checkout_eft(
         branch_code=settings.eft_branch_code,
         amount=payment.amount,
         currency=payment.currency,
+    )
+
+
+@router.post("/orders/{order_id}/checkout/card", response_model=CardCheckoutResponse)
+async def checkout_card(
+    order_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    settings: SettingsDep,
+    provider: PaymentProviderDep,
+) -> CardCheckoutResponse:
+    order = await _get_own_order(session, principal, order_id)
+    payment, redirect = await orders_service.checkout_card(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        order=order,
+        provider=provider,
+        # order_id on both — the return/cancel pages have no session-side
+        # record of which order this redirect belongs to otherwise. Not
+        # the actual fulfilment signal (the webhook is, asynchronously);
+        # this only tells the returning buyer what to look at.
+        return_url=f"{settings.public_web_url}/checkout/return?order={order.id}",
+        cancel_url=f"{settings.public_web_url}/checkout/cancel?order={order.id}",
+        notify_url=f"{settings.api_public_url}/api/v1/webhooks/{provider.name}",
+    )
+    return CardCheckoutResponse(
+        payment_id=str(payment.id), action_url=redirect.action_url, fields=redirect.fields
     )
 
 

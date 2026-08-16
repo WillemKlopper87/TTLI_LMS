@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -251,6 +252,47 @@ class Payment(Base, TimestampMixin):
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PaymentWebhook(Base, TimestampMixin):
+    """02 §6.3: "`payment_webhooks.provider_event_id` is unique, which is
+    the whole idempotency mechanism (§1.6)." `tenant_id` is resolved by
+    the `resolve_payment_tenant` SECURITY DEFINER function (`0024`)
+    *before* this row is ever written — a webhook arrives with no
+    `X-Tenant-Host` a browser request would carry, so the normal
+    hostname-based tenant resolution (`core/tenancy.py`) doesn't apply;
+    this is the one request path that has to look itself up.
+
+    `raw_payload_encrypted` (02 §6.3: "stored encrypted, since they carry
+    billing details") holds the exact received form body, so a
+    reconciliation dispute can be resolved against what the gateway
+    actually sent, not a reconstruction of it.
+    """
+
+    __tablename__ = "payment_webhooks"
+    __table_args__ = (
+        Index("uq_payment_webhooks_provider_event", "provider", "provider_event_id", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("payments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    raw_payload_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
 
 
 class InvoiceNumberCounter(Base):
@@ -506,6 +548,7 @@ __all__ = [
     "OrderItem",
     "OrderStatus",
     "Payment",
+    "PaymentWebhook",
     "Price",
     "Product",
     "Refund",

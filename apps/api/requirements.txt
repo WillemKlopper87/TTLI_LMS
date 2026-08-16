@@ -40,6 +40,12 @@ pyotp==2.10.0
 boto3==1.43.67
 azure-storage-blob==12.30.0
 arq==0.28.0
+# The Payfast ITN "confirm with provider" round-trip (03 §5.7,
+# services/payments/payfast.py) — Payfast's own documented anti-forgery
+# check needs a real outbound HTTPS POST. Already a pinned dev/test
+# dependency (requirements-dev.txt, every test's ASGI transport); pinned
+# here too now that application code — not just tests — uses it.
+httpx==0.28.1
 # Certificate PDF generation + QR codes (Phase 4 sprint 4, REQ-CRED-02).
 # No pure-stdlib equivalent for either — unlike the ClamAV wire protocol,
 # PDF/QR encoding isn't small enough to hand-roll reasonably.

@@ -389,6 +389,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/checkout/card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Checkout Card */
+        post: operations["checkout_card_api_v1_orders__order_id__checkout_card_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/orders/{order_id}/checkout/po": {
         parameters: {
             query?: never;
@@ -501,6 +518,23 @@ export interface paths {
          *     double-click) must not credit an invoice twice.
          */
         post: operations["refund_order_api_v1_orders__order_id__refund_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webhooks/payfast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Payfast Webhook */
+        post: operations["payfast_webhook_api_v1_webhooks_payfast_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2626,6 +2660,17 @@ export interface components {
         CampaignsPage: {
             /** Items */
             items: components["schemas"]["CampaignResponse"][];
+        };
+        /** CardCheckoutResponse */
+        CardCheckoutResponse: {
+            /** Payment Id */
+            payment_id: string;
+            /** Action Url */
+            action_url: string;
+            /** Fields */
+            fields: {
+                [key: string]: string;
+            };
         };
         /** CertificatePdfResponse */
         CertificatePdfResponse: {
@@ -5194,6 +5239,37 @@ export interface operations {
             };
         };
     };
+    checkout_card_api_v1_orders__order_id__checkout_card_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardCheckoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     checkout_po_api_v1_orders__order_id__checkout_po_post: {
         parameters: {
             query?: never;
@@ -5389,6 +5465,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payfast_webhook_api_v1_webhooks_payfast_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
@@ -27,14 +27,21 @@ interface EftCheckoutResponse {
   currency: string;
 }
 
-type Step = "details" | "eft" | "submitted";
+interface CardCheckoutResponse {
+  payment_id: string;
+  action_url: string;
+  fields: Record<string, string>;
+}
+
+type Step = "details" | "eft" | "redirecting" | "submitted";
 
 /**
- * The EFT purchase path (REQ-PAY-03), wired to the real backend built this
- * sprint: POST /orders -> POST /orders/{id}/checkout/eft ->
- * POST /orders/{id}/payment-proof. Card (Payfast/Netcash) and PO checkout
- * aren't built — see 0009's migration docstring for why — so this page
- * only offers EFT.
+ * Card (Payfast hosted checkout) and EFT purchase paths (REQ-PAY-03),
+ * wired to the backend built this sprint: POST /orders then either
+ * POST /orders/{id}/checkout/card (redirect-and-auto-submit to Payfast)
+ * or POST /orders/{id}/checkout/eft -> POST /orders/{id}/payment-proof.
+ * PO checkout isn't offered here — 01 §4.3 workflow 5 routes that through
+ * an admin/procurement flow, not this self-serve page.
  */
 export default function CheckoutPage() {
   useRequireAuth();
@@ -44,9 +51,11 @@ export default function CheckoutPage() {
   const [step, setStep] = useState<Step>("details");
   const [order, setOrder] = useState<OrderResponse | null>(null);
   const [eft, setEft] = useState<EftCheckoutResponse | null>(null);
+  const [cardCheckout, setCardCheckout] = useState<CardCheckoutResponse | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"card" | "eft" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cardFormRef = useRef<HTMLFormElement>(null);
 
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();
@@ -56,13 +65,11 @@ export default function CheckoutPage() {
     });
   }
 
-  async function createOrderAndCheckout() {
+  async function createOrder(): Promise<OrderResponse | null> {
     if (!priceId) {
       setError("No programme selected — start from the catalogue.");
-      return;
+      return null;
     }
-    setBusy(true);
-    setError(null);
     const orderResp = await authedFetch("/api/bff/orders", {
       method: "POST",
       // Idempotency-Key (03 §1.6): a network retry of this exact click
@@ -77,18 +84,61 @@ export default function CheckoutPage() {
       }),
     });
     if (!orderResp.ok) {
-      setBusy(false);
       const body = await orderResp.json().catch(() => null);
       setError(body?.error?.message ?? "Could not create the order.");
-      return;
+      return null;
     }
     const createdOrder: OrderResponse = await orderResp.json();
     setOrder(createdOrder);
+    return createdOrder;
+  }
 
+  async function payByCard() {
+    setBusy("card");
+    setError(null);
+    const createdOrder = await createOrder();
+    if (!createdOrder) {
+      setBusy(null);
+      return;
+    }
+    // No Idempotency-Key here — 03 §1.6 never names this endpoint
+    // (core/idempotency.py's SCOPED_ROUTES docstring), because a
+    // retried click is just a second hosted-checkout redirect the buyer
+    // abandons, not a duplicate charge: Payfast itself, via the ITN
+    // webhook, is the sole source of truth for whether money moved.
+    const cardResp = await authedFetch(`/api/bff/orders/${createdOrder.id}/checkout/card`, {
+      method: "POST",
+    });
+    if (!cardResp.ok) {
+      setBusy(null);
+      if (cardResp.status === 503) {
+        setError("Card payment isn't switched on for this deployment yet — please use EFT below.");
+      } else {
+        const body = await cardResp.json().catch(() => null);
+        setError(body?.error?.message ?? "Could not start card checkout.");
+      }
+      return;
+    }
+    setCardCheckout(await cardResp.json());
+    setStep("redirecting");
+    // Payfast's hosted checkout only accepts a real form POST, not a
+    // fetch/redirect — submit once the hidden form below has rendered
+    // with the returned fields.
+    requestAnimationFrame(() => cardFormRef.current?.submit());
+  }
+
+  async function payByEft() {
+    setBusy("eft");
+    setError(null);
+    const createdOrder = await createOrder();
+    if (!createdOrder) {
+      setBusy(null);
+      return;
+    }
     const eftResp = await authedFetch(`/api/bff/orders/${createdOrder.id}/checkout/eft`, {
       method: "POST",
     });
-    setBusy(false);
+    setBusy(null);
     if (!eftResp.ok) {
       setError("Could not start EFT checkout.");
       return;
@@ -99,7 +149,7 @@ export default function CheckoutPage() {
 
   async function submitProof() {
     if (!order || !file) return;
-    setBusy(true);
+    setBusy("eft");
     setError(null);
     const formData = new FormData();
     formData.append("file", file);
@@ -107,12 +157,32 @@ export default function CheckoutPage() {
       method: "POST",
       body: formData,
     });
-    setBusy(false);
+    setBusy(null);
     if (!resp.ok) {
       setError("Could not upload the proof of payment.");
       return;
     }
     setStep("submitted");
+  }
+
+  if (step === "redirecting" && cardCheckout) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 px-6 text-center">
+        <h1 className="serif" style={{ fontSize: "1.5rem" }}>
+          Taking you to secure checkout&hellip;
+        </h1>
+        <p style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+          You&rsquo;ll pay on Payfast&rsquo;s own site — this platform never sees your card details.
+        </p>
+        {/* Hosted-checkout redirect: Payfast requires a real browser form
+            POST with these exact fields, not a fetch or 3xx redirect. */}
+        <form ref={cardFormRef} method="POST" action={cardCheckout.action_url} hidden>
+          {Object.entries(cardCheckout.fields).map(([key, value]) => (
+            <input key={key} type="hidden" name={key} value={value} />
+          ))}
+        </form>
+      </main>
+    );
   }
 
   if (step === "submitted") {
@@ -162,7 +232,7 @@ export default function CheckoutPage() {
           <button
             type="button"
             className="btn btn--primary btn--block mt-3"
-            disabled={!file || busy}
+            disabled={!file || busy !== null}
             onClick={submitProof}
           >
             Submit for approval
@@ -178,8 +248,8 @@ export default function CheckoutPage() {
         How would you like to pay?
       </h1>
       <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-        Direct EFT is the only path available today — card checkout needs live payment-gateway
-        credentials that aren&rsquo;t configured yet.
+        Card is the fastest way in — access opens as soon as Payfast confirms the payment. Prefer a
+        bank transfer instead? Choose EFT below.
       </p>
 
       <label className="field mt-6">
@@ -196,10 +266,18 @@ export default function CheckoutPage() {
       <button
         type="button"
         className="btn btn--primary btn--lg btn--block mt-4"
-        disabled={busy}
-        onClick={createOrderAndCheckout}
+        disabled={busy !== null}
+        onClick={payByCard}
       >
-        Continue to EFT details
+        {busy === "card" ? "Starting checkout…" : "Pay by card"}
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost btn--lg btn--block mt-2"
+        disabled={busy !== null}
+        onClick={payByEft}
+      >
+        {busy === "eft" ? "Starting checkout…" : "Pay by EFT instead"}
       </button>
     </main>
   );

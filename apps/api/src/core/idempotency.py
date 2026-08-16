@@ -16,11 +16,14 @@ stack).
 
 `SCOPED_ROUTES` limits enforcement to the handful of endpoints 03 §1.6
 actually names: `POST /orders`, `POST /payments/{id}/approve`, `POST
-/payments/{id}/reject`, `POST /orders/{id}/refund`. No card-checkout or
-provider-webhook endpoints exist yet (01 §1.4's Phase 0 sandbox-credentials
-item still blocks Payfast/Netcash) — this list grows when those land; it
-is not the ceiling of what idempotency *could* cover, only what has a real
-caller today.
+/payments/{id}/reject`, `POST /orders/{id}/refund`. `POST
+/orders/{id}/checkout/card` and the Payfast webhook exist now (03 §5.2/
+§5.7) but were never named by §1.6 for idempotency, so this list correctly
+didn't grow when they landed — a browser retry there is a second Payfast
+redirect the buyer just gets to abandon, and Payfast's own `provider_event_
+id` uniqueness (`payment_webhooks`) is what makes the webhook replay-safe
+instead. This is not the ceiling of what idempotency *could* cover, only
+what has a real caller today.
 
 Definitive vs transient: a response below 500 is cached and replayed
 verbatim on a retry — that includes a deliberate refusal (403, 404, a

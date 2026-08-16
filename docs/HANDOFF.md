@@ -2382,6 +2382,168 @@ mid-pass (all five containers exited, the known flakiness on this
 machine) — recovered with `docker compose up -d` from `infra/`, full
 gate sweep re-run clean afterward, not trusted from before the drop.
 
+**Card checkout (Payfast) and its webhook — Phase 3's last named purchase
+path.** Built as a provider-agnostic `Protocol`
+(`services/payments/base.py`: `initiate_checkout`/`verify_signature`/
+`confirm_with_provider`/`parse_webhook`), not a Payfast-specific function
+wired straight into `orders.py` — the international-payments research
+commissioned alongside this pass (below) makes a Merchant-of-Record
+adapter a plausible future second implementation, and this shape doesn't
+need touching for that to slot in. `services/payments/payfast.py` is the
+one implementation, written to Payfast's own documented checkout/ITN
+protocol. Its module docstring records two genuine ambiguities found
+*in Payfast's own materials*, not invented uncertainty: which of two
+documented field orders the checkout signature actually wants (older
+docs say alphabetical, newer guidance says submission order, and at
+least one third-party integration write-up calls Payfast's own worked
+example "flawed"), and states plainly that **none of this has ever run
+against a live Payfast account** — no sandbox `merchant_id`/
+`merchant_key` exist (01 §1.4's Phase 0 list), so `settings.
+payfast_merchant_id` empty is what keeps card checkout correctly *off*
+rather than attempting one with invented credentials. This is the first
+feature in this file's entire history that could not be live-verified
+the way every other pass above was — said outright rather than glossed
+over, both here and in STATUS.md.
+
+`services/orders.py::checkout_card` deliberately does **not** add a new
+`order_status` value the way EFT/PO each needed one — nothing about card
+checkout needs a distinct intermediate state, so the order stays
+`pending_payment` until the *webhook*, not the browser redirect,
+resolves it. That's also why `POST /orders/{id}/checkout/card` is
+deliberately **not** `Idempotency-Key`-scoped even though it creates a
+payment row: 03 §1.6 never names it, and a retried click is just a
+second Payfast redirect the buyer abandons, not a duplicate charge —
+`core/idempotency.py`'s own docstring was updated to say why, since it
+previously (wrongly, by the time this pass landed) implied this
+endpoint would eventually join the scoped list.
+
+The genuinely new architectural problem this pass had to solve: **an
+inbound webhook arrives with no tenant context** — no JWT, no
+`X-Tenant-Host` a browser would send, nothing RLS can key off before a
+query even runs. Solved with a `resolve_payment_tenant` `SECURITY
+DEFINER` Postgres function (migration `0024`) — the same narrow,
+single-purpose privilege-escalation pattern `0005`'s
+`extend_events_partitions`/`purge_expired_auth_rows` already established,
+used here for the one query that legitimately needs to look a payment up
+before a tenant-scoped session can exist. `POST /webhooks/payfast`
+(`routers/webhooks.py`) then does everything Payfast's own ITN guidance
+recommends: constant-time signature verification
+(`hmac.compare_digest`), a live server-to-server `confirm_with_provider`
+round-trip as the second, harder-to-forge check, and a server-side
+amount comparison against the order's own recorded total — never trusted
+from the payload alone. Fails closed (`401` + an audited
+`payment.webhook.rejected`) on either check failing, and is idempotent
+on `(provider, provider_event_id)` via the new append-only
+`payment_webhooks` table, so a replayed ITN is a no-op, not a second
+fulfilment.
+
+**A real test-pollution bug, the same *class* this file has flagged
+before under a different specific cause.** `tests/test_webhooks.py`'s
+first draft used hardcoded `pf_payment_id`/`provider_event_id` literals
+(`"replay-1"`, `"reject-1"`, etc.). Those collided not within a single
+run but *across separate runs* against the persistent, never-reset dev
+Postgres — a stale row left by an earlier run made
+`_already_processed()` wrongly return `True` on a fresh run's very first
+call, failing `test_replayed_notification_does_not_reprocess` with
+`ledger_count == 0` instead of `1`. Fixed by suffixing every literal
+with a fresh `uuid.uuid4().hex[:10]`. Worth remembering for the next
+webhook-style test: a bare fixed string that has to be globally unique
+across the table's whole history is a landmine in a dev database that
+never resets between sessions, even though it looks perfectly fine
+inside one isolated test run.
+
+Frontend: a "Pay by card" option added to `/checkout` alongside the
+existing EFT flow — creates the order, calls the new checkout endpoint,
+then auto-submits a hidden HTML form to Payfast's returned `action_url`/
+`fields` (the standard hosted-checkout redirect pattern; Payfast requires
+a real browser form POST, not a fetch or a 3xx redirect). Two new pages
+the router now sends buyers to: `/checkout/return` (polls
+`GET /orders/{id}` rather than trusting the redirect itself as a success
+signal, since the ITN webhook can genuinely arrive after the browser
+does — "still pending" is rendered as exactly that, not treated as a
+failure, with a manual re-check after a bounded number of polls) and
+`/checkout/cancel` (standard hosted-checkout semantics: reached only
+when the buyer backs out before paying, nothing to reconcile).
+
+Verified: 8 pure unit tests (`tests/test_payments_payfast.py` — no
+DB/network, signature construction/verification round-trip including
+tamper detection, sandbox-vs-production host selection, wrong-passphrase
+rejection, missing-signature rejection) and 6 integration tests
+(`tests/test_webhooks.py` — successful fulfilment, replay-is-a-no-op,
+invalid signature, failed provider confirmation, amount mismatch),
+using `app.dependency_overrides` to substitute a scripted `PayfastProvider`
+subclass at exactly the one boundary with no live account to test
+against — the same "keep everything real except the untestable edge"
+pattern `test_storage.py`'s moto-for-S3 already established, not a
+generic mock. **A near-miss worth recording, the same lesson the tenth
+pass already taught under a different specific cause**: the first full
+run this pass showed 73 passed / 193 skipped — not a regression, the
+entire Docker stack (`docker ps`, empty output) had dropped at some
+point during this session's long background-agent load, same class of
+flakiness on this machine noted before. Brought the compose stack back
+up, waited for ClamAV's health check, re-ran: **266 tests / 0 skipped**,
+clean. Full backend suite, `ruff`/`ruff format`/`mypy src` clean,
+migration round-tripped twice (once for the table+function, once after
+a ruff-format pass touched unrelated files in the same working tree),
+`alembic check` clean. `apps/web` `typecheck`/`build` clean, 41 routes
+(up from 39 — `/checkout/return`, `/checkout/cancel`). **The one honest
+limitation already flagged above, restated so it isn't missed**:
+everything here is verified against Payfast's documented protocol and
+this project's own test doubles, not a real Payfast sandbox response —
+re-verify against a live account before this is trusted with a real
+payment, the same caveat the module's own docstring carries.
+
+**Three research reports, commissioned as background agents run
+alongside this pass rather than sequentially, saved to `docs/research/`
+so they outlive the chat they were requested in** — a new convention
+worth continuing for any future open-ended research task, since a chat
+answer alone doesn't survive a context compaction the way a committed
+file does (this session lost one of these to exactly that, and it had
+to be recovered from the raw transcript rather than re-run). `docs/
+research/international-payments...` (also exported as a PDF at the
+user's request) covers card/PayPal payment-processor options for US/EU
+buyers, EU VAT OSS and US sales-tax obligations, and a GDPR/CCPA-vs-
+POPIA gap analysis. `docs/research/bank-eft-automation.md` answers
+whether the manual EFT flow above can be automated via direct South
+African bank rails — its standout, load-bearing finding: Instant EFT
+very plausibly rides this exact Payfast integration with no new code at
+all, once live credentials exist, since Payfast's hosted checkout
+already presents Instant EFT as a payment-method tab behind the same
+redirect and the same ITN webhook already built and tested here; PayShap
+Request-to-Pay, by contrast, is a genuinely different integration shape
+(a new order-status value, a new Protocol method) recommended only once
+real order volume justifies it. `docs/research/devsecops-deployment.md`
+covers cost-effective Azure/AWS/GCP hosting (including a minimal-start
+scaling path for unknown early traffic and a cheaper-alternatives cut
+list against Premium WAF tiers), reverse-proxy/WAF strategy, A/B testing
+infrastructure, and defense against AI-agent/scanner traffic — hosting
+recommendation stays Azure South Africa North for POPIA residency, not
+reopened by the AWS/GCP comparison.
+
+Two further planning documents were produced the same way, for two
+follow-on feature requests scoped but **not implemented** this
+pass — both explicitly plans for a future pass, not built code:
+`docs/research/payment-analytics-dashboard.md` (an admin Payment &
+Revenue Analytics section — paid-vs-waiting status, payment-method
+breakdown, an actual-vs-predicted revenue definition resolved concretely
+against this project's own ledger/subscription schema rather than left
+vague, registrations by package/organisation, a timeframe picker with
+both presets and a custom range, `recharts` recommended as the one new
+frontend dependency this needs) and `docs/research/podcast-platform-
+integration.md` (expanding REQ-STORE-04 to cover Spotify embedding, admin
+curation of third-party "recommended" episodes, and podcast-listen
+statistics — recommends a hybrid: self-hosted audio for TTLI's own
+episodes, since Spotify's embed alone can't satisfy REQ-STORE-04's
+transcript/show-notes/CTA requirement, plus a lightweight embed-only path
+for curated episodes, with zero new frontend dependencies). Both
+subagents that produced these plans turned out to lack file-write access
+in the tool profile they were dispatched with — they returned complete,
+finished markdown as their message text instead, which then had to be
+written to disk by the orchestrating session. Worth knowing before
+dispatching a "write a plan to this path" agent again: confirm it
+actually has Write/Edit, or expect to be the one who persists its
+output.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

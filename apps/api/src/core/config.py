@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     # URL must be embedded outside a browser context (certificate QR
     # codes, REQ-CRED-02) rather than a relative one the BFF would resolve.
     public_web_url: str = "http://localhost:3010"
+    # The API's own public origin — needed for exactly one thing: the
+    # `notify_url` a payment gateway's webhook calls. Every *browser*
+    # request reaches the API only through apps/web's BFF (no CORS
+    # surface, by design), but a gateway webhook is a server calling a
+    # server, not a browser — same-origin policy doesn't apply, and
+    # routing it through the BFF would mean giving Next.js an
+    # unauthenticated pass-through route for no benefit. In production
+    # this points at whatever hostname the edge (Front Door/App Gateway)
+    # routes to the API's own container, alongside the BFF's — an infra
+    # routing decision, not one this setting makes.
+    api_public_url: str = "http://localhost:8010"
 
     # --- Database ---
     database_url: str
@@ -69,6 +80,22 @@ class Settings(BaseSettings):
     # 0021's migration docstring), so this defaults on; the flag stays so a
     # deployment can still turn it off without a redeploy.
     subscriptions_enabled: bool = True
+
+    # --- Card checkout: Payfast (03 §5.2/5.7) ---
+    # No live sandbox account exists (01 §1.4's Phase 0 outstanding list) —
+    # every empty default below means card checkout is correctly *disabled*
+    # (services/payments/payfast.py refuses to initiate a checkout with no
+    # merchant_id configured) rather than silently attempting one with
+    # invented credentials. Set these three from a real Payfast account to
+    # turn card checkout on; nothing else in the code needs to change.
+    payfast_merchant_id: str = ""
+    payfast_merchant_key: str = ""
+    payfast_passphrase: str = ""
+    # Payfast's own recommended anti-forgery step beyond signature
+    # checking: POST the received ITN straight back and require "VALID".
+    # Sandbox and production use different hosts entirely, not a query
+    # param — switching env changes the host, same as most gateways.
+    payfast_sandbox: bool = True
 
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"

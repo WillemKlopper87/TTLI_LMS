@@ -32,6 +32,7 @@ from src.models.user import User
 from src.services import enrolment as enrolment_service
 from src.services import entitlements, invoicing, ledger, tax
 from src.services import subscriptions as subscriptions_service
+from src.services.payments.base import CheckoutRedirect, PaymentProvider
 
 log = get_logger(__name__)
 
@@ -220,21 +221,86 @@ async def checkout_po(
     return payment
 
 
+async def checkout_card(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    order: Order,
+    provider: PaymentProvider,
+    return_url: str,
+    cancel_url: str,
+    notify_url: str,
+) -> tuple[Payment, CheckoutRedirect]:
+    """03 §5.2. Deliberately leaves `order.status` at `pending_payment`
+    rather than introducing a new intermediate enum value — unlike EFT/PO,
+    there is nothing for the buyer or an admin to *do* between "redirected
+    to the gateway" and the webhook resolving it, so a distinct status
+    would describe a state nobody ever needs to see or act on. A failed
+    or abandoned attempt leaves nothing committed; the buyer can simply
+    check out again, which creates a fresh `Payment` row.
+    """
+    if order.status != "pending_payment":
+        raise OrderError(f"Order is {order.status!r}, not ready for card checkout.")
+
+    buyer = await session.get(User, order.user_id)
+    if buyer is None:
+        raise OrderError("Order references a buyer that no longer exists.")
+    try:
+        buyer_email = crypto.decrypt(buyer.email_encrypted)
+    except InvalidTag as exc:
+        # Same class of gap list_pending_payments already tolerates for
+        # finance's queue — a row encrypted under a since-rotated key.
+        # Checkout can't silently substitute a placeholder the way a
+        # read-only queue can, since this email is going to the gateway
+        # as the buyer's own identity — refuse loudly instead.
+        raise OrderError("This account's stored email could not be read. Contact support.") from exc
+
+    payment = Payment(
+        id=uuid7(),
+        tenant_id=tenant_id,
+        order_id=order.id,
+        provider="card",
+        amount=order.grand_total,
+        currency=order.currency,
+        status="pending",
+    )
+    session.add(payment)
+    await session.flush()
+
+    redirect = await provider.initiate_checkout(
+        order=order,
+        payment_id=payment.id,
+        return_url=return_url,
+        cancel_url=cancel_url,
+        notify_url=notify_url,
+        buyer_email=buyer_email,
+    )
+    return payment, redirect
+
+
 async def _fulfil_order(
     session: AsyncSession,
     *,
     tenant_id: uuid.UUID,
     order: Order,
     payment: Payment,
-    approved_by_user_id: uuid.UUID,
+    approved_by_user_id: uuid.UUID | None,
+    payment_status: str,
     supplier_vat_number: str | None,
 ) -> Invoice:
-    """Shared by `approve_eft` and `approve_po` — invoice issuance,
-    entitlement/enrolment granting and the ledger entries that record
-    both, identical regardless of which payment method got the order
-    here. The two callers differ only in which status they're leaving
-    (`eft_pending_approval` vs `po_pending_approval`) and what payment
-    metadata that implies — never in what fulfilment itself means.
+    """Shared by `approve_eft`, `approve_po` and `fulfil_card_payment` —
+    invoice issuance, entitlement/enrolment granting and the ledger
+    entries that record both, identical regardless of which payment
+    method got the order here. The three callers differ only in which
+    status they're leaving and what payment metadata that implies — never
+    in what fulfilment itself means.
+
+    `approved_by_user_id` is nullable specifically for the card path: a
+    gateway webhook confirms the payment, not a human, so there is no
+    finance user to record — `payment_status` carries the real distinction
+    ("manually_approved" vs "complete") instead of overloading who
+    approved it to also mean how.
 
     `order.organisation_id` set (02 §4.7) means this order bought seat
     capacity, not a direct entitlement for `order.user_id` — the buyer
@@ -242,7 +308,7 @@ async def _fulfil_order(
     learner. Seats are assigned to specific employees afterward via
     `services/organisations.py::assign_seat`, drawing from the pool this
     creates."""
-    payment.status = "manually_approved"
+    payment.status = payment_status
     payment.approved_by_user_id = approved_by_user_id
     payment.approved_at = datetime.now(UTC)
 
@@ -363,6 +429,7 @@ async def approve_eft(
         order=order,
         payment=payment,
         approved_by_user_id=approved_by_user_id,
+        payment_status="manually_approved",
         supplier_vat_number=supplier_vat_number,
     )
 
@@ -384,6 +451,35 @@ async def approve_po(
         order=order,
         payment=payment,
         approved_by_user_id=approved_by_user_id,
+        payment_status="manually_approved",
+        supplier_vat_number=supplier_vat_number,
+    )
+
+
+async def fulfil_card_payment(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    order: Order,
+    payment: Payment,
+    supplier_vat_number: str | None,
+) -> Invoice:
+    """Called from `routers/webhooks.py` once a provider notification is
+    signature-verified, source-confirmed, and amount-checked — the
+    gateway is the authority here, unlike EFT/PO, so there is no separate
+    human-approval step the way REQ-PAY-03 requires for those two.
+    `approved_by_user_id` stays `None`: nobody approved this, the payment
+    provider confirmed it.
+    """
+    if order.status != "pending_payment":
+        raise OrderError(f"Order is {order.status!r}, not awaiting card payment.")
+    return await _fulfil_order(
+        session,
+        tenant_id=tenant_id,
+        order=order,
+        payment=payment,
+        approved_by_user_id=None,
+        payment_status="complete",
         supplier_vat_number=supplier_vat_number,
     )
 

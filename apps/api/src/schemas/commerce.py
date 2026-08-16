@@ -55,6 +55,16 @@ class EftCheckoutResponse(BaseModel):
     currency: str
 
 
+class CardCheckoutResponse(BaseModel):
+    payment_id: str
+    # The frontend auto-submits a real HTML form built from these — the
+    # standard hosted-checkout redirect pattern, not a client-side
+    # navigation to action_url with fields as a query string (POST only,
+    # REQ-PAY-06: no card data or payment details belong in a URL/log).
+    action_url: str
+    fields: dict[str, str]
+
+
 class PoCheckoutResponse(BaseModel):
     payment_id: str
     po_number: str
