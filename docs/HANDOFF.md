@@ -2171,6 +2171,40 @@ pages were not visually confirmed in a browser, same disclosed
 limitation as every other frontend item in this document. Full detail in
 `docs/STATUS.md` §9c.
 
+**Another security-scan round, requested by name: Trivy, ZAP, Clair,
+Grype, Anchore Engine, Snyk.** Asked upfront which of these were actually
+available before running anything — Trivy and ZAP were already installed
+(ZAP explicitly local, never Docker, per this session's own standing
+instruction); Grype and Snyk installed cleanly via `winget` as standalone
+CLIs; Clair and Anchore Engine have no local-binary form at all, only
+multi-container Docker services, the same category of action already
+steered away from once this session. Asked rather than assumed — the
+user chose to skip both, so the actual run was Trivy + Grype (filesystem
+and all five `infra/docker-compose.yml` images) + Snyk (npm and pip,
+once authenticated with the user's own org) + ZAP (baseline + an
+authenticated pass targeting specifically the new subscription/preview
+surface). Net result: clean, with the same already-reviewed findings as
+before (the CSP `style-src 'unsafe-inline'` finding, ClamAV's bundled
+unfixed Debian packages) plus one new one — Mailpit picked up a fresh
+CRITICAL OpenSSL CVE since the last scan, scoped by its own title to
+32-bit systems only (this deployment is 64-bit) and on dev-only tooling
+regardless; reviewed and accepted, not fixed, since there's no newer
+image to pull yet.
+
+Two real snags along the way, both environment, not code: Snyk's Python
+plugin needs a real `pip` on `PATH` to resolve the dependency graph, and
+this machine's default `pip`/`python` resolve to a completely unrelated
+project's virtualenv (`hermes-agent`) — fixed by prepending
+`apps/api/.venv/Scripts` to `PATH` for that one command. And Docker
+Desktop crashed again mid-scan (the same recurring flake already on
+record), which first showed up as 8 apparent `500`s and a ZAP "Debug
+Error Disclosure" finding on the authenticated pass — investigated via
+the API server's own log before writing it up as a real finding, traced
+to a dead Redis connection pool in the already-running dev-server
+process, not application code. Restarted everything cleanly and
+re-ran the identical pass, which reproduced zero errors. Full detail in
+`docs/STATUS.md` §10.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
