@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { getTheme } from "@/lib/server-api";
 import { SessionProvider } from "@/lib/session-context";
+import { NotificationOptIn } from "@/components/notification-opt-in";
 import { SiteHeader } from "@/components/site-header";
 
 import { RegisterServiceWorker } from "./register-sw";
@@ -31,6 +32,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <RegisterServiceWorker />
         <SessionProvider>
           <SiteHeader />
+          <NotificationOptIn />
           {children}
         </SessionProvider>
       </body>

@@ -171,6 +171,12 @@ class Booking(Base, TimestampMixin):
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     status: Mapped[str] = mapped_column(BookingStatus, nullable=False, server_default="registered")
+    # `0027` — set once by due_workshop_reminders() (SECURITY DEFINER),
+    # never by application code directly; null means "not yet reminded,"
+    # not "no reminder is due."
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class MeetingLink(Base):

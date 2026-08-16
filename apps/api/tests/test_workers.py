@@ -6,16 +6,24 @@ DDL privileges of their own.
 
 from __future__ import annotations
 
+import socket
 import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 import httpx
 import pytest
 import sqlalchemy as sa
 from src.core.config import Settings, get_settings
 from src.core.db import dispose_engine, init_engine
+from src.core.ids import uuid7
+from src.core.queue import dispose_queue, init_queue
+from src.core.redis import dispose_redis, init_redis
 from src.models.auth import RefreshToken
+from src.models.push import PushSubscription
+from src.models.workshop import Booking, Facilitator, Workshop, WorkshopSession
 from src.services import identity
+from src.services import push as push_service
 from src.services.email import send_sync
 from src.workers.main import (
     downgrade_expired_guests,
@@ -23,9 +31,40 @@ from src.workers.main import (
     purge_expired_auth,
     revoke_lapsed_subscriptions,
     send_email_job,
+    send_push_job,
+    send_workshop_reminders,
 )
 
 pytestmark = pytest.mark.integration
+
+
+def _redis_reachable(url: str) -> bool:
+    parsed = urlparse(url)
+    sock = socket.socket()
+    sock.settimeout(2)
+    try:
+        sock.connect((parsed.hostname or "localhost", parsed.port or 6379))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+@pytest.fixture
+async def queue(settings):  # type: ignore[no-untyped-def]
+    if not _redis_reachable(settings.redis_url):
+        pytest.skip(
+            "no Redis on the configured REDIS_URL — run: "
+            "docker compose -f infra/docker-compose.yml up -d redis"
+        )
+    redis = init_redis(settings)
+    await redis.flushdb()
+    await init_queue(settings)
+    yield
+    await dispose_redis()
+    await dispose_queue()
+
 
 # infra/docker-compose.yml runs Mailpit, not MailHog (docstring there has
 # the Trivy-scan reasoning) — its own /api/v1 shape, not MailHog's
@@ -40,6 +79,13 @@ async def engine(settings, database_url):  # type: ignore[no-untyped-def]
     init_engine(settings)
     yield
     await dispose_engine()
+
+
+async def _demo_tenant_id(tenant_session_factory) -> uuid.UUID:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(None) as s:
+        row = (await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'demo'"))).first()
+    assert row is not None
+    return uuid.UUID(str(row[0]))
 
 
 async def test_extend_event_partitions_is_idempotent_and_extends(
@@ -303,6 +349,184 @@ async def test_downgrade_expired_guests_leaves_active_and_non_guests_alone(
 
     # Idempotent: a second run finds nothing new to transition.
     assert await downgrade_expired_guests({}) == 0
+
+
+async def test_send_push_job_deletes_subscription_on_gone(
+    monkeypatch, engine, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(tenant_id) as s:
+        user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"pushjob-{uuid.uuid4().hex[:10]}@example.com"
+        )
+        subscription = PushSubscription(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            user_id=user.id,
+            endpoint=f"https://push.example.com/{uuid.uuid4().hex}",
+            p256dh_key="k",
+            auth_key="a",
+        )
+        s.add(subscription)
+        subscription_id = subscription.id
+
+    def _fake_send_push_sync(settings, **kwargs):  # type: ignore[no-untyped-def]
+        raise push_service.PushSubscriptionGone("gone")
+
+    monkeypatch.setattr(push_service, "send_push_sync", _fake_send_push_sync)
+
+    result = await send_push_job(
+        {},
+        tenant_id=str(tenant_id),
+        subscription_id=str(subscription_id),
+        title="t",
+        body="b",
+        url=None,
+    )
+    assert result is False
+
+    async with tenant_session_factory(tenant_id) as s:
+        remaining = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM push_subscriptions WHERE id = :i"),
+                {"i": subscription_id},
+            )
+        ).scalar_one()
+    assert remaining == 0
+
+
+async def test_send_push_job_keeps_subscription_on_success(
+    monkeypatch, engine, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(tenant_id) as s:
+        user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"pushjob-{uuid.uuid4().hex[:10]}@example.com"
+        )
+        subscription = PushSubscription(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            user_id=user.id,
+            endpoint=f"https://push.example.com/{uuid.uuid4().hex}",
+            p256dh_key="k",
+            auth_key="a",
+        )
+        s.add(subscription)
+        subscription_id = subscription.id
+
+    calls = []
+    monkeypatch.setattr(
+        push_service, "send_push_sync", lambda settings, **kwargs: calls.append(kwargs)
+    )
+
+    result = await send_push_job(
+        {},
+        tenant_id=str(tenant_id),
+        subscription_id=str(subscription_id),
+        title="t",
+        body="b",
+        url="/learn",
+    )
+    assert result is True
+    assert len(calls) == 1
+
+    async with tenant_session_factory(tenant_id) as s:
+        remaining = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM push_subscriptions WHERE id = :i"),
+                {"i": subscription_id},
+            )
+        ).scalar_one()
+    assert remaining == 1
+
+
+async def test_send_workshop_reminders_only_notifies_sessions_in_window_once(
+    engine, queue, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    now = datetime.now(UTC)
+
+    async with tenant_session_factory(tenant_id) as s:
+        facilitator_user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"facilitator-{uuid.uuid4().hex[:10]}@example.com"
+        )
+        learner_email = f"reminder-learner-{uuid.uuid4().hex[:10]}@example.com"
+        learner = await identity.create_user(s, crypto, tenant_id=tenant_id, email=learner_email)
+        far_future_learner = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"far-learner-{uuid.uuid4().hex[:10]}@example.com"
+        )
+
+    async with tenant_session_factory(tenant_id) as s:
+        facilitator = Facilitator(id=uuid7(), tenant_id=tenant_id, user_id=facilitator_user.id)
+        s.add(facilitator)
+        await s.flush()
+
+        workshop = Workshop(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            title=f"Reminder Test Workshop {uuid.uuid4().hex[:6]}",
+            session_type="group_workshop",
+        )
+        s.add(workshop)
+        await s.flush()
+
+        due_session = WorkshopSession(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            workshop_id=workshop.id,
+            facilitator_id=facilitator.id,
+            starts_at=now + timedelta(hours=2),
+            ends_at=now + timedelta(hours=3),
+            capacity=10,
+        )
+        far_session = WorkshopSession(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            workshop_id=workshop.id,
+            facilitator_id=facilitator.id,
+            starts_at=now + timedelta(days=10),
+            ends_at=now + timedelta(days=10, hours=1),
+            capacity=10,
+        )
+        s.add_all([due_session, far_session])
+        await s.flush()
+
+        s.add(
+            Booking(id=uuid7(), tenant_id=tenant_id, session_id=due_session.id, user_id=learner.id)
+        )
+        s.add(
+            Booking(
+                id=uuid7(),
+                tenant_id=tenant_id,
+                session_id=far_session.id,
+                user_id=far_future_learner.id,
+            )
+        )
+
+    reminded = await send_workshop_reminders({})
+    assert reminded >= 1
+
+    async with tenant_session_factory(tenant_id) as s:
+        due_reminder_sent_at = (
+            await s.execute(
+                sa.text("SELECT reminder_sent_at FROM bookings WHERE session_id = :sid"),
+                {"sid": due_session.id},
+            )
+        ).scalar_one()
+        far_reminder_sent_at = (
+            await s.execute(
+                sa.text("SELECT reminder_sent_at FROM bookings WHERE session_id = :sid"),
+                {"sid": far_session.id},
+            )
+        ).scalar_one()
+    assert due_reminder_sent_at is not None
+    assert far_reminder_sent_at is None
+
+    # Idempotent: a second run finds nothing new in the due session
+    # (already reminded) and nothing yet in the far one (still outside
+    # the window).
+    second_run = await send_workshop_reminders({})
+    assert second_run == 0
 
 
 def test_send_sync_raises_on_unreachable_smtp_host() -> None:

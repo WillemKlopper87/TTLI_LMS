@@ -30,7 +30,7 @@ from src.core.logging import get_logger
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
 from src.models.user import User
 from src.services import enrolment as enrolment_service
-from src.services import entitlements, invoicing, ledger, tax
+from src.services import entitlements, invoicing, ledger, push, tax
 from src.services import subscriptions as subscriptions_service
 from src.services.payments.base import CheckoutRedirect, PaymentProvider
 
@@ -409,6 +409,23 @@ async def _fulfil_order(
         reference=invoice.number,
         created_by=approved_by_user_id,
     )
+
+    # order.organisation_id set means this bought seat capacity, not a
+    # direct entitlement (docstring above) — order.user_id is then the
+    # org admin who placed the order, still the right person to tell
+    # "your payment was approved," not a learner who hasn't been
+    # assigned a seat yet.
+    await push.notify_user(
+        session,
+        tenant_id=tenant_id,
+        user_id=order.user_id,
+        title="Payment approved",
+        body=(
+            f"Your payment of {order.currency} {order.grand_total} was approved — "
+            "access is now available."
+        ),
+        url="/learn",
+    )
     return invoice
 
 
@@ -491,6 +508,14 @@ async def reject_eft(session: AsyncSession, *, order: Order, payment: Payment, r
     payment.rejection_reason = reason
     order.status = "eft_rejected"
     await session.flush()
+    await push.notify_user(
+        session,
+        tenant_id=order.tenant_id,
+        user_id=order.user_id,
+        title="Payment not approved",
+        body=f"Your payment could not be approved: {reason}",
+        url="/checkout",
+    )
 
 
 async def reject_po(session: AsyncSession, *, order: Order, payment: Payment, reason: str) -> None:
@@ -503,6 +528,14 @@ async def reject_po(session: AsyncSession, *, order: Order, payment: Payment, re
     payment.rejection_reason = reason
     order.status = "cancelled"
     await session.flush()
+    await push.notify_user(
+        session,
+        tenant_id=order.tenant_id,
+        user_id=order.user_id,
+        title="Payment not approved",
+        body=f"Your payment could not be approved: {reason}",
+        url="/checkout",
+    )
 
 
 @dataclass(frozen=True, slots=True)

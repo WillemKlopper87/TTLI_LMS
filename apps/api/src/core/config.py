@@ -108,6 +108,19 @@ class Settings(BaseSettings):
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
 
+    # --- Web Push (01 §5.9) ---
+    # Unlike Payfast/Spotify above, VAPID is a self-generated keypair, not
+    # a third party's credential — nothing external blocks this feature,
+    # only whether a pair has been generated yet (services/push.py's
+    # module docstring has the one-liner). Empty means push sends are
+    # skipped, the same graceful-degradation shape as everything above.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # A contact URI VAPID requires the sender to identify itself with —
+    # mailto: or an https: URL, so a push service that flags abuse has
+    # somewhere to reach the sender.
+    vapid_subject: str = "mailto:support@example.com"
+
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"
     break_glass_admin_password: str = ""

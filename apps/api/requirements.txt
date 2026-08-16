@@ -52,3 +52,9 @@ httpx==0.28.1
 reportlab==5.0.0
 qrcode[pil]==8.2
 Pillow==12.3.0
+# Web Push (01 §5.9, services/push.py) — VAPID signing + aes128gcm
+# payload encryption per RFC 8291/8292. Unlike Payfast/Spotify, nothing
+# here is blocked on a third-party account: VAPID is a self-generated
+# keypair, not a credential from anyone else, so this ships fully
+# functional, not another empty-default "coded but not configured" gap.
+pywebpush==2.4.0

@@ -2655,6 +2655,116 @@ hardening informed by `docs/research/devsecops-deployment.md` (Terraform
 targeting Azure South Africa North, the WAF cut-list, anti-bot defenses),
 then the payment analytics dashboard from the other research doc.
 
+**Next pass: Web Push (01 §5.9), the first half of that list — 2026-08-16.**
+The product-owner decision Phase 4.5's Outstanding entry was blocked on
+arrived ("payment approved/rejected, certificate/badge issued, workshop
+starting soon" — three triggers, nothing else), so this is a real build,
+not the wiring-without-content this file previously refused to do.
+
+Shape: `0027` (`push_subscriptions`, RLS-forced, tenant-scoped, one row
+per device, upsert on `endpoint`; `bookings.reminder_sent_at`; the
+`SECURITY DEFINER` `due_workshop_reminders(int)` — same `0005`/`0021`/
+`0025` maintenance-function idiom, one `UPDATE … RETURNING` so "mark
+reminded" and "who to notify" can't drift apart), `services/push.py`
+mirroring `services/email.py`'s exact enqueue/worker split, `routers/
+push.py` (`POST/DELETE /push-subscriptions`, `GET /push/vapid-public-key`
+reporting `configured: false` when no keypair is set so the frontend
+renders nothing), the three `push.notify_user` call sites in `services/
+orders.py` and `services/credentials.py`, `send_push_job` + the hourly
+`send_workshop_reminders` cron in `workers/main.py`, `components/
+notification-opt-in.tsx` mounted globally in `layout.tsx`, and `push`/
+`notificationclick` handlers in `public/sw.js`. VAPID keys are a self-
+generated keypair (one-liner in `services/push.py`'s docstring), never a
+third-party credential.
+
+**Two real bugs found only by the live smoke test — the eleventh pass's
+lesson yet again, and both would have shipped otherwise.**
+
+(1) *A migration grant gap tests cannot see.* `0027`'s first draft
+granted `SELECT, INSERT, DELETE` on `push_subscriptions` to `app_user`
+but not `UPDATE`. `services/push.py::subscribe`'s whole reason for
+upserting on `endpoint` is a browser re-subscribing the same device with
+rotated keys — and that exact second call 500'd with `permission denied
+for table push_subscriptions` through the real BFF. pytest runs as the
+table owner, so every subscribe test passed. Fixed in the migration
+(round-tripped `downgrade -1 → upgrade head → alembic check`, clean), not
+just `GRANT`ed by hand in the dev DB. **Rule worth internalising**: any
+new RLS-forced table needs its `GRANT` line read against every verb the
+service layer actually issues — `0009`'s per-table grant list is the
+precedent, and the test suite will never catch a missing one.
+
+(2) *pywebpush's default TTL is unusable on Windows.* The first real
+delivery to the browser's actual subscription came back `400 Bad
+Request` from `wns2-db5p.notify.windows.com` — WNS, the push service
+behind Edge on Windows. Ruled out the VAPID subject first (`mailto:` on
+three different domains and an `https:` subject: all 400), then read the
+`X-WNS-*` response headers pywebpush swallows into a bare exception:
+`X-WNS-ERROR-DESCRIPTION: Ttl value conflicts with X-WNS-Cache-Policy`,
+`X-WNS-STATUS: dropped`. pywebpush sends `TTL: 0` unless told otherwise;
+WNS refuses that outright, FCM and Mozilla autopush accept it. A Chrome-
+only smoke test would have passed and every Windows/Edge learner would
+silently never receive a single notification. Tested directly against
+the real endpoint: TTL 0 → 400 dropped, TTL 60 and 86400 → 201
+`X-WNS-STATUS: received`. Fixed with `PUSH_TTL_SECONDS = 24h` in
+`send_push_sync` (matches the longest-lived trigger — workshop reminders
+fire 24h ahead — and lets a closed laptop see "payment approved" when it
+wakes) and the unit test now asserts a nonzero `ttl` kwarg reaches
+`webpush()` so it can't regress silently.
+
+The verification path, all real: a CDP-driven Edge instance (`msedge
+--remote-debugging-port=9222 --user-data-dir=<temp>`, driven by a
+40-line `websockets` script since the `browser-use` MCP harness insisted
+on the interactive `chrome://inspect` remote-debugging consent this
+non-interactive session couldn't click) → real learner login → the opt-
+in banner rendered → clicked Enable → `PushManager.subscribe` produced a
+real WNS endpoint → row landed via the real BFF → `push.notify_user`
+enqueued through the real arq queue → the worker logged `push_sent` with
+WNS 201 → and `sw.js`'s `push` handler was confirmed to call
+`showNotification` with the right title/body/URL by delivering the
+payload straight to the registered service worker via CDP
+(`ServiceWorker.deliverPushMessage`). That last step also surfaced that
+`Browser.grantPermissions` does *not* give the service-worker context
+notification permission even when the page reports `granted` —
+`Browser.setPermission` does; not an app issue, but a real hour if
+unknown. **Not observed**: the final WNS→OS→browser hop actually
+rendering in the throwaway automation profile — that leg is entirely
+Microsoft's, WNS confirmed receipt, a temp `--user-data-dir` profile with
+no bound WNS channel is the expected reason. Every boundary this codebase
+owns was exercised with the real thing; a manual check in a normal Edge
+profile is the one confirmation left, and a cheap one.
+
+Two smaller things worth knowing. The `admin@ttli.local` break-glass
+account **cannot log in through the API at all** — `LoginRequest.email:
+EmailStr` rejects `.local` as a reserved TLD (422 before it ever reaches
+the password check), and no `ttli.local` user exists in the dev DB anyway
+(seeded only when `BREAK_GLASS_ADMIN_ENABLED` was on at `0002` time).
+The finance-queue smoke path was exercised via the service layer instead;
+if a future pass needs a real `payment:approve` login, either change the
+break-glass default domain to something `email-validator` accepts or
+grant `super_admin` to the seeded `podcast-smoke@example.com` learner
+(its `users.id` is `01a00b9e-6740-7186-a580-b511f63d1955`, *not* the
+`content_author` row a similar-looking earlier query returned). And
+`arq`'s CLI logs `→`/`←` arrows that crash Python's default `cp1252`
+console encoder on Windows with a `UnicodeEncodeError` inside the logging
+module — harmless to the job, but it hides the log line you're looking
+for; run it with `PYTHONIOENCODING=utf-8`.
+
+Verified: 10 new tests (6 `tests/test_push.py`, 4 `tests/test_workers.py`
+including an idempotency test that a second `send_workshop_reminders`
+run finds nothing new), full suite 287 / 0 skipped (up from 277),
+`ruff`/`ruff format`/`mypy src` clean, `0027` round-tripped and `alembic
+check` clean. `apps/web` `typecheck`/`build` clean, 43 routes
+(unchanged — the opt-in is a global component), `api-client`
+regenerated. Live smoke test as described above.
+
+Still to come from the same direction: the axe-core CI gate (the last
+Phase 4.5 item), then Phase 6's AI insights (shipped inert, `ai_enabled`
+stays off), then Phase 7 hardening per `docs/research/devsecops-
+deployment.md`, then the payment analytics dashboard. Separately, a
+course-authoring wizard planning report was produced this session
+(`docs/research/course-authoring-wizard.md`) — its finding that 11 of 22 wizard elements are already built and only
+four are net-new is worth reading before scoping that work.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

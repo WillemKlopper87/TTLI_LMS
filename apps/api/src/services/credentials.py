@@ -40,7 +40,7 @@ from src.models.credential import (
 )
 from src.models.learning import Enrolment
 from src.models.user import User
-from src.services import identity
+from src.services import identity, push
 
 VISIBILITY_VALUES = ("private", "public", "link_only")
 
@@ -130,6 +130,20 @@ async def issue_for_completed_enrolment(
         )
         session.add(badge)
         await session.flush()
+
+    if certificate is not None or badge is not None:
+        if certificate and badge:
+            issued = "certificate and badge"
+        else:
+            issued = "certificate" if certificate else "badge"
+        await push.notify_user(
+            session,
+            tenant_id=tenant_id,
+            user_id=enrolment.user_id,
+            title="Certificate issued!" if certificate else "Badge issued!",
+            body=f"You've earned a {issued} for {course_title}.",
+            url=f"/learn/{enrolment.id}",
+        )
 
     return IssuedCredentials(certificate=certificate, badge=badge, raw_verification_token=raw_token)
 

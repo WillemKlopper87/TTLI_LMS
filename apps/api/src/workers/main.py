@@ -20,8 +20,10 @@ from arq.cron import cron
 from sqlalchemy import text
 
 from src.core.config import get_settings
-from src.core.db import dispose_engine, get_sessionmaker, init_engine
+from src.core.db import dispose_engine, get_sessionmaker, init_engine, set_tenant
 from src.core.logging import configure_logging, get_logger
+from src.models.push import PushSubscription
+from src.services import push as push_service
 from src.services.email import send_sync
 from src.services.media.pipeline import transcode_video_asset
 from src.services.storage import get_storage_adapter
@@ -80,6 +82,80 @@ async def downgrade_expired_guests(ctx: dict[str, Any]) -> int:
     return int(downgraded)
 
 
+async def send_push_job(
+    ctx: dict[str, Any],
+    *,
+    tenant_id: str,
+    subscription_id: str,
+    title: str,
+    body: str,
+    url: str | None,
+) -> bool:
+    """Raises on a genuine delivery failure so arq retries with backoff
+    (max_tries below) — the same reasoning `send_email_job` already
+    established. A dead subscription (404/410) is different: not a
+    transient failure to retry, so the row is deleted and the job
+    succeeds with `False` rather than being retried against an endpoint
+    that will never accept another push."""
+    settings = get_settings()
+    factory = get_sessionmaker()
+    async with factory() as session, session.begin():
+        await set_tenant(session, uuid.UUID(tenant_id))
+        subscription = await session.get(PushSubscription, uuid.UUID(subscription_id))
+        if subscription is None:
+            return False
+        try:
+            await asyncio.to_thread(
+                push_service.send_push_sync,
+                settings,
+                endpoint=subscription.endpoint,
+                p256dh_key=subscription.p256dh_key,
+                auth_key=subscription.auth_key,
+                title=title,
+                body=body,
+                url=url,
+            )
+        except push_service.PushSubscriptionGone:
+            await session.delete(subscription)
+            log.info("push_subscription_gone", subscription_id=subscription_id)
+            return False
+    log.info("push_sent", subscription_id=subscription_id)
+    return True
+
+
+async def send_workshop_reminders(ctx: dict[str, Any]) -> int:
+    """The third of the product owner's three push triggers. `due_
+    workshop_reminders()` (SECURITY DEFINER, `0027`) atomically finds
+    `registered` bookings for sessions starting within 24h that haven't
+    been reminded yet, marks them reminded, and returns who to notify —
+    marking and notifying can't drift apart, since a crash between the
+    two isn't possible (one SQL statement did both). This function's own
+    job is just the per-row fan-out into `push.notify_user`, which needs
+    a tenant-bound session `due_workshop_reminders()` itself can't hold
+    (SECURITY DEFINER intentionally has none — see 0027's docstring)."""
+    factory = get_sessionmaker()
+    # session.begin() here is load-bearing, not boilerplate: without an
+    # explicit commit, due_workshop_reminders()'s own UPDATE ... RETURNING
+    # rolls back when the session just closes, so the SELECT half's
+    # result looks right in this same transaction while the "mark
+    # reminded" half silently never persists — caught by this function's
+    # own idempotency test asserting a second run finds nothing new.
+    async with factory() as lookup_session, lookup_session.begin():
+        due = (await lookup_session.execute(text("SELECT * FROM due_workshop_reminders(24)"))).all()
+    for row in due:
+        async with factory() as session, session.begin():
+            await set_tenant(session, row.tenant_id)
+            await push_service.notify_user(
+                session,
+                tenant_id=row.tenant_id,
+                user_id=row.user_id,
+                title="Workshop starting soon",
+                body=f'"{row.workshop_title}" starts at {row.starts_at:%Y-%m-%d %H:%M %Z}.',
+            )
+    log.info("workshop_reminders_sent", count=len(due))
+    return len(due)
+
+
 async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
     """Raises on any SMTP failure so arq retries with backoff (max_tries
     below) instead of the message being silently dropped — the one thing
@@ -125,11 +201,13 @@ class WorkerSettings:
         revoke_lapsed_subscriptions,
         downgrade_expired_guests,
         func(send_email_job, max_tries=5),
+        func(send_push_job, max_tries=5),
         # max_tries=1: a failed transcode already leaves video_assets/
         # transcode_jobs in a clean 'failed' state with the real error
         # (pipeline.py's except clause) — a bare retry would just re-run
         # the same doomed ffmpeg invocation.
         func(transcode_video_job, max_tries=1),
+        send_workshop_reminders,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Partitions monthly on the 1st; 0004 bootstrapped ~13 months of
@@ -142,6 +220,12 @@ class WorkerSettings:
         # guest_access_days, default 7), so a once-a-day cadence would
         # leave the status bookkeeping visibly stale for up to 24h.
         cron(downgrade_expired_guests, minute=0),
+        # Every 15 minutes, not hourly: the reminder window itself is 24h
+        # (due_workshop_reminders' default), so a coarser cadence would
+        # only widen how late a reminder can arrive relative to when a
+        # session first entered the window, not how often the sweep runs
+        # relative to the sessions it actually finds.
+        cron(send_workshop_reminders, minute={0, 15, 30, 45}),
     ]
     on_startup = startup
     on_shutdown = shutdown
@@ -155,5 +239,7 @@ __all__ = [
     "purge_expired_auth",
     "revoke_lapsed_subscriptions",
     "send_email_job",
+    "send_push_job",
+    "send_workshop_reminders",
     "transcode_video_job",
 ]

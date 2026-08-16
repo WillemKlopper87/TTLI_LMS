@@ -27,7 +27,7 @@ warn_unreachable = true
 exclude = ["alembic/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["argon2.*", "boto3.*", "botocore.*", "qrcode.*", "reportlab.*"]
+module = ["argon2.*", "boto3.*", "botocore.*", "pywebpush.*", "qrcode.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

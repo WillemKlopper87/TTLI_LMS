@@ -38,3 +38,41 @@ self.addEventListener("fetch", (event) => {
     )
   );
 });
+
+// Web Push (01 §5.9). The payload is whatever services/push.py::
+// send_push_sync's `data=json.dumps({title, body, url})` sent — a plain
+// JSON object, not a Notification-shaped payload, so this parses it
+// itself rather than assuming event.data.json() is display-ready.
+self.addEventListener("push", (event) => {
+  let payload = { title: "TTLI", body: "" };
+  try {
+    payload = event.data ? event.data.json() : payload;
+  } catch {
+    // Not JSON — fall back to the plain-text body rather than dropping
+    // the notification entirely.
+    payload = { title: "TTLI", body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "TTLI", {
+      body: payload.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: payload.url || "/" },
+    })
+  );
+});
+
+// Clicking the notification focuses an already-open tab on that URL if
+// one exists, rather than always opening a new one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data && event.notification.data.url;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(url) && "focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url || "/");
+    })
+  );
+});
