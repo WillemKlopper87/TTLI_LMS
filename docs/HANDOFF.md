@@ -2263,6 +2263,48 @@ log in through `POST /auth/login` at all: pydantic's `EmailStr` rejects
 the reserved `.local` TLD, so create a real `@example.com` user for any
 live auth testing.
 
+**Frontend backlog item 5 — course → commerce link, closing the five-item set.**
+`Product.course_id`/`Price` have existed since `0009`/`0011`, but nothing
+could ever write them except a migration, so every product in the database
+was one of the seeded demo rows and a freshly authored course had no path
+to being sold. New `/catalogue/*` admin routes (`routers/catalogue.py`,
+`services/catalogue.py`) close that: create a product, attach a course
+(checked against `course_tenant_assignments`, since `courses` is global —
+02 §1.3 — and that join is the only real tenant boundary), price it,
+publish. Publishing without a price is refused outright, so the storefront
+can never show a live "Enrol" button with nothing behind it.
+
+Gated on a new `product:manage` permission (`0022`), **not**
+`subscription_plan:manage` even though `0002` grants that one to
+`content_author` too — pricing is a commercial decision, a content author
+should not silently gain it as a side effect of an unrelated grant.
+`test_content_author_cannot_price_products` holds that line as a test, not
+just a comment, so it can't drift quietly later.
+
+The whole point of this item is that nothing downstream needed to change:
+`services/orders.py::approve_eft` already reads `Product.course_id` to
+grant the entitlement and enrolment, exactly as it does for the seeded
+demo product — this item only had to make that column genuinely writable.
+Proven end to end in `tests/test_catalogue.py`'s last test, not assumed:
+author a real course, sell it, buy it through the real EFT → payment-proof
+→ finance-approval path, and assert a real `Enrolment` lands for that
+exact course.
+
+**Also worth recording: this session hit the Docker container-drop hazard
+mid-work** (all five `ttli-*` containers had exited, the flakiness already
+on record for this machine) and both dev servers were down. Full gate
+sweep — 243 tests, ruff/mypy/format, migration round-trip, `typecheck`/
+`build` — was re-run clean *after* bringing everything back up, not just
+trusted from before the drop. If you hit a sudden wall of connection
+refused errors mid-session, check `docker ps -a` before assuming a code
+regression; `docker compose -f infra/docker-compose.yml up -d` from
+`infra/` recovers it, no data lost (named volumes).
+
+Backend: 243 tests / 0 skipped (+6), full gate sweep clean, migration
+round-tripped. Frontend: `typecheck`/`build` clean, 39 routes (`build`'s
+own count — `/admin/catalogue` is the only new page). Committed `e4538fb`,
+pushed.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
