@@ -2349,6 +2349,161 @@ export interface paths {
         patch: operations["update_badge_template_api_v1_badge_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/podcasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Podcast Episodes */
+        get: operations["list_podcast_episodes_api_v1_podcasts_get"];
+        put?: never;
+        /** Create Podcast Episode */
+        post: operations["create_podcast_episode_api_v1_podcasts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/podcasts/spotify-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Prefill an episode form from a pasted Spotify URL */
+        get: operations["spotify_lookup_api_v1_podcasts_spotify_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/podcasts/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Podcast Episode */
+        get: operations["get_podcast_episode_api_v1_podcasts__episode_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Podcast Episode */
+        patch: operations["update_podcast_episode_api_v1_podcasts__episode_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/podcasts/{episode_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Podcast Episode */
+        post: operations["publish_podcast_episode_api_v1_podcasts__episode_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/podcasts/{episode_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Podcast Episode */
+        post: operations["unpublish_podcast_episode_api_v1_podcasts__episode_id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/podcasts/{episode_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload self-hosted audio for an authored episode */
+        post: operations["upload_podcast_audio_api_v1_podcasts__episode_id__audio_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/podcasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Published podcast episodes, no auth required */
+        get: operations["list_public_podcast_episodes_api_v1_public_podcasts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/podcasts/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A published podcast episode, no auth required */
+        get: operations["get_public_podcast_episode_api_v1_public_podcasts__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/podcasts/{slug}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log a podcast engagement event (play/progress/CTA-click), no auth required */
+        post: operations["log_podcast_event_api_v1_public_podcasts__slug__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2610,6 +2765,11 @@ export interface components {
         };
         /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
         Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_podcast_audio_api_v1_podcasts__episode_id__audio_post */
+        Body_upload_podcast_audio_api_v1_podcasts__episode_id__audio_post: {
             /** File */
             file: string;
         };
@@ -3617,6 +3777,114 @@ export interface components {
             /** Currency */
             currency: string;
         };
+        /** PodcastEpisodeCreateRequest */
+        PodcastEpisodeCreateRequest: {
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Slug */
+            slug?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Show Notes */
+            show_notes?: string | null;
+            /** Transcript */
+            transcript?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+            /** External Platform */
+            external_platform?: string | null;
+            /** External Url */
+            external_url?: string | null;
+            /** Curator Name */
+            curator_name?: string | null;
+            /** Curator Note */
+            curator_note?: string | null;
+        };
+        /** PodcastEpisodeResponse */
+        PodcastEpisodeResponse: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** State */
+            state: string;
+            /** Show Notes */
+            show_notes: string | null;
+            /** Transcript */
+            transcript: string | null;
+            /** Related Course Id */
+            related_course_id: string | null;
+            /** Audio Url */
+            audio_url: string | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Cover Image Url */
+            cover_image_url: string | null;
+            /** External Platform */
+            external_platform: string | null;
+            /** External Url */
+            external_url: string | null;
+            /** Curator Name */
+            curator_name: string | null;
+            /** Curator Note */
+            curator_note: string | null;
+            /** Position */
+            position: number;
+        };
+        /**
+         * PodcastEpisodeUpdateRequest
+         * @description Every field `None` means "leave unchanged" — matches
+         *     `CourseUpdateRequest`'s convention. `kind` is not updatable: an
+         *     episode's audio/curation shape is a create-time decision, not
+         *     something to flip after the fact (`services/podcasts.py` refuses to
+         *     change it).
+         */
+        PodcastEpisodeUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Show Notes */
+            show_notes?: string | null;
+            /** Transcript */
+            transcript?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+            /** External Platform */
+            external_platform?: string | null;
+            /** External Url */
+            external_url?: string | null;
+            /** Curator Name */
+            curator_name?: string | null;
+            /** Curator Note */
+            curator_note?: string | null;
+            /** Position */
+            position?: number | null;
+        };
+        /** PodcastEpisodesPageResponse */
+        PodcastEpisodesPageResponse: {
+            /** Items */
+            items: components["schemas"]["PodcastEpisodeResponse"][];
+        };
+        /** PodcastEventRequest */
+        PodcastEventRequest: {
+            /** Event Name */
+            event_name: string;
+            /** Percent Complete */
+            percent_complete?: number | null;
+            /** Position Seconds */
+            position_seconds?: number | null;
+            /** Source */
+            source?: string | null;
+        };
         /** PriceCreateRequest */
         PriceCreateRequest: {
             /** Currency */
@@ -4135,6 +4403,27 @@ export interface components {
         SessionsPage: {
             /** Items */
             items: components["schemas"]["SessionResponse"][];
+        };
+        /**
+         * SpotifyLookupResponse
+         * @description `configured=False` means no `spotify_client_id` is set for this
+         *     deployment — the same graceful-degradation shape
+         *     `services/payments/payfast.py` established for an unconfigured
+         *     provider. The caller falls back to manual entry, not an error.
+         */
+        SpotifyLookupResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** Cover Image Url */
+            cover_image_url?: string | null;
+            /** Embed Id */
+            embed_id?: string | null;
         };
         /** SubmissionDownloadResponse */
         SubmissionDownloadResponse: {
@@ -9256,6 +9545,337 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BadgeTemplateResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_podcast_episodes_api_v1_podcasts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodesPageResponse"];
+                };
+            };
+        };
+    };
+    create_podcast_episode_api_v1_podcasts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PodcastEpisodeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spotify_lookup_api_v1_podcasts_spotify_lookup_get: {
+        parameters: {
+            query: {
+                url: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyLookupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_podcast_episode_api_v1_podcasts__episode_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_podcast_episode_api_v1_podcasts__episode_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PodcastEpisodeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_podcast_episode_api_v1_podcasts__episode_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_podcast_episode_api_v1_podcasts__episode_id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_podcast_audio_api_v1_podcasts__episode_id__audio_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_podcast_audio_api_v1_podcasts__episode_id__audio_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_podcast_episodes_api_v1_public_podcasts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodesPageResponse"];
+                };
+            };
+        };
+    };
+    get_public_podcast_episode_api_v1_public_podcasts__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    log_podcast_event_api_v1_public_podcasts__slug__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PodcastEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -2544,6 +2544,117 @@ dispatching a "write a plan to this path" agent again: confirm it
 actually has Write/Edit, or expect to be the one who persists its
 output.
 
+**Next pass: the guest-expiry sweep and a real podcast platform —
+Phase 2's two remaining pieces, the second one built to a research doc
+rather than the original placeholder-copy plan.** User direction after
+card checkout landed: "build all the sprints... utilise the research
+provided... so as to minimise going back and forth." Two small pieces
+first, then the big one.
+
+`downgrade_expired_guests()` (`0025`) is the hourly sweep 02 §12.4 named
+and the guest-access pass (way back) deliberately deferred — `SECURITY
+DEFINER`, the exact `0005`/`0021` maintenance-function idiom, an arq cron
+on the hour. Bookkeeping only (`users.status` → `'expired'`); access
+itself was already enforced live at magic-link consumption and refresh
+rotation, so this closes a documentation gap more than an access-control
+one. One test in `tests/test_workers.py`.
+
+**The podcast platform (REQ-STORE-04, `0026`)** supersedes the original
+"fabricate placeholder copy" plan for the exact same requirement — the
+user's mid-session request (Spotify integration, admin-curated
+third-party recommendations, listen stats) turned this into a real,
+richer build instead, and the concurrently-produced research doc
+(`docs/research/podcast-platform-integration.md`, previous pass) meant
+no re-discovery was needed going in.
+
+Deliberately **no gated-content tier** — every episode is public
+(`state` alone gates visibility, the same `ContentState` enum `courses`
+uses). The research doc's own open-questions section had already flagged
+that a lead-capture-gated-content unlock mechanism doesn't exist
+anywhere in this codebase for any content type; building one as a side
+effect here would have been a much bigger, separate feature than what
+was actually asked for, and 01_PRD.md's "podcasts as a sales lure"
+framing backs the simplification anyway. `services/podcasts.py`
+deliberately does **not** reuse `services/media/*`'s transcode
+pipeline — that solves problems (adaptive bitrate, seek-ceiling
+enforcement, anti-bypass watermarking) a freely-playable marketing
+episode doesn't have; an upload gets one `ffprobe` call for
+`duration_seconds` and a direct store to `Container.PUBLIC_MARKETING`,
+no rendition ladder, no arq job. `services/spotify.py` is a
+client-credentials episode-metadata lookup, written the same
+graceful-degradation way `services/payments/payfast.py` was — real code,
+no live Spotify Developer app registered, so it correctly reports
+"not configured" today rather than pretending to work.
+
+**A real route-ordering bug, caught by the test suite, not by
+inspection.** `GET /podcasts/spotify-lookup` was first registered
+*after* `GET /podcasts/{episode_id}` — FastAPI/Starlette matches routes
+in registration order, so the parameterized route swallowed the literal
+one (`episode_id="spotify-lookup"`, a 404 masquerading as "not found").
+`tests/test_podcasts.py`'s own lookup test failed immediately; fixed by
+moving the literal path ahead of its parameterized sibling. Same general
+rule `routers/courses.py`'s `/public/courses/{id}/curriculum` already
+implicitly follows (registered on its own literal-enough path) — worth
+checking on any future router with both a literal and a parameterized
+GET on the same prefix.
+
+Frontend: `/podcasts` (public listing), `/podcasts/[slug]` (transcript/
+show-notes/related-course CTA, a native `<audio>` player, and a
+click-to-load `SpotifyEmbed` — no iframe injected until an explicit
+click, since there's no cookie-consent banner in this project yet to
+gate a third-party embed against properly; the Spotify Web Playback SDK
+was deliberately not used, since that needs a listener's own Premium
+OAuth and is the wrong tool for embedding a show), and `/admin/podcasts`
+(curation CRUD, structurally copied from `admin/catalogue/page.tsx`'s
+expandable-row convention). `proxy.ts`'s CSP gained a narrowly-scoped
+`frame-src https://open.spotify.com` (previously absent — any iframe was
+being blocked) and `img-src` now allows `i.scdn.co` for Spotify's own
+cover-art CDN.
+
+**A real near-miss on the test side, the tenth pass's lesson recurring
+under a new specific cause.** The first full suite run this pass showed
+73 passed / 193 skipped — not a regression: `docker ps` came back
+completely empty, the whole compose stack had silently dropped sometime
+during this session's long background-agent load. Brought it back up,
+waited for ClamAV's health check, re-ran: 277 / 0 skipped, clean.
+
+**A second, more interesting near-miss, found only because a live smoke
+test was attempted at all.** The running API and web dev servers turned
+out to be stale processes started much earlier in this same long
+session — plain `uvicorn src.main:app --port 8010` with no `--reload`,
+so **none** of this session's backend work since they were started,
+including Sprint 3's entire card-checkout pass, was actually being
+served. `identity.py`'s module-level `_DUMMY_HASH = hash_password(...)`
+also failed once with a genuine `argon2.exceptions.HashingError: Memory
+allocation error` on the very first restart attempt — transient memory
+pressure from this session's own long-running background load, not a
+code problem; the immediate retry succeeded. Restarted both servers
+clean, then drove the real path through `localhost:3010`: logged in as a
+real `content_author`, created a curated episode, published it, confirmed
+it on the real `GET /public/podcasts`, fetched its detail, logged a real
+listen-stat event (204), and loaded both `/podcasts` and
+`/podcasts/[slug]` as actual rendered pages (200). **Worth internalising
+for any future long session**: a dev server started early can silently
+serve stale code for everything built afterward, and a `curl`/browser
+check late in the session can look successful for the wrong reason (an
+old build responding, not the new one) unless the process's own start
+time is checked against the code's own edit times first.
+
+Verified: 11 new tests (10 `tests/test_podcasts.py`, 1
+`tests/test_workers.py`), full suite 277 / 0 skipped (up from 266),
+`ruff`/`ruff format`/`mypy src` clean, two migrations (`0025`, `0026`)
+each round-tripped and `alembic check` clean. `apps/web` `typecheck`/
+`build` clean, 43 routes (up from 41 — `/podcasts`, `/podcasts/[slug]`,
+`/admin/podcasts`). Live smoke test as described above, through the real
+BFF and the actual rendered pages, not just pytest.
+
+Going straight into the rest of the user's "build all the sprints"
+direction next: push notifications + an axe-core CI gate, then Phase 6's
+AI insights (shipped inert, `ai_enabled` stays off), then Phase 7
+hardening informed by `docs/research/devsecops-deployment.md` (Terraform
+targeting Azure South Africa North, the WAF cut-list, anti-bot defenses),
+then the payment analytics dashboard from the other research doc.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

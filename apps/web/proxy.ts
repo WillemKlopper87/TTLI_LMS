@@ -48,9 +48,21 @@ export function proxy(request: NextRequest) {
     `default-src 'self'`,
     scriptSrc,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data:`,
+    // i.scdn.co: Spotify's own cover-art CDN, for a curated/cross-posted
+    // podcast episode's artwork (services/spotify.py's lookup returns
+    // these URLs directly, not proxied through our own storage).
+    `img-src 'self' data: https://i.scdn.co`,
     `font-src 'self'`,
     `connect-src 'self'`,
+    // Podcasts (REQ-STORE-04): the one iframe this app embeds, Spotify's
+    // own episode player — click-to-load only (SpotifyEmbed.tsx), not
+    // injected until the visitor asks for it, pending the cookie-consent
+    // banner this project doesn't have yet (docs/research/podcast-
+    // platform-integration.md §9 flags this for 04_SECURITY_AND_
+    // COMPLIANCE.md's owner). frame-ancestors below is unrelated — that's
+    // about *this site* being framed by someone else, not what this site
+    // frames.
+    `frame-src https://open.spotify.com`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

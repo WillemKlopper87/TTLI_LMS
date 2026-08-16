@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     # param — switching env changes the host, same as most gateways.
     payfast_sandbox: bool = True
 
+    # --- Podcast Spotify metadata lookup (REQ-STORE-04) ---
+    # Same empty-default, graceful-degradation shape as Payfast above:
+    # services/spotify.py refuses to look anything up with no client_id
+    # configured, and the admin curation UI falls back to manual entry —
+    # this is a UX convenience (autofill title/duration/artwork from a
+    # pasted episode URL), never a hard dependency for podcasts to work.
+    # Client-credentials only (no user OAuth, no scopes needed) — register
+    # a free Spotify Developer app to turn this on.
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+
     break_glass_admin_enabled: bool = False
     break_glass_admin_email: str = "admin@ttli.local"
     break_glass_admin_password: str = ""

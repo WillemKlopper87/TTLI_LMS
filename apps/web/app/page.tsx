@@ -16,12 +16,16 @@ import { getTheme } from "@/lib/server-api";
  *
  * "Lead with Intent" (/lead-with-intent) and a working contact form
  * (/contact, source="contact_form" through POST /leads) are now real
- * pages. Still not built: Podcasts and "Cultivate with Intent" — no real
- * content was extracted for either (docs/brand/ttli-brand-identity.md
- * notes the real site names them in its nav but the extraction pass never
- * pulled episode/page content), so building them now would mean
- * fabricating copy. Genuinely blocked on the same content-inventory gap
- * as Phase 0 (01_PRD.md §1.4), not a missed task.
+ * pages. Podcasts (/podcasts) is now a real, working platform too — own
+ * episodes plus admin-curated third-party recommendations, per
+ * docs/research/podcast-platform-integration.md — but genuinely empty of
+ * content today: no real TTLI episode audio/transcripts were ever
+ * extracted (docs/brand/ttli-brand-identity.md notes the real site names
+ * a podcast in its nav but the extraction pass never pulled episode
+ * content), the same content-inventory gap Phase 0 is blocked on
+ * (01_PRD.md §1.4) — infrastructure ready, content not yet loaded, not a
+ * missed task. "Cultivate with Intent" stays unbuilt for the identical
+ * reason.
  */
 export default async function LandingPage() {
   const theme = await getTheme();
@@ -45,6 +49,7 @@ export default async function LandingPage() {
         <nav className="hidden gap-6 md:flex" style={{ fontSize: "0.8125rem", color: "var(--ink-2)" }}>
           <a href="#about">About</a>
           <Link href="/lead-with-intent">Lead with Intent</Link>
+          <Link href="/podcasts">Podcasts</Link>
           <a href="#partners">Clients</a>
           <Link href="/contact">Contact</Link>
         </nav>

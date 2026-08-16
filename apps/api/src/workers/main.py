@@ -65,6 +65,21 @@ async def revoke_lapsed_subscriptions(ctx: dict[str, Any]) -> int:
     return int(revoked)
 
 
+async def downgrade_expired_guests(ctx: dict[str, Any]) -> int:
+    """02 §12.4's hourly guest-expiry sweep — `users.status` bookkeeping
+    only. Access itself already lapses live at the two points that
+    actually gate it (magic-link consumption, refresh rotation, both in
+    services/identity.py and services/tokens.py) — this just makes an
+    expired guest read as `'expired'` rather than sitting in `'active'`
+    with nothing to show for it. Never touches `contacts`/`leads`, so the
+    lead this guest originated from is retained either way."""
+    factory = get_sessionmaker()
+    async with factory() as session, session.begin():
+        downgraded = (await session.execute(text("SELECT downgrade_expired_guests()"))).scalar_one()
+    log.info("expired_guests_downgraded", downgraded=downgraded)
+    return int(downgraded)
+
+
 async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
     """Raises on any SMTP failure so arq retries with backoff (max_tries
     below) instead of the message being silently dropped — the one thing
@@ -108,6 +123,7 @@ class WorkerSettings:
         extend_event_partitions,
         purge_expired_auth,
         revoke_lapsed_subscriptions,
+        downgrade_expired_guests,
         func(send_email_job, max_tries=5),
         # max_tries=1: a failed transcode already leaves video_assets/
         # transcode_jobs in a clean 'failed' state with the real error
@@ -121,6 +137,11 @@ class WorkerSettings:
         cron(extend_event_partitions, day=1, hour=2, minute=0),
         cron(purge_expired_auth, hour=3, minute=30),
         cron(revoke_lapsed_subscriptions, hour=4, minute=0),
+        # Hourly per 02 §12.4, not daily like the other sweeps above — a
+        # guest's whole access window is measured in days (settings.
+        # guest_access_days, default 7), so a once-a-day cadence would
+        # leave the status bookkeeping visibly stale for up to 24h.
+        cron(downgrade_expired_guests, minute=0),
     ]
     on_startup = startup
     on_shutdown = shutdown
@@ -129,6 +150,7 @@ class WorkerSettings:
 
 __all__ = [
     "WorkerSettings",
+    "downgrade_expired_guests",
     "extend_event_partitions",
     "purge_expired_auth",
     "revoke_lapsed_subscriptions",

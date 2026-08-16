@@ -18,6 +18,7 @@ from src.models.auth import RefreshToken
 from src.services import identity
 from src.services.email import send_sync
 from src.workers.main import (
+    downgrade_expired_guests,
     extend_event_partitions,
     purge_expired_auth,
     revoke_lapsed_subscriptions,
@@ -250,6 +251,58 @@ async def test_revoke_lapsed_subscriptions_respects_grace_period(
     assert revoked_ats[fresh_entitlement_id] is None
     # One-time purchases (expires_at IS NULL) are never touched by the sweep.
     assert revoked_ats[onetime_entitlement_id] is None
+
+
+async def test_downgrade_expired_guests_leaves_active_and_non_guests_alone(
+    engine, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(None) as s:
+        tenant_id = (
+            await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'demo'"))
+        ).scalar_one()
+
+    async with tenant_session_factory(tenant_id) as s:
+        expired_guest = await identity.create_user(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=f"expired-guest-{uuid.uuid4().hex[:10]}@example.com",
+            is_guest=True,
+            guest_days=-1,
+        )
+        active_guest = await identity.create_user(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=f"active-guest-{uuid.uuid4().hex[:10]}@example.com",
+            is_guest=True,
+            guest_days=7,
+        )
+        non_guest = await identity.create_user(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=f"non-guest-{uuid.uuid4().hex[:10]}@example.com",
+        )
+
+    downgraded = await downgrade_expired_guests({})
+    assert downgraded >= 1
+
+    async with tenant_session_factory(tenant_id) as s:
+        statuses = dict(
+            (
+                await s.execute(
+                    sa.text("SELECT id, status FROM users WHERE id IN (:a, :b, :c)"),
+                    {"a": expired_guest.id, "b": active_guest.id, "c": non_guest.id},
+                )
+            ).all()
+        )
+    assert statuses[expired_guest.id] == "expired"
+    assert statuses[active_guest.id] == "active"
+    assert statuses[non_guest.id] == "active"
+
+    # Idempotent: a second run finds nothing new to transition.
+    assert await downgrade_expired_guests({}) == 0
 
 
 def test_send_sync_raises_on_unreachable_smtp_host() -> None:

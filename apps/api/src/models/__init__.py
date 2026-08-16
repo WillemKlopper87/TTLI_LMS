@@ -75,6 +75,7 @@ from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
+from src.models.podcast import PodcastEpisode
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.subscription import (
     Subscription,
@@ -160,6 +161,7 @@ __all__ = [
     "Payment",
     "PaymentWebhook",
     "Permission",
+    "PodcastEpisode",
     "Price",
     "Product",
     "Quiz",
