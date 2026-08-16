@@ -78,6 +78,22 @@ def _derive_embed_id(external_url: str | None) -> str | None:
     return spotify.parse_episode_id(external_url)
 
 
+def _validate_external_url(external_url: str | None) -> None:
+    """`external_url` is rendered back out as a raw `<a href>` on the
+    public episode page (`app/podcasts/[slug]/page.tsx`) — refusing
+    anything but `http(s)://` here is what stops a `javascript:`/`data:`
+    URL from ever reaching that anchor tag in the first place. The
+    frontend has its own defensive scheme check too (belt and braces,
+    the same layered posture the Payfast webhook's signature+confirm+
+    amount checks already established) — this is the authoritative one,
+    since `podcast:manage` gates who can set this field, not who can
+    read it back."""
+    if not external_url:
+        return
+    if not external_url.startswith(("http://", "https://")):
+        raise PodcastError("external_url must be an http:// or https:// link.")
+
+
 def _validate_kind_fields(*, kind: str, external_url: str | None, curator_name: str | None) -> None:
     if kind not in PODCAST_KIND_VALUES:
         raise PodcastError(f"kind must be one of {PODCAST_KIND_VALUES!r}.")
@@ -102,6 +118,7 @@ async def create_episode(
     curator_note: str | None,
 ) -> PodcastEpisode:
     _validate_kind_fields(kind=kind, external_url=external_url, curator_name=curator_name)
+    _validate_external_url(external_url)
     position = (
         await session.execute(
             select(func.count())
@@ -205,6 +222,7 @@ async def update_episode(
     if external_platform is not None:
         episode.external_platform = external_platform
     if external_url is not None:
+        _validate_external_url(external_url)
         episode.external_url = external_url
         episode.external_embed_id = _derive_embed_id(external_url)
     if curator_name is not None:

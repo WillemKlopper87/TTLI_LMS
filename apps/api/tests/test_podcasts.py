@@ -152,6 +152,38 @@ async def test_curated_episode_embed_id_is_parsed_from_spotify_url(
     assert resp.json()["external_url"].endswith("4rOoJ6Egrf8K2IrywzwOMk")
 
 
+async def test_javascript_uri_is_refused_as_external_url(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """external_url is rendered back out as a raw <a href> on the public
+    episode page — a javascript:/data: URI must never be accepted, on
+    create or on a later edit (apps/web's own defensive scheme check is
+    the second layer, not the only one)."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    created = await client.post(
+        "/api/v1/podcasts",
+        json={
+            "kind": "curated",
+            "title": _unique_title(),
+            "external_url": "javascript:alert(document.cookie)",
+            "curator_name": "Someone",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 400, created.text
+
+    episode_id = await _make_curated_episode(client, admin_token)
+    updated = await client.patch(
+        f"/api/v1/podcasts/{episode_id}",
+        json={"external_url": "javascript:alert(1)"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert updated.status_code == 400, updated.text
+
+
 async def test_authored_episode_cannot_publish_without_audio_or_link(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]

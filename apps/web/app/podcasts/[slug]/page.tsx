@@ -23,6 +23,22 @@ interface EpisodeDetail {
   curator_note: string | null;
 }
 
+// Defense in depth for a raw <a href> — the backend already refuses
+// anything but http(s):// at write time (services/podcasts.py's
+// _validate_external_url), but external_url still reaches this
+// component as untyped API JSON, and a bare `href={url}` would let a
+// javascript:/data: URI execute on click if that first layer were ever
+// bypassed. Belt and braces, the same layered posture the Payfast
+// webhook's signature+confirm+amount checks already established.
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function logEvent(slug: string, eventName: string, extra: Record<string, unknown> = {}) {
   // Fire-and-forget, no auth — a dropped stat is not worth blocking the
   // listener on. GET /public/podcasts/{slug}/events, no response body.
@@ -158,15 +174,20 @@ export default function PodcastEpisodePage() {
             ) : null}
             <SpotifyEmbed embedId={episode.external_embed_id} slug={slug} />
           </div>
-        ) : episode.external_url ? (
+        ) : episode.external_url && isSafeHttpUrl(episode.external_url) ? (
           <a
             href={episode.external_url}
             target="_blank"
             rel="noreferrer"
             className="btn btn--primary"
-            onClick={() => logEvent(slug, "podcast.embed.click_through", { external_platform: episode.external_platform })}
+            onClick={() =>
+              logEvent(slug, "podcast.embed.click_through", {
+                external_platform: episode.external_platform,
+              })
+            }
           >
-            Listen on {episode.external_platform === "apple_podcasts" ? "Apple Podcasts" : "the original site"}
+            Listen on{" "}
+            {episode.external_platform === "apple_podcasts" ? "Apple Podcasts" : "the original site"}
           </a>
         ) : null}
       </div>
