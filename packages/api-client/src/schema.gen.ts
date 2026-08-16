@@ -817,6 +817,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalogue/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Products For Admin */
+        get: operations["list_products_for_admin_api_v1_catalogue_products_get"];
+        put?: never;
+        /** Create Product */
+        post: operations["create_product_api_v1_catalogue_products_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalogue/sellable-courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sellable Courses */
+        get: operations["list_sellable_courses_api_v1_catalogue_sellable_courses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalogue/products/{product_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Product */
+        patch: operations["update_product_api_v1_catalogue_products__product_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/catalogue/products/{product_id}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Price */
+        post: operations["add_price_api_v1_catalogue_products__product_id__prices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalogue/prices/{price_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Price */
+        delete: operations["delete_price_api_v1_catalogue_prices__price_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses": {
         parameters: {
             query?: never;
@@ -2230,6 +2316,45 @@ export interface components {
             /** End Time */
             end_time: string;
         };
+        /** AdminPriceRow */
+        AdminPriceRow: {
+            /** Id */
+            id: string;
+            /** Currency */
+            currency: string;
+            /** Unit Amount */
+            unit_amount: string;
+            /** Tax Behaviour */
+            tax_behaviour: string;
+        };
+        /** AdminProductResponse */
+        AdminProductResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Kind */
+            kind: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Course Id */
+            course_id: string | null;
+            /** Course Title */
+            course_title: string | null;
+            /** Subscription Plan Id */
+            subscription_plan_id: string | null;
+            /** Prices */
+            prices: components["schemas"]["AdminPriceRow"][];
+        };
+        /** AdminProductsPage */
+        AdminProductsPage: {
+            /** Items */
+            items: components["schemas"]["AdminProductResponse"][];
+        };
         /** AssignSeatsRequest */
         AssignSeatsRequest: {
             /** Course Id */
@@ -3419,6 +3544,18 @@ export interface components {
             /** Currency */
             currency: string;
         };
+        /** PriceCreateRequest */
+        PriceCreateRequest: {
+            /** Currency */
+            currency: string;
+            /** Unit Amount */
+            unit_amount: number | string;
+            /**
+             * Tax Behaviour
+             * @default exclusive
+             */
+            tax_behaviour: string;
+        };
         /** PriceSummary */
         PriceSummary: {
             /** Id */
@@ -3429,6 +3566,17 @@ export interface components {
             unit_amount: string;
             /** Tax Behaviour */
             tax_behaviour: string;
+        };
+        /** ProductCreateRequest */
+        ProductCreateRequest: {
+            /** Slug */
+            slug: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Course Id */
+            course_id?: string | null;
         };
         /** ProductSummary */
         ProductSummary: {
@@ -3448,6 +3596,17 @@ export interface components {
             subscription_plan_id?: string | null;
             /** Bundled Courses */
             bundled_courses?: string[] | null;
+        };
+        /** ProductUpdateRequest */
+        ProductUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Course Id */
+            course_id?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
         };
         /** ProductsPage */
         ProductsPage: {
@@ -3818,6 +3977,25 @@ export interface components {
         SegmentsPage: {
             /** Items */
             items: components["schemas"]["SegmentResponse"][];
+        };
+        /**
+         * SellableCourseRow
+         * @description A course this tenant is assigned and could attach to a product.
+         */
+        SellableCourseRow: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** State */
+            state: string;
+            /** Already Sold As */
+            already_sold_as: string | null;
+        };
+        /** SellableCoursesPage */
+        SellableCoursesPage: {
+            /** Items */
+            items: components["schemas"]["SellableCourseRow"][];
         };
         /** SendCampaignResponse */
         SendCampaignResponse: {
@@ -5769,6 +5947,178 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SubscriptionOrderResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_products_for_admin_api_v1_catalogue_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductsPage"];
+                };
+            };
+        };
+    };
+    create_product_api_v1_catalogue_products_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sellable_courses_api_v1_catalogue_sellable_courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SellableCoursesPage"];
+                };
+            };
+        };
+    };
+    update_product_api_v1_catalogue_products__product_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminProductResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_price_api_v1_catalogue_products__product_id__prices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PriceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPriceRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_price_api_v1_catalogue_prices__price_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                price_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

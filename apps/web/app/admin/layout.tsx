@@ -25,6 +25,7 @@ const WORKING_SECTIONS = [
   { label: "Payments", href: "/admin/payments" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
+  { label: "Catalogue", href: "/admin/catalogue" },
   { label: "Grading", href: "/admin/grading" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
