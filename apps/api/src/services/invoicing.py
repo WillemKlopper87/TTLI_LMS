@@ -8,7 +8,11 @@ the rest of the transaction, same as everything else in it.
 
 An issued invoice is immutable (02 §6.4) — nothing in this module updates
 one after `issue()` returns. Correction is a credit note plus a new
-invoice, not implemented in this sprint (STATUS.md tracks it as deferred).
+invoice; `next_sequence` below is public (not `_next_sequence` as
+originally written) specifically so `services/refunds.py` can allocate a
+credit note's number through the identical locked-counter mechanism,
+under its own `"CN"` series — the locking discipline is what matters, and
+duplicating it would be the real risk, not sharing it.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from src.models.commerce import Invoice, InvoiceItem, Order, OrderItem, Product
 DEFAULT_SERIES = "INV"
 
 
-async def _next_sequence(session: AsyncSession, *, tenant_id: uuid.UUID, series: str) -> int:
+async def next_sequence(session: AsyncSession, *, tenant_id: uuid.UUID, series: str) -> int:
     await session.execute(
         text(
             "INSERT INTO invoice_number_counters (tenant_id, series, next_sequence) "
@@ -57,7 +61,7 @@ async def issue(
     session: AsyncSession, *, tenant_id: uuid.UUID, order: Order, supplier_vat_number: str | None
 ) -> Invoice:
     series = DEFAULT_SERIES
-    sequence = await _next_sequence(session, tenant_id=tenant_id, series=series)
+    sequence = await next_sequence(session, tenant_id=tenant_id, series=series)
     number = f"{series}-{sequence:06d}"
 
     invoice = Invoice(
@@ -102,4 +106,4 @@ async def issue(
     return invoice
 
 
-__all__ = ["DEFAULT_SERIES", "issue"]
+__all__ = ["DEFAULT_SERIES", "issue", "next_sequence"]

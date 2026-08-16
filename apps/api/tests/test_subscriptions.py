@@ -172,7 +172,7 @@ async def _fulfil_eft(client, buyer_token: str, finance_token: str, order_id: st
     assert proof.status_code == 204, proof.text
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approve.status_code == 200, approve.text
 
@@ -478,7 +478,7 @@ async def test_one_time_purchase_then_subscribe_does_not_duplicate_enrolment(
     # One-time purchase of the seeded demo course.
     order = await client.post(
         "/api/v1/orders",
-        headers={"Authorization": f"Bearer {buyer_token}"},
+        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": uuid.uuid4().hex},
         json={
             "currency": "ZAR",
             "customer_type": "individual",

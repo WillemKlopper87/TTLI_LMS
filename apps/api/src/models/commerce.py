@@ -299,6 +299,104 @@ class Invoice(Base, TimestampMixin):
     customer_vat_number: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CreditNote(Base, TimestampMixin):
+    """02 §6.4's "correction means a credit note plus a new invoice" — the
+    correction half. Full-invoice-only this sprint (`amount`/`tax_amount`
+    always mirror the credited invoice's own totals exactly); a partial,
+    line-item credit note is a real but separate scope this table doesn't
+    yet model, the same class of narrowing Phase 3 sprint 1 already applied
+    to EFT-only checkout. Numbered through the same gapless, locked counter
+    `invoicing.py` uses for invoices, under its own `"CN"` series.
+
+    Immutable once issued, like `Invoice` (02 §6.4) — `app_user` gets no
+    UPDATE/DELETE grant, the same two-layer treatment `ledger_entries`
+    already established.
+    """
+
+    __tablename__ = "credit_notes"
+    __table_args__ = (
+        Index(
+            "uq_credit_notes_tenant_series_sequence", "tenant_id", "series", "sequence", unique=True
+        ),
+        Index("uq_credit_notes_tenant_number", "tenant_id", "number", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    number: Mapped[str] = mapped_column(String(64), nullable=False)
+    series: Mapped[str] = mapped_column(String(32), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    tax_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
+class Refund(Base, TimestampMixin):
+    """02 §6.3's `refunds` table — the record that money actually moved.
+
+    Deliberately distinct from `CreditNote`: a credit note is the
+    accounting correction to an invoice; a refund is the payment event
+    itself. `services/refunds.py::process_refund` always writes both
+    together for this narrow full-refund path, but they answer different
+    questions and an auditor needs both. No provider/gateway fields yet —
+    like EFT approval, this records that a human moved the money outside
+    the system (there is no live payment gateway to call), not that this
+    system moved it. Append-only, same reasoning as `CreditNote` above.
+    """
+
+    __tablename__ = "refunds"
+
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    payment_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("payments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    credit_note_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("credit_notes.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    processed_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
 class InvoiceItem(Base):
     __tablename__ = "invoice_items"
 
@@ -397,6 +495,7 @@ class Entitlement(Base):
 
 
 __all__ = [
+    "CreditNote",
     "Entitlement",
     "Invoice",
     "InvoiceItem",
@@ -409,5 +508,6 @@ __all__ = [
     "Payment",
     "Price",
     "Product",
+    "Refund",
     "TaxRule",
 ]

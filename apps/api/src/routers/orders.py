@@ -13,16 +13,15 @@ Card checkout (Payfast/Netcash) is still not built here — blocked on
 live sandbox credentials (01 §1.4's Phase 0 outstanding list), not a
 design gap the way PO checkout was.
 
-03 §1.6 requires `Idempotency-Key` handling on `POST /orders` and
-`POST /payments/*` — deferred this sprint (tracked in STATUS.md), since it
-matters most for the webhook/gateway retries that come with card checkout,
-which isn't built yet either. It is not a silent gap in the meantime: every
-`services/orders.py` transition checks the order/payment is in the expected
-state before acting, so a genuine double-submission (a retried approve,
-a doubled proof upload) is refused with a 400, not silently re-executed —
-that is what stops a duplicate invoice or entitlement, even though the
-refusal isn't full Idempotency-Key replay semantics (returning the original
-response rather than an error).
+03 §1.6's `Idempotency-Key` requirement on `POST /orders`, `POST
+/payments/{id}/{approve,reject}` and `POST /orders/{id}/refund` is enforced
+by `core/idempotency.py`'s middleware, not in this file — it wraps the
+whole request/response cycle so it can replay an identical response
+without this router's handlers running twice, which a per-endpoint check
+inside the handler could not do. The state checks already in
+`services/orders.py` (a transition refused with 400 if the order/payment
+isn't in the expected state) remain the second, independent layer they
+always were — belt and braces, not replaced by the middleware.
 """
 
 from __future__ import annotations
@@ -47,11 +46,14 @@ from src.schemas.commerce import (
     PriceSummary,
     ProductsPage,
     ProductSummary,
+    RefundRequest,
+    RefundResponse,
     RejectPaymentRequest,
 )
 from src.services import antivirus, catalogue
 from src.services import orders as orders_service
 from src.services import organisations as organisations_service
+from src.services import refunds as refunds_service
 from src.services.storage import Container
 
 router = APIRouter(tags=["commerce"])
@@ -382,6 +384,43 @@ async def reject_payment(
 
     reject_fn = orders_service.reject_po if payment.provider == "po" else orders_service.reject_eft
     await reject_fn(session, order=order, payment=payment, reason=body.reason)
+
+
+@router.post("/orders/{order_id}/refund", response_model=RefundResponse)
+async def refund_order(
+    order_id: str,
+    body: RefundRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> RefundResponse:
+    """Full refund of a fulfilled order — `refund:process`-gated, distinct
+    from `payment:approve`: approving a payment and reversing one already
+    approved are different authorities, the same split 04's RBAC model
+    already draws by seeding them as separate permissions.
+
+    Requires an `Idempotency-Key` header (`core/idempotency.py`'s
+    middleware enforces this before the request reaches here) — a
+    double-submitted refund (a slow network retry, an impatient
+    double-click) must not credit an invoice twice.
+    """
+    principal.require("refund:process")
+    order = await _get_order(session, order_id)
+    refund, credit_note = await refunds_service.process_refund(
+        session,
+        tenant_id=principal.tenant_id,
+        order=order,
+        reason=body.reason,
+        processed_by_user_id=principal.user_id,
+    )
+    return RefundResponse(
+        id=str(refund.id),
+        order_id=str(refund.order_id),
+        credit_note_number=credit_note.number,
+        amount=refund.amount,
+        currency=refund.currency,
+        reason=refund.reason,
+        processed_at=refund.processed_at,
+    )
 
 
 __all__ = ["router"]

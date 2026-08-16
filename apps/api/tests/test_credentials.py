@@ -157,7 +157,7 @@ async def _enrol_via_eft(
             "customer_type": "individual",
             "lines": [{"price_id": price_id, "quantity": 1}],
         },
-        headers={"Authorization": f"Bearer {buyer_token}"},
+        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     order_id = order.json()["id"]
     checkout = await client.post(
@@ -172,7 +172,7 @@ async def _enrol_via_eft(
     )
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approve.status_code == 200, approve.text
     return buyer_token, buyer_id

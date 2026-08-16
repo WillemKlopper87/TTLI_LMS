@@ -19,6 +19,7 @@ from src.core.errors import (
     http_error_handler,
     validation_error_handler,
 )
+from src.core.idempotency import idempotency_middleware
 from src.core.logging import configure_logging, get_logger
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
@@ -81,6 +82,15 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # Registered before request_context below so that request_context ends
+    # up outermost — Starlette builds its middleware stack in the reverse
+    # of registration order, so whichever of these two is registered
+    # *last* runs *first* on a request. request_context needs to run
+    # first: it binds request_id into structlog's context, which
+    # error_envelope (core/errors.py) reads via request.state.request_id
+    # for every 400/409 idempotency_middleware itself can emit.
+    app.middleware("http")(idempotency_middleware)
 
     @app.middleware("http")
     async def request_context(

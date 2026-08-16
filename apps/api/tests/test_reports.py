@@ -136,7 +136,7 @@ async def _buy_and_assign_one_seat(
             "lines": [{"price_id": price_id, "quantity": 1}],
             "organisation_id": organisation_id,
         },
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {admin_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert order.status_code == 201, order.text
     order_id = order.json()["id"]
@@ -152,7 +152,7 @@ async def _buy_and_assign_one_seat(
 
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approve.status_code == 200, approve.text
 

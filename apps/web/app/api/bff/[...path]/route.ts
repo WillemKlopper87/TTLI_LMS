@@ -22,6 +22,16 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   if (contentType) headers["Content-Type"] = contentType;
   const fingerprint = request.headers.get("x-device-fingerprint");
   if (fingerprint) headers["X-Device-Fingerprint"] = fingerprint;
+  // core/idempotency.py's middleware requires this on a handful of
+  // commerce endpoints (03 §1.6) — dropped here like every other header
+  // not on this explicit allowlist, so it never reached the API at all
+  // until this line existed. Caught live: every curl test against the
+  // API directly passed, but the same request through this proxy 400'd
+  // with IDEMPOTENCY_KEY_REQUIRED — pytest's ASGI transport and manual
+  // API-only curl checks both bypass this proxy, so neither could have
+  // caught it; only a request through the real browser path could.
+  const idempotencyKey = request.headers.get("idempotency-key");
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
 
   // arrayBuffer, not text: a text() round-trip re-decodes/re-encodes as
   // UTF-8, which corrupts binary bodies — multipart file uploads

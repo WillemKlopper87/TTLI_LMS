@@ -21,6 +21,7 @@ from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
 from src.models.commerce import (
+    CreditNote,
     Entitlement,
     Invoice,
     InvoiceItem,
@@ -31,6 +32,7 @@ from src.models.commerce import (
     Payment,
     Price,
     Product,
+    Refund,
     TaxRule,
 )
 from src.models.consent import ConsentRecord
@@ -67,6 +69,7 @@ from src.models.crm import (
     Task,
 )
 from src.models.event import Event
+from src.models.idempotency import IdempotencyKey
 from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
@@ -120,6 +123,7 @@ __all__ = [
     "CourseTenantAssignment",
     "CredentialStatus",
     "CredentialVerification",
+    "CreditNote",
     "Deal",
     "DealStage",
     "EmailEvent",
@@ -131,6 +135,7 @@ __all__ = [
     "Event",
     "Facilitator",
     "FacilitatorAvailability",
+    "IdempotencyKey",
     "Invoice",
     "InvoiceItem",
     "InvoiceNumberCounter",
@@ -160,6 +165,7 @@ __all__ = [
     "QuizAttempt",
     "QuizQuestion",
     "RefreshToken",
+    "Refund",
     "Role",
     "RoleAssignment",
     "RolePermission",

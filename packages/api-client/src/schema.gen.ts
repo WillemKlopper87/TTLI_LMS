@@ -479,6 +479,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orders/{order_id}/refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refund Order
+         * @description Full refund of a fulfilled order — `refund:process`-gated, distinct
+         *     from `payment:approve`: approving a payment and reversing one already
+         *     approved are different authorities, the same split 04's RBAC model
+         *     already draws by seeding them as separate permissions.
+         *
+         *     Requires an `Idempotency-Key` header (`core/idempotency.py`'s
+         *     middleware enforces this before the request reaches here) — a
+         *     double-submitted refund (a slow network retry, an impatient
+         *     double-click) must not credit an invoice twice.
+         */
+        post: operations["refund_order_api_v1_orders__order_id__refund_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organisations": {
         parameters: {
             query?: never;
@@ -3900,6 +3928,31 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** RefundRequest */
+        RefundRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** RefundResponse */
+        RefundResponse: {
+            /** Id */
+            id: string;
+            /** Order Id */
+            order_id: string;
+            /** Credit Note Number */
+            credit_note_number: string;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Processed At
+             * Format: date-time
+             */
+            processed_at: string;
+        };
         /** RejectPaymentRequest */
         RejectPaymentRequest: {
             /** Reason */
@@ -5293,6 +5346,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refund_order_api_v1_orders__order_id__refund_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefundRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefundResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

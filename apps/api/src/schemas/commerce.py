@@ -66,6 +66,20 @@ class RejectPaymentRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class RefundRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class RefundResponse(BaseModel):
+    id: str
+    order_id: str
+    credit_note_number: str
+    amount: Decimal
+    currency: str
+    reason: str
+    processed_at: datetime
+
+
 class InvoiceResponse(BaseModel):
     id: str
     number: str
@@ -137,5 +151,7 @@ __all__ = [
     "PriceSummary",
     "ProductSummary",
     "ProductsPage",
+    "RefundRequest",
+    "RefundResponse",
     "RejectPaymentRequest",
 ]

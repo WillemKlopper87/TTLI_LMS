@@ -267,7 +267,7 @@ async def test_price_used_by_an_order_cannot_be_deleted(  # type: ignore[no-unty
             "customer_type": "individual",
             "lines": [{"price_id": price["id"], "quantity": 1}],
         },
-        headers=auth,
+        headers={**auth, "Idempotency-Key": uuid.uuid4().hex},
     )
     assert order.status_code == 201, order.text
 
@@ -345,7 +345,7 @@ async def test_authored_course_can_be_sold_and_bought_end_to_end(  # type: ignor
             "customer_type": "individual",
             "lines": [{"price_id": price["id"], "quantity": 1}],
         },
-        headers=buyer_auth,
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
     )
     assert order.status_code == 201, order.text
     order_id = order.json()["id"]
@@ -372,7 +372,7 @@ async def test_authored_course_can_be_sold_and_bought_end_to_end(  # type: ignor
     )
     approved = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance}"},
+        headers={"Authorization": f"Bearer {finance}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approved.status_code == 200, approved.text
 

@@ -4,6 +4,15 @@
 
 Messages never disclose whether an email address exists, which tenant a resource
 belongs to, or why authorisation failed beyond the fact that it did.
+
+`error_envelope` is public (not the originally private `_envelope`)
+specifically so `core/idempotency.py`'s middleware can build the same
+shape for its own 400/409 responses — those are emitted from outside the
+exception-handler machinery below (the middleware short-circuits before
+`call_next`, so no `AppError` is ever raised to route through
+`app_error_handler`), and a second, differently-shaped error body from the
+same API would be a real, visible inconsistency, not just an internal
+tidiness concern.
 """
 
 from __future__ import annotations
@@ -64,7 +73,7 @@ class ServiceUnavailable(AppError):
     code = "SERVICE_UNAVAILABLE"
 
 
-def _envelope(
+def error_envelope(
     *, code: str, message: str, details: dict[str, Any], request: Request, status_code: int
 ) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None)
@@ -88,7 +97,7 @@ def _envelope(
 # would be compiled away under -O and is flagged as a security smell.
 async def app_error_handler(request: Request, raw: Exception) -> JSONResponse:
     exc = cast(AppError, raw)
-    return _envelope(
+    return error_envelope(
         code=exc.code,
         message=exc.message,
         details=exc.details,
@@ -108,7 +117,7 @@ async def http_error_handler(request: Request, raw: Exception) -> JSONResponse:
         409: "CONFLICT",
         429: "RATE_LIMITED",
     }
-    return _envelope(
+    return error_envelope(
         code=codes.get(exc.status_code, "ERROR"),
         message=str(exc.detail),
         details={},
@@ -119,7 +128,7 @@ async def http_error_handler(request: Request, raw: Exception) -> JSONResponse:
 
 async def validation_error_handler(request: Request, raw: Exception) -> JSONResponse:
     exc = cast(RequestValidationError, raw)
-    return _envelope(
+    return error_envelope(
         code="VALIDATION_FAILED",
         message="The request body did not validate.",
         details={"errors": exc.errors()},
@@ -138,6 +147,7 @@ __all__ = [
     "TooManyAttempts",
     "Unauthenticated",
     "app_error_handler",
+    "error_envelope",
     "http_error_handler",
     "validation_error_handler",
 ]

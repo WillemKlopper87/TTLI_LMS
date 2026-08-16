@@ -102,7 +102,9 @@ async def _create_order(client, token: str, price_id: str, **overrides: object) 
     }
     body.update(overrides)
     resp = await client.post(
-        "/api/v1/orders", json=body, headers={"Authorization": f"Bearer {token}"}
+        "/api/v1/orders",
+        json=body,
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -141,7 +143,7 @@ async def test_international_customer_is_refused_not_guessed(
             "customer_type": "international",
             "lines": [{"price_id": price_id, "quantity": 1}],
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "TAX_UNRESOLVED"
@@ -169,7 +171,7 @@ async def test_create_order_rejects_unknown_price(client, tenant_session_factory
             "customer_type": "individual",
             "lines": [{"price_id": str(uuid.uuid4()), "quantity": 1}],
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "ORDER_ERROR"
@@ -207,7 +209,7 @@ async def test_full_eft_happy_path_issues_invoice_grants_entitlement_and_ledger(
 
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approve.status_code == 200, approve.text
     invoice = approve.json()
@@ -278,7 +280,7 @@ async def test_eft_reject_then_resubmit_then_approve(
     reject = await client.post(
         f"/api/v1/payments/{payment_id}/reject",
         json={"reason": "Reference does not match."},
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert reject.status_code == 204
 
@@ -297,7 +299,7 @@ async def test_eft_reject_then_resubmit_then_approve(
 
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert approve.status_code == 200
 
@@ -318,7 +320,7 @@ async def test_payment_approve_requires_permission(client, tenant_session_factor
 
     resp = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {buyer_token}"},
+        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
     assert resp.status_code == 403
 
@@ -368,7 +370,10 @@ async def test_invoice_numbers_are_sequential_and_gapless(
         )
         approve = await client.post(
             f"/api/v1/payments/{payment_id}/approve",
-            headers={"Authorization": f"Bearer {finance_token}"},
+            headers={
+                "Authorization": f"Bearer {finance_token}",
+                "Idempotency-Key": uuid.uuid4().hex,
+            },
         )
         number = approve.json()["number"]
         sequences.append(int(number.rsplit("-", 1)[1]))
@@ -402,7 +407,7 @@ async def test_ledger_entries_are_append_only(client, tenant_session_factory, cr
     )
     await client.post(
         f"/api/v1/payments/{payment_id}/approve",
-        headers={"Authorization": f"Bearer {finance_token}"},
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
     )
 
     async with tenant_session_factory(tenant_id) as s:

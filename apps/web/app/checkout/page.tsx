@@ -65,7 +65,11 @@ export default function CheckoutPage() {
     setError(null);
     const orderResp = await authedFetch("/api/bff/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Idempotency-Key (03 §1.6): a network retry of this exact click
+      // must not create a second order. One key per attempt — generated
+      // fresh here, not stored across retries, since a genuine second
+      // click (not a retry) is a new, distinct purchase attempt.
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({
         currency: "ZAR",
         customer_type: customerType,

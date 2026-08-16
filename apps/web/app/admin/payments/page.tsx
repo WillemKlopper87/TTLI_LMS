@@ -32,6 +32,12 @@ export default function PaymentsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reason, setReason] = useState<Record<string, string>>({});
 
+  const [refundOrderId, setRefundOrderId] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundResult, setRefundResult] = useState<string | null>(null);
+  const [refundError, setRefundError] = useState<string | null>(null);
+
   async function load() {
     const token = getAccessToken();
     if (!token) return;
@@ -58,7 +64,9 @@ export default function PaymentsScreen() {
     const token = getAccessToken();
     const resp = await fetch(`/api/bff/payments/${paymentId}/approve`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      // Idempotency-Key (03 §1.6): finance clicking twice on a slow
+      // connection must not issue two invoices for one payment.
+      headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": crypto.randomUUID() },
     });
     setBusyId(null);
     if (resp.ok) await load();
@@ -71,11 +79,46 @@ export default function PaymentsScreen() {
     const token = getAccessToken();
     const resp = await fetch(`/api/bff/payments/${paymentId}/reject`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": crypto.randomUUID(),
+      },
       body: JSON.stringify({ reason: text }),
     });
     setBusyId(null);
     if (resp.ok) await load();
+  }
+
+  async function refund() {
+    const orderId = refundOrderId.trim();
+    const text = refundReason.trim();
+    if (!orderId || !text) return;
+    setRefundBusy(true);
+    setRefundError(null);
+    setRefundResult(null);
+    const token = getAccessToken();
+    const resp = await fetch(`/api/bff/orders/${orderId}/refund`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ reason: text }),
+    });
+    setRefundBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setRefundError(body?.error?.message ?? "The refund could not be processed.");
+      return;
+    }
+    const body = await resp.json();
+    setRefundResult(
+      `Refunded ${body.currency} ${body.amount} — credit note ${body.credit_note_number}.`
+    );
+    setRefundOrderId("");
+    setRefundReason("");
   }
 
   if (error === "forbidden") {
@@ -160,6 +203,53 @@ export default function PaymentsScreen() {
           ))}
         </div>
       )}
+
+      <section className="card mt-8 p-4">
+        <h2 className="serif" style={{ fontSize: "1.1rem" }}>
+          Refund a fulfilled order
+        </h2>
+        <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+          Full refund only — credits the order&rsquo;s invoice in full, revokes the access it
+          granted, and records the refund. Needs the order&rsquo;s id (not the payment id above);
+          find it on the buyer&rsquo;s own order confirmation or support request.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            className="input"
+            style={{ maxWidth: "20rem" }}
+            placeholder="Order id"
+            aria-label="Order id to refund"
+            value={refundOrderId}
+            onChange={(e) => setRefundOrderId(e.target.value)}
+          />
+          <input
+            className="input"
+            style={{ maxWidth: "18rem" }}
+            placeholder="Reason for the refund"
+            aria-label="Reason for the refund"
+            value={refundReason}
+            onChange={(e) => setRefundReason(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={refundBusy || !refundOrderId.trim() || !refundReason.trim()}
+            onClick={refund}
+          >
+            Refund
+          </button>
+        </div>
+        {refundResult ? (
+          <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--done)" }}>
+            {refundResult}
+          </p>
+        ) : null}
+        {refundError ? (
+          <p role="alert" className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>
+            {refundError}
+          </p>
+        ) : null}
+      </section>
     </>
   );
 }

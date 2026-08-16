@@ -2305,6 +2305,83 @@ round-tripped. Frontend: `typecheck`/`build` clean, 39 routes (`build`'s
 own count — `/admin/catalogue` is the only new page). Committed `e4538fb`,
 pushed.
 
+**Seventeenth pass: Phase 3's commerce remainder — `Idempotency-Key`
+handling, refunds, and credit notes.** Also corrects a stale STATUS.md
+entry found along the way: PO checkout has actually worked since Phase 5
+sprint 1 (`0016`) — it was left marked "deferred" in Phase 3's own
+outstanding list by an oversight in that later pass's documentation, not
+an actual gap. Fixed in the same pass as everything below, not left for
+someone else to trip over.
+
+`core/idempotency.py` is `@app.middleware("http")`, not a FastAPI
+dependency — a dependency runs after the body is already being parsed,
+too late to intercept a replay before the handler's side effects run.
+Scoped to exactly the four endpoints 03 §1.6 names (`POST /orders`,
+`POST /payments/{id}/{approve,reject}`, the new `POST
+/orders/{id}/refund`); grows when card-checkout webhooks eventually need
+it. A response below 500 is cached and replayed verbatim on a retry
+(including a deliberate business refusal — still "the original
+response"); a 5xx is never cached, so a transient failure leaves the key
+retryable.
+
+**The one bug in this pass worth remembering, because nothing except a
+real browser request could have caught it.** Every pytest test (ASGI
+transport, hits the app directly) passed. Every manual `curl` check
+against `localhost:8010` passed. The BFF catch-all proxy
+(`apps/web/app/api/bff/[...path]/route.ts`) forwards an *explicit
+allowlist* of headers — `Authorization`, `Content-Type`,
+`X-Device-Fingerprint` — and `Idempotency-Key` wasn't on it, so every
+request from the actual running app silently lost the header before it
+ever reached the API. Found only by driving the full purchase → refund
+cycle through `localhost:3010` itself. Fixed by adding it to the
+allowlist; three real frontend callers (`app/checkout/page.tsx`,
+`app/organisations/[id]/buy-seats/page.tsx`,
+`app/admin/payments/page.tsx`'s approve/reject) were *also* missing the
+header client-side, so the middleware fix alone would only have moved
+the 400 from "proxy dropped it" to "the page never sent it" — both
+layers needed fixing together. **If you add a new header a route
+depends on, check the catch-all's allowlist before assuming it reaches
+the API** — this is the second time in this project a client-visible
+contract turned out to be silently filtered by that proxy (the first was
+the binary-body `arrayBuffer()` fix in the ninth pass).
+
+`services/refunds.py::process_refund` is full-refund-only, deliberately
+— same "one complete vertical slice" narrowing as EFT-only checkout.
+Issues a `CreditNote` (reusing `invoicing.py`'s gapless, locked counter
+under a separate `"CN"` series — `_next_sequence` made public as
+`next_sequence` specifically for this second caller), revokes every
+`Entitlement` the order granted (the exact mechanism a lapsed
+subscription already relies on), and writes both `credit_note_issued`
+and `refund_issued` ledger entries — always together, never one without
+the other. New `refund:process` permission, distinct from
+`payment:approve`: reversing a sale is a different authority from
+approving one.
+
+Frontend: a "Refund a fulfilled order" panel added to the existing
+`admin/payments` screen (order id + reason — a fulfilled order has
+already left the pending-approval queue that page otherwise lists;
+building a dedicated fulfilled-orders browser was judged out of scope
+for this pass).
+
+**Every pre-existing test that called one of the four newly-scoped
+endpoints needed an `Idempotency-Key` header added** — nine test files,
+real and necessary given the endpoints' contract changed, not incidental
+churn. If you add a fifth scoped endpoint later, expect the same sweep.
+
+Verified: 252 tests / 0 skipped (+9), full gate sweep, migration
+round-tripped, `alembic check` clean. `apps/web` `typecheck`/`build`
+clean, api-client regenerated. **Live smoke test through the actual
+running BFF** (not just pytest, and not just direct-API curl — see the
+bug above for why that distinction mattered here specifically):
+authored a course, sold it, bought it, approved it, refunded it in
+full — `575.00` credited, `CN-000009` issued — then replayed the refund
+with the same key+body (`200`, byte-for-byte identical) and the same
+key with a different body (`409 IDEMPOTENCY_KEY_CONFLICT`), all through
+`localhost:3010`. This session's Docker stack also dropped entirely
+mid-pass (all five containers exited, the known flakiness on this
+machine) — recovered with `docker compose up -d` from `infra/`, full
+gate sweep re-run clean afterward, not trusted from before the drop.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

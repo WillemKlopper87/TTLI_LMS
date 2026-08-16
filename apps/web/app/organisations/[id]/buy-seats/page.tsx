@@ -81,7 +81,8 @@ export default function BuySeatsPage() {
     setError(null);
     const resp = await authedFetch("/api/bff/orders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Idempotency-Key (03 §1.6) — same reasoning as app/checkout/page.tsx.
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({
         currency: "ZAR",
         customer_type: "registered_business",
