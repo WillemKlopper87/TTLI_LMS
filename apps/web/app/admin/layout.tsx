@@ -69,7 +69,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           color: "var(--on-brand)",
         }}
       >
-        <Link href="/admin" className="mb-8 block">
+        {/* Same explicit-colour reason as the nav links below: a tenant
+            with no logo falls back to its name as text inside this <a>,
+            which would otherwise inherit --brand-ink on the brand
+            gradient and disappear (the `acme` demo tenant has no logo). */}
+        <Link href="/admin" className="mb-8 block" style={{ color: "var(--on-brand)" }}>
           {theme?.logo_url ? (
             <Image
               src={theme.logo_url}
@@ -90,10 +94,24 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               key={section.href}
               href={section.href}
               className="block rounded-md px-3 py-2 text-sm"
+              // `color` must be set explicitly, not inherited from the
+              // <aside>: globals.css has a site-wide `a { color:
+              // var(--brand-ink) }`, and any direct declaration beats an
+              // inherited value regardless of specificity. Without this the
+              // links render in --brand-ink (#8e151c) on the --brand
+              // (#8e151c) gradient — the exact same colour, 1:1 contrast,
+              // completely invisible. The neighbouring Learners/Reports
+              // <div>s and the Sign out <button> were always fine precisely
+              // because no element rule targets them, which is what made
+              // this look like "only the nav links vanished".
               style={
                 pathname === section.href
-                  ? { background: "rgba(255,255,255,0.15)", fontWeight: 600 }
-                  : { opacity: 0.85 }
+                  ? {
+                      background: "rgba(255,255,255,0.15)",
+                      fontWeight: 600,
+                      color: "var(--on-brand)",
+                    }
+                  : { opacity: 0.85, color: "var(--on-brand)" }
               }
             >
               {section.label}
