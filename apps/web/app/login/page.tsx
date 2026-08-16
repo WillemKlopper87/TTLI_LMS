@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 import { getTheme } from "@/lib/server-api";
 
@@ -28,6 +29,14 @@ export default async function LoginPage() {
           </div>
         )}
         <LoginForm />
+        <p
+          className="mt-4 flex justify-center gap-3"
+          style={{ fontSize: "0.8125rem", color: "var(--muted)" }}
+        >
+          <Link href="/auth/password-reset">Forgot password?</Link>
+          <span aria-hidden="true">·</span>
+          <Link href="/auth/magic-link">Sign in with a link</Link>
+        </p>
         {theme?.support_email ? (
           <p className="mt-6 text-center" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
             Need help? {theme.support_email}

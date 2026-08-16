@@ -48,6 +48,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
+
+
 class MfaEnrollResponse(BaseModel):
     secret: str
     otpauth_uri: str
@@ -76,6 +80,7 @@ class PasswordResetConfirmRequest(BaseModel):
 
 __all__ = [
     "LoginRequest",
+    "LogoutRequest",
     "MagicLinkConsumeRequest",
     "MagicLinkRequest",
     "MeResponse",

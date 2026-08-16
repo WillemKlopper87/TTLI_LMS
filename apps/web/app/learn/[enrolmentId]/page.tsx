@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 import { AssignmentUpload } from "./assignment-upload";
 import { CredentialsPanel } from "./credentials-panel";
@@ -47,7 +48,7 @@ const STATE_TAG: Record<string, string> = {
  * this page renders a checklist, it does not compute one.
  */
 export default function LearnEnrolmentPage() {
-  const router = useRouter();
+  const { ready } = useRequireAuth();
   const { enrolmentId } = useParams<{ enrolmentId: string }>();
   const [progress, setProgress] = useState<EnrolmentProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,10 +56,7 @@ export default function LearnEnrolmentPage() {
 
   const load = useCallback(async () => {
     const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
+    if (!token) return;
     const resp = await fetch(`/api/bff/enrolments/${enrolmentId}/progress`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -67,11 +65,12 @@ export default function LearnEnrolmentPage() {
       return;
     }
     setProgress(await resp.json());
-  }, [enrolmentId, router]);
+  }, [enrolmentId]);
 
   useEffect(() => {
+    if (!ready) return;
     load();
-  }, [load]);
+  }, [ready, load]);
 
   async function startLesson(lessonId: string) {
     const token = getAccessToken();

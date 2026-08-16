@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { useSession } from "@/lib/session-context";
 
 interface PriceSummary {
   id: string;
@@ -32,6 +32,7 @@ interface ProductSummary {
  */
 export default function CataloguePage() {
   const router = useRouter();
+  const { status } = useSession();
   const [products, setProducts] = useState<ProductSummary[] | null>(null);
   const [error, setError] = useState(false);
 
@@ -48,7 +49,7 @@ export default function CataloguePage() {
   }, []);
 
   function enrol(priceId: string) {
-    if (!getAccessToken()) {
+    if (status !== "authenticated") {
       router.push("/login");
       return;
     }
@@ -56,7 +57,7 @@ export default function CataloguePage() {
   }
 
   function subscribe(planId: string) {
-    if (!getAccessToken()) {
+    if (status !== "authenticated") {
       router.push("/login");
       return;
     }

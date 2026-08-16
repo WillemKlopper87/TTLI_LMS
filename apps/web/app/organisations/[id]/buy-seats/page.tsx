@@ -1,9 +1,10 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface PriceSummary {
   id: string;
@@ -45,7 +46,7 @@ type Step = "select" | "po" | "submitted";
  */
 export default function BuySeatsPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
+  const { ready } = useRequireAuth();
   const orgId = params.id;
 
   const [products, setProducts] = useState<ProductSummary[] | null>(null);
@@ -65,14 +66,11 @@ export default function BuySeatsPage() {
   }
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!ready || !getAccessToken()) return;
     fetch("/api/bff/products")
       .then(async (resp) => (resp.ok ? setProducts((await resp.json()).items) : setProducts([])))
       .catch(() => setProducts([]));
-  }, [router]);
+  }, [ready]);
 
   async function createOrder() {
     if (!priceId) {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { useRequireAuth, useSession } from "@/lib/session-context";
 import type { Theme } from "@/lib/server-api";
 
 import { AdminContext, type Me } from "./admin-context";
@@ -35,16 +35,14 @@ const INERT_SECTIONS = ["Learners", "Reports"];
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { accessToken, ready } = useRequireAuth();
+  const { logout } = useSession();
   const [me, setMe] = useState<Me | null>(null);
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+    if (!ready || !accessToken) return;
+    fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${accessToken}` } })
       .then(async (resp) => {
         if (!resp.ok) throw new Error("unauthenticated");
         setMe(await resp.json());
@@ -53,7 +51,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     fetch("/api/bff/tenant/theme")
       .then(async (resp) => (resp.ok ? setTheme(await resp.json()) : null))
       .catch(() => undefined);
-  }, [router]);
+  }, [ready, accessToken, router]);
+
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
+  }
 
   if (!me) return null;
 
@@ -114,6 +117,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mt-8 block w-full rounded-md px-3 py-2 text-left text-sm"
+          style={{ opacity: 0.85 }}
+        >
+          Sign out
+        </button>
       </aside>
       <main className="flex-1 p-8">
         <AdminContext.Provider value={{ me, theme }}>{children}</AdminContext.Provider>

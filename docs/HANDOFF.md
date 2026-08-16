@@ -2205,6 +2205,64 @@ process, not application code. Restarted everything cleanly and
 re-ran the identical pass, which reproduced zero errors. Full detail in
 `docs/STATUS.md` §10.
 
+**Frontend backlog item 4: session and account recovery — and the first
+browser-verified pass this project has ever had.** The feature itself is
+described in `docs/STATUS.md` §9b item 4; three things belong here because
+they change how you should work on this repo, not just what it does.
+
+*The refresh token is now an HttpOnly cookie, and the BFF has two kinds of
+route.* `apps/web/app/api/bff/[...path]/route.ts` is still the generic
+byte-for-byte proxy — do not make it parse bodies, the binary
+payment-proof and video uploads depend on `arrayBuffer()` (ninth pass).
+Alongside it now sit five auth-aware routes under
+`app/api/bff/auth/{login,logout,refresh,mfa/verify,magic-link/consume}/`
+that *do* read the JSON body, because splitting `refresh_token` out of it
+is the whole point. Anything under `/api/bff/auth/` without its own
+`route.ts` (`auth/me`, `auth/magic-link`, `auth/password-reset`) still
+falls through to the catch-all — verified live, not assumed, because it is
+exactly the kind of Next routing behaviour worth checking once.
+
+*Never let two refreshes race on one cookie.* This is the bug worth
+internalising. A refresh rotates the token, so a second caller presenting
+the same cookie looks like a replay, and `services/tokens.py::rotate`
+correctly treats replay as theft: it revokes the entire family and writes
+a `TOKEN_REUSE_DETECTED` audit event. The user is signed out everywhere
+and the security log gains a false theft alert. Two concurrent
+`POST /api/bff/auth/refresh` calls were confirmed to return `200` + `401`
+and leave the session dead — *including the winner's brand-new token*.
+React StrictMode's dev double-mount, several tabs restoring at once, and
+two tabs' timers firing together all reach it. The fix is
+`serialisedRefresh()` in `lib/session-context.tsx`, which serialises on the
+Web Locks API across every tab. **If you add another caller of
+`/api/bff/auth/refresh`, route it through that function** — calling
+`fetch` directly reintroduces the bug, and it will present as "users keep
+getting logged out" long after the change that caused it.
+
+*`npm run dev` was completely non-interactive in a browser, and had been
+since the tenth pass.* `proxy.ts`'s strict CSP has no `unsafe-eval`;
+Next's Fast Refresh runtime evaluates strings, so it threw `EvalError`
+while `main-app.js` was still initialising and **React never hydrated** —
+dead server HTML, forms falling back to native GET submits, no client
+handler running at all. Nobody had caught it because every prior pass
+recorded "not visually confirmed — no browser-automation tool available"
+and verified frontends over curl instead, which cannot see hydration.
+`script-src` now adds `'unsafe-eval'` in development only; production is
+byte-for-byte unchanged and was confirmed to hydrate cleanly without it.
+The broader lesson: a page returning `200` with correct HTML says nothing
+about whether the app actually works. **A browser was available this
+session** (driven over CDP against a Chromium instance launched with
+`--remote-debugging-port`) — if one is available to you, use it, and stop
+inheriting that caveat.
+
+Also worth knowing: two `tests/test_media.py`/`test_preview.py` failures
+mid-sweep were the stray-dev-server hazard item 3 already recorded, not a
+regression — the API server and `arq` worker left running from this
+session's own smoke test share the Redis the suite flushes. Kill them
+before a full run. And the break-glass admin (`admin@ttli.local`) cannot
+log in through `POST /auth/login` at all: pydantic's `EmailStr` rejects
+the reserved `.local` TLD, so create a real `@example.com` user for any
+live auth testing.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

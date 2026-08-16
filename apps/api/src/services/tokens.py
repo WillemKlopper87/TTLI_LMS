@@ -195,6 +195,26 @@ async def _revoke_family(session: AsyncSession, *, family_id: uuid.UUID) -> None
     await session.flush()
 
 
+async def revoke_family_for_token(session: AsyncSession, *, raw_token: str) -> uuid.UUID | None:
+    """Revoke only the family `raw_token` belongs to — used by logout.
+
+    Narrower than revoke_all_for_user: a logout should end this session, not
+    every device. Returns the owning user_id, or None (a no-op, not an error)
+    if the token is unknown or already dead, so logout stays idempotent.
+    """
+    token_hash = hash_token(raw_token)
+    stmt = select(RefreshToken.user_id, RefreshToken.family_id).where(
+        RefreshToken.token_hash == token_hash, RefreshToken.revoked_at.is_(None)
+    )
+    row = (await session.execute(stmt)).first()
+    if row is None:
+        return None
+    user_id: uuid.UUID = row.user_id
+    family_id: uuid.UUID = row.family_id
+    await _revoke_family(session, family_id=family_id)
+    return user_id
+
+
 async def revoke_all_for_user(session: AsyncSession, *, user_id: uuid.UUID) -> int:
     """Revoke every live refresh token the user holds, across all families.
 
@@ -216,5 +236,6 @@ __all__ = [
     "RefreshTokenReused",
     "issue_family",
     "revoke_all_for_user",
+    "revoke_family_for_token",
     "rotate",
 ]

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface OwnEnrolment {
   enrolment_id: string;
@@ -20,16 +20,13 @@ interface OwnEnrolment {
  * approve_eft), never anything the client asserts.
  */
 export default function LearnIndexPage() {
-  const router = useRouter();
+  const { ready } = useRequireAuth();
   const [enrolments, setEnrolments] = useState<OwnEnrolment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
+    if (!ready || !token) return;
     fetch("/api/bff/enrolments", { headers: { Authorization: `Bearer ${token}` } })
       .then(async (resp) => {
         if (!resp.ok) {
@@ -39,7 +36,7 @@ export default function LearnIndexPage() {
         setEnrolments(await resp.json());
       })
       .catch(() => setError("Your courses could not be loaded. Try again shortly."));
-  }, [router]);
+  }, [ready]);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-16">

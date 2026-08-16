@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface SubscriptionResponse {
   id: string;
@@ -112,8 +113,8 @@ function EftPanel({ orderId, onDone }: { orderId: string; onDone: () => void }) 
  * (services/subscriptions.py's own docstring).
  */
 export default function SubscriptionAccountPage() {
-  const router = useRouter();
   const requestedPlanId = useSearchParams().get("plan");
+  const { ready } = useRequireAuth();
 
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -122,17 +123,14 @@ export default function SubscriptionAccountPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!ready || !getAccessToken()) return;
     authedFetch("/api/bff/subscriptions/me")
       .then(async (resp) => {
         if (resp.ok) setSubscription(await resp.json());
       })
       .finally(() => setLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
 
   async function startSubscribe(planId: string) {
     setBusy(true);

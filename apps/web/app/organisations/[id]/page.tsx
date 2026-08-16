@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface Organisation {
   id: string;
@@ -77,7 +78,7 @@ const RELATIONSHIP_TAG: Record<string, string> = {
  */
 export default function OrganisationDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
+  const { ready } = useRequireAuth();
   const orgId = params.id;
 
   const [org, setOrg] = useState<Organisation | null>(null);
@@ -126,13 +127,10 @@ export default function OrganisationDetailPage() {
   }
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!ready || !getAccessToken()) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [ready, orgId]);
 
   async function invite() {
     const emails = inviteEmails

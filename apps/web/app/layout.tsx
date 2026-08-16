@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import { getTheme } from "@/lib/server-api";
+import { SessionProvider } from "@/lib/session-context";
+import { SiteHeader } from "@/components/site-header";
 
 import { RegisterServiceWorker } from "./register-sw";
 
@@ -27,7 +29,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body style={style} className="min-h-screen antialiased">
         <RegisterServiceWorker />
-        {children}
+        <SessionProvider>
+          <SiteHeader />
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

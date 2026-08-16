@@ -31,6 +31,7 @@ from src.models.audit import AuditAction
 from src.models.user import User
 from src.schemas.auth import (
     LoginRequest,
+    LogoutRequest,
     MagicLinkConsumeRequest,
     MagicLinkRequest,
     MeResponse,
@@ -441,6 +442,36 @@ async def refresh(
         refresh_token=issued.raw,
         expires_in=settings.access_token_minutes * 60,
     )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Revoke the current session's refresh-token family",
+)
+async def logout(
+    body: LogoutRequest,
+    request: Request,
+    session: SessionDep,
+    tenant: TenantDep,
+) -> None:
+    """Ends this session only — revoke_all_for_user (all devices) is reserved
+    for password-reset-confirm, where proof of mailbox justifies the wider
+    blast radius. Always 204, whether or not the token was still live, so
+    logout is idempotent and never leaks token state via status code."""
+    user_id = await tokens.revoke_family_for_token(session, raw_token=body.refresh_token)
+    if user_id is not None:
+        await audit.record(
+            session,
+            tenant_id=tenant.id,
+            action=AuditAction.LOGOUT,
+            actor_user_id=user_id,
+            entity_type="user",
+            entity_id=user_id,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
 
 
 @router.post("/mfa/enroll", summary="Begin TOTP enrolment for the current user")

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface TranscriptLesson {
   module_title: string;
@@ -29,19 +30,17 @@ interface Transcript {
  * certificate's own PDF+QR treatment (credentials-panel.tsx).
  */
 export default function TranscriptPage() {
-  const router = useRouter();
+  const { ready } = useRequireAuth();
   const { enrolmentId } = useParams<{ enrolmentId: string }>();
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
     let cancelled = false;
     async function load() {
       const token = getAccessToken();
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
+      if (!token) return;
       const resp = await fetch(`/api/bff/enrolments/${enrolmentId}/transcript`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -55,7 +54,7 @@ export default function TranscriptPage() {
     return () => {
       cancelled = true;
     };
-  }, [enrolmentId, router]);
+  }, [ready, enrolmentId]);
 
   if (error) {
     return (

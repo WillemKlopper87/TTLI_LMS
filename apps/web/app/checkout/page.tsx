@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface OrderResponse {
   id: string;
@@ -36,7 +37,7 @@ type Step = "details" | "eft" | "submitted";
  * only offers EFT.
  */
 export default function CheckoutPage() {
-  const router = useRouter();
+  useRequireAuth();
   const priceId = useSearchParams().get("price");
 
   const [customerType, setCustomerType] = useState("individual");
@@ -46,10 +47,6 @@ export default function CheckoutPage() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!getAccessToken()) router.replace("/login");
-  }, [router]);
 
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();

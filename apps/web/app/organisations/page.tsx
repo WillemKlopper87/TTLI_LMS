@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useRequireAuth } from "@/lib/session-context";
 
 interface OrganisationSummary {
   id: string;
@@ -19,6 +20,7 @@ interface OrganisationSummary {
  */
 export default function OrganisationsPage() {
   const router = useRouter();
+  const { ready } = useRequireAuth();
   const [orgs, setOrgs] = useState<OrganisationSummary[] | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -34,13 +36,10 @@ export default function OrganisationsPage() {
   }
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!ready || !getAccessToken()) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
 
   async function createOrganisation() {
     if (!name.trim()) return;

@@ -285,6 +285,47 @@ async def test_refresh_rotates_and_detects_reuse(client, tenant_session_factory,
     assert also_revoked.status_code == 401
 
 
+async def test_logout_revokes_only_this_session(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    session_a = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    session_b = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    refresh_a = session_a.json()["refresh_token"]
+    refresh_b = session_b.json()["refresh_token"]
+
+    out = await client.post("/api/v1/auth/logout", json={"refresh_token": refresh_a})
+    assert out.status_code == 204
+
+    # This session is dead...
+    dead = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_a})
+    assert dead.status_code == 401
+
+    # ...but the other login's session is untouched.
+    alive = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_b})
+    assert alive.status_code == 200
+
+
+async def test_logout_is_idempotent(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    refresh_token = login.json()["refresh_token"]
+
+    first = await client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
+    assert first.status_code == 204
+    second = await client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
+    assert second.status_code == 204
+
+
+async def test_logout_with_unknown_token_is_still_204(client) -> None:  # type: ignore[no-untyped-def]
+    resp = await client.post("/api/v1/auth/logout", json={"refresh_token": "not-a-real-token"})
+    assert resp.status_code == 204
+
+
 async def test_login_rate_limits_by_account(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     """03_API_SPEC.md §1.8: 5/min per account."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)

@@ -7,7 +7,9 @@ import type { NextRequest } from "next/server";
  * applies it to its own inline hydration/RSC-streaming scripts — see
  * https://nextjs.org/docs/app/guides/content-security-policy — so
  * `script-src` stays strict (no `unsafe-inline`, no `unsafe-eval`)
- * without any extra plumbing beyond this file.
+ * without any extra plumbing beyond this file. `unsafe-eval` is added
+ * back in development only, for Fast Refresh — see the note on
+ * `scriptSrc` below before touching that.
  *
  * `style-src` keeps `unsafe-inline`: this app uses React's inline
  * `style` prop pervasively (see app/checkout, app/page.tsx, etc.), and
@@ -28,9 +30,23 @@ export function proxy(request: NextRequest) {
   const nonce = generateNonce();
   const isProd = process.env.NODE_ENV === "production";
 
+  // 'unsafe-eval' in development only, and for one specific reason: Next's
+  // React Fast Refresh runtime evaluates strings, so a production-strict
+  // script-src makes it throw
+  //     EvalError: Evaluating a string as JavaScript violates ... CSP
+  // while main-app.js is still initialising. That aborts module init before
+  // React ever hydrates, so under `npm run dev` the whole app renders as
+  // dead server HTML — forms fall back to native GET submits and no client
+  // handler runs. Confirmed in a real browser, and confirmed absent from
+  // `next build && next start`, which ships no Fast Refresh and therefore
+  // no eval. Production keeps the strict directive unchanged.
+  const scriptSrc = isProd
+    ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`;
+
   const csp = [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    scriptSrc,
     `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self'`,
