@@ -32,9 +32,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.db import get_sessionmaker, init_engine, set_tenant
 from src.core.ids import uuid7
+from src.models.article import Article
 from src.models.commerce import Price, Product
 from src.models.course import Course, CourseTenantAssignment, Lesson, Module
-from src.models.article import Article
 from src.models.credential import CertificateTemplate
 from src.models.podcast import PodcastEpisode
 
