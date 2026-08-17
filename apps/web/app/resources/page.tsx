@@ -107,10 +107,15 @@ export default async function ResourcesPage() {
                   All episodes &rarr;
                 </Link>
               </div>
-              {rest.length === 0 && !latest ? (
+              {rest.length === 0 ? (
+                // One episode (or none) means the hero card above is
+                // already showing everything there is; a heading over an
+                // empty grid reads as a broken section.
                 <div className="callout">
-                  <b>Nothing published yet</b>
-                  Episodes appear here as they are released.
+                  <b>{latest ? "That's the whole series so far" : "Nothing published yet"}</b>
+                  {latest
+                    ? "New episodes land every few weeks — the newsletter is the quickest way to hear about them."
+                    : "Episodes appear here as they are released."}
                 </div>
               ) : (
                 <div className="rowlist">
