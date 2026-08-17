@@ -37,6 +37,7 @@ from src.models.commerce import Price, Product
 from src.models.course import Course, CourseTenantAssignment, Lesson, Module
 from src.models.credential import CertificateTemplate
 from src.models.podcast import PodcastEpisode
+from src.models.recommendation import Recommendation
 
 # (slug, title, summary, topic, level, format, workshop, colour, price, outcomes, modules)
 PROGRAMMES: list[dict] = [
@@ -426,6 +427,42 @@ async def _article(session: AsyncSession, related_course_id: uuid.UUID | None) -
     article.published_at = article.published_at or datetime.now(UTC)
     article.reading_minutes = max(1, round(len(ARTICLE_BODY.split()) / 200))
     article.position = 0
+    await session.flush()
+
+
+RECOMMENDATION_TITLE = "Radical Candor"
+
+
+async def _recommendation(session: AsyncSession, related_course_id: uuid.UUID | None) -> None:
+    """One real recommendation, so the merged "What our facilitators
+    recommend" list (curated podcast episodes + this table, per the design
+    doc §3.2) has honest content of *both* shapes rather than only the
+    podcast-episode one. No slug on this model — matched on title instead,
+    the closest stable identifier a recommendation has."""
+    recommendation = (
+        await session.execute(
+            select(Recommendation).where(
+                Recommendation.tenant_id == DEMO_TENANT,
+                Recommendation.title == RECOMMENDATION_TITLE,
+            )
+        )
+    ).scalar_one_or_none()
+    if recommendation is None:
+        recommendation = Recommendation(
+            id=uuid7(), tenant_id=DEMO_TENANT, title=RECOMMENDATION_TITLE, url=""
+        )
+        session.add(recommendation)
+        await session.flush()
+    recommendation.url = "https://www.radicalcandor.com/"
+    recommendation.source_name = "Kim Scott"
+    recommendation.curator_name = "Dr N. Mokoena"
+    recommendation.curator_note = (
+        "The clearest published framing of the same idea Leading Through Ambiguity's "
+        "second module covers — care personally, challenge directly."
+    )
+    recommendation.related_course_id = related_course_id
+    recommendation.state = "published"
+    recommendation.position = 0
     await session.flush()
 
 
