@@ -404,6 +404,17 @@ async def test_completing_course_issues_certificate_and_badge_with_working_pdf_a
         assert body["holder_name"] == "Ada Lovelace"
         assert body["course_title"] == "Executive Leadership Certificate"
         assert body["status"] == "valid"
+        # What the public verify page renders beside the name: the printed
+        # credential ID, the issuing organisation and the CPD value — all
+        # off the issuance-time snapshot, so editing the template later
+        # cannot change what an already-issued certificate claims.
+        assert body["credential_id"] == certificate_number
+        assert body["issuer_name"] == "Themba Thandeka Leadership Institute"
+        assert body["cpd_points"] == 5
+        assert body["visibility"] == "public"
+        # An alias of course_title, not a second fact — the verify page
+        # speaks "programme" where the data model speaks "course".
+        assert body["programme_title"] == body["course_title"]
     finally:
         await _restore_course_templates(tenant_session_factory, course_id)
 
@@ -414,13 +425,20 @@ async def test_verify_unknown_token_is_a_clean_miss_and_is_logged(
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     resp = await client.get("/api/v1/verify/not-a-real-token")
     assert resp.status_code == 200
+    # Every field null, including the verify page's own additions — a miss
+    # must not be distinguishable from a `private` certificate.
     assert resp.json() == {
         "found": False,
         "holder_name": None,
         "course_title": None,
+        "programme_title": None,
         "issued_at": None,
         "expires_at": None,
         "status": None,
+        "credential_id": None,
+        "issuer_name": None,
+        "cpd_points": None,
+        "visibility": None,
     }
     async with tenant_session_factory(tenant_id) as s:
         count = (

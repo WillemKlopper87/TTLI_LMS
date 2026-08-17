@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,11 +34,11 @@ from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import VideoAsset
 from src.models.user import User
-from src.services import audit, entitlements, identity
+from src.services import audit, course_wizard, entitlements, identity
 from src.services import credentials as credentials_service
 from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
-from src.services.completion import evaluate, merge_rules
+from src.services.completion import CompletionRules, evaluate, merge_rules
 from src.services.storage import Container, StorageService
 
 
@@ -57,18 +58,63 @@ class OwnEnrolmentRow:
 
 
 @dataclass(frozen=True, slots=True)
+class LessonCheckRow:
+    """One completion rule as the learner-facing checklist renders it —
+    met *and* unmet alike, unlike `unmet_requirements`, which stays a
+    flat list of refusal reasons. `current`/`required` are short display
+    strings ("41%" / "80%", "5:19" / "10:00") or null for a rule with
+    nothing meaningful to show a number for."""
+
+    rule: str
+    met: bool
+    reason: str
+    current: str | None
+    required: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class LessonProgressRow:
     lesson_id: uuid.UUID
+    module_id: uuid.UUID
     module_title: str
+    module_position: int
     title: str
     position: int
     activity_type: str
+    estimated_minutes: int
     video_asset_id: uuid.UUID | None
     quiz_id: uuid.UUID | None
     survey_id: uuid.UUID | None
     assignment_id: uuid.UUID | None
     state: str
     unmet_requirements: list[str]
+    checks: list[LessonCheckRow]
+
+
+@dataclass(frozen=True, slots=True)
+class EnrolmentProgress:
+    """What `GET /enrolments/{id}/progress` answers with — the per-lesson
+    rows plus the course-level roll-up the learner shell's header needs,
+    computed here so no caller re-derives "how far am I" differently."""
+
+    enrolment: Enrolment
+    course: Course
+    lessons: list[LessonProgressRow]
+    progress_percent: int
+    next_lesson_id: uuid.UUID | None
+    estimated_minutes: int
+
+
+@dataclass(frozen=True, slots=True)
+class VideoContext:
+    """The three numbers a video player needs alongside a heartbeat ack:
+    how far the server thinks this learner has watched, how far the
+    merged completion rules require, and how long the asset runs. All
+    null when the lesson has no video or no rule."""
+
+    watched_percentage: int | None
+    required_percentage: int | None
+    duration_seconds: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,9 +448,9 @@ async def _video_watch_percentage(
     )
 
 
-async def _quiz_passed(
+async def _latest_quiz_attempt(
     session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
-) -> bool | None:
+) -> QuizAttempt | None:
     if lesson.quiz_id is None:
         return None
     stmt = (
@@ -417,8 +463,7 @@ async def _quiz_passed(
         )
         .order_by(QuizAttempt.attempt_number.desc())
     )
-    latest = (await session.execute(stmt)).scalars().first()
-    return latest.passed if latest is not None else None
+    return (await session.execute(stmt)).scalars().first()
 
 
 async def _survey_responded(
@@ -465,6 +510,7 @@ async def _assignment_approved(
 class _CompletionContext:
     video_watched_percentage: float | None
     quiz_passed: bool | None
+    quiz_score: Decimal | None
     survey_responded: bool
     assignment_approved: bool
 
@@ -477,11 +523,13 @@ async def _completion_context(
     user_id: uuid.UUID,
     enrolment_id: uuid.UUID,
 ) -> _CompletionContext:
+    attempt = await _latest_quiz_attempt(session, lesson=lesson, enrolment_id=enrolment_id)
     return _CompletionContext(
         video_watched_percentage=await _video_watch_percentage(
             session, lesson=lesson, enrolment_id=enrolment_id
         ),
-        quiz_passed=await _quiz_passed(session, lesson=lesson, enrolment_id=enrolment_id),
+        quiz_passed=attempt.passed if attempt is not None else None,
+        quiz_score=attempt.score if attempt is not None else None,
         survey_responded=await _survey_responded(
             session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment_id
         ),
@@ -491,17 +539,95 @@ async def _completion_context(
     )
 
 
+_EMPTY_CONTEXT = _CompletionContext(
+    video_watched_percentage=None,
+    quiz_passed=None,
+    quiz_score=None,
+    survey_responded=False,
+    assignment_approved=False,
+)
+
+
+def _rules_need_context(rules: CompletionRules) -> bool:
+    """`minimum_time_seconds` is answerable from `first_seen_at` alone;
+    every other rule needs a round trip to the subsystem that backs it.
+    Progress is read far more often than it is written, and most lessons
+    carry only a time rule, so the four lookups are skipped unless a rule
+    actually asks for them."""
+    return (
+        rules.video_watch_percentage is not None
+        or rules.quiz_pass_score is not None
+        or bool(rules.survey_required)
+        or bool(rules.assignment_approval_required)
+    )
+
+
+def _clock(seconds: float) -> str:
+    total = max(0, int(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _check_values(
+    rule: str, rules: CompletionRules, ctx: _CompletionContext, *, elapsed_seconds: float
+) -> tuple[str | None, str | None]:
+    """The two short strings a progress meter renders beside a rule. Null
+    for rules with nothing to count (a survey is done or it isn't) —
+    never a fabricated "0/1"."""
+    if rule == "minimum_time_seconds" and rules.minimum_time_seconds is not None:
+        return _clock(elapsed_seconds), _clock(rules.minimum_time_seconds)
+    if rule == "video_watch_percentage" and rules.video_watch_percentage is not None:
+        return (
+            f"{int(ctx.video_watched_percentage or 0)}%",
+            f"{rules.video_watch_percentage}%",
+        )
+    if rule == "quiz_pass_score" and rules.quiz_pass_score is not None:
+        current = f"{ctx.quiz_score:.0f}%" if ctx.quiz_score is not None else None
+        return current, f"{rules.quiz_pass_score}%"
+    return None, None
+
+
+async def video_context(
+    session: AsyncSession, *, lesson: Lesson, course: Course, enrolment_id: uuid.UUID
+) -> VideoContext:
+    """What `POST /lessons/{id}/heartbeat` answers with beside the raw
+    counters — the same merged rule set and the same
+    `video_progress.watch_percentage` the completion engine reads, so the
+    player's progress ring can never disagree with the server's verdict."""
+    duration_seconds: int | None = None
+    watched: int | None = None
+    if lesson.video_asset_id is not None:
+        asset = await session.get(VideoAsset, lesson.video_asset_id)
+        if asset is not None:
+            duration_seconds = asset.duration_seconds
+            if duration_seconds:
+                percentage = await video_progress_service.watch_percentage(
+                    session,
+                    enrolment_id=enrolment_id,
+                    lesson_id=lesson.id,
+                    duration_seconds=duration_seconds,
+                )
+                watched = int(percentage) if percentage is not None else None
+    rules = merge_rules(course.completion_rules, lesson.completion_rules)
+    return VideoContext(
+        watched_percentage=watched,
+        required_percentage=rules.video_watch_percentage,
+        duration_seconds=duration_seconds,
+    )
+
+
 async def resolve_enrolment_for_lesson(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, lesson_id: uuid.UUID
-) -> tuple[Enrolment, Lesson]:
+) -> tuple[Enrolment, Lesson, Course]:
     """The ownership resolution `start_lesson`/`complete_lesson` each do
     inline, factored out for `POST /lessons/{id}/heartbeat`
-    (routers/learning.py) too."""
+    (routers/learning.py) too. The course comes back with it because the
+    heartbeat's own response now reports the merged completion rule the
+    lesson is being measured against, and that merge needs both."""
     lesson, course = await _get_lesson_and_course(session, lesson_id)
     enrolment = await get_own_enrolment(
         session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
     )
-    return enrolment, lesson
+    return enrolment, lesson, course
 
 
 async def start_lesson(
@@ -642,9 +768,17 @@ async def get_progress(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
     enrolment_id: uuid.UUID,
-) -> tuple[Enrolment, Course, list[LessonProgressRow]]:
-    """03 §6.1 — the UI renders its checklist from `unmet_requirements`; it
-    does not compute it."""
+) -> EnrolmentProgress:
+    """03 §6.1 — the UI renders its checklist from `checks`/
+    `unmet_requirements`; it does not compute either. `checks` carries the
+    met rules as well as the unmet ones, so a learner can see what they
+    have already cleared, not only what is still blocking them;
+    `unmet_requirements` is unchanged and still the refusal-reason list.
+
+    Ordering and the per-lesson time estimate both come from
+    `course_wizard.get_outline` — the one place video duration, question
+    counts and body word counts are turned into minutes — rather than a
+    second, subtly different derivation here."""
     enrolment = await _get_own_enrolment_by_id(
         session, tenant_id=tenant_id, user_id=user_id, enrolment_id=enrolment_id
     )
@@ -652,57 +786,100 @@ async def get_progress(
     if course is None:  # pragma: no cover - FK guarantees this
         raise NotFound("No such course.")
 
-    ordered = await _ordered_lessons(session, course.id)
+    outline = await course_wizard.get_outline(session, course_id=course.id)
     completions_stmt = select(LessonCompletion).where(LessonCompletion.enrolment_id == enrolment.id)
     completions = {c.lesson_id: c for c in (await session.execute(completions_stmt)).scalars()}
+    now = datetime.now(UTC)
 
     rows: list[LessonProgressRow] = []
     previous_completed = True
-    for item in ordered:
-        lesson = item.lesson
-        completion = completions.get(lesson.id)
-        unmet: list[str] = []
+    for module_outline in outline:
+        for item in module_outline.lessons:
+            lesson = item.lesson
+            completion = completions.get(lesson.id)
+            unmet: list[str] = []
 
-        if completion is not None:
-            state = completion.state
-            if state != "completed":
-                rules = merge_rules(course.completion_rules, lesson.completion_rules)
-                ctx = await _completion_context(
+            if completion is not None:
+                state = completion.state
+            elif previous_completed:
+                state = "available"
+            else:
+                state = "locked"
+                unmet = ["Complete the previous lesson first."]
+
+            rules = merge_rules(course.completion_rules, lesson.completion_rules)
+            ctx = (
+                await _completion_context(
                     session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment.id
                 )
-                result = evaluate(
-                    rules,
-                    first_seen_at=completion.first_seen_at,
-                    video_watched_percentage=ctx.video_watched_percentage,
-                    quiz_passed=ctx.quiz_passed,
-                    survey_responded=ctx.survey_responded,
-                    assignment_approved=ctx.assignment_approved,
-                )
-                unmet = [c.reason for c in result.checks if not c.met]
-        elif previous_completed:
-            state = "available"
-        else:
-            state = "locked"
-            unmet = ["Complete the previous lesson first."]
-
-        rows.append(
-            LessonProgressRow(
-                lesson_id=lesson.id,
-                module_title=item.module.title,
-                title=lesson.title,
-                position=lesson.position,
-                activity_type=lesson.activity_type,
-                video_asset_id=lesson.video_asset_id,
-                quiz_id=lesson.quiz_id,
-                survey_id=lesson.survey_id,
-                assignment_id=lesson.assignment_id,
-                state=state,
-                unmet_requirements=unmet,
+                if _rules_need_context(rules)
+                else _EMPTY_CONTEXT
             )
-        )
-        previous_completed = state == "completed"
+            # A lesson with no completion row has never been opened, so
+            # there is no server-assigned start to measure elapsed time
+            # against — `now` makes that read as 0s spent, which is the
+            # truth, rather than silently dropping the rule.
+            first_seen_at = completion.first_seen_at if completion is not None else now
+            result = evaluate(
+                rules,
+                first_seen_at=first_seen_at,
+                now=now,
+                video_watched_percentage=ctx.video_watched_percentage,
+                quiz_passed=ctx.quiz_passed,
+                survey_responded=ctx.survey_responded,
+                assignment_approved=ctx.assignment_approved,
+            )
+            elapsed_seconds = (now - first_seen_at).total_seconds()
+            checks: list[LessonCheckRow] = []
+            for check in result.checks:
+                current, required = _check_values(
+                    check.rule, rules, ctx, elapsed_seconds=elapsed_seconds
+                )
+                checks.append(
+                    LessonCheckRow(
+                        rule=check.rule,
+                        met=check.met,
+                        reason=check.reason,
+                        current=current,
+                        required=required,
+                    )
+                )
+            if completion is not None and state != "completed":
+                unmet = [c.reason for c in result.checks if not c.met]
 
-    return enrolment, course, rows
+            rows.append(
+                LessonProgressRow(
+                    lesson_id=lesson.id,
+                    module_id=module_outline.module.id,
+                    module_title=module_outline.module.title,
+                    module_position=module_outline.module.position,
+                    title=lesson.title,
+                    position=lesson.position,
+                    activity_type=lesson.activity_type,
+                    estimated_minutes=item.estimated_minutes,
+                    video_asset_id=lesson.video_asset_id,
+                    quiz_id=lesson.quiz_id,
+                    survey_id=lesson.survey_id,
+                    assignment_id=lesson.assignment_id,
+                    state=state,
+                    unmet_requirements=unmet,
+                    checks=checks,
+                )
+            )
+            previous_completed = state == "completed"
+
+    completed_count = sum(1 for row in rows if row.state == "completed")
+    next_lesson_id = next(
+        (row.lesson_id for row in rows if row.state in ("available", "in_progress")), None
+    )
+    return EnrolmentProgress(
+        enrolment=enrolment,
+        course=course,
+        lessons=rows,
+        progress_percent=round(100 * completed_count / len(rows)) if rows else 0,
+        next_lesson_id=next_lesson_id,
+        estimated_minutes=sum(row.estimated_minutes for row in rows),
+    )
 
 
 async def get_transcript(
@@ -754,10 +931,13 @@ async def get_transcript(
 
 
 __all__ = [
+    "EnrolmentProgress",
+    "LessonCheckRow",
     "LessonProgressRow",
     "OwnEnrolmentRow",
     "Transcript",
     "TranscriptLessonRow",
+    "VideoContext",
     "complete_lesson",
     "get_or_create_enrolment",
     "get_own_enrolment",
@@ -770,4 +950,5 @@ __all__ = [
     "resolve_enrolment_for_quiz",
     "resolve_enrolment_for_survey",
     "start_lesson",
+    "video_context",
 ]

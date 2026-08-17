@@ -31,7 +31,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body style={style} className="min-h-screen antialiased">
         <RegisterServiceWorker />
         <SessionProvider>
-          <SiteHeader />
+          <SiteHeader tenantName={theme?.tenant_name ?? null} logoUrl={theme?.logo_url ?? null} />
           <NotificationOptIn />
           {children}
         </SessionProvider>

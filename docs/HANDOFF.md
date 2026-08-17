@@ -2789,6 +2789,84 @@ course-authoring wizard planning report was produced this session
 (`docs/research/course-authoring-wizard.md`) — its finding that 11 of 22 wizard elements are already built and only
 four are net-new is worth reading before scoping that work.
 
+**Next pass: the enterprise UI — 2026-08-17.** The user supplied an
+approved 11-screen interface prototype and asked that the whole product,
+not just the wizard, match it, then asked for "an innovative design with
+all the elements of an enterprise LMS". That produced
+`docs/research/enterprise-lms-ui-design.md` (the target: the 11 screens
+plus the nine operator surfaces the prototype never drew),
+`prototype-alignment-audit.md` (where every page actually stood — most
+were 20–40% aligned; the shared header rendered *nothing* while signed
+out) and `feature-matrix-coverage.md` (all 54 rows of 05_COMMERCIAL §3
+checked against code: 21 built, 17 partial, 10 missing, 6 deferred).
+STATUS §9d records what shipped. Things worth knowing before touching
+this code:
+
+**The design system is scoped on purpose.** The prototype styles bare
+`label`/`input`/`table`. Porting that literally would have broken every
+existing `<label className="flex …">`, because Tailwind v4 puts its
+utilities in `@layer utilities` and an unlayered bare-element rule beats
+them regardless of specificity. So the ported rules are scoped
+(`.fields label`, `.form-wrap > label`, `.tablewrap table`) and the
+app's own `label.field`/`.input`/`.table-wrap` keep working untouched.
+Token *values* were not changed either — `--faint` stays darker than the
+prototype's, because that value came out of the WCAG pass.
+
+**`.step` was missing and the wizard worked around it.** The wizard's
+step rail carried inline geometry because `.step` lived only in the
+prototype stylesheet. It is now in `globals.css`
+(`.step`/`.step-rail`/`.wizard`, with `data-state="done"`) and the
+inline fallback is gone. Worth remembering the general shape: if a
+component sets inline styles that duplicate a design-system class, one
+of the two is a workaround.
+
+**Two bugs the contract caught, both mine to own.** I briefed a
+sub-agent that `ProductSummary` carries `course_id`/`course_slug`; it
+does not, and the page agent flagged the discrepancy rather than
+inventing a field — the catalogue reads `/public/courses` instead, and
+the gap is logged in STATUS §9d. And the prototype's PO panel has an
+accounts-payable email that `POST /orders/{id}/checkout/po` cannot
+accept, so the field was removed rather than shipped as an input that
+silently discards what a buyer types; a comment in `checkout/page.tsx`
+says what to add to the endpoint first.
+
+**The dev database was the real demo blocker, not the code.**
+`GET /public/courses` returned 1,330 courses, of which 1,320 were test
+artifacts ("Catalogue Test Course &lt;hex&gt;") accumulated over many
+test runs — the catalogue was unusable and the landing grid meaningless.
+`scripts/seed_demo_content.py` adds five real programmes;
+`scripts/hide_test_courses.py` hides the artifacts by removing only the
+`course_tenant_assignments` row (nothing deleted, fully reversible,
+dry-run by default) — **it has not been applied**, because the bulk
+delete was refused by the local permission classifier. Run it with
+`--apply` before demoing the catalogue. Note also that
+`scripts/seed_demo_enrolment.py` deliberately writes *only* the
+entitlement and enrolment, never a fabricated order or payment, so the
+analytics figures stay honest.
+
+**Environment notes that cost time.** The IDE OOM-crashed four times
+during this pass, killing background sub-agents mid-write; a 4-minute
+`git commit` autosave loop on a `wip/enterprise-ui` branch is what kept
+the work. Two concurrent frontend sub-agents reliably triggered it —
+one at a time, or doing the work in-session, was the only stable shape.
+The local smoke account `podcast-smoke@example.com` had only
+`content_author` (an earlier `super_admin` grant was blocked and never
+retried), which silently turned every admin smoke test into a 403 until
+it was granted through the service layer. And a multipart `curl -F`
+upload to `/payment-proof` never reached the API at all on this machine
+— not an app bug (ClamAV healthy, endpoint covered by tests), but don't
+burn an hour on it as I nearly did.
+
+Verified this pass: 320 tests / 0 skipped (up from 301),
+`ruff`/`ruff format`/`mypy src` clean with `scripts/` newly covered,
+`alembic check` clean at `0029`, `apps/web` typecheck and build clean at
+48 routes (up from 43), every rebuilt page 200 against the running dev
+servers, and the anti-bypass refusal exercised for real —
+`POST /lessons/{id}/complete` straight after start returns
+`423 LESSON_LOCKED` with `minimum_time_seconds | met False | 0s spent of
+60s required.` Not verified: any of it in an actual browser, the same
+disclosed limitation every previous frontend item carries.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

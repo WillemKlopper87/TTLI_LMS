@@ -148,7 +148,13 @@ class TaxRule(Base, TimestampMixin):
 
 class Order(Base, TimestampMixin):
     __tablename__ = "orders"
-    __table_args__ = (Index("uq_orders_payment_reference", "payment_reference", unique=True),)
+    __table_args__ = (
+        Index("uq_orders_payment_reference", "payment_reference", unique=True),
+        # 0028: the analytics dashboard's pipeline / paid-vs-waiting scans and
+        # its by-organisation axis (routers/analytics.py).
+        Index("ix_orders_tenant_status_created", "tenant_id", "status", "created_at"),
+        Index("ix_orders_tenant_organisation", "tenant_id", "organisation_id"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -227,6 +233,10 @@ class OrderItem(Base):
 
 class Payment(Base, TimestampMixin):
     __tablename__ = "payments"
+    # 0028: payment-method breakdown on the analytics dashboard.
+    __table_args__ = (
+        Index("ix_payments_tenant_provider_created", "tenant_id", "provider", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -470,7 +480,11 @@ class LedgerEntry(Base):
     trigger, same two-layer enforcement as AuditEvent and ConsentRecord."""
 
     __tablename__ = "ledger_entries"
-    __table_args__ = (Index("ix_ledger_entries_entity", "tenant_id", "entity_type", "entity_id"),)
+    __table_args__ = (
+        Index("ix_ledger_entries_entity", "tenant_id", "entity_type", "entity_id"),
+        # 0028: period-scoped revenue sums (payment_received / refund_issued).
+        Index("ix_ledger_entries_tenant_type_created", "tenant_id", "entry_type", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(

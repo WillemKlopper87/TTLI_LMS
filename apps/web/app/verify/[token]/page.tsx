@@ -4,110 +4,177 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { formatDate } from "@/lib/format";
+
+import { CertificateCard } from "./certificate-card";
+
 interface VerificationResult {
   found: boolean;
   holder_name: string | null;
   course_title: string | null;
+  programme_title: string | null;
   issued_at: string | null;
   expires_at: string | null;
   status: string | null;
+  credential_id: string | null;
+  issuer_name: string | null;
+  cpd_points: number | null;
+  visibility: string | null;
 }
 
-const STATUS_COPY: Record<string, { label: string; tag: string }> = {
-  valid: { label: "This credential is valid.", tag: "tag--done" },
-  revoked: { label: "This credential has been revoked.", tag: "tag--stop" },
-  expired: { label: "This credential has expired.", tag: "tag--mute" },
+const STATUS: Record<string, { head: string; glyph: string; tone: string }> = {
+  valid: { head: "Valid credential", glyph: "✓", tone: "" },
+  revoked: { head: "Revoked credential", glyph: "✕", tone: "verify-head--stop" },
+  expired: { head: "Expired credential", glyph: "!", tone: "verify-head--live" },
 };
 
 /**
- * REQ-CRED-03: the public, unauthenticated verification page a QR code on
- * a printed/PDF certificate resolves to. It calls the same public
- * `GET /verify/{token}` a phone camera would hit directly — this page
- * exists so the result reads as a page, not raw JSON, and so a private
- * certificate's owner can hand out the link deliberately (REQ-CRED-07).
+ * REQ-CRED-03: the public, unauthenticated page a certificate's QR code
+ * resolves to (design doc §4 screen 10). It calls the same public
+ * `GET /verify/{token}` a phone camera would hit, and shows the
+ * credential as a credential — a rendered certificate beside the
+ * verification record — rather than as raw JSON.
+ *
+ * A private certificate is deliberately indistinguishable from a miss:
+ * the API returns the same "not found" shape either way, so this page
+ * cannot leak the existence of a credential its holder chose to hide.
  */
 export default function VerifyPage() {
   const { token } = useParams<{ token: string }>();
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [href, setHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHref(window.location.href);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      const resp = await fetch(`/api/bff/verify/${token}`);
-      if (!resp.ok) {
+    fetch(`/api/bff/verify/${token}`)
+      .then(async (resp) => {
+        if (!resp.ok) {
+          if (!cancelled) setError("This credential could not be checked right now.");
+          return;
+        }
+        if (!cancelled) setResult(await resp.json());
+      })
+      .catch(() => {
         if (!cancelled) setError("This credential could not be checked right now.");
-        return;
-      }
-      if (!cancelled) setResult(await resp.json());
-    }
-    load();
+      });
     return () => {
       cancelled = true;
     };
   }, [token]);
 
-  return (
-    <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-6 py-16">
-      <div className="text-center">
-        <p className="eyebrow">Credential verification</p>
-        <h1 className="serif mt-2" style={{ fontSize: "1.75rem" }}>
-          Verify a TTLI credential
-        </h1>
-      </div>
-
-      {error ? (
-        <p role="alert" className="card text-center" style={{ fontSize: "0.875rem", color: "var(--stop)" }}>
+  if (error) {
+    return (
+      <main className="pad-lg">
+        <p className="callout callout--stop" role="alert">
+          <b>Could not verify</b>
           {error}
         </p>
-      ) : null}
+      </main>
+    );
+  }
 
-      {!error && result === null ? (
-        <p className="text-center" style={{ fontSize: "0.875rem", color: "var(--faint)" }}>
-          Checking&hellip;
-        </p>
-      ) : null}
+  if (result === null) {
+    return (
+      <main className="pad-lg">
+        <p style={{ color: "var(--muted)" }}>Checking this credential…</p>
+      </main>
+    );
+  }
 
-      {result && !result.found ? (
-        <div className="card text-center">
-          <span className="tag tag--stop" style={{ display: "inline-block" }}>
-            Not found
-          </span>
-          <p className="mt-3" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-            No valid, publicly verifiable credential matches this link. It may be private, revoked,
-            or the link may be incorrect.
+  if (!result.found) {
+    return (
+      <main className="pad-lg">
+        <div style={{ maxWidth: "42rem" }}>
+          <p className="eyebrow">Credential verification</p>
+          <h1 className="serif" style={{ fontSize: "1.75rem", margin: ".4rem 0 1rem" }}>
+            No credential matches this link
+          </h1>
+          <div className="callout callout--stop">
+            <b>Not found</b>
+            The link may be mistyped or expired, or the holder may have set the credential to
+            private. TTLI cannot confirm whether a private credential exists.
+          </div>
+          <p style={{ marginTop: "1rem" }}>
+            <Link href="/">Back to the home page</Link>
           </p>
         </div>
-      ) : null}
+      </main>
+    );
+  }
 
-      {result && result.found ? (
-        <div className="card flex flex-col gap-3 text-center">
-          <span
-            className={`tag ${STATUS_COPY[result.status ?? ""]?.tag ?? "tag--mute"}`}
-            style={{ display: "inline-block", alignSelf: "center" }}
-          >
-            {result.status}
-          </span>
-          <p style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-            {STATUS_COPY[result.status ?? ""]?.label ?? "This credential's status is unknown."}
-          </p>
-          <h2 className="serif" style={{ fontSize: "1.375rem" }}>
-            {result.holder_name}
-          </h2>
-          <p style={{ fontSize: "0.9375rem", color: "var(--ink-2)" }}>{result.course_title}</p>
-          <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
-            Issued{" "}
-            {result.issued_at ? new Date(result.issued_at).toLocaleDateString() : "unknown date"}
-            {result.expires_at
-              ? ` · expires ${new Date(result.expires_at).toLocaleDateString()}`
-              : ""}
+  const status = STATUS[result.status ?? "valid"] ?? STATUS.valid;
+  const programme = result.programme_title ?? result.course_title;
+
+  return (
+    <main className="pad-lg">
+      <div className="certpage">
+        <CertificateCard
+          issuerName={result.issuer_name}
+          holderName={result.holder_name}
+          programmeTitle={programme}
+          issuedAt={result.issued_at}
+          credentialId={result.credential_id}
+          cpdPoints={result.cpd_points}
+          verifyUrl={href}
+        />
+
+        <div style={{ display: "grid", gap: "1.15rem" }}>
+          <div className="verify">
+            <div className={`verify-head ${status.tone}`}>
+              <span aria-hidden="true">{status.glyph}</span>
+              <span>{status.head}</span>
+            </div>
+            <div className="verify-body">
+              <div>
+                <span className="k">Holder</span>
+                <span className="v">{result.holder_name ?? "—"}</span>
+              </div>
+              <div>
+                <span className="k">Programme</span>
+                <span className="v">{programme ?? "—"}</span>
+              </div>
+              <div>
+                <span className="k">Issued</span>
+                <span className="v">{result.issued_at ? formatDate(result.issued_at) : "—"}</span>
+              </div>
+              <div>
+                <span className="k">Expires</span>
+                <span className="v">
+                  {result.expires_at ? formatDate(result.expires_at) : "No expiry"}
+                </span>
+              </div>
+              <div>
+                <span className="k">Issuer</span>
+                <span className="v">
+                  {result.issuer_name ?? "Themba Thandeka Leadership Institute"}
+                </span>
+              </div>
+              <div>
+                <span className="k">Status</span>
+                <span
+                  className="v"
+                  style={{
+                    color: result.status === "valid" ? "var(--done)" : "var(--stop)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {(result.status ?? "valid").replace(/^./, (c) => c.toUpperCase())}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <p style={{ fontSize: ".75rem", color: "var(--muted)" }}>
+            Anyone can check this page without an account. Revoking the credential changes what
+            they see here immediately.
           </p>
         </div>
-      ) : null}
-
-      <Link href="/" className="btn btn--ghost" style={{ alignSelf: "center" }}>
-        Back to the homepage
-      </Link>
+      </div>
     </main>
   );
 }

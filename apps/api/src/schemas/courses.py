@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from src.models.course import ACCESS_LEVEL_VALUES, MANAGER_VISIBILITY_VALUES
+from src.models.course import (
+    ACCESS_LEVEL_VALUES,
+    COURSE_FORMAT_VALUES,
+    COURSE_LEVEL_VALUES,
+    MANAGER_VISIBILITY_VALUES,
+)
+
+_LEVEL_PATTERN = "^(" + "|".join(COURSE_LEVEL_VALUES) + ")$"
+_FORMAT_PATTERN = "^(" + "|".join(COURSE_FORMAT_VALUES) + ")$"
+_HEX_COLOUR_PATTERN = "^#[0-9A-Fa-f]{6}$"
 
 
 class UpdateManagerVisibilityRequest(BaseModel):
@@ -14,6 +23,14 @@ class CourseCreateRequest(BaseModel):
     slug: str | None = None
     description: str | None = None
     completion_rules: dict[str, object] = Field(default_factory=dict)
+    # 0029 presentation metadata — all optional.
+    summary: str | None = None
+    level: str | None = Field(default=None, pattern=_LEVEL_PATTERN)
+    topic: str | None = Field(default=None, max_length=64)
+    format: str | None = Field(default=None, pattern=_FORMAT_PATTERN)
+    outcomes: list[str] | None = None
+    includes_workshop: bool | None = None
+    hero_colour: str | None = Field(default=None, pattern=_HEX_COLOUR_PATTERN)
 
 
 class CourseUpdateRequest(BaseModel):
@@ -25,6 +42,13 @@ class CourseUpdateRequest(BaseModel):
     completion_rules: dict[str, object] | None = None
     certificate_template_id: str | None = None
     badge_template_id: str | None = None
+    summary: str | None = None
+    level: str | None = Field(default=None, pattern=_LEVEL_PATTERN)
+    topic: str | None = Field(default=None, max_length=64)
+    format: str | None = Field(default=None, pattern=_FORMAT_PATTERN)
+    outcomes: list[str] | None = None
+    includes_workshop: bool | None = None
+    hero_colour: str | None = Field(default=None, pattern=_HEX_COLOUR_PATTERN)
 
 
 class CourseResponse(BaseModel):
@@ -37,6 +61,13 @@ class CourseResponse(BaseModel):
     completion_rules: dict[str, object]
     certificate_template_id: str | None
     badge_template_id: str | None
+    summary: str | None = None
+    level: str | None = None
+    topic: str | None = None
+    format: str | None = None
+    outcomes: list[str] = Field(default_factory=list)
+    includes_workshop: bool = False
+    hero_colour: str | None = None
 
 
 class CoursesPageResponse(BaseModel):
@@ -134,6 +165,9 @@ class PublicLessonRow(BaseModel):
     position: int
     activity_type: str
     access_level: str
+    estimated_minutes: int = 0
+    # access_level == "public" — the lesson a visitor can open before buying.
+    is_preview: bool = False
 
 
 class PublicModuleRow(BaseModel):
@@ -141,6 +175,53 @@ class PublicModuleRow(BaseModel):
     title: str
     position: int
     lessons: list[PublicLessonRow]
+    estimated_minutes: int = 0
+    lesson_count: int = 0
+
+
+class PublicPrice(BaseModel):
+    """The first active, priced product selling this course to *this*
+    tenant — what the catalogue card / detail page's price block shows.
+    Mirrors `schemas/commerce.py::PriceSummary` (`unit_amount` as a
+    string so no float rounding on the wire) plus the product it hangs
+    off, so "Enrol" can go straight to `POST /orders`."""
+
+    product_id: str
+    price_id: str
+    currency: str
+    unit_amount: str
+    tax_behaviour: str
+    # tax_behaviour == "inclusive" — the displayed amount already
+    # contains VAT; "exclusive" means the checkout adds it.
+    includes_vat: bool
+
+
+class PublicCourseCard(BaseModel):
+    """One row of `GET /public/courses` — the catalogue/landing grid.
+    Every facet the prototype filters on (topic / format / includes /
+    level) is here so the client can compute counts itself."""
+
+    id: str
+    slug: str
+    title: str
+    summary: str | None
+    description: str | None
+    level: str | None
+    topic: str | None
+    format: str | None
+    outcomes: list[str]
+    includes_workshop: bool
+    has_certificate: bool
+    cpd_points: int | None
+    estimated_minutes: int
+    module_count: int
+    lesson_count: int
+    hero_colour: str | None
+    price: PublicPrice | None
+
+
+class PublicCoursesResponse(BaseModel):
+    items: list[PublicCourseCard]
 
 
 class PublicCurriculumResponse(BaseModel):
@@ -148,6 +229,18 @@ class PublicCurriculumResponse(BaseModel):
     title: str
     description: str | None
     modules: list[PublicModuleRow]
+    summary: str | None = None
+    level: str | None = None
+    topic: str | None = None
+    format: str | None = None
+    outcomes: list[str] = Field(default_factory=list)
+    includes_workshop: bool = False
+    has_certificate: bool = False
+    cpd_points: int | None = None
+    estimated_minutes: int = 0
+    lesson_count: int = 0
+    hero_colour: str | None = None
+    price: PublicPrice | None = None
 
 
 class PublicLessonPreviewResponse(BaseModel):
@@ -174,10 +267,13 @@ __all__ = [
     "ModuleResponse",
     "ModuleUpdateRequest",
     "ModulesPageResponse",
+    "PublicCourseCard",
+    "PublicCoursesResponse",
     "PublicCurriculumResponse",
     "PublicLessonPreviewResponse",
     "PublicLessonRow",
     "PublicModuleRow",
+    "PublicPrice",
     "TenantAssignmentCreateRequest",
     "TenantAssignmentResponse",
     "TenantAssignmentRow",

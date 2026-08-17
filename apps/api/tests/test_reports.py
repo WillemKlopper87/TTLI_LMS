@@ -212,7 +212,20 @@ async def test_aggregate_only_by_default(client, tenant_session_factory, crypto)
     body = resp.json()
     assert body["enrolled"] == 1
     assert body["individual_visible"] is False
-    assert body["learners"] == []
+    # The participation row is returned; the *score* is what's withheld.
+    # See services/reports.py's module docstring for why that line moved.
+    assert len(body["learners"]) == 1
+    row = body["learners"][0]
+    assert row["score_hidden"] is True
+    assert row["best_quiz_score"] is None
+    assert row["status"] == "not_started"
+    assert row["progress_percent"] == 0
+    # Masked, never the real address, and display_name falls back to it.
+    assert row["email"].startswith("m•••@")
+    assert row["display_name"] == row["email"]
+    assert "@example.com" in row["email"]
+    assert body["average_progress"] == 0
+    assert body["at_risk"] == 0  # freshly assigned — nowhere near 14 days
 
 
 async def test_individual_visible_once_all_three_conditions_hold(
@@ -274,6 +287,13 @@ async def test_individual_visible_once_all_three_conditions_hold(
         assert len(body["learners"]) == 1
         assert body["learners"][0]["email"] == employee_email
         assert body["learners"][0]["status"] == "not_started"
+        # Unlocked: the real address, and the score field is no longer withheld.
+        assert body["learners"][0]["score_hidden"] is False
+        assert body["learners"][0]["display_name"] == employee_email
+        assert body["learners"][0]["progress_percent"] == 0
+        assert body["learners"][0]["last_active_at"] is None
+        assert body["average_progress"] == 0
+        assert body["at_risk"] == 0
     finally:
         await _reset_visibility(client, platform_admin_token, course_id)
 
@@ -338,7 +358,13 @@ async def test_plain_member_never_sees_individual_rows_even_with_both_toggles_on
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["individual_visible"] is False
-        assert body["learners"] == []
+        # Both toggles are on, yet a plain member still gets no scores —
+        # the row is present (participation), the score is not.
+        assert len(body["learners"]) == 1
+        assert body["learners"][0]["score_hidden"] is True
+        assert body["learners"][0]["best_quiz_score"] is None
+        assert body["learners"][0]["email"] != employee_email
+        assert body["learners"][0]["email"].startswith(f"{employee_email[0]}•••@")
     finally:
         await _reset_visibility(client, platform_admin_token, course_id)
 
@@ -474,3 +500,64 @@ async def test_course_and_tenant_toggle_endpoints_round_trip(
         assert setting_after.json()["allow_manager_individual_results"] is True
     finally:
         await _reset_visibility(client, platform_admin_token, course_id)
+
+
+async def test_at_risk_counts_a_seat_assigned_a_fortnight_ago_and_never_opened(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The number a manager actually acts on. Two weeks after the seat was
+    assigned, a learner who has never opened the course is at risk — no
+    lesson has to have been started for that to be true, which is exactly
+    why `at_risk` is not derived from progress alone."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    course_id = await _demo_course_id(tenant_session_factory)
+    admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    org_id = await _create_organisation(client, admin_token, "At Risk Co")
+    await _buy_and_assign_one_seat(
+        client,
+        admin_token,
+        finance_token,
+        organisation_id=org_id,
+        price_id=price_id,
+        course_id=course_id,
+    )
+
+    fresh = await client.get(
+        f"/api/v1/organisations/{org_id}/reports/progress?course_id={course_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["at_risk"] == 0
+    assert fresh.json()["average_progress"] == 0
+
+    # Age the enrolment rather than sleeping for a fortnight — the same
+    # "move the clock's input, not the logic" trick test_learning.py uses
+    # for minimum_time_seconds. Scoped to this organisation's own seats.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "UPDATE enrolments SET created_at = now() - interval '20 days' WHERE id IN ("
+                "  SELECT e.id FROM enrolments e"
+                "  JOIN entitlements ent ON ent.user_id = e.user_id"
+                "   AND ent.target_id = e.course_id"
+                "  WHERE ent.organisation_id = :o AND ent.target_id = :c)"
+            ),
+            {"o": org_id, "c": course_id},
+        )
+
+    aged = await client.get(
+        f"/api/v1/organisations/{org_id}/reports/progress?course_id={course_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert aged.status_code == 200, aged.text
+    body = aged.json()
+    assert body["at_risk"] == 1
+    assert body["average_progress"] == 0
+    assert body["learners"][0]["status"] == "not_started"
+    assert body["learners"][0]["last_active_at"] is None

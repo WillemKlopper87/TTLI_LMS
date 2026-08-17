@@ -971,3 +971,53 @@ async def test_completion_rule_engine_gates_on_quiz_survey_and_assignment(
                 sa.text("UPDATE lessons SET completion_rules = CAST(:r AS JSONB) WHERE id = :l"),
                 {"r": original_rules, "l": lesson_id},
             )
+
+
+async def test_quiz_attempt_payload_states_the_rules_of_the_sitting(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The learner should not have to guess the pass mark or how many
+    goes they have left. `attempts_remaining` counts what is left *after*
+    the attempt just started, using the same arithmetic
+    `services/quiz.py::start_attempt` enforces the limit with."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz_id = await _create_quiz(client, author_token)  # pass_score 70, max_attempts 2
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    first = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["quiz_title"] == "Test Quiz"
+    assert body["pass_score"] == 70
+    assert body["max_attempts"] == 2
+    assert body["attempt_number"] == 1
+    assert body["attempts_remaining"] == 1
+    assert body["randomise_questions"] is False
+    assert body["randomise_options"] is False
+    # Every field the endpoint already returned is still there.
+    assert body["attempt_id"]
+    assert body["quiz_id"] == quiz_id
+    assert body["time_limit_seconds"] is None
+    assert len(body["questions"]) == 1
+
+    second = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["attempt_number"] == 2
+    assert second.json()["attempts_remaining"] == 0

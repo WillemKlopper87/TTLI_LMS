@@ -1,153 +1,270 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { getTheme } from "@/lib/server-api";
+import { CourseCard } from "@/app/catalogue/course-card";
+import { formatClock } from "@/lib/format";
+import { getPublicCourses, getPublicEpisodes, getTheme } from "@/lib/server-api";
 
 /**
- * The public marketing landing page (Phase 2, REQ-STORE-01/02/06).
+ * The public marketing landing page (Phase 2, REQ-STORE-01/02/06) —
+ * prototype screen 1.
  *
- * Content below — the About narrative, team, client list, "Lead with
- * Intent" book — is TTLI's real copy and imagery, extracted from
- * https://ttli.co.za/ at the customer's own request (docs/brand/
- * ttli-brand-identity.md has full provenance). It is intentionally not
- * theme-driven the way the logo/colors are: no CMS exists yet for a
- * second tenant to supply its own marketing copy, so this page is
- * TTLI-specific content wrapped in tenant-driven chrome.
+ * The page no longer renders a header of its own: components/
+ * site-header.tsx puts the prototype's `.site-head` on every non-admin
+ * route, and a second bar underneath it was the last piece of the old
+ * layout still competing with it.
+ *
+ * Content below the programmes grid — the About narrative, team, client
+ * list, "Lead with Intent" book — is TTLI's real copy and imagery,
+ * extracted from https://ttli.co.za/ at the customer's own request
+ * (docs/brand/ttli-brand-identity.md has full provenance). It is
+ * intentionally not theme-driven the way the logo/colors are: no CMS
+ * exists yet for a second tenant to supply its own marketing copy, so
+ * this page is TTLI-specific content wrapped in tenant-driven chrome.
  *
  * "Lead with Intent" (/lead-with-intent) and a working contact form
- * (/contact, source="contact_form" through POST /leads) are now real
- * pages. Podcasts (/podcasts) is now a real, working platform too — own
- * episodes plus admin-curated third-party recommendations, per
- * docs/research/podcast-platform-integration.md — but genuinely empty of
- * content today: no real TTLI episode audio/transcripts were ever
- * extracted (docs/brand/ttli-brand-identity.md notes the real site names
- * a podcast in its nav but the extraction pass never pulled episode
- * content), the same content-inventory gap Phase 0 is blocked on
- * (01_PRD.md §1.4) — infrastructure ready, content not yet loaded, not a
- * missed task. "Cultivate with Intent" stays unbuilt for the identical
- * reason.
+ * (/contact, source="contact_form" through POST /leads) are real pages.
+ * Podcasts (/podcasts) is a real platform too — own episodes plus
+ * admin-curated third-party recommendations — but genuinely empty of
+ * TTLI content today (01_PRD.md §1.4), which is why the hero card falls
+ * back to a plain invitation when no episode is published.
  */
+
+// Static bar heights for the `.wave` — decoration, not a waveform: the
+// API exposes no peak data, and inventing one per episode would imply a
+// precision that isn't there.
+const WAVE = [30, 55, 80, 45, 95, 60, 35, 70, 100, 50, 75, 40, 85, 30, 65, 45, 90, 55, 25, 60];
+
+const FACILITATORS: Array<[string, string, string]> = [
+  ["team-hermann-du-plessis", "Hermann du Plessis", "Founder"],
+  ["team-sizwe-kuzwayo", "Sizwe Kuzwayo", "Sustainability & business consultant"],
+  ["team-hano-du-plessis", "Hano du Plessis", "Training Manager"],
+  ["team-agnes-hove", "Agnes Hove", "Strategist"],
+  ["team-erika-botha", "Erika Botha", "Management consultant"],
+];
+
+export const dynamic = "force-dynamic";
+
 export default async function LandingPage() {
-  const theme = await getTheme();
+  const [theme, courses, episodes] = await Promise.all([
+    getTheme(),
+    getPublicCourses(),
+    getPublicEpisodes(),
+  ]);
   const name = theme?.tenant_name ?? "Themba Thandeka Leadership Institute";
 
-  return (
-    <>
-      <header
-        className="flex items-center justify-between px-6 py-4"
-        style={{ borderBottom: "1px solid var(--rule)", background: "var(--surface)" }}
-      >
-        <Link href="/" className="flex items-center gap-2">
-          {theme?.logo_url ? (
-            <Image src={theme.logo_url} alt={name} width={120} height={63} priority />
-          ) : (
-            <span className="serif" style={{ fontSize: "1.0625rem", fontWeight: 600 }}>
-              {name}
-            </span>
-          )}
-        </Link>
-        <nav className="hidden gap-6 md:flex" style={{ fontSize: "0.8125rem", color: "var(--ink-2)" }}>
-          <a href="#about">About</a>
-          <Link href="/lead-with-intent">Lead with Intent</Link>
-          <Link href="/podcasts">Podcasts</Link>
-          <a href="#partners">Clients</a>
-          <Link href="/contact">Contact</Link>
-        </nav>
-        <div className="flex items-center gap-2">
-          <Link href="/login" className="btn btn--ghost">
-            Sign in
-          </Link>
-          <Link href="/guest-access" className="btn btn--primary">
-            Try a free lesson
-          </Link>
-        </div>
-      </header>
+  // `GET /public/podcasts` is ordered by the curator's own `position`, so
+  // the first row is what the site leads with.
+  const latest = episodes[0] ?? null;
+  const executiveCount = courses.filter((course) => course.level === "executive").length;
 
-      <main>
-        {/* ---- Hero ---- */}
-        <div
-          className="relative overflow-hidden px-6 py-20"
-          style={{ background: "var(--brand)", color: "var(--on-brand)" }}
-        >
-          <Image
-            src="/brand/hero-texture.jpg"
-            alt=""
-            fill
-            className="pointer-events-none object-cover opacity-40"
-            priority
-          />
-          <div className="relative mx-auto max-w-3xl text-center">
-            <p className="eyebrow" style={{ color: "var(--on-brand)", opacity: 0.85 }}>
-              Organisational Behaviour Consultancy
+  // "Popular" has no signal behind it yet (no enrolment counts on the
+  // public endpoint), so the three cards shown are the most completely
+  // presented courses — the ones with art, topic and level filled in —
+  // newest first. A catalogue of bare test rows therefore still renders
+  // three plausible cards rather than three blank ones.
+  const popular = [...courses]
+    .sort((a, b) => {
+      const score = (c: (typeof courses)[number]) =>
+        (c.hero_colour ? 1 : 0) + (c.topic ? 1 : 0) + (c.level ? 1 : 0) + (c.summary ? 1 : 0);
+      return score(b) - score(a) || b.id.localeCompare(a.id);
+    })
+    .slice(0, 3);
+
+  return (
+    <main>
+      {/* ---- Hero ---- */}
+      <div className="pad-lg">
+        <div className="hero">
+          <div>
+            <p className="eyebrow">Leadership &middot; Strategy &middot; Organisational behaviour</p>
+            <h1>Leadership training that can prove someone actually did it.</h1>
+            <p className="sub">
+              Executive programmes with enforced completion, verifiable certificates and live
+              facilitated workshops. Built for individuals and for organisations that need the
+              completion report to mean something.
             </p>
-            <h1 className="serif mt-3" style={{ fontSize: "clamp(1.9rem, 4vw, 2.9rem)" }}>
-              {name}
-            </h1>
-            <p className="serif mt-4" style={{ fontSize: "1.125rem", opacity: 0.92 }}>
-              We help business and organisations cultivate work environments that create value
-              and unlock human potential. In short, we help align talent with strategy.
-            </p>
-            <div className="mt-8 flex justify-center gap-3">
-              <Link href="/catalogue" className="btn btn--lg" style={{ background: "var(--on-brand)", color: "var(--brand)" }}>
-                Browse programmes
+            <div className="hero-cta">
+              <Link href="/catalogue" className="btn btn--primary btn--lg">
+                Explore courses
               </Link>
-              <Link href="/guest-access" className="btn btn--lg btn--ghost" style={{ borderColor: "var(--on-brand)", color: "var(--on-brand)" }}>
+              <Link href="/guest-access" className="btn btn--ghost btn--lg">
                 Try a free lesson
               </Link>
             </div>
+            <div className="hero-trust">
+              <div>
+                <strong>{executiveCount}</strong>
+                <span>Executive programmes</span>
+              </div>
+              <div>
+                <strong>{FACILITATORS.length}</strong>
+                <span>Facilitators</span>
+              </div>
+              <div>
+                <strong>100%</strong>
+                <span>Server-verified completion</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hero-card">
+            <p className="eyebrow">{latest ? "Latest episode" : "Podcast"}</p>
+            <h3 className="serif" style={{ fontSize: "1.1875rem" }}>
+              {latest ? latest.title : "Conversations on leadership, free to everyone"}
+            </h3>
+            <div className="wave" aria-hidden="true">
+              {WAVE.map((height, index) => (
+                <i key={index} style={{ height: `${height}%` }} />
+              ))}
+            </div>
+            {latest?.duration_seconds ? (
+              <div className="times">
+                <span>00:00</span>
+                <span>{formatClock(latest.duration_seconds)}</span>
+              </div>
+            ) : null}
+            <Link
+              href={latest ? `/podcasts/${latest.slug}` : "/podcasts"}
+              className="btn btn--ghost btn--block"
+            >
+              Listen &middot; free, no account
+            </Link>
           </div>
         </div>
+      </div>
 
-        {/* ---- About ---- */}
-        <div id="about" className="mx-auto max-w-3xl px-6 py-16 text-center">
-          <p className="eyebrow">About</p>
-          <p className="serif mt-3" style={{ fontSize: "1.1875rem", color: "var(--ink-2)" }}>
-            We train, consult and coach organisations in the essential skills needed to raise
-            engagement. We offer value to customers through Engagement Analysis, Training,
-            Consulting and Coaching within the spheres of Leadership, Strategy and Organisational
-            Wellbeing.
-          </p>
-          <p className="mt-4" style={{ fontSize: "0.9375rem", color: "var(--muted)" }}>
-            We hold a deep belief that to work is a gift, and that the workplace should be an
-            environment that inspires people to share their talent, experience, ideas,
-            uniqueness and enthusiasm.
-          </p>
-          <p className="tag tag--brand mt-6" style={{ display: "inline-block" }}>
-            90+ organisations &middot; 19 countries
-          </p>
-        </div>
-
-        {/* ---- Lead with Intent ---- */}
-        <div id="programme" style={{ background: "var(--surface-2)", borderTop: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
-          <div className="mx-auto flex max-w-4xl flex-col items-center gap-8 px-6 py-16 md:flex-row">
-            <Image
-              src="/brand/book-lead-with-intent.jpg"
-              alt="Lead with Intent, by Hermann du Plessis"
-              width={220}
-              height={335}
-              className="shrink-0 shadow-md"
-            />
-            <div>
-              <p className="eyebrow">By founder Hermann du Plessis</p>
-              <h2 className="serif mt-2" style={{ fontSize: "1.65rem" }}>
-                Lead with Intent
-              </h2>
-              <p className="mt-3" style={{ fontSize: "0.9375rem", color: "var(--ink-2)" }}>
-                A ground-breaking book that reveals nine leadership principles and practices that
-                drive engagement and commitment in the workplace — the foundation the Institute's
-                own programmes are built from.
+      {/* ---- Three pillars ---- */}
+      <div className="band">
+        <div className="pad">
+          <div className="cols-3">
+            <div className="cell">
+              <h3>Completion you can audit</h3>
+              <p>
+                Watch time, assessment scores and attendance are validated on the server. Clicking
+                Next eleven times does not finish a course.
               </p>
-              <Link href="/lead-with-intent" className="btn btn--ghost mt-4">
-                Read more
-              </Link>
+            </div>
+            <div className="cell">
+              <h3>Certificates that verify</h3>
+              <p>
+                Every certificate carries a QR code and a public verification page showing valid,
+                expired or revoked.
+              </p>
+            </div>
+            <div className="cell">
+              <h3>Reporting that respects staff</h3>
+              <p>
+                Managers see team progress in aggregate. Individual scores stay private unless an
+                administrator opens them per course.
+              </p>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* ---- Client logos ---- */}
-        <div id="partners" className="mx-auto max-w-5xl px-6 py-16 text-center">
-          <p className="eyebrow">Organisations we've worked with</p>
-          <div className="mt-8 grid grid-cols-2 items-center gap-8 sm:grid-cols-3 md:grid-cols-5">
+      {/* ---- Popular programmes ---- */}
+      {popular.length > 0 ? (
+        <div className="pad-lg">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: "1rem",
+              flexWrap: "wrap",
+              marginBottom: "1.1rem",
+            }}
+          >
+            <h2 className="serif" style={{ fontSize: "1.5rem" }}>
+              Popular programmes
+            </h2>
+            <Link href="/catalogue" className="btn btn--quiet">
+              View all {courses.length} &rarr;
+            </Link>
+          </div>
+          <div className="course-grid">
+            {popular.map((course) => (
+              <CourseCard key={course.id} course={course} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---- About ---- */}
+      <div className="band">
+        <div className="pad-lg" id="about">
+          <div style={{ maxWidth: "48rem", marginInline: "auto", textAlign: "center" }}>
+            <p className="eyebrow">About</p>
+            <p className="serif" style={{ fontSize: "1.1875rem", color: "var(--ink-2)", marginTop: "0.75rem" }}>
+              We train, consult and coach organisations in the essential skills needed to raise
+              engagement. We offer value to customers through Engagement Analysis, Training,
+              Consulting and Coaching within the spheres of Leadership, Strategy and Organisational
+              Wellbeing.
+            </p>
+            <p style={{ fontSize: "0.9375rem", color: "var(--muted)", marginTop: "1rem" }}>
+              We hold a deep belief that to work is a gift, and that the workplace should be an
+              environment that inspires people to share their talent, experience, ideas, uniqueness
+              and enthusiasm.
+            </p>
+            <p className="tag tag--brand" style={{ display: "inline-block", marginTop: "1.5rem" }}>
+              90+ organisations &middot; 19 countries
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- Lead with Intent ---- */}
+      <div className="pad-lg" id="programme">
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "2rem",
+            maxWidth: "56rem",
+            marginInline: "auto",
+          }}
+        >
+          <Image
+            src="/brand/book-lead-with-intent.jpg"
+            alt="Lead with Intent, by Hermann du Plessis"
+            width={220}
+            height={335}
+            style={{ flex: "none", boxShadow: "var(--shadow-2)" }}
+          />
+          <div style={{ flex: "1 1 20rem" }}>
+            <p className="eyebrow">By founder Hermann du Plessis</p>
+            <h2 className="serif" style={{ fontSize: "1.65rem", marginTop: "0.5rem" }}>
+              Lead with Intent
+            </h2>
+            <p style={{ fontSize: "0.9375rem", color: "var(--ink-2)", marginTop: "0.75rem" }}>
+              A ground-breaking book that reveals nine leadership principles and practices that
+              drive engagement and commitment in the workplace — the foundation the Institute&rsquo;s
+              own programmes are built from.
+            </p>
+            <Link href="/lead-with-intent" className="btn btn--ghost" style={{ marginTop: "1rem" }}>
+              Read more
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- Client logos ---- */}
+      <div className="band">
+        <div className="pad-lg" id="partners">
+          <p className="eyebrow" style={{ textAlign: "center" }}>
+            Organisations we&rsquo;ve worked with
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(7rem, 1fr))",
+              gap: "2rem",
+              alignItems: "center",
+              marginTop: "2rem",
+            }}
+          >
             {[
               ["standard-bank", "Standard Bank"],
               ["hensoldt", "HENSOLDT"],
@@ -170,59 +287,61 @@ export default async function LandingPage() {
             ))}
           </div>
         </div>
+      </div>
 
-        {/* ---- Team ---- */}
-        <div style={{ background: "var(--surface-2)", borderTop: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
-          <div className="mx-auto max-w-5xl px-6 py-16">
-            <p className="eyebrow text-center">Facilitators</p>
-            <div className="mt-8 grid grid-cols-2 gap-8 md:grid-cols-5">
-              {[
-                ["team-hermann-du-plessis", "Hermann du Plessis", "Founder"],
-                ["team-sizwe-kuzwayo", "Sizwe Kuzwayo", "Sustainability & business consultant"],
-                ["team-hano-du-plessis", "Hano du Plessis", "Training Manager"],
-                ["team-agnes-hove", "Agnes Hove", "Strategist"],
-                ["team-erika-botha", "Erika Botha", "Management consultant"],
-              ].map(([file, person, role]) => (
-                <div key={file} className="text-center">
-                  <Image
-                    src={`/brand/team/${file}.jpg`}
-                    alt={person}
-                    width={120}
-                    height={160}
-                    className="mx-auto"
-                    style={{ objectFit: "cover", borderRadius: "4px" }}
-                  />
-                  <p className="mt-2" style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                    {person}
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{role}</p>
-                </div>
-              ))}
+      {/* ---- Facilitators ---- */}
+      <div className="pad-lg">
+        <p className="eyebrow" style={{ textAlign: "center" }}>
+          Facilitators
+        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))",
+            gap: "2rem",
+            marginTop: "2rem",
+          }}
+        >
+          {FACILITATORS.map(([file, person, role]) => (
+            <div key={file} style={{ textAlign: "center" }}>
+              <Image
+                src={`/brand/team/${file}.jpg`}
+                alt={person}
+                width={120}
+                height={160}
+                style={{ objectFit: "cover", borderRadius: "4px", marginInline: "auto" }}
+              />
+              <p style={{ fontSize: "0.8125rem", fontWeight: 600, marginTop: "0.5rem" }}>{person}</p>
+              <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{role}</p>
             </div>
-          </div>
+          ))}
         </div>
-      </main>
+      </div>
 
       {/* ---- Footer / contact ---- */}
-      <footer className="px-6 py-12" style={{ background: "var(--ink)", color: "var(--on-brand)" }}>
-        <div className="mx-auto max-w-3xl text-center">
+      <footer className="pad-lg" style={{ background: "var(--ink)", color: "var(--on-brand)" }}>
+        <div style={{ maxWidth: "40rem", marginInline: "auto", textAlign: "center" }}>
           <p className="eyebrow" style={{ color: "var(--on-brand)", opacity: 0.7 }}>
             Get in touch
           </p>
-          <p className="serif mt-2" style={{ fontSize: "1.0625rem" }}>
+          <p className="serif" style={{ fontSize: "1.0625rem", marginTop: "0.5rem" }}>
             We would really like to hear from you.
           </p>
-          <p className="mt-4" style={{ fontSize: "0.8125rem", opacity: 0.85 }}>
+          <p style={{ fontSize: "0.8125rem", opacity: 0.85, marginTop: "1rem" }}>
             30 Kasbah Ridge, Egale Canyon Golf Estate
           </p>
-          <Link href="/contact" className="btn btn--ghost mt-4" style={{ borderColor: "var(--on-brand)", color: "var(--on-brand)" }}>
+          <Link
+            href="/contact"
+            className="btn btn--ghost"
+            style={{ borderColor: "var(--on-brand)", color: "var(--on-brand)", marginTop: "1rem" }}
+          >
             Send us a message
           </Link>
-          <p className="mt-6" style={{ fontSize: "0.75rem", opacity: 0.55 }}>
+          <p style={{ fontSize: "0.75rem", opacity: 0.55, marginTop: "1.5rem" }}>
             Terms of usage &amp; privacy &middot; Copyright &copy; {name} 2026
           </p>
         </div>
       </footer>
-    </>
+    </main>
   );
 }

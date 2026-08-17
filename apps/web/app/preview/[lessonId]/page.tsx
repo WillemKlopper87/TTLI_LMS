@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
+import { useSession } from "@/lib/session-context";
 
 import { VideoPlayer } from "../../learn/[enrolmentId]/video-player";
 
@@ -123,26 +124,62 @@ function AssignmentPreview({ assignmentId }: { assignmentId: string }) {
  * any signed-in account (no purchase) — preview is view-only, it never
  * starts/completes the lesson or submits anything
  * (services/enrolment.py's own scope decision).
+ *
+ * Author fallback: the public endpoint correctly refuses a draft or
+ * non-public lesson, which would otherwise make "View as learner" useless
+ * to the very person authoring it. When that refusal lands and the caller
+ * holds `course:edit`, the page falls back to `GET /lessons/{id}` (the
+ * wizard's author-side read) and says so in the banner. The refusal itself
+ * is unchanged — this is a second, separately authorised request, exactly
+ * the shape of the `course:edit` fast-path already used by `GET /surveys/{id}`.
  */
 export default function PreviewPage() {
   const params = useParams<{ lessonId: string }>();
   const router = useRouter();
+  const { accessToken, status } = useSession();
   const [lesson, setLesson] = useState<LessonPreview | null>(null);
   const [error, setError] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [authorPreview, setAuthorPreview] = useState(false);
 
   useEffect(() => {
-    setSignedIn(!!getAccessToken());
-    fetch(`/api/bff/public/lessons/${params.lessonId}/preview`)
-      .then(async (resp) => {
-        if (!resp.ok) {
-          setError(true);
-          return;
-        }
+    // Wait for the silent refresh to settle: a draft lesson's fallback
+    // needs the bearer, which isn't in memory on the very first tick.
+    if (status === "loading") return;
+    setSignedIn(!!accessToken);
+
+    async function loadPreview() {
+      const resp = await fetch(`/api/bff/public/lessons/${params.lessonId}/preview`);
+      if (resp.ok) {
         setLesson(await resp.json());
-      })
-      .catch(() => setError(true));
-  }, [params.lessonId]);
+        return;
+      }
+      if (!accessToken || (resp.status !== 404 && resp.status !== 403)) {
+        setError(true);
+        return;
+      }
+      const auth = { Authorization: `Bearer ${accessToken}` };
+      const meResp = await fetch("/api/bff/auth/me", { headers: auth });
+      if (!meResp.ok) {
+        setError(true);
+        return;
+      }
+      const permissions: string[] = (await meResp.json()).permissions ?? [];
+      if (!permissions.includes("course:edit")) {
+        setError(true);
+        return;
+      }
+      const authored = await fetch(`/api/bff/lessons/${params.lessonId}`, { headers: auth });
+      if (!authored.ok) {
+        setError(true);
+        return;
+      }
+      setLesson(await authored.json());
+      setAuthorPreview(true);
+    }
+
+    loadPreview().catch(() => setError(true));
+  }, [params.lessonId, accessToken, status]);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-16">
@@ -162,7 +199,11 @@ export default function PreviewPage() {
         <p style={{ fontSize: "0.875rem", color: "var(--faint)" }}>Loading…</p>
       ) : (
         <>
-          <p className="eyebrow">Free preview</p>
+          {authorPreview ? (
+            <span className="tag tag--live">Author preview — not published</span>
+          ) : (
+            <p className="eyebrow">Free preview</p>
+          )}
           <h1 className="serif mt-2" style={{ fontSize: "1.5rem" }}>
             {lesson.title}
           </h1>

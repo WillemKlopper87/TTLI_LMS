@@ -7,7 +7,9 @@ confirming that a named executive has an account is itself a disclosure.
 
 from __future__ import annotations
 
+import math
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
@@ -68,6 +70,52 @@ def display_name(user: User, crypto: CryptoBox) -> str:
     if user.full_name_encrypted:
         return crypto.decrypt(user.full_name_encrypted)
     return crypto.decrypt(user.email_encrypted)
+
+
+@dataclass(frozen=True, slots=True)
+class DisplayIdentity:
+    """What a greeting or an avatar needs, derived once. `full_name` and
+    `first_name` are genuinely null for the many accounts checkout and
+    guest flows never asked a name for — `initials` never is, because an
+    avatar with nothing in it is a rendering bug, so it falls back to the
+    email's local part rather than inventing a name (same honesty rule as
+    `display_name` above)."""
+
+    full_name: str | None
+    first_name: str | None
+    initials: str
+
+
+def _initials_from(text_value: str) -> str:
+    tokens = [t for t in text_value.replace(".", " ").replace("_", " ").split() if t]
+    letters = [c for token in tokens for c in token[:1] if c.isalpha()]
+    if len(letters) >= 2:
+        return (letters[0] + letters[-1]).upper()
+    alpha = [c for c in text_value if c.isalpha()]
+    return "".join(alpha[:2]).upper() or "?"
+
+
+def display_identity(user: User, crypto: CryptoBox) -> DisplayIdentity:
+    full_name = crypto.decrypt(user.full_name_encrypted) if user.full_name_encrypted else None
+    full_name = full_name.strip() if full_name else None
+    if full_name:
+        first_name = full_name.split()[0]
+        return DisplayIdentity(
+            full_name=full_name, first_name=first_name, initials=_initials_from(full_name)
+        )
+    local_part = crypto.decrypt(user.email_encrypted).split("@", 1)[0]
+    return DisplayIdentity(full_name=None, first_name=None, initials=_initials_from(local_part))
+
+
+def guest_days_left(user: User, *, now: datetime | None = None) -> int | None:
+    """Whole days of guest access still to run — null for a non-guest or a
+    guest with no expiry set. Never negative: an expired guest is `0`, and
+    the two real enforcement points (`consume_magic_link`, `tokens.rotate`)
+    are what actually cut access off, not this number."""
+    if not user.is_guest or user.guest_expires_at is None:
+        return None
+    remaining = (user.guest_expires_at - (now or datetime.now(UTC))).total_seconds()
+    return max(0, math.ceil(remaining / 86400))
 
 
 async def authenticate(
@@ -308,15 +356,18 @@ __all__ = [
     "MFA_LOCKOUT_MINUTES",
     "MFA_LOCKOUT_THRESHOLD",
     "RECOVERY_CODE_COUNT",
+    "DisplayIdentity",
     "authenticate",
     "consume_magic_link",
     "consume_password_reset",
     "create_magic_link",
     "create_password_reset",
     "create_user",
+    "display_identity",
     "display_name",
     "enroll_mfa",
     "find_by_email",
+    "guest_days_left",
     "is_locked",
     "is_mfa_locked",
     "permissions_for",

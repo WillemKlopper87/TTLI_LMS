@@ -505,3 +505,93 @@ async def test_password_reset_flow(client, tenant_session_factory, crypto, setti
     assert (
         await client.post("/api/v1/auth/login", json={"email": email, "password": new_password})
     ).status_code == 200
+
+
+async def test_me_carries_the_named_learner_shell_identity(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """`GET /auth/me` is the whole signed-in shell's identity payload:
+    the decrypted name, a greeting-sized first name, and initials for the
+    avatar — every existing field still beside them."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=email,
+            password=PASSWORD,
+            full_name="Thandeka Van Der Merwe",
+        )
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    resp = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["email"] == email
+    assert body["tenant_slug"] == "demo"
+    assert body["permissions"] == []
+    assert body["full_name"] == "Thandeka Van Der Merwe"
+    assert body["first_name"] == "Thandeka"
+    # First and last, not first and second — "TM", not "TV".
+    assert body["initials"] == "TM"
+    assert body["is_guest"] is False
+    assert body["guest_expires_at"] is None
+    assert body["guest_days_left"] is None
+
+
+async def test_me_falls_back_to_the_email_when_no_name_was_ever_captured(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Checkout and guest flows never ask for a name. The avatar still
+    has to render something, so initials come off the email's local part
+    — but no name is fabricated for `full_name`/`first_name`."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    body = (
+        await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+    ).json()
+    assert body["full_name"] is None
+    assert body["first_name"] is None
+    assert body["initials"] == email[:2].upper()
+
+
+async def test_me_reports_a_guest_window_that_counts_down(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """REQ-LEAD-06's time-limited guest account, surfaced to the client
+    that has to warn about it. The window is `settings.guest_access_days`
+    (Phase 0 decision #6 is still unsigned), never a hardcoded guess."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=email,
+            password=PASSWORD,
+            is_guest=True,
+            guest_days=settings.guest_access_days,
+        )
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    body = (
+        await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+    ).json()
+    assert body["is_guest"] is True
+    assert body["guest_expires_at"] is not None
+    assert body["guest_days_left"] == settings.guest_access_days

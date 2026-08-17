@@ -18,15 +18,23 @@ from fastapi import APIRouter
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import NotFound
 from src.schemas.learning import (
+    DashboardCertificate,
+    DashboardEnrolment,
+    DashboardNextLesson,
+    DashboardResponse,
+    DashboardStats,
+    DashboardUpcoming,
     EnrolmentProgressResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    LessonCheckResponse,
     LessonCompleteResponse,
     LessonProgressResponse,
     OwnEnrolmentResponse,
     TranscriptLessonResponse,
     TranscriptResponse,
 )
+from src.services import dashboard as dashboard_service
 from src.services import enrolment as enrolment_service
 from src.services import video_progress as video_progress_service
 
@@ -71,7 +79,7 @@ async def list_own_enrolments(
 async def get_progress(
     enrolment_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
 ) -> EnrolmentProgressResponse:
-    enrolment, course, lessons = await enrolment_service.get_progress(
+    progress = await enrolment_service.get_progress(
         session,
         crypto,
         tenant_id=principal.tenant_id,
@@ -79,24 +87,108 @@ async def get_progress(
         enrolment_id=_parse_uuid(enrolment_id),
     )
     return EnrolmentProgressResponse(
-        enrolment_id=str(enrolment.id),
-        course_id=str(course.id),
-        course_title=course.title,
+        enrolment_id=str(progress.enrolment.id),
+        course_id=str(progress.course.id),
+        course_title=progress.course.title,
+        progress_percent=progress.progress_percent,
+        next_lesson_id=str(progress.next_lesson_id) if progress.next_lesson_id else None,
+        estimated_minutes=progress.estimated_minutes,
         lessons=[
             LessonProgressResponse(
                 lesson_id=str(row.lesson_id),
+                module_id=str(row.module_id),
                 module_title=row.module_title,
+                module_position=row.module_position,
                 title=row.title,
                 position=row.position,
                 activity_type=row.activity_type,
+                estimated_minutes=row.estimated_minutes,
                 video_asset_id=str(row.video_asset_id) if row.video_asset_id else None,
                 quiz_id=str(row.quiz_id) if row.quiz_id else None,
                 survey_id=str(row.survey_id) if row.survey_id else None,
                 assignment_id=str(row.assignment_id) if row.assignment_id else None,
                 state=row.state,
                 unmet_requirements=row.unmet_requirements,
+                checks=[
+                    LessonCheckResponse(
+                        rule=check.rule,
+                        met=check.met,
+                        reason=check.reason,
+                        current=check.current,
+                        required=check.required,
+                    )
+                    for check in row.checks
+                ],
             )
-            for row in lessons
+            for row in progress.lessons
+        ],
+    )
+
+
+@router.get(
+    "/learn/dashboard",
+    response_model=DashboardResponse,
+    summary="Everything the learner's signed-in landing screen renders",
+)
+async def get_dashboard(
+    principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> DashboardResponse:
+    board = await dashboard_service.get_dashboard(
+        session, crypto, tenant_id=principal.tenant_id, user_id=principal.user_id
+    )
+    return DashboardResponse(
+        first_name=board.first_name,
+        initials=board.initials,
+        enrolments=[
+            DashboardEnrolment(
+                enrolment_id=str(card.enrolment_id),
+                course_id=str(card.course_id),
+                course_title=card.course_title,
+                hero_colour=card.hero_colour,
+                status=card.status,
+                progress_percent=card.progress_percent,
+                lessons_total=card.lessons_total,
+                lessons_completed=card.lessons_completed,
+                next_lesson=DashboardNextLesson(
+                    lesson_id=str(card.next_lesson.lesson_id),
+                    title=card.next_lesson.title,
+                    module_title=card.next_lesson.module_title,
+                    position_label=card.next_lesson.position_label,
+                )
+                if card.next_lesson is not None
+                else None,
+                started_at=card.started_at,
+                completed_at=card.completed_at,
+                certificate=DashboardCertificate(
+                    certificate_id=str(card.certificate.certificate_id),
+                    certificate_number=card.certificate.certificate_number,
+                    issued_at=card.certificate.issued_at,
+                    status=card.certificate.status,
+                )
+                if card.certificate is not None
+                else None,
+            )
+            for card in board.enrolments
+        ],
+        stats=DashboardStats(
+            in_progress=board.stats.in_progress,
+            completed=board.stats.completed,
+            certificates=board.stats.certificates,
+            workshop_credits=board.stats.workshop_credits,
+        ),
+        upcoming=[
+            DashboardUpcoming(
+                kind=item.kind,
+                title=item.title,
+                subtitle=item.subtitle,
+                starts_at=item.starts_at,
+                join_url=item.join_url,
+                enrolment_id=str(item.enrolment_id) if item.enrolment_id else None,
+                lesson_id=str(item.lesson_id) if item.lesson_id else None,
+                quiz_id=str(item.quiz_id) if item.quiz_id else None,
+                attempts_remaining=item.attempts_remaining,
+            )
+            for item in board.upcoming
         ],
     )
 
@@ -189,7 +281,7 @@ async def record_heartbeat(
     session: SessionDep,
     settings: SettingsDep,
 ) -> HeartbeatResponse:
-    enrolment, _lesson = await enrolment_service.resolve_enrolment_for_lesson(
+    enrolment, lesson, course = await enrolment_service.resolve_enrolment_for_lesson(
         session,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
@@ -205,9 +297,17 @@ async def record_heartbeat(
         session_id=body.session_id,
         max_playback_rate=Decimal(str(settings.heartbeat_max_playback_rate)),
     )
+    # Read back after the write, so the percentage the player renders is
+    # the one this heartbeat just produced, not the previous one.
+    video = await enrolment_service.video_context(
+        session, lesson=lesson, course=course, enrolment_id=enrolment.id
+    )
     return HeartbeatResponse(
         furthest_position_seconds=result.furthest_position_seconds,
         watched_seconds=result.watched_seconds,
+        watched_percentage=video.watched_percentage,
+        required_percentage=video.required_percentage,
+        duration_seconds=video.duration_seconds,
     )
 
 

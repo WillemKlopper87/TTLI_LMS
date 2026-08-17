@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
-import type { LessonItem } from "./page";
+import type { LessonItem } from "./types";
 
 type ActivityKind = "quiz" | "survey" | "assignment" | "video";
 type VideoUploadPhase = "idle" | "uploading" | "polling" | "ready" | "failed";

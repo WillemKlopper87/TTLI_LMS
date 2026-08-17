@@ -166,9 +166,11 @@ async def progress_report(
     crypto: CryptoDep,
 ) -> ProgressReportResponse:
     """REQ-TEN-03's report: response shape is determined by policy, not
-    by query parameters — a caller who fails any of the three
-    conditions gets an empty `learners` list, never present-and-redacted
-    rows (04 §2.3's P2, 03 §9)."""
+    by query parameters. A caller who fails any of the three conditions
+    still gets the participation list — with every score withheld
+    (`score_hidden: true`, `best_quiz_score: null`) and the email masked.
+    See `services/reports.py`'s module docstring for why that line moved
+    from "no rows at all" to "rows without scores"."""
     org_id = _parse_uuid(organisation_id)
     await organisations_service.require_membership(
         session, tenant_id=principal.tenant_id, organisation_id=org_id, user_id=principal.user_id
@@ -187,14 +189,20 @@ async def progress_report(
         enrolled=report.enrolled,
         completed=report.completed,
         completion_rate=report.completion_rate,
+        average_progress=report.average_progress,
+        at_risk=report.at_risk,
         individual_visible=report.individual_visible,
         learners=[
             LearnerRowResponse(
                 user_id=str(row.user_id),
                 email=row.email,
+                display_name=row.display_name,
                 status=row.status,
+                progress_percent=row.progress_percent,
+                last_active_at=row.last_active_at,
                 completed_at=row.completed_at,
                 best_quiz_score=row.best_quiz_score,
+                score_hidden=row.score_hidden,
             )
             for row in report.learners
         ],

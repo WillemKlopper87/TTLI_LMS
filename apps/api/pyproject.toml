@@ -18,6 +18,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]        # asserts and test credentials
 "alembic/versions/*" = ["E501"]              # generated SQL is wide
+# Dev-only scripts put sys.path.insert before their src imports so they can
+# be run directly from apps/api without installing the package.
+"scripts/*" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"

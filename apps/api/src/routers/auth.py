@@ -634,12 +634,19 @@ async def me(
     user = await session.get(User, principal.user_id)
     if user is None:
         raise Unauthenticated("Authentication required.")
+    who = identity.display_identity(user, crypto)
     return MeResponse(
         user_id=str(principal.user_id),
         tenant_id=str(principal.tenant_id),
         tenant_slug=tenant.slug,
         email=crypto.decrypt(user.email_encrypted),
         permissions=sorted(principal.permissions),
+        full_name=who.full_name,
+        first_name=who.first_name,
+        initials=who.initials,
+        is_guest=user.is_guest,
+        guest_expires_at=user.guest_expires_at,
+        guest_days_left=identity.guest_days_left(user),
     )
 
 

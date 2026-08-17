@@ -64,3 +64,11 @@ export async function POST(request: NextRequest, context: Context) {
 export async function PATCH(request: NextRequest, context: Context) {
   return forward(request, (await context.params).path);
 }
+
+// DELETE joined the allowlist with the course wizard (`DELETE /modules/{id}`,
+// `/lessons/{id}`, `/lessons/{id}/activity`, `/catalogue/prices/{id}`) —
+// Next answers 405 for any method a route file doesn't export, so without
+// this the browser never reached the API at all.
+export async function DELETE(request: NextRequest, context: Context) {
+  return forward(request, (await context.params).path);
+}

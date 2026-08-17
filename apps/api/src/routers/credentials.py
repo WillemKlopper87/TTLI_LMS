@@ -153,9 +153,14 @@ async def verify_credential(
         found=result.found,
         holder_name=result.holder_name,
         course_title=result.course_title,
+        programme_title=result.course_title,
         issued_at=result.issued_at,
         expires_at=result.expires_at,
         status=result.status,
+        credential_id=result.credential_id,
+        issuer_name=result.issuer_name,
+        cpd_points=result.cpd_points,
+        visibility=result.visibility,
     )
 
 

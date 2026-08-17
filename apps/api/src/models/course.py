@@ -23,6 +23,10 @@ from src.models.base import Base, TimestampMixin, pk
 CONTENT_STATE_VALUES = ("draft", "in_review", "approved", "published", "archived")
 ACCESS_LEVEL_VALUES = ("public", "gated", "guest", "paid", "corporate")
 MANAGER_VISIBILITY_VALUES = ("aggregate_only", "individual_enabled", "disabled")
+# 0029 presentation vocabulary — validated at the schema layer
+# (schemas/courses.py), stored as plain strings.
+COURSE_LEVEL_VALUES = ("introductory", "intermediate", "executive")
+COURSE_FORMAT_VALUES = ("self_paced", "blended", "live_cohort")
 
 # create_type=False: the migration creates these Postgres enum types
 # explicitly, once — same reasoning as commerce.py's OrderStatus/InvoiceStatus.
@@ -64,6 +68,21 @@ class Course(Base, TimestampMixin):
     badge_template_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("badge_templates.id", ondelete="SET NULL"), nullable=True
     )
+    # 0029 — presentation metadata for the public catalogue / landing /
+    # learner dashboard (the approved prototype). All optional; the
+    # public course surface (`routers/courses.py`) reads them, nothing
+    # else does. Plain strings rather than enums for the same reason
+    # `Lesson.activity_type` is (this set is a UI vocabulary, not a
+    # state machine).
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    topic: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    outcomes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=text("'[]'"))
+    includes_workshop: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    hero_colour: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class Module(Base, TimestampMixin):
@@ -152,6 +171,8 @@ class CourseTenantAssignment(Base, TimestampMixin):
 
 
 __all__ = [
+    "COURSE_FORMAT_VALUES",
+    "COURSE_LEVEL_VALUES",
     "AccessLevel",
     "Course",
     "CourseTenantAssignment",

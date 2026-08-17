@@ -1,142 +1,65 @@
-"use client";
-
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
-import { useSession } from "@/lib/session-context";
-
-interface PriceSummary {
-  id: string;
-  currency: string;
-  unit_amount: string;
-  tax_behaviour: string;
-}
-
-interface ProductSummary {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  kind: string;
-  prices: PriceSummary[];
-  subscription_plan_id: string | null;
-  bundled_courses: string[] | null;
-}
-
 /**
- * The public catalogue (REQ-STORE-01), backed by the real products/prices
- * seeded in migration 0009 — not the prototype's invented course names.
- * "Enrol now" requires an account: guests land on /login (via /guest-access
- * if they don't have one yet), then are sent back to complete checkout.
+ * The public catalogue (REQ-STORE-01) — prototype screen 4.
+ *
+ * Server-rendered: `GET /public/courses` is anonymous, so the whole
+ * faceted grid exists in the first HTML response rather than after a
+ * client round trip. Only the interactive parts (facet toggles, sort,
+ * the subscription CTA that needs the session) are client components.
+ *
+ * `?topic=` and `?level=` preselect a facet — the header's "Executive
+ * Programmes" item is /catalogue?level=executive. The browser is keyed
+ * on those params so arriving from that link re-seeds the selection.
  */
-export default function CataloguePage() {
-  const router = useRouter();
-  const { status } = useSession();
-  const [products, setProducts] = useState<ProductSummary[] | null>(null);
-  const [error, setError] = useState(false);
+import { CatalogueBrowser } from "@/app/catalogue/catalogue-browser";
+import { Subscriptions } from "@/app/catalogue/subscriptions";
+import { getPublicCourses, getPublicProducts } from "@/lib/server-api";
 
-  useEffect(() => {
-    fetch("/api/bff/products")
-      .then(async (resp) => {
-        if (!resp.ok) {
-          setError(true);
-          return;
-        }
-        setProducts((await resp.json()).items);
-      })
-      .catch(() => setError(true));
-  }, []);
+export const dynamic = "force-dynamic";
 
-  function enrol(priceId: string) {
-    if (status !== "authenticated") {
-      router.push("/login");
-      return;
-    }
-    router.push(`/checkout?price=${priceId}`);
-  }
+interface CataloguePageProps {
+  searchParams: Promise<{ topic?: string | string[]; level?: string | string[] }>;
+}
 
-  function subscribe(planId: string) {
-    if (status !== "authenticated") {
-      router.push("/login");
-      return;
-    }
-    router.push(`/account/subscription?plan=${planId}`);
-  }
+function first(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+export default async function CataloguePage({ searchParams }: CataloguePageProps) {
+  const [{ topic, level }, courses, products] = await Promise.all([
+    searchParams,
+    getPublicCourses(),
+    getPublicProducts(),
+  ]);
+
+  const initialTopic = first(topic);
+  const initialLevel = first(level)?.toLowerCase() ?? null;
+  const subscriptions = products.filter((product) => product.subscription_plan_id !== null);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-16">
-      <p className="eyebrow">Programmes</p>
-      <h1 className="serif mt-2" style={{ fontSize: "1.75rem" }}>
-        Browse the catalogue
-      </h1>
-      <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-        Buying for a team?{" "}
-        <Link href="/organisations" style={{ color: "var(--brand-ink)" }}>
-          Manage your organisation
-        </Link>
-        .
-      </p>
+    <main>
+      <div className="pad-lg">
+        {courses.length === 0 ? (
+          <>
+            <p className="eyebrow">Programmes</p>
+            <h1 className="serif" style={{ fontSize: "1.5rem", marginTop: "0.35rem" }}>
+              The catalogue is not open yet
+            </h1>
+            <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.5rem" }}>
+              No programmes are published for this site yet. Try again shortly.
+            </p>
+          </>
+        ) : (
+          <CatalogueBrowser
+            key={`${initialTopic ?? ""}|${initialLevel ?? ""}`}
+            courses={courses}
+            initialTopic={initialTopic}
+            initialLevel={initialLevel}
+          />
+        )}
+      </div>
 
-      {error ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-          The catalogue could not be loaded. Try again shortly.
-        </p>
-      ) : products === null ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--faint)" }}>
-          Loading…
-        </p>
-      ) : products.length === 0 ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-          No programmes are listed for sale yet.
-        </p>
-      ) : (
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          {products.map((product) => (
-            <div key={product.id} className="card p-5">
-              <span className="tag tag--brand">{product.kind}</span>
-              <h2 className="serif mt-2" style={{ fontSize: "1.0625rem" }}>
-                {product.name}
-              </h2>
-              {product.description ? (
-                <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-                  {product.description}
-                </p>
-              ) : null}
-              {product.kind === "subscription" && product.bundled_courses?.length ? (
-                <p className="mt-2" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                  Includes: {product.bundled_courses.join(", ")}
-                </p>
-              ) : null}
-              {product.prices.map((price) => (
-                <div key={price.id} className="mt-4 flex items-center justify-between">
-                  <span className="serif" style={{ fontSize: "1.0625rem" }}>
-                    {price.currency} {Number(price.unit_amount).toLocaleString()}
-                    <small style={{ fontSize: "0.6875rem", color: "var(--muted)", fontWeight: 400 }}>
-                      {" "}
-                      {price.tax_behaviour === "exclusive" ? "excl. VAT" : "incl. VAT"}
-                      {product.kind === "subscription" ? " / period" : ""}
-                    </small>
-                  </span>
-                  {product.kind === "subscription" && product.subscription_plan_id ? (
-                    <button
-                      type="button"
-                      className="btn btn--primary"
-                      onClick={() => subscribe(product.subscription_plan_id as string)}
-                    >
-                      Subscribe
-                    </button>
-                  ) : (
-                    <button type="button" className="btn btn--primary" onClick={() => enrol(price.id)}>
-                      Enrol now
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      <Subscriptions products={subscriptions} />
     </main>
   );
 }

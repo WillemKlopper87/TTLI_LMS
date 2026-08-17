@@ -218,8 +218,15 @@ async def get_playback(
 
     # Entitlement checked before the URL is ever minted (03 §6.7) — never
     # cached, so a revoked entitlement takes effect on the very next call.
-    allowed = await enrolment_service.has_access_to_video(
-        session, tenant_id=principal.tenant_id, user_id=principal.user_id, video_asset_id=asset_uuid
+    # course:edit short-circuits the entitlement check: an author
+    # previewing their own draft (the wizard's view-as-learner) holds no
+    # enrolment. Learner tokens never carry course:edit, so the gate is
+    # unchanged for every existing learner-facing call site.
+    allowed = "course:edit" in principal.permissions or await enrolment_service.has_access_to_video(
+        session,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        video_asset_id=asset_uuid,
     )
     if not allowed:
         raise Forbidden("You do not have access to this video.")

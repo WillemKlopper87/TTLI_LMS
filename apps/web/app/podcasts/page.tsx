@@ -1,96 +1,60 @@
-"use client";
-
-import Link from "next/link";
-import { useEffect, useState } from "react";
-
-interface EpisodeSummary {
-  id: string;
-  kind: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  cover_image_url: string | null;
-  curator_name: string | null;
-  duration_seconds: number | null;
-}
-
-function formatDuration(seconds: number | null): string | null {
-  if (!seconds) return null;
-  const minutes = Math.round(seconds / 60);
-  return `${minutes} min`;
-}
-
 /**
  * The public podcast listing (REQ-STORE-04) — TTLI's own episodes and
  * shows recommended with attribution, side by side. Backed by the real
- * GET /public/podcasts, published episodes only.
+ * anonymous GET /public/podcasts, published episodes only.
+ *
+ * Rendered on the server (nothing here needs the session) as the
+ * prototype's `.rowlist`: an episode list is a list, and the `.ccard`
+ * grid next door is for programmes with art and a price.
  */
-export default function PodcastsPage() {
-  const [episodes, setEpisodes] = useState<EpisodeSummary[] | null>(null);
-  const [error, setError] = useState(false);
+import Link from "next/link";
 
-  useEffect(() => {
-    fetch("/api/bff/public/podcasts")
-      .then(async (resp) => {
-        if (!resp.ok) {
-          setError(true);
-          return;
-        }
-        setEpisodes((await resp.json()).items);
-      })
-      .catch(() => setError(true));
-  }, []);
+import { formatDuration } from "@/lib/format";
+import { getPublicEpisodes } from "@/lib/server-api";
+
+export const dynamic = "force-dynamic";
+
+export default async function PodcastsPage() {
+  const episodes = await getPublicEpisodes();
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-16">
+    <main className="pad-lg">
       <p className="eyebrow">Listen</p>
-      <h1 className="serif mt-2" style={{ fontSize: "1.75rem" }}>
+      <h1 className="serif" style={{ fontSize: "1.5rem", marginTop: "0.35rem" }}>
         Podcasts
       </h1>
-      <p className="mt-2" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-        Conversations from TTLI, and other shows worth your time.
+      <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.35rem 0 1.5rem" }}>
+        Conversations from TTLI, and other shows worth your time. Free, no account.
       </p>
 
-      {error ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-          Episodes could not be loaded. Try again shortly.
-        </p>
-      ) : episodes === null ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--faint)" }}>
-          Loading…
-        </p>
-      ) : episodes.length === 0 ? (
-        <p className="mt-6" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-          No episodes published yet.
-        </p>
+      {episodes.length === 0 ? (
+        <p style={{ fontSize: "0.875rem", color: "var(--muted)" }}>No episodes published yet.</p>
       ) : (
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          {episodes.map((episode) => (
-            <Link
-              key={episode.id}
-              href={`/podcasts/${episode.slug}`}
-              className="card p-5"
-              style={{ display: "block" }}
-            >
-              <span className="tag">
-                {episode.kind === "curated" ? `Recommended by ${episode.curator_name}` : "TTLI"}
-              </span>
-              <h2 className="serif mt-2" style={{ fontSize: "1.0625rem" }}>
-                {episode.title}
-              </h2>
-              {episode.description ? (
-                <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-                  {episode.description}
-                </p>
-              ) : null}
-              {formatDuration(episode.duration_seconds) ? (
-                <p className="mt-2" style={{ fontSize: "0.75rem", color: "var(--faint)" }}>
-                  {formatDuration(episode.duration_seconds)}
-                </p>
-              ) : null}
-            </Link>
-          ))}
-        </div>
+        <ul className="rowlist">
+          {episodes.map((episode) => {
+            const minutes = episode.duration_seconds
+              ? formatDuration(Math.round(episode.duration_seconds / 60))
+              : null;
+            return (
+              <li className="rowitem" key={episode.id}>
+                <span className={episode.kind === "curated" ? "tag tag--mute" : "tag tag--brand"}>
+                  {episode.kind === "curated" ? "Recommended" : "TTLI"}
+                </span>
+                <span className="t">{episode.title}</span>
+                {episode.curator_name || minutes ? (
+                  <span className="m">
+                    {[episode.curator_name ? `Curated by ${episode.curator_name}` : null, minutes]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                ) : null}
+                <Link href={`/podcasts/${episode.slug}`} className="btn btn--ghost">
+                  Listen
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </main>
   );

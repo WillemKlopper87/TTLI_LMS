@@ -35,16 +35,20 @@ from src.schemas.courses import (
     ModuleResponse,
     ModulesPageResponse,
     ModuleUpdateRequest,
+    PublicCourseCard,
+    PublicCoursesResponse,
     PublicCurriculumResponse,
     PublicLessonPreviewResponse,
     PublicLessonRow,
     PublicModuleRow,
+    PublicPrice,
     TenantAssignmentCreateRequest,
     TenantAssignmentResponse,
     TenantAssignmentRow,
     TenantAssignmentsPageResponse,
     UpdateManagerVisibilityRequest,
 )
+from src.services import course_wizard as wizard_service
 from src.services import courses as courses_service
 
 router = APIRouter(tags=["courses"])
@@ -70,6 +74,13 @@ def _course_response(course: Course) -> CourseResponse:
             str(course.certificate_template_id) if course.certificate_template_id else None
         ),
         badge_template_id=str(course.badge_template_id) if course.badge_template_id else None,
+        summary=course.summary,
+        level=course.level,
+        topic=course.topic,
+        format=course.format,
+        outcomes=list(course.outcomes or []),
+        includes_workshop=course.includes_workshop,
+        hero_colour=course.hero_colour,
     )
 
 
@@ -117,6 +128,13 @@ async def create_course(
         slug=body.slug,
         description=body.description,
         completion_rules=body.completion_rules,
+        summary=body.summary,
+        level=body.level,
+        topic=body.topic,
+        format=body.format,
+        outcomes=body.outcomes,
+        includes_workshop=body.includes_workshop,
+        hero_colour=body.hero_colour,
     )
     return _course_response(course)
 
@@ -145,6 +163,13 @@ async def update_course(
             _parse_uuid(body.certificate_template_id) if body.certificate_template_id else None
         ),
         badge_template_id=_parse_uuid(body.badge_template_id) if body.badge_template_id else None,
+        summary=body.summary,
+        level=body.level,
+        topic=body.topic,
+        format=body.format,
+        outcomes=body.outcomes,
+        includes_workshop=body.includes_workshop,
+        hero_colour=body.hero_colour,
     )
     return _course_response(course)
 
@@ -309,6 +334,94 @@ async def list_tenant_assignments(
     )
 
 
+def _public_price(row: courses_service.PublicPriceRow | None) -> PublicPrice | None:
+    if row is None:
+        return None
+    return PublicPrice(
+        product_id=str(row.product_id),
+        price_id=str(row.price_id),
+        currency=row.currency,
+        unit_amount=row.unit_amount,
+        tax_behaviour=row.tax_behaviour,
+        includes_vat=row.includes_vat,
+    )
+
+
+def _public_modules(outline: list[wizard_service.ModuleOutline]) -> list[PublicModuleRow]:
+    """The curriculum shape plus per-lesson/-module time estimates —
+    `course_wizard.get_outline` is the one place those are computed
+    (video duration, question counts, body word count), reused rather
+    than re-derived here."""
+    rows: list[PublicModuleRow] = []
+    for module_outline in outline:
+        lessons = [
+            PublicLessonRow(
+                id=str(item.lesson.id),
+                title=item.lesson.title,
+                position=item.lesson.position,
+                activity_type=item.lesson.activity_type,
+                access_level=item.lesson.access_level,
+                estimated_minutes=item.estimated_minutes,
+                is_preview=item.lesson.access_level == "public",
+            )
+            for item in module_outline.lessons
+        ]
+        rows.append(
+            PublicModuleRow(
+                id=str(module_outline.module.id),
+                title=module_outline.module.title,
+                position=module_outline.module.position,
+                lessons=lessons,
+                estimated_minutes=sum(x.estimated_minutes for x in lessons),
+                lesson_count=len(lessons),
+            )
+        )
+    return rows
+
+
+@router.get(
+    "/public/courses",
+    response_model=PublicCoursesResponse,
+    summary="Every published course this tenant offers, no auth required",
+)
+async def list_public_courses(session: SessionDep, tenant: TenantDep) -> PublicCoursesResponse:
+    """The catalogue / landing grid. Facet counts (topic / format /
+    includes / level) are computed client-side from these rows — the
+    list is small by construction (a tenant's assigned, published
+    courses), so one round trip beats a facet endpoint."""
+    courses = await courses_service.list_public_courses(session, tenant_id=tenant.id)
+    prices = await courses_service.public_prices_for_courses(
+        session, tenant_id=tenant.id, course_ids=[c.id for c in courses]
+    )
+    cpd = await courses_service.cpd_points_for_courses(session, courses=courses)
+    items: list[PublicCourseCard] = []
+    for course in courses:
+        outline = await wizard_service.get_outline(session, course_id=course.id)
+        modules = _public_modules(outline)
+        items.append(
+            PublicCourseCard(
+                id=str(course.id),
+                slug=course.slug,
+                title=course.title,
+                summary=course.summary,
+                description=course.description,
+                level=course.level,
+                topic=course.topic,
+                format=course.format,
+                outcomes=list(course.outcomes or []),
+                includes_workshop=course.includes_workshop,
+                has_certificate=course.certificate_template_id is not None,
+                cpd_points=cpd.get(course.id),
+                estimated_minutes=sum(m.estimated_minutes for m in modules),
+                module_count=len(modules),
+                lesson_count=sum(m.lesson_count for m in modules),
+                hero_colour=course.hero_colour,
+                price=_public_price(prices.get(course.id)),
+            )
+        )
+    return PublicCoursesResponse(items=items)
+
+
 @router.get(
     "/public/courses/{course_id}/curriculum",
     response_model=PublicCurriculumResponse,
@@ -317,31 +430,32 @@ async def list_tenant_assignments(
 async def get_public_curriculum(
     course_id: str, session: SessionDep, tenant: TenantDep
 ) -> PublicCurriculumResponse:
-    course, modules = await courses_service.get_public_curriculum(
+    course, _modules = await courses_service.get_public_curriculum(
         session, tenant_id=tenant.id, course_id=_parse_uuid(course_id)
     )
+    outline = await wizard_service.get_outline(session, course_id=course.id)
+    modules = _public_modules(outline)
+    prices = await courses_service.public_prices_for_courses(
+        session, tenant_id=tenant.id, course_ids=[course.id]
+    )
+    cpd = await courses_service.cpd_points_for_courses(session, courses=[course])
     return PublicCurriculumResponse(
         course_id=str(course.id),
         title=course.title,
         description=course.description,
-        modules=[
-            PublicModuleRow(
-                id=str(module.id),
-                title=module.title,
-                position=module.position,
-                lessons=[
-                    PublicLessonRow(
-                        id=str(lesson.id),
-                        title=lesson.title,
-                        position=lesson.position,
-                        activity_type=lesson.activity_type,
-                        access_level=lesson.access_level,
-                    )
-                    for lesson in lessons
-                ],
-            )
-            for module, lessons in modules
-        ],
+        modules=modules,
+        summary=course.summary,
+        level=course.level,
+        topic=course.topic,
+        format=course.format,
+        outcomes=list(course.outcomes or []),
+        includes_workshop=course.includes_workshop,
+        has_certificate=course.certificate_template_id is not None,
+        cpd_points=cpd.get(course.id),
+        estimated_minutes=sum(m.estimated_minutes for m in modules),
+        lesson_count=sum(m.lesson_count for m in modules),
+        hero_colour=course.hero_colour,
+        price=_public_price(prices.get(course.id)),
     )
 
 

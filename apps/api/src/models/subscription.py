@@ -101,7 +101,11 @@ class Subscription(Base, TimestampMixin):
     cooldown anchor) always has exactly one place to read from."""
 
     __tablename__ = "subscriptions"
-    __table_args__ = (Index("uq_subscriptions_tenant_user", "tenant_id", "user_id", unique=True),)
+    __table_args__ = (
+        Index("uq_subscriptions_tenant_user", "tenant_id", "user_id", unique=True),
+        # 0028: the analytics dashboard's renewal forecast.
+        Index("ix_subscriptions_tenant_status_period", "tenant_id", "status", "current_period_end"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(

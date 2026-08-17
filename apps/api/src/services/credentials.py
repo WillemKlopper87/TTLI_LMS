@@ -221,6 +221,14 @@ class VerificationResult:
     issued_at: datetime | None = None
     expires_at: datetime | None = None
     status: str | None = None
+    # Everything below comes from the issuance-time snapshot or the row
+    # itself, never a live re-read of the template — a certificate must
+    # keep saying what it said the day it was issued even if the template
+    # is edited afterwards (that is what `snapshot` is for).
+    credential_id: str | None = None
+    issuer_name: str | None = None
+    cpd_points: int | None = None
+    visibility: str | None = None
 
 
 async def verify(
@@ -263,6 +271,7 @@ async def verify(
         return VerificationResult(found=False)
 
     snapshot = certificate.snapshot
+    cpd_points = snapshot.get("cpd_points")
     return VerificationResult(
         found=True,
         holder_name=snapshot.get("learner_name"),
@@ -270,6 +279,10 @@ async def verify(
         issued_at=certificate.issued_at,
         expires_at=certificate.expires_at,
         status=certificate.status,
+        credential_id=certificate.certificate_number,
+        issuer_name=snapshot.get("issuer_name"),
+        cpd_points=int(cpd_points) if cpd_points is not None else None,
+        visibility=certificate.visibility,
     )
 
 

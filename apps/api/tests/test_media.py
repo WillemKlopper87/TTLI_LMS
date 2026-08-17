@@ -576,3 +576,54 @@ async def test_heartbeat_rejects_playback_rate_above_the_configured_maximum(
         json={"position_seconds": 1, "playback_rate": 8.0, "session_id": "s1"},
     )
     assert resp.status_code == 400
+
+
+async def test_heartbeat_reports_the_rule_the_player_is_being_measured_against(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """The player draws a progress ring; it must not have to derive the
+    numbers behind it. The heartbeat ack now carries the server's own
+    watched percentage, the asset's duration, and whatever
+    `video_watch_percentage` the merged completion rules require (null
+    when no such rule applies) — read back *after* the write, so it is
+    this heartbeat's result, not the previous one's."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+
+    token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    resp = await client.post(
+        f"/api/v1/lessons/{lesson_id}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"position_seconds": 1, "playback_rate": 1.0, "session_id": "s1"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # The original counters are untouched.
+    assert Decimal(body["furthest_position_seconds"]) == Decimal("1")
+    assert Decimal(body["watched_seconds"]) == Decimal("0")
+    assert body["duration_seconds"] == 3  # the 3-second synthetic clip
+    # The first heartbeat has no previous one to measure an interval
+    # against (REQ-BYPASS-03), so nothing counts as watched yet — 0%, not
+    # null, because a progress row now exists.
+    assert body["watched_percentage"] == 0
+    # 0011 seeds only minimum_time_seconds on this lesson, so there is no
+    # watch-percentage rule to report.
+    assert body["required_percentage"] is None

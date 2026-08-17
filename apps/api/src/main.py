@@ -24,10 +24,12 @@ from src.core.logging import configure_logging, get_logger
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.routers import (
+    analytics,
     assessment,
     auth,
     campaigns,
     catalogue,
+    course_wizard,
     courses,
     credentials,
     deals,
@@ -124,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(subscriptions.router, prefix="/api/v1")
     app.include_router(catalogue.router, prefix="/api/v1")
     app.include_router(courses.router, prefix="/api/v1")
+    app.include_router(course_wizard.router, prefix="/api/v1")
     app.include_router(workshops.router, prefix="/api/v1")
     app.include_router(deals.router, prefix="/api/v1")
     app.include_router(campaigns.router, prefix="/api/v1")
@@ -133,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(credentials.router, prefix="/api/v1")
     app.include_router(podcasts.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
+    app.include_router(analytics.router, prefix="/api/v1")
 
     return app
 

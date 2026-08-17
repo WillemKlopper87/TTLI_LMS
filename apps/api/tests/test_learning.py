@@ -452,3 +452,240 @@ async def test_completion_refusal_is_audit_logged(client, tenant_session_factory
     assert row is not None
     assert str(row[0]) == str(buyer_id)
     assert str(row[1]) == lessons[0][0]
+
+
+async def test_progress_carries_structured_checks_and_a_course_roll_up(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """`checks` is the full rule list — cleared rules included — beside
+    the unchanged `unmet_requirements` refusal list, plus the course-level
+    roll-up the learner shell's header renders."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_1_id = lessons[0][0]
+    enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+
+    before = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/progress", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert before.status_code == 200, before.text
+    body = before.json()
+    assert body["progress_percent"] == 0
+    assert body["next_lesson_id"] == lesson_1_id
+    assert body["estimated_minutes"] >= 1
+    assert body["estimated_minutes"] == sum(row["estimated_minutes"] for row in body["lessons"])
+
+    first = next(row for row in body["lessons"] if row["lesson_id"] == lesson_1_id)
+    assert first["module_title"] == "Getting Started"
+    assert first["module_id"]
+    assert isinstance(first["module_position"], int)
+    # 0011 seeds lesson 1 with minimum_time_seconds: 30. Nothing has been
+    # opened yet, so nought seconds of it are spent.
+    check = next(c for c in first["checks"] if c["rule"] == "minimum_time_seconds")
+    assert check["met"] is False
+    assert check["current"] == "0:00"
+    assert check["required"] == "0:30"
+
+    await client.post(
+        f"/api/v1/lessons/{lesson_1_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+    await _backdate_first_seen(
+        tenant_session_factory, tenant_id, enrolment_id=enrolment_id, lesson_id=lesson_1_id
+    )
+    complete = await client.post(
+        f"/api/v1/lessons/{lesson_1_id}/complete", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert complete.status_code == 200, complete.text
+
+    after = (
+        await client.get(
+            f"/api/v1/enrolments/{enrolment_id}/progress",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    ).json()
+    assert after["progress_percent"] == 50
+    assert after["next_lesson_id"] == lessons[1][0]
+    done = next(row for row in after["lessons"] if row["lesson_id"] == lesson_1_id)
+    # A cleared rule is still reported — that is the whole point of
+    # `checks` existing beside `unmet_requirements`, which stays empty.
+    assert done["unmet_requirements"] == []
+    met = next(c for c in done["checks"] if c["rule"] == "minimum_time_seconds")
+    assert met["met"] is True
+    assert met["required"] == "0:30"
+
+
+async def test_dashboard_greets_the_learner_and_points_at_the_next_lesson(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+
+    resp = await client.get("/api/v1/learn/dashboard", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200, resp.text
+    board = resp.json()
+    # No name was ever captured by the EFT purchase path.
+    assert board["first_name"] is None
+    assert len(board["initials"]) == 2
+    assert board["stats"]["workshop_credits"] == 0
+    assert board["stats"]["certificates"] == 0
+
+    card = next(c for c in board["enrolments"] if c["enrolment_id"] == enrolment_id)
+    assert card["course_title"] == "Executive Leadership Certificate"
+    assert card["status"] == "not_started"
+    assert card["progress_percent"] == 0
+    assert card["lessons_total"] == 2
+    assert card["lessons_completed"] == 0
+    assert card["completed_at"] is None
+    assert card["certificate"] is None
+    assert card["next_lesson"]["title"] == "Welcome"
+    assert card["next_lesson"]["module_title"] == "Getting Started"
+    # Counted from the row order, not the stored position column — 0011
+    # numbers its seed from 1 while the authoring service numbers from 0.
+    assert card["next_lesson"]["position_label"] == "Module 1, lesson 1"
+
+    await client.post(
+        f"/api/v1/lessons/{lessons[0][0]}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+    await _backdate_first_seen(
+        tenant_session_factory, tenant_id, enrolment_id=enrolment_id, lesson_id=lessons[0][0]
+    )
+    await client.post(
+        f"/api/v1/lessons/{lessons[0][0]}/complete", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    after = (
+        await client.get("/api/v1/learn/dashboard", headers={"Authorization": f"Bearer {token}"})
+    ).json()
+    card = next(c for c in after["enrolments"] if c["enrolment_id"] == enrolment_id)
+    assert card["status"] == "in_progress"
+    assert card["progress_percent"] == 50
+    assert card["lessons_completed"] == 1
+    assert card["started_at"] is not None
+    assert card["next_lesson"]["title"] == "Core Concepts"
+    assert card["next_lesson"]["position_label"] == "Module 1, lesson 2"
+    assert after["stats"]["in_progress"] == 1
+    assert after["stats"]["completed"] == 0
+
+
+async def test_dashboard_shows_only_the_callers_own_enrolments(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    stranger_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    board = (
+        await client.get(
+            "/api/v1/learn/dashboard", headers={"Authorization": f"Bearer {stranger_token}"}
+        )
+    ).json()
+    assert board["enrolments"] == []
+    assert board["upcoming"] == []
+    assert board["stats"] == {
+        "in_progress": 0,
+        "completed": 0,
+        "certificates": 0,
+        "workshop_credits": 0,
+    }
+
+
+async def test_dashboard_is_unauthenticated_without_a_token(client) -> None:  # type: ignore[no-untyped-def]
+    assert (await client.get("/api/v1/learn/dashboard")).status_code == 401
+
+
+async def test_dashboard_lists_an_open_quiz_as_an_upcoming_assessment(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """A quiz lesson the learner can sit right now is "upcoming" work,
+    with the attempts the server would actually allow — the same count
+    `services/quiz.py::start_attempt` enforces, not a client guess.
+
+    The seeded course is global and shared with every other test file, so
+    the lesson's activity wiring is snapshotted and restored, the same
+    discipline test_credentials.py uses for the course's template links.
+    """
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    lesson_id = lessons[0][0]
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+
+    async with tenant_session_factory(tenant_id) as s:
+        before = (
+            await s.execute(
+                sa.text(
+                    "SELECT activity_type, quiz_id, survey_id, assignment_id, video_asset_id "
+                    "FROM lessons WHERE id = :l"
+                ),
+                {"l": lesson_id},
+            )
+        ).first()
+    assert before is not None
+
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Dashboard Readiness Check", "pass_score": 60, "max_attempts": 3},
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+
+    try:
+        attach = await client.post(
+            f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
+            headers={"Authorization": f"Bearer {author_token}"},
+        )
+        assert attach.status_code == 204, attach.text
+
+        token, buyer_id = await _enrol_via_eft(
+            client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+        )
+        enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+
+        board = (
+            await client.get(
+                "/api/v1/learn/dashboard", headers={"Authorization": f"Bearer {token}"}
+            )
+        ).json()
+        item = next(
+            u for u in board["upcoming"] if u["kind"] == "assessment" and u["quiz_id"] == quiz_id
+        )
+        assert item["title"] == "Dashboard Readiness Check"
+        assert item["subtitle"] == "Executive Leadership Certificate"
+        assert item["enrolment_id"] == enrolment_id
+        assert item["lesson_id"] == lesson_id
+        assert item["attempts_remaining"] == 3
+        assert item["starts_at"] is None
+        assert item["join_url"] is None
+    finally:
+        async with tenant_session_factory(tenant_id) as s:
+            await s.execute(
+                sa.text(
+                    "UPDATE lessons SET activity_type = :a, quiz_id = :q, survey_id = :s, "
+                    "assignment_id = :n, video_asset_id = :v WHERE id = :l"
+                ),
+                {
+                    "a": before[0],
+                    "q": before[1],
+                    "s": before[2],
+                    "n": before[3],
+                    "v": before[4],
+                    "l": lesson_id,
+                },
+            )

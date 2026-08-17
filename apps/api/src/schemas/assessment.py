@@ -46,10 +46,22 @@ class QuizQuestionView(BaseModel):
 
 
 class QuizAttemptResponse(BaseModel):
+    """The learner's view of a freshly started attempt. The quiz's own
+    settings ride along so the sitting screen can state the pass mark and
+    what is left before the learner commits — `attempts_remaining` counts
+    what is left *after* this attempt, computed the same way
+    `services/quiz.py::start_attempt` enforces the limit."""
+
     attempt_id: str
     quiz_id: str
+    quiz_title: str
     attempt_number: int
     time_limit_seconds: int | None
+    pass_score: int
+    max_attempts: int
+    attempts_remaining: int
+    randomise_questions: bool
+    randomise_options: bool
     questions: list[QuizQuestionView]
 
 

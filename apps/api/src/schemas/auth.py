@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -23,11 +25,23 @@ class MfaChallengeResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
+    """The signed-in shell's whole identity payload: who the caller is,
+    what they may do, and — for a guest — how long they still have.
+    `full_name`/`first_name` are null for the many accounts checkout and
+    guest flows never captured a name for; `initials` never is (see
+    services/identity.py::display_identity)."""
+
     user_id: str
     tenant_id: str
     tenant_slug: str
     email: str
     permissions: list[str]
+    full_name: str | None = None
+    first_name: str | None = None
+    initials: str
+    is_guest: bool = False
+    guest_expires_at: datetime | None = None
+    guest_days_left: int | None = None
 
 
 class MagicLinkRequest(BaseModel):

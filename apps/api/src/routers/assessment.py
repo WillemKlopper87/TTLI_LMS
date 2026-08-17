@@ -145,8 +145,16 @@ async def preview_quiz(
     Learner-shaped (no `correct`) and creates no `QuizAttempt`, unlike the
     real attempt flow."""
     quiz_uuid = _parse_uuid(quiz_id)
-    if not await enrolment_service.has_view_access_to_quiz(
-        session, tenant_id=principal.tenant_id, user_id=principal.user_id, quiz_id=quiz_uuid
+    # course:edit takes precedence over the enrolment/free-preview check —
+    # an author previewing a draft lesson "as a learner" (the wizard's
+    # view-as-learner) has no enrolment; same precedent as the survey
+    # detail endpoint below. This shape carries no `correct` flags, so
+    # nothing extra is exposed to an author who could read it anyway.
+    if (
+        "course:edit" not in principal.permissions
+        and not await enrolment_service.has_view_access_to_quiz(
+            session, tenant_id=principal.tenant_id, user_id=principal.user_id, quiz_id=quiz_uuid
+        )
     ):
         raise Forbidden("This quiz is not available for preview.")
     quiz, questions = await quiz_service.get_quiz_detail(session, quiz_id=quiz_uuid)
@@ -246,8 +254,16 @@ async def start_quiz_attempt(
     return QuizAttemptResponse(
         attempt_id=str(attempt.id),
         quiz_id=quiz_id,
+        quiz_title=quiz.title,
         attempt_number=attempt.attempt_number,
         time_limit_seconds=quiz.time_limit_seconds,
+        pass_score=quiz.pass_score,
+        max_attempts=quiz.max_attempts,
+        # attempt_number is the count of live attempts including this one
+        # (services/quiz.py::start_attempt), so this is what remains after.
+        attempts_remaining=max(0, quiz.max_attempts - attempt.attempt_number),
+        randomise_questions=quiz.randomise_questions,
+        randomise_options=quiz.randomise_options,
         questions=[
             QuizQuestionView.model_validate(
                 question_view(q, randomise_options=quiz.randomise_options)
@@ -546,11 +562,14 @@ async def preview_assignment(
     instructions at all — nothing previously exposed that outside
     authoring."""
     assignment_uuid = _parse_uuid(assignment_id)
-    if not await enrolment_service.has_view_access_to_assignment(
-        session,
-        tenant_id=principal.tenant_id,
-        user_id=principal.user_id,
-        assignment_id=assignment_uuid,
+    if (
+        "course:edit" not in principal.permissions
+        and not await enrolment_service.has_view_access_to_assignment(
+            session,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            assignment_id=assignment_uuid,
+        )
     ):
         raise Forbidden("This assignment is not available for preview.")
     assignment = await assignment_service.get_assignment(session, assignment_id=assignment_uuid)

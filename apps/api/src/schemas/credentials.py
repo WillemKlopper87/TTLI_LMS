@@ -10,12 +10,26 @@ class CertificatePdfResponse(BaseModel):
 
 
 class VerificationResponse(BaseModel):
+    """What the public `/verify/{token}` page renders. Every field is null
+    on a miss — and a `private` certificate is deliberately a miss (see
+    services/credentials.py::verify), so none of the additions here can
+    leak a credential the holder chose not to publish.
+
+    `programme_title` is an alias of `course_title`, not a second fact:
+    the verify page speaks the customer's vocabulary ("programme") while
+    the rest of the API speaks the data model's ("course")."""
+
     found: bool
     holder_name: str | None = None
     course_title: str | None = None
+    programme_title: str | None = None
     issued_at: datetime | None = None
     expires_at: datetime | None = None
     status: str | None = None
+    credential_id: str | None = None
+    issuer_name: str | None = None
+    cpd_points: int | None = None
+    visibility: str | None = None
 
 
 class RevokeCertificateRequest(BaseModel):

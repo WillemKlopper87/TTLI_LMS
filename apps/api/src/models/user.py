@@ -26,6 +26,8 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         # with two different corporate customers.
         Index("uq_users_tenant_email", "tenant_id", "email_blind_index", unique=True),
         Index("ix_users_guest_expiry", "guest_expires_at", postgresql_where=text("is_guest")),
+        # 0028: registrations-in-period on the analytics dashboard.
+        Index("ix_users_tenant_created", "tenant_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = pk()

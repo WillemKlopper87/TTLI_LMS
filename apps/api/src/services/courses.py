@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
+from src.models.commerce import Price, Product
 from src.models.course import Course, CourseTenantAssignment, Lesson, Module
 from src.models.credential import BadgeTemplate, CertificateTemplate
 from src.services.completion import CompletionRules
@@ -68,6 +71,13 @@ async def create_course(
     slug: str | None,
     description: str | None,
     completion_rules: dict[str, object],
+    summary: str | None = None,
+    level: str | None = None,
+    topic: str | None = None,
+    format: str | None = None,
+    outcomes: list[str] | None = None,
+    includes_workshop: bool | None = None,
+    hero_colour: str | None = None,
 ) -> Course:
     _validate_completion_rules(completion_rules)
     course = Course(
@@ -76,6 +86,13 @@ async def create_course(
         title=title,
         description=description,
         completion_rules=completion_rules,
+        summary=summary,
+        level=level,
+        topic=topic,
+        format=format,
+        outcomes=list(outcomes) if outcomes is not None else [],
+        includes_workshop=bool(includes_workshop),
+        hero_colour=hero_colour,
     )
     session.add(course)
     await session.flush()
@@ -103,12 +120,33 @@ async def update_course(
     completion_rules: dict[str, object] | None = None,
     certificate_template_id: uuid.UUID | None = None,
     badge_template_id: uuid.UUID | None = None,
+    summary: str | None = None,
+    level: str | None = None,
+    topic: str | None = None,
+    format: str | None = None,
+    outcomes: list[str] | None = None,
+    includes_workshop: bool | None = None,
+    hero_colour: str | None = None,
 ) -> Course:
     course = await get_course(session, course_id=course_id)
     if title is not None:
         course.title = title
     if description is not None:
         course.description = description
+    if summary is not None:
+        course.summary = summary
+    if level is not None:
+        course.level = level
+    if topic is not None:
+        course.topic = topic
+    if format is not None:
+        course.format = format
+    if outcomes is not None:
+        course.outcomes = list(outcomes)
+    if includes_workshop is not None:
+        course.includes_workshop = includes_workshop
+    if hero_colour is not None:
+        course.hero_colour = hero_colour
     if completion_rules is not None:
         course.completion_rules = _validate_completion_rules(completion_rules)
     if certificate_template_id is not None:
@@ -323,6 +361,90 @@ async def get_public_curriculum(
     return course, result
 
 
+async def list_public_courses(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[Course]:
+    """Every published course assigned to this tenant — the anonymous
+    catalogue / landing grid (`GET /public/courses`). The same visibility
+    rule as `_visible_course`, just as a list."""
+    stmt = (
+        select(Course)
+        .join(CourseTenantAssignment, CourseTenantAssignment.course_id == Course.id)
+        .where(Course.state == "published", CourseTenantAssignment.tenant_id == tenant_id)
+        .order_by(Course.title)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+@dataclass(frozen=True, slots=True)
+class PublicPriceRow:
+    product_id: uuid.UUID
+    price_id: uuid.UUID
+    currency: str
+    unit_amount: str
+    tax_behaviour: str
+    includes_vat: bool
+
+
+async def public_prices_for_courses(
+    session: AsyncSession, *, tenant_id: uuid.UUID, course_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, PublicPriceRow]:
+    """For each course, the first ACTIVE product of *this* tenant that
+    sells it and has a currently valid price — what the catalogue card
+    shows. Courses with no sellable product are simply absent from the
+    result (the card renders no price). Which product/price is "first"
+    is deterministic (product name, then price valid_from) so the same
+    course always shows the same figure."""
+    if not course_ids:
+        return {}
+    now = datetime.now(UTC)
+    stmt = (
+        select(Product, Price)
+        .join(Price, Price.product_id == Product.id)
+        .where(
+            Product.tenant_id == tenant_id,
+            Product.is_active.is_(True),
+            Product.course_id.in_(course_ids),
+            or_(Price.valid_until.is_(None), Price.valid_until > now),
+        )
+        .order_by(Product.name, Price.valid_from)
+    )
+    result: dict[uuid.UUID, PublicPriceRow] = {}
+    for product, price in (await session.execute(stmt)).tuples().all():
+        if product.course_id is None or product.course_id in result:
+            continue
+        result[product.course_id] = PublicPriceRow(
+            product_id=product.id,
+            price_id=price.id,
+            currency=price.currency,
+            unit_amount=str(price.unit_amount),
+            tax_behaviour=price.tax_behaviour,
+            includes_vat=price.tax_behaviour == "inclusive",
+        )
+    return result
+
+
+async def cpd_points_for_courses(
+    session: AsyncSession, *, courses: list[Course]
+) -> dict[uuid.UUID, int | None]:
+    """course_id -> the certificate template's cpd_points, for courses
+    that certify completion (`certificate_template_id` set)."""
+    template_ids = {c.certificate_template_id for c in courses if c.certificate_template_id}
+    if not template_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(CertificateTemplate.id, CertificateTemplate.cpd_points).where(
+                CertificateTemplate.id.in_(template_ids)
+            )
+        )
+    ).all()
+    by_template = {row[0]: row[1] for row in rows}
+    return {
+        c.id: by_template.get(c.certificate_template_id)
+        for c in courses
+        if c.certificate_template_id
+    }
+
+
 async def get_public_lesson_preview(
     session: AsyncSession, *, tenant_id: uuid.UUID, lesson_id: uuid.UUID
 ) -> Lesson:
@@ -346,7 +468,9 @@ async def get_public_lesson_preview(
 
 __all__ = [
     "CourseAuthoringError",
+    "PublicPriceRow",
     "assign_course_to_tenant",
+    "cpd_points_for_courses",
     "create_course",
     "create_lesson",
     "create_module",
@@ -356,7 +480,9 @@ __all__ = [
     "list_courses",
     "list_lessons",
     "list_modules",
+    "list_public_courses",
     "list_tenant_assignments",
+    "public_prices_for_courses",
     "publish_course",
     "unpublish_course",
     "update_course",
