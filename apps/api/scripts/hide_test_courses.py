@@ -238,10 +238,17 @@ async def main() -> None:
                 .where(Article.id.in_([a.id for a in art_artifacts]))
                 .values(state="draft")
             )
+        if rec_artifacts:
+            await session.execute(
+                update(Recommendation)
+                .where(Recommendation.id.in_([r.id for r in rec_artifacts]))
+                .values(state="draft")
+            )
         print()
         print(f"APPLIED — {len(artifacts)} course assignment(s) removed (courses untouched)")
         print(f"          {len(ep_artifacts)} episode(s) unpublished (episodes untouched)")
         print(f"          {len(art_artifacts)} article(s) unpublished (articles untouched)")
+        print(f"          {len(rec_artifacts)} recommendation(s) unpublished (untouched otherwise)")
 
 
 asyncio.run(main())
