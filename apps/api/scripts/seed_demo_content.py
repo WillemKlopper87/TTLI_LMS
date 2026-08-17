@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from src.core.db import get_sessionmaker, init_engine, set_tenant
 from src.core.ids import uuid7
 from src.models.commerce import Price, Product
 from src.models.course import Course, CourseTenantAssignment, Lesson, Module
+from src.models.article import Article
 from src.models.credential import CertificateTemplate
 from src.models.podcast import PodcastEpisode
 
@@ -379,6 +381,54 @@ async def _episode(session: AsyncSession, related_course_id: uuid.UUID | None) -
     await session.flush()
 
 
+ARTICLE_SLUG = "the-eleven-day-gap"
+ARTICLE_BODY = (
+    "## The gap that actually costs you\n\n"
+    "Most executive teams do not have a feedback problem. They have a problem with the "
+    "eleven days between noticing something and saying it.\n\n"
+    "That number is not exact for any one team, but it is close for most of the ones we "
+    "work with: the interval between a manager clocking a pattern and actually naming it "
+    "out loud, in the room, to the person who could do something about it.\n\n"
+    "### Why the delay compounds\n\n"
+    "A observation that would have taken thirty seconds to raise in the moment turns into "
+    "a prepared conversation by the time it is finally said — which means it arrives "
+    "carrying more weight than the original moment ever had. The person on the receiving "
+    "end reasonably asks why now, and why like this.\n\n"
+    "### What to try instead\n\n"
+    "Agree on a shorter interval as a team norm, not a better script for the eventual "
+    "conversation. The technique matters less than the timing — this is the same idea "
+    "*Leading Through Ambiguity* spends its second module on.\n"
+)
+
+
+async def _article(session: AsyncSession, related_course_id: uuid.UUID | None) -> None:
+    """One real article, so the Resources hub's "Writing" section has
+    honest content once the test articles pytest leaves behind are
+    unpublished (scripts/hide_test_courses.py) — the same "one real row
+    over 1,300 test rows" convention `_episode` already established."""
+    article = (
+        await session.execute(
+            select(Article).where(Article.tenant_id == DEMO_TENANT, Article.slug == ARTICLE_SLUG)
+        )
+    ).scalar_one_or_none()
+    if article is None:
+        article = Article(
+            id=uuid7(), tenant_id=DEMO_TENANT, slug=ARTICLE_SLUG, title="", body=""
+        )
+        session.add(article)
+        await session.flush()
+    article.title = "The eleven-day gap"
+    article.dek = "Most executive teams do not have a feedback problem. They have a timing problem."
+    article.body = ARTICLE_BODY
+    article.author_name = "Dr N. Mokoena"
+    article.related_course_id = related_course_id
+    article.state = "published"
+    article.published_at = article.published_at or datetime.now(UTC)
+    article.reading_minutes = max(1, round(len(ARTICLE_BODY.split()) / 200))
+    article.position = 0
+    await session.flush()
+
+
 DEMO_TENANT: uuid.UUID  # set in main() from the database
 
 
@@ -416,7 +466,12 @@ async def main() -> None:
             print(f"seeded {course.slug}")
         await _episode(session, first_course_id)
         print(f"seeded episode {EPISODE_SLUG}")
-    print(f"done — {len(PROGRAMMES)} programmes published, assigned and priced, 1 episode")
+        await _article(session, first_course_id)
+        print(f"seeded article {ARTICLE_SLUG}")
+    print(
+        f"done — {len(PROGRAMMES)} programmes published, assigned and priced, "
+        "1 episode, 1 article"
+    )
 
 
 asyncio.run(main())

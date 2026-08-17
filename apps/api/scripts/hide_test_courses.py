@@ -44,6 +44,7 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.db import get_sessionmaker, init_engine, set_tenant
+from src.models.article import Article
 from src.models.course import Course, CourseTenantAssignment
 from src.models.podcast import PodcastEpisode
 
@@ -72,6 +73,12 @@ def _is_episode_artifact(title: str) -> bool:
     shapes the test suite actually generates."""
     lowered = title.lower()
     return lowered.startswith("test episode") or "smoke test episode" in lowered
+
+
+def _is_article_artifact(title: str) -> bool:
+    """Same shape as `_is_episode_artifact` — `tests/test_articles.py`'s
+    `_unique_title()` generates "Test Article <hex>"."""
+    return title.lower().startswith("test article")
 
 
 DEMO_TENANT: uuid.UUID  # set in main() from the database
@@ -156,6 +163,28 @@ async def main() -> None:
         print(f"episodes that stay visible  : {len(ep_keep)}")
         for e in sorted(ep_keep, key=lambda e: e.title)[:10]:
             print(f"  - {e.title}")
+
+        # --- Articles -----------------------------------------------------
+        # Same problem again: /public/articles lists every published
+        # article, and tests/test_articles.py leaves "Test Article <hex>"
+        # rows behind. Same lever as episodes — unpublish via state.
+        articles = (
+            await session.execute(
+                select(Article.id, Article.title).where(
+                    Article.tenant_id == DEMO_TENANT,
+                    Article.state == "published",
+                )
+            )
+        ).all()
+        art_artifacts = [a for a in articles if _is_article_artifact(a.title)]
+        art_keep = [a for a in articles if not _is_article_artifact(a.title)]
+
+        print()
+        print(f"published articles          : {len(articles)}")
+        print(f"test articles to unpublish  : {len(art_artifacts)}")
+        print(f"articles that stay visible  : {len(art_keep)}")
+        for a in sorted(art_keep, key=lambda a: a.title)[:10]:
+            print(f"  - {a.title}")
 
         if not apply:
             print()

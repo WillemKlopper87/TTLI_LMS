@@ -1,30 +1,33 @@
 import Link from "next/link";
 
 import { formatClock } from "@/lib/format";
-import { getPublicCourses, getPublicEpisodes } from "@/lib/server-api";
+import { getPublicArticles, getPublicCourses, getPublicEpisodes } from "@/lib/server-api";
 
 import { NewsletterSignup } from "./newsletter-signup";
 
 /**
- * The resources hub (design doc §5 item 21). "Resources" used to point
+ * The resources hub (design doc §5 item 21, stage 2 per
+ * `docs/research/resources-hub-design.md`). "Resources" used to point
  * straight at /podcasts — a bare list of episodes, which is a content
  * type rather than a section.
  *
  * This is the section: TTLI's own episodes, the third-party work the
  * faculty actually recommends (the podcast model already distinguishes
- * `authored` from `curated`), the book, and the newsletter. Articles are
- * specified in the design doc but not built — no table exists for them —
- * and this page deliberately does not fake a placeholder for something
- * that would render empty.
+ * `authored` from `curated`), articles, the book, and the newsletter.
+ * Articles are folded straight into this page rather than given their
+ * own listing route yet — the design doc's own recommendation, matching
+ * the pattern the podcast section itself used before volume justified
+ * `/podcasts` as a separate page.
  */
 export const metadata = {
   title: "Resources",
 };
 
 export default async function ResourcesPage() {
-  const [episodes, courses] = await Promise.all([
+  const [episodes, courses, articles] = await Promise.all([
     getPublicEpisodes().catch(() => []),
     getPublicCourses().catch(() => []),
+    getPublicArticles().catch(() => []),
   ]);
 
   const authored = episodes.filter((e) => e.kind === "authored");
@@ -156,6 +159,39 @@ export default async function ResourcesPage() {
                       </span>
                       <Link className="btn btn--ghost" href={`/podcasts/${e.slug}`}>
                         Open
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {articles.length > 0 ? (
+              <section>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "baseline",
+                    gap: "1rem",
+                    marginBottom: ".7rem",
+                  }}
+                >
+                  <h2 className="serif" style={{ fontSize: "1.25rem" }}>
+                    Writing
+                  </h2>
+                </div>
+                <div className="rowlist">
+                  {articles.slice(0, 6).map((a) => (
+                    <div className="rowitem" key={a.slug}>
+                      <span className="t">{a.title}</span>
+                      <span className="m">
+                        {[a.author_name, a.reading_minutes ? `${a.reading_minutes} min` : null]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      <Link className="btn btn--ghost" href={`/resources/articles/${a.slug}`}>
+                        Read
                       </Link>
                     </div>
                   ))}
