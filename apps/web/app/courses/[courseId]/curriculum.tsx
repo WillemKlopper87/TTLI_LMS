@@ -90,7 +90,11 @@ export function Curriculum({ modules, includesWorkshop }: CurriculumProps) {
         <div className="mod">
           <div className="mod-head">
             <span>
-              {VISIBLE_MODULES + 1}&ndash;{ordered.length}&nbsp;&nbsp;{restTitles}
+              {/* A single collapsed module is "3", not "3–3". */}
+              {VISIBLE_MODULES + 1 === ordered.length
+                ? `${ordered.length}`
+                : `${VISIBLE_MODULES + 1}–${ordered.length}`}
+              &nbsp;&nbsp;{restTitles}
             </span>
             <span>{joinMeta([countLabel(restLessons, "lesson"), formatDuration(restMinutes)])}</span>
           </div>

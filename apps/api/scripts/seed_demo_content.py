@@ -34,6 +34,7 @@ from src.core.ids import uuid7
 from src.models.commerce import Price, Product
 from src.models.course import Course, CourseTenantAssignment, Lesson, Module
 from src.models.credential import CertificateTemplate
+from src.models.podcast import PodcastEpisode
 
 DEMO_TENANT = uuid.UUID("019fe2ab-dab6-7bea-8f14-d3ea786a227d")
 
@@ -333,6 +334,53 @@ async def _assign_and_price(session: AsyncSession, course: Course, amount: Decim
     await session.flush()
 
 
+EPISODE_SLUG = "the-quiet-cost-of-unspoken-feedback"
+
+
+async def _episode(session: AsyncSession, related_course_id: uuid.UUID | None) -> None:
+    """One real episode, so the Resources page and the landing page's
+    "Latest episode" card have honest content once the test episodes are
+    unpublished (scripts/hide_test_courses.py). Authored, not curated:
+    there is no audio file in the dev database, so it carries show notes,
+    a transcript and a related programme rather than pretending to play."""
+    episode = (
+        await session.execute(
+            select(PodcastEpisode).where(
+                PodcastEpisode.tenant_id == DEMO_TENANT,
+                PodcastEpisode.slug == EPISODE_SLUG,
+            )
+        )
+    ).scalar_one_or_none()
+    if episode is None:
+        episode = PodcastEpisode(
+            id=uuid7(), tenant_id=DEMO_TENANT, slug=EPISODE_SLUG, kind="authored", title=""
+        )
+        session.add(episode)
+        await session.flush()
+    episode.title = "The quiet cost of unspoken feedback"
+    episode.description = (
+        "Most executive teams do not have a feedback problem. They have a problem with the "
+        "eleven days between noticing something and saying it."
+    )
+    episode.show_notes = (
+        "02:10  Why delay compounds\n"
+        "11:35  Seniority and silence\n"
+        "18:40  The interval, not the script\n"
+        "26:02  What to try on Monday"
+    )
+    episode.transcript = (
+        "In this episode we look at what actually happens inside a leadership team when "
+        "observations go unspoken — how the delay compounds, why seniority makes it worse "
+        "rather than better, and what changes when a team agrees on a shorter interval "
+        "rather than a better technique."
+    )
+    episode.related_course_id = related_course_id
+    episode.duration_seconds = 1934
+    episode.state = "published"
+    episode.position = 0
+    await session.flush()
+
+
 async def main() -> None:
     settings = get_settings()
     if settings.environment not in ("local", "development", "dev"):
@@ -342,12 +390,16 @@ async def main() -> None:
     async with factory() as session, session.begin():
         await set_tenant(session, DEMO_TENANT)
         template_id = await _certificate_template(session)
+        first_course_id: uuid.UUID | None = None
         for spec in PROGRAMMES:
             course = await _upsert_course(session, spec)
             course.certificate_template_id = template_id
             await _assign_and_price(session, course, spec["price"])
+            first_course_id = first_course_id or course.id
             print(f"seeded {course.slug}")
-    print(f"done — {len(PROGRAMMES)} programmes published, assigned and priced")
+        await _episode(session, first_course_id)
+        print(f"seeded episode {EPISODE_SLUG}")
+    print(f"done — {len(PROGRAMMES)} programmes published, assigned and priced, 1 episode")
 
 
 asyncio.run(main())
