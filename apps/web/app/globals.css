@@ -688,6 +688,64 @@ a {
   color: var(--ink);
 }
 
+/* Markdown body content (article.body via react-markdown) — Tailwind's
+   preflight resets h1-h6/ul/ol/blockquote to inherit, so without these
+   rules a rendered heading is indistinguishable from a paragraph. */
+.prose h2 {
+  font-family: var(--serif);
+  font-size: 1.375rem;
+  color: var(--ink);
+  margin: 1.75rem 0 0.7rem;
+}
+
+.prose h3 {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  color: var(--ink);
+  margin: 1.5rem 0 0.6rem;
+}
+
+.prose h4 {
+  font-weight: 600;
+  color: var(--ink);
+  margin: 1.25rem 0 0.5rem;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0 0 0.95rem 1.25rem;
+  color: var(--ink-2);
+}
+
+.prose li {
+  margin-bottom: 0.35rem;
+}
+
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.prose a {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  border-left: 3px solid var(--rule);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--surface-2);
+  padding: 0.15em 0.35em;
+}
+
 .gate {
   border: 1px solid var(--brand);
   background: var(--brand-wash);
