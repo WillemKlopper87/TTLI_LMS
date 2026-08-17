@@ -8,16 +8,25 @@
  * goes to /login first and comes back.
  */
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { formatMoney, vatSuffix } from "@/lib/format";
 import type { PublicProduct } from "@/lib/server-api";
 import { useSession } from "@/lib/session-context";
 
+/** Same cap the course grid uses. Without it this section renders every
+ * subscription product the tenant has ever had — 482 of them in the dev
+ * database, which is 35,000px of page on its own. */
+const PAGE = 12;
+
 export function Subscriptions({ products }: { products: PublicProduct[] }) {
   const router = useRouter();
   const { status } = useSession();
+  const [shown, setShown] = useState(PAGE);
 
   if (products.length === 0) return null;
+
+  const visible = products.slice(0, shown);
 
   function subscribe(planId: string) {
     if (status !== "authenticated") {
@@ -35,9 +44,12 @@ export function Subscriptions({ products }: { products: PublicProduct[] }) {
         </h2>
         <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "1.1rem" }}>
           Continuous access to a bundle of programmes, billed per period.
+          {products.length > visible.length
+            ? ` Showing ${visible.length} of ${products.length}.`
+            : ""}
         </p>
         <div className="course-grid">
-          {products.map((product) => (
+          {visible.map((product) => (
             <div className="card" key={product.id} style={{ padding: "1.05rem", display: "grid", gap: "0.5rem" }}>
               <span className="tag tag--brand" style={{ justifySelf: "start" }}>
                 Subscription
@@ -72,6 +84,16 @@ export function Subscriptions({ products }: { products: PublicProduct[] }) {
             </div>
           ))}
         </div>
+        {products.length > visible.length ? (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            style={{ marginTop: "1.1rem" }}
+            onClick={() => setShown((n) => n + PAGE)}
+          >
+            Show more subscriptions
+          </button>
+        ) : null}
       </div>
     </div>
   );
