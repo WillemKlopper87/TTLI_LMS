@@ -125,6 +125,13 @@ a {
   padding: 0.9rem clamp(1rem, 3vw, 2rem);
   border-bottom: 1px solid var(--rule);
   background: var(--surface);
+  /* Stays reachable on long pages (catalogue, resources) instead of
+     scrolling away with the content. z-index 50 is well above anything
+     else in this file (max in use elsewhere is 2) but still below a
+     future modal/dialog layer, which should claim something higher. */
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .brand-mark {
