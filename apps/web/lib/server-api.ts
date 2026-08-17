@@ -161,6 +161,27 @@ export interface PublicEpisode {
   duration_seconds: number | null;
 }
 
+
+export interface PublicSession {
+  session_id: string;
+  workshop_id: string;
+  title: string;
+  description: string | null;
+  session_type: string;
+  facilitator_name: string | null;
+  starts_at: string;
+  ends_at: string;
+  duration_minutes: number;
+  capacity: number;
+  seats_left: number;
+  is_full: boolean;
+}
+
+export async function getPublicWorkshops(): Promise<PublicSession[]> {
+  const body = await publicGet<{ items: PublicSession[] }>("/public/workshops");
+  return body?.items ?? [];
+}
+
 export async function getPublicCourses(): Promise<PublicCourse[]> {
   const body = await publicGet<{ items: PublicCourse[] }>("/public/courses");
   return body?.items ?? [];
