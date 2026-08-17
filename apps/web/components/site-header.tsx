@@ -30,13 +30,16 @@ interface NavItem {
   href: string;
 }
 
-// The public/marketing journey (prototype screens 1, 2, 4, 5).
+// The public/marketing journey. Each item is its own page: pointing
+// "Executive Programmes" at a catalogue filter and "Live Workshops" at a
+// (non-existent) catalogue anchor made three nav items render the same
+// list, and put the corporate pitch behind a login.
 const PUBLIC_NAV: NavItem[] = [
   { label: "Courses", href: "/catalogue" },
-  { label: "Executive Programmes", href: "/catalogue?level=executive" },
-  { label: "Live Workshops", href: "/catalogue#workshops" },
-  { label: "Resources", href: "/podcasts" },
-  { label: "For Organisations", href: "/organisations" },
+  { label: "Executive Programmes", href: "/executive-programmes" },
+  { label: "Live Workshops", href: "/workshops" },
+  { label: "Resources", href: "/resources" },
+  { label: "For Organisations", href: "/for-organisations" },
 ];
 
 // The signed-in learner journey (prototype screens 7, 10). There is no

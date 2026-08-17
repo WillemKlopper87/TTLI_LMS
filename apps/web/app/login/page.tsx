@@ -1,15 +1,19 @@
 import Image from "next/image";
-import Link from "next/link";
 
 import { getTheme } from "@/lib/server-api";
 
-import { LoginForm } from "./login-form";
+import { AccountTypeSignIn } from "./account-type";
+
+/** The base host organisation workspaces hang off. Configurable because
+ * it differs per deployment (localhost in dev, ttli.co.za in production);
+ * `core/tenancy.py` resolves the tenant from whatever hostname arrives. */
+const BASE_HOST = process.env.NEXT_PUBLIC_TENANT_BASE_HOST ?? "localhost:3010";
 
 export default async function LoginPage() {
   const theme = await getTheme();
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="card w-full max-w-sm" style={{ padding: "2rem" }}>
+      <div className="card w-full" style={{ padding: "2rem", maxWidth: "26rem" }}>
         {theme?.logo_url ? (
           <div className="mb-6 flex justify-center">
             <Image
@@ -28,15 +32,9 @@ export default async function LoginPage() {
             {theme?.tenant_name ?? "TTLI"}
           </div>
         )}
-        <LoginForm />
-        <p
-          className="mt-4 flex justify-center gap-3"
-          style={{ fontSize: "0.8125rem", color: "var(--muted)" }}
-        >
-          <Link href="/auth/password-reset">Forgot password?</Link>
-          <span aria-hidden="true">·</span>
-          <Link href="/auth/magic-link">Sign in with a link</Link>
-        </p>
+
+        <AccountTypeSignIn baseHost={BASE_HOST} />
+
         {theme?.support_email ? (
           <p className="mt-6 text-center" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
             Need help? {theme.support_email}
