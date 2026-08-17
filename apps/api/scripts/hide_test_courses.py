@@ -1,4 +1,4 @@
-"""Hide test-suite course artifacts from the demo tenant's catalogue.
+"""Hide test-suite artifacts (courses and podcast episodes) from the demo tenant.
 
 Years of test runs have left ~1,300 published courses named "Catalogue
 Test Course <hex>", "Subscription Test Course <hex>" and similar in the
@@ -40,10 +40,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from src.core.config import get_settings
 from src.core.db import get_sessionmaker, init_engine, set_tenant
 from src.models.course import Course, CourseTenantAssignment
+from src.models.podcast import PodcastEpisode
 
 DEMO_TENANT = uuid.UUID("019fe2ab-dab6-7bea-8f14-d3ea786a227d")
 
@@ -64,6 +65,14 @@ def _is_artifact(title: str, summary: str | None, topic: str | None) -> bool:
         return False
     lowered = title.lower()
     return "test course" in lowered or lowered.startswith("wizard ") or lowered.startswith("smoke ")
+
+
+def _is_episode_artifact(title: str) -> bool:
+    """Podcast episodes carry no editorial metadata to cross-check, so
+    the title alone decides — deliberately narrow, matching only the
+    shapes the test suite actually generates."""
+    lowered = title.lower()
+    return lowered.startswith("test episode") or "smoke test episode" in lowered
 
 
 async def main() -> None:
@@ -106,6 +115,30 @@ async def main() -> None:
         if len(keep) > 25:
             print(f"  … and {len(keep) - 25} more")
 
+        # --- Podcast episodes -------------------------------------------
+        # Same problem, different table: /public/podcasts lists every
+        # published episode, and the test suite has left ~100 named
+        # "Test Episode <hex>". Podcasts have no tenant-assignment join,
+        # so the narrowest lever here is `state` — unpublishing hides the
+        # episode without deleting it, and re-publishing restores it.
+        episodes = (
+            await session.execute(
+                select(PodcastEpisode.id, PodcastEpisode.title).where(
+                    PodcastEpisode.tenant_id == DEMO_TENANT,
+                    PodcastEpisode.state == "published",
+                )
+            )
+        ).all()
+        ep_artifacts = [e for e in episodes if _is_episode_artifact(e.title)]
+        ep_keep = [e for e in episodes if not _is_episode_artifact(e.title)]
+
+        print()
+        print(f"published episodes          : {len(episodes)}")
+        print(f"test episodes to unpublish  : {len(ep_artifacts)}")
+        print(f"episodes that stay visible  : {len(ep_keep)}")
+        for e in sorted(ep_keep, key=lambda e: e.title)[:10]:
+            print(f"  - {e.title}")
+
         if not apply:
             print()
             print("DRY RUN — nothing changed. Re-run with --apply to hide them.")
@@ -117,8 +150,15 @@ async def main() -> None:
                 CourseTenantAssignment.course_id.in_([r.id for r in artifacts]),
             )
         )
+        if ep_artifacts:
+            await session.execute(
+                update(PodcastEpisode)
+                .where(PodcastEpisode.id.in_([e.id for e in ep_artifacts]))
+                .values(state="draft")
+            )
         print()
-        print(f"APPLIED — {len(artifacts)} assignment(s) removed; courses themselves untouched.")
+        print(f"APPLIED — {len(artifacts)} course assignment(s) removed (courses untouched)")
+        print(f"          {len(ep_artifacts)} episode(s) unpublished (episodes untouched)")
 
 
 asyncio.run(main())
