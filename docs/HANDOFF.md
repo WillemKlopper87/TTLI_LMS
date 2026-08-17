@@ -2867,6 +2867,50 @@ servers, and the anti-bypass refusal exercised for real —
 60s required.` Not verified: any of it in an actual browser, the same
 disclosed limitation every previous frontend item carries.
 
+**Follow-up pass, same day: fixing three nav items that led nowhere real.**
+Walking the 11 screens live (the user asked to see them) surfaced that
+"Executive Programmes" and "Live Workshops" both pointed at views of the
+same catalogue (`?level=executive`, and `#workshops` — an anchor that
+did not exist, so it silently landed on the unfiltered catalogue), and
+"For Organisations" called `useRequireAuth()`, bouncing a prospective
+corporate buyer to a login screen before they could read the pitch.
+
+Each is now its own page with real content behind it, not a filter:
+`/executive-programmes`, `/workshops` (see below), `/for-organisations`
+(public; `/organisations` stays the authed management screen). Login
+gained an Individual/Organisation split — Organisation takes a workspace
+name and routes to that tenant's own subdomain rather than offering SSO,
+since none is implemented (feature-matrix audit has it MISSING).
+
+**A real gap this closed, not just copy:** the workshop booking API
+(`POST /sessions/{id}/book`, capacity, waitlist promotion, meeting
+links) has existed since Phase 5 with zero learner-facing UI — only the
+admin screens ever called it. `GET /public/workshops` is new (one
+endpoint, one test: unauthenticated visitor sees upcoming `scheduled`
+sessions with seat counts and no `join_url`/roster leaked; booking
+reduces the public seat count) and the `/workshops` page is the first
+place a learner can actually book one.
+
+Resources became a real section — podcast, curated recommendations
+(`PodcastEpisode.kind == "curated"`), the book, and a newsletter signup
+built on the existing lead-capture flow (`POST /leads` with
+`marketing_consent`) rather than a parallel subscriber table, since a
+subscriber is just a lead with consent and the campaign engine already
+gates sends on it correctly. Articles/blog are **designed, not built** —
+see `docs/research/resources-hub-design.md` for the full target (article
++ recommendation tables, public/admin routes, size estimates) — no table
+exists yet, and the page deliberately omits a placeholder for content
+that doesn't exist rather than showing an empty section. One real UI bug
+from this: the podcast section rendered a large blank gap when there was
+exactly one episode (it becomes the hero card, leaving the list below
+empty while the heading still drew) — caught by screenshotting the page,
+not by any gate.
+
+Verified: `apps/web` typecheck clean throughout, all eight public routes
+(`/`, `/catalogue`, `/executive-programmes`, `/workshops`, `/resources`,
+`/for-organisations`, `/login`, `/podcasts`) return 200, and the new
+workshops test passes alongside the other five in `test_workshops.py`.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
