@@ -28,6 +28,8 @@ const WORKING_SECTIONS = [
   { label: "Courses", href: "/admin/courses" },
   { label: "Catalogue", href: "/admin/catalogue" },
   { label: "Podcasts", href: "/admin/podcasts" },
+  { label: "Articles", href: "/admin/articles" },
+  { label: "Recommendations", href: "/admin/recommendations" },
   { label: "Grading", href: "/admin/grading" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
