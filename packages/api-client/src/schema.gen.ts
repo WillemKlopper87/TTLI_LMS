@@ -637,9 +637,11 @@ export interface paths {
         /**
          * Progress Report
          * @description REQ-TEN-03's report: response shape is determined by policy, not
-         *     by query parameters — a caller who fails any of the three
-         *     conditions gets an empty `learners` list, never present-and-redacted
-         *     rows (04 §2.3's P2, 03 §9).
+         *     by query parameters. A caller who fails any of the three conditions
+         *     still gets the participation list — with every score withheld
+         *     (`score_hidden: true`, `best_quiz_score: null`) and the email masked.
+         *     See `services/reports.py`'s module docstring for why that line moved
+         *     from "no rows at all" to "rows without scores".
          */
         get: operations["progress_report_api_v1_organisations__organisation_id__reports_progress_get"];
         put?: never;
@@ -1080,7 +1082,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Module */
+        delete: operations["delete_module_api_v1_modules__module_id__delete"];
         options?: never;
         head?: never;
         /** Update Module */
@@ -1112,10 +1115,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Lesson
+         * @description Author-side single-lesson read (`course:edit`) — what the draft
+         *     "view as learner" preview falls back to when the public preview
+         *     endpoint correctly refuses an unpublished/non-public lesson.
+         */
+        get: operations["get_lesson_api_v1_lessons__lesson_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Lesson */
+        delete: operations["delete_lesson_api_v1_lessons__lesson_id__delete"];
         options?: never;
         head?: never;
         /** Update Lesson */
@@ -1156,6 +1166,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every published course this tenant offers, no auth required
+         * @description The catalogue / landing grid. Facet counts (topic / format /
+         *     includes / level) are computed client-side from these rows — the
+         *     list is small by construction (a tenant's assigned, published
+         *     courses), so one round trip beats a facet endpoint.
+         */
+        get: operations["list_public_courses_api_v1_public_courses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/courses/{course_id}/curriculum": {
         parameters: {
             query?: never;
@@ -1185,6 +1218,129 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Course Outline */
+        get: operations["get_course_outline_api_v1_courses__course_id__outline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Course Readiness */
+        get: operations["get_course_readiness_api_v1_courses__course_id__readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate Course */
+        post: operations["duplicate_course_api_v1_courses__course_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/clear-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Course Templates */
+        post: operations["clear_course_templates_api_v1_courses__course_id__clear_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/modules/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Modules */
+        post: operations["reorder_modules_api_v1_courses__course_id__modules_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/{module_id}/lessons/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Lessons */
+        post: operations["reorder_lessons_api_v1_modules__module_id__lessons_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Detach Lesson Activity
+         * @description Revert a lesson to a plain document — the reverse of the four
+         *     attach endpoints. The activity itself is kept.
+         */
+        delete: operations["detach_lesson_activity_api_v1_lessons__lesson_id__activity_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1588,6 +1744,23 @@ export interface paths {
         };
         /** Per-lesson progress for one of the caller's enrolments */
         get: operations["get_progress_api_v1_enrolments__enrolment_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learn/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everything the learner's signed-in landing screen renders */
+        get: operations["get_dashboard_api_v1_learn_dashboard_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2555,6 +2728,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/revenue-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Paid vs waiting, payment methods, actual and predicted revenue for a period */
+        get: operations["revenue_summary_api_v1_analytics_revenue_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Registrations in a period, by package and by organisation */
+        get: operations["registrations_api_v1_analytics_registrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/revenue-summary/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CSV of the revenue summary, same rows as the JSON report */
+        get: operations["revenue_summary_csv_api_v1_analytics_revenue_summary_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/registrations/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CSV of the registrations report, same rows as the JSON report */
+        get: operations["registrations_csv_api_v1_analytics_registrations_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2966,6 +3207,19 @@ export interface components {
             /** Customer Type */
             customer_type: string;
         };
+        /** ClearTemplatesRequest */
+        ClearTemplatesRequest: {
+            /**
+             * Certificate
+             * @default false
+             */
+            certificate: boolean;
+            /**
+             * Badge
+             * @default false
+             */
+            badge: boolean;
+        };
         /** CourseCreateRequest */
         CourseCreateRequest: {
             /** Title */
@@ -2978,6 +3232,31 @@ export interface components {
             completion_rules?: {
                 [key: string]: unknown;
             };
+            /** Summary */
+            summary?: string | null;
+            /** Level */
+            level?: string | null;
+            /** Topic */
+            topic?: string | null;
+            /** Format */
+            format?: string | null;
+            /** Outcomes */
+            outcomes?: string[] | null;
+            /** Includes Workshop */
+            includes_workshop?: boolean | null;
+            /** Hero Colour */
+            hero_colour?: string | null;
+        };
+        /** CourseOutlineResponse */
+        CourseOutlineResponse: {
+            /** Course Id */
+            course_id: string;
+            /** Modules */
+            modules: components["schemas"]["ModuleOutlineRow"][];
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Lesson Count */
+            lesson_count: number;
         };
         /** CourseResponse */
         CourseResponse: {
@@ -3001,6 +3280,23 @@ export interface components {
             certificate_template_id: string | null;
             /** Badge Template Id */
             badge_template_id: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Level */
+            level?: string | null;
+            /** Topic */
+            topic?: string | null;
+            /** Format */
+            format?: string | null;
+            /** Outcomes */
+            outcomes?: string[];
+            /**
+             * Includes Workshop
+             * @default false
+             */
+            includes_workshop: boolean;
+            /** Hero Colour */
+            hero_colour?: string | null;
         };
         /**
          * CourseUpdateRequest
@@ -3020,6 +3316,20 @@ export interface components {
             certificate_template_id?: string | null;
             /** Badge Template Id */
             badge_template_id?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Level */
+            level?: string | null;
+            /** Topic */
+            topic?: string | null;
+            /** Format */
+            format?: string | null;
+            /** Outcomes */
+            outcomes?: string[] | null;
+            /** Includes Workshop */
+            includes_workshop?: boolean | null;
+            /** Hero Colour */
+            hero_colour?: string | null;
         };
         /** CoursesPageResponse */
         CoursesPageResponse: {
@@ -3136,6 +3446,105 @@ export interface components {
              */
             default_duration_minutes: number;
         };
+        /** DashboardCertificate */
+        DashboardCertificate: {
+            /** Certificate Id */
+            certificate_id: string;
+            /** Certificate Number */
+            certificate_number: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Status */
+            status: string;
+        };
+        /** DashboardEnrolment */
+        DashboardEnrolment: {
+            /** Enrolment Id */
+            enrolment_id: string;
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Hero Colour */
+            hero_colour?: string | null;
+            /** Status */
+            status: string;
+            /** Progress Percent */
+            progress_percent: number;
+            /** Lessons Total */
+            lessons_total: number;
+            /** Lessons Completed */
+            lessons_completed: number;
+            next_lesson?: components["schemas"]["DashboardNextLesson"] | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            certificate?: components["schemas"]["DashboardCertificate"] | null;
+        };
+        /** DashboardNextLesson */
+        DashboardNextLesson: {
+            /** Lesson Id */
+            lesson_id: string;
+            /** Title */
+            title: string;
+            /** Module Title */
+            module_title: string;
+            /** Position Label */
+            position_label: string;
+        };
+        /** DashboardResponse */
+        DashboardResponse: {
+            /** First Name */
+            first_name?: string | null;
+            /** Initials */
+            initials: string;
+            /** Enrolments */
+            enrolments?: components["schemas"]["DashboardEnrolment"][];
+            stats: components["schemas"]["DashboardStats"];
+            /** Upcoming */
+            upcoming?: components["schemas"]["DashboardUpcoming"][];
+        };
+        /** DashboardStats */
+        DashboardStats: {
+            /** In Progress */
+            in_progress: number;
+            /** Completed */
+            completed: number;
+            /** Certificates */
+            certificates: number;
+            /** Workshop Credits */
+            workshop_credits: number;
+        };
+        /**
+         * DashboardUpcoming
+         * @description A workshop session the learner is registered for, or an assessment
+         *     sitting open in a course they are part-way through. One shape for
+         *     both, because the dashboard renders them in one list.
+         */
+        DashboardUpcoming: {
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Subtitle */
+            subtitle: string;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Join Url */
+            join_url?: string | null;
+            /** Enrolment Id */
+            enrolment_id?: string | null;
+            /** Lesson Id */
+            lesson_id?: string | null;
+            /** Quiz Id */
+            quiz_id?: string | null;
+            /** Attempts Remaining */
+            attempts_remaining?: number | null;
+        };
         /** DealDetailResponse */
         DealDetailResponse: {
             deal: components["schemas"]["DealResponse"];
@@ -3176,6 +3585,11 @@ export interface components {
             limit: number;
             /** Offset */
             offset: number;
+        };
+        /** DuplicateCourseRequest */
+        DuplicateCourseRequest: {
+            /** Title */
+            title?: string | null;
         };
         /** EftCheckoutResponse */
         EftCheckoutResponse: {
@@ -3218,6 +3632,18 @@ export interface components {
             course_title: string;
             /** Lessons */
             lessons: components["schemas"]["LessonProgressResponse"][];
+            /**
+             * Progress Percent
+             * @default 0
+             */
+            progress_percent: number;
+            /** Next Lesson Id */
+            next_lesson_id?: string | null;
+            /**
+             * Estimated Minutes
+             * @default 0
+             */
+            estimated_minutes: number;
         };
         /** FacilitatorResponse */
         FacilitatorResponse: {
@@ -3259,12 +3685,24 @@ export interface components {
             /** Session Id */
             session_id: string;
         };
-        /** HeartbeatResponse */
+        /**
+         * HeartbeatResponse
+         * @description The raw counters, plus what the player's progress ring needs to
+         *     render the completion rule it is being measured against without a
+         *     second round trip. All three additions are null when the lesson has
+         *     no video asset, no known duration, or no watch-percentage rule.
+         */
         HeartbeatResponse: {
             /** Furthest Position Seconds */
             furthest_position_seconds: string;
             /** Watched Seconds */
             watched_seconds: string;
+            /** Watched Percentage */
+            watched_percentage?: number | null;
+            /** Required Percentage */
+            required_percentage?: number | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
         };
         /** InvoiceResponse */
         InvoiceResponse: {
@@ -3376,18 +3814,52 @@ export interface components {
             /** Offset */
             offset: number;
         };
-        /** LearnerRowResponse */
+        /**
+         * LearnerRowResponse
+         * @description One assigned seat. Always present — participation is not the thing
+         *     REQ-TEN-03 withholds; the *score* is (`score_hidden`, and
+         *     `best_quiz_score` null with it). `email` is masked, and `display_name`
+         *     falls back to that mask, whenever the score is hidden.
+         */
         LearnerRowResponse: {
             /** User Id */
             user_id: string;
             /** Email */
             email: string;
+            /** Display Name */
+            display_name: string;
             /** Status */
             status: string;
+            /** Progress Percent */
+            progress_percent: number;
+            /** Last Active At */
+            last_active_at: string | null;
             /** Completed At */
             completed_at: string | null;
             /** Best Quiz Score */
             best_quiz_score: string | null;
+            /** Score Hidden */
+            score_hidden: boolean;
+        };
+        /**
+         * LessonCheckResponse
+         * @description One completion rule, met or not. `unmet_requirements` stays the
+         *     flat refusal-reason list it always was; this is the full checklist —
+         *     cleared rules included — with a short pair of display values
+         *     ("41%" / "80%", "5:19" / "10:00") where a rule has numbers worth
+         *     showing, and nulls where it does not.
+         */
+        LessonCheckResponse: {
+            /** Rule */
+            rule: string;
+            /** Met */
+            met: boolean;
+            /** Reason */
+            reason: string;
+            /** Current */
+            current?: string | null;
+            /** Required */
+            required?: string | null;
         };
         /** LessonCompleteResponse */
         LessonCompleteResponse: {
@@ -3412,18 +3884,38 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** LessonOutlineRow */
+        LessonOutlineRow: {
+            lesson: components["schemas"]["LessonResponse"];
+            /** Video State */
+            video_state: string | null;
+            /** Video Duration Seconds */
+            video_duration_seconds: number | null;
+            /** Video Has Captions */
+            video_has_captions: boolean;
+            /** Question Count */
+            question_count: number | null;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+        };
         /** LessonProgressResponse */
         LessonProgressResponse: {
             /** Lesson Id */
             lesson_id: string;
+            /** Module Id */
+            module_id: string;
             /** Module Title */
             module_title: string;
+            /** Module Position */
+            module_position: number;
             /** Title */
             title: string;
             /** Position */
             position: number;
             /** Activity Type */
             activity_type: string;
+            /** Estimated Minutes */
+            estimated_minutes: number;
             /** Video Asset Id */
             video_asset_id: string | null;
             /** Quiz Id */
@@ -3436,6 +3928,8 @@ export interface components {
             state: string;
             /** Unmet Requirements */
             unmet_requirements: string[];
+            /** Checks */
+            checks?: components["schemas"]["LessonCheckResponse"][];
         };
         /** LessonResponse */
         LessonResponse: {
@@ -3547,7 +4041,14 @@ export interface components {
             /** Status */
             status: string;
         };
-        /** MeResponse */
+        /**
+         * MeResponse
+         * @description The signed-in shell's whole identity payload: who the caller is,
+         *     what they may do, and — for a guest — how long they still have.
+         *     `full_name`/`first_name` are null for the many accounts checkout and
+         *     guest flows never captured a name for; `initials` never is (see
+         *     services/identity.py::display_identity).
+         */
         MeResponse: {
             /** User Id */
             user_id: string;
@@ -3559,6 +4060,21 @@ export interface components {
             email: string;
             /** Permissions */
             permissions: string[];
+            /** Full Name */
+            full_name?: string | null;
+            /** First Name */
+            first_name?: string | null;
+            /** Initials */
+            initials: string;
+            /**
+             * Is Guest
+             * @default false
+             */
+            is_guest: boolean;
+            /** Guest Expires At */
+            guest_expires_at?: string | null;
+            /** Guest Days Left */
+            guest_days_left?: number | null;
         };
         /** MemberResponse */
         MemberResponse: {
@@ -3607,6 +4123,12 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** ModuleOutlineRow */
+        ModuleOutlineRow: {
+            module: components["schemas"]["ModuleResponse"];
+            /** Lessons */
+            lessons: components["schemas"]["LessonOutlineRow"][];
+        };
         /** ModuleResponse */
         ModuleResponse: {
             /** Id */
@@ -3629,6 +4151,13 @@ export interface components {
         ModulesPageResponse: {
             /** Items */
             items: components["schemas"]["ModuleResponse"][];
+        };
+        /** MoneyByCurrency */
+        MoneyByCurrency: {
+            /** Currency */
+            currency: string;
+            /** Amount */
+            amount: string;
         };
         /** NoteResponse */
         NoteResponse: {
@@ -3697,6 +4226,15 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** OrganisationRow */
+        OrganisationRow: {
+            /** Organisation Id */
+            organisation_id: string | null;
+            /** Organisation Name */
+            organisation_name: string;
+            /** User Count */
+            user_count: number;
+        };
         /** OwnEnrolmentResponse */
         OwnEnrolmentResponse: {
             /** Enrolment Id */
@@ -3709,6 +4247,30 @@ export interface components {
             started_at: string | null;
             /** Completed At */
             completed_at: string | null;
+        };
+        /** PackageRow */
+        PackageRow: {
+            /** Package Label */
+            package_label: string;
+            /** User Count */
+            user_count: number;
+        };
+        /**
+         * PaidVsWaitingResponse
+         * @description Buyers in the period, bucketed by their most recent order's status:
+         *     `fulfilled` -> paid; any pending/awaiting state -> awaiting_payment;
+         *     rejected/cancelled/refunded -> did_not_convert (kept as a third bucket
+         *     rather than folded into either side — §12.5).
+         */
+        PaidVsWaitingResponse: {
+            /** Paid */
+            paid: number;
+            /** Awaiting Payment */
+            awaiting_payment: number;
+            /** Did Not Convert */
+            did_not_convert: number;
+            /** Total Users */
+            total_users: number;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -3786,6 +4348,26 @@ export interface components {
         PendingSubmissionsResponse: {
             /** Items */
             items: components["schemas"]["PendingSubmissionItem"][];
+        };
+        /**
+         * PeriodResponse
+         * @description The server-resolved window `[from, to)` every figure below was
+         *     computed over — echoed back so the report can state exactly what it
+         *     covers rather than the client re-deriving it.
+         */
+        PeriodResponse: {
+            /** Preset */
+            preset: string | null;
+            /**
+             * From
+             * Format: date-time
+             */
+            from: string;
+            /**
+             * To
+             * Format: date-time
+             */
+            to: string;
         };
         /** PlanCourseRequest */
         PlanCourseRequest: {
@@ -3936,6 +4518,27 @@ export interface components {
             /** Source */
             source?: string | null;
         };
+        /**
+         * PredictedRevenueResponse
+         * @description Two labelled components plus their sum. `pipeline` is orders still
+         *     awaiting payment/approval (not risk-weighted — there is no stored
+         *     conversion-rate to weight by); `subscription_renewals` is plan list
+         *     price for every active, non-cancelling subscription whose current
+         *     period ends inside the window — a forecast of expected billing, not
+         *     a guarantee (renewals still go through manual EFT/PO approval).
+         */
+        PredictedRevenueResponse: {
+            /** Pipeline */
+            pipeline: components["schemas"]["MoneyByCurrency"][];
+            /** Pipeline Order Count */
+            pipeline_order_count: number;
+            /** Subscription Renewals */
+            subscription_renewals: components["schemas"]["MoneyByCurrency"][];
+            /** Subscription Renewal Count */
+            subscription_renewal_count: number;
+            /** Total */
+            total: components["schemas"]["MoneyByCurrency"][];
+        };
         /** PriceCreateRequest */
         PriceCreateRequest: {
             /** Currency */
@@ -4017,10 +4620,69 @@ export interface components {
             completed: number;
             /** Completion Rate */
             completion_rate: number;
+            /** Average Progress */
+            average_progress: number;
+            /** At Risk */
+            at_risk: number;
             /** Individual Visible */
             individual_visible: boolean;
             /** Learners */
             learners: components["schemas"]["LearnerRowResponse"][];
+        };
+        /** ProviderBreakdownRow */
+        ProviderBreakdownRow: {
+            /** Provider */
+            provider: string;
+            /** Payment Count */
+            payment_count: number;
+            /** Amount */
+            amount: components["schemas"]["MoneyByCurrency"][];
+        };
+        /**
+         * PublicCourseCard
+         * @description One row of `GET /public/courses` — the catalogue/landing grid.
+         *     Every facet the prototype filters on (topic / format / includes /
+         *     level) is here so the client can compute counts itself.
+         */
+        PublicCourseCard: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string | null;
+            /** Description */
+            description: string | null;
+            /** Level */
+            level: string | null;
+            /** Topic */
+            topic: string | null;
+            /** Format */
+            format: string | null;
+            /** Outcomes */
+            outcomes: string[];
+            /** Includes Workshop */
+            includes_workshop: boolean;
+            /** Has Certificate */
+            has_certificate: boolean;
+            /** Cpd Points */
+            cpd_points: number | null;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Module Count */
+            module_count: number;
+            /** Lesson Count */
+            lesson_count: number;
+            /** Hero Colour */
+            hero_colour: string | null;
+            price: components["schemas"]["PublicPrice"] | null;
+        };
+        /** PublicCoursesResponse */
+        PublicCoursesResponse: {
+            /** Items */
+            items: components["schemas"]["PublicCourseCard"][];
         };
         /** PublicCurriculumResponse */
         PublicCurriculumResponse: {
@@ -4032,6 +4694,41 @@ export interface components {
             description: string | null;
             /** Modules */
             modules: components["schemas"]["PublicModuleRow"][];
+            /** Summary */
+            summary?: string | null;
+            /** Level */
+            level?: string | null;
+            /** Topic */
+            topic?: string | null;
+            /** Format */
+            format?: string | null;
+            /** Outcomes */
+            outcomes?: string[];
+            /**
+             * Includes Workshop
+             * @default false
+             */
+            includes_workshop: boolean;
+            /**
+             * Has Certificate
+             * @default false
+             */
+            has_certificate: boolean;
+            /** Cpd Points */
+            cpd_points?: number | null;
+            /**
+             * Estimated Minutes
+             * @default 0
+             */
+            estimated_minutes: number;
+            /**
+             * Lesson Count
+             * @default 0
+             */
+            lesson_count: number;
+            /** Hero Colour */
+            hero_colour?: string | null;
+            price?: components["schemas"]["PublicPrice"] | null;
         };
         /** PublicLessonPreviewResponse */
         PublicLessonPreviewResponse: {
@@ -4068,6 +4765,16 @@ export interface components {
             activity_type: string;
             /** Access Level */
             access_level: string;
+            /**
+             * Estimated Minutes
+             * @default 0
+             */
+            estimated_minutes: number;
+            /**
+             * Is Preview
+             * @default false
+             */
+            is_preview: boolean;
         };
         /** PublicModuleRow */
         PublicModuleRow: {
@@ -4079,6 +4786,38 @@ export interface components {
             position: number;
             /** Lessons */
             lessons: components["schemas"]["PublicLessonRow"][];
+            /**
+             * Estimated Minutes
+             * @default 0
+             */
+            estimated_minutes: number;
+            /**
+             * Lesson Count
+             * @default 0
+             */
+            lesson_count: number;
+        };
+        /**
+         * PublicPrice
+         * @description The first active, priced product selling this course to *this*
+         *     tenant — what the catalogue card / detail page's price block shows.
+         *     Mirrors `schemas/commerce.py::PriceSummary` (`unit_amount` as a
+         *     string so no float rounding on the wire) plus the product it hangs
+         *     off, so "Enrol" can go straight to `POST /orders`.
+         */
+        PublicPrice: {
+            /** Product Id */
+            product_id: string;
+            /** Price Id */
+            price_id: string;
+            /** Currency */
+            currency: string;
+            /** Unit Amount */
+            unit_amount: string;
+            /** Tax Behaviour */
+            tax_behaviour: string;
+            /** Includes Vat */
+            includes_vat: boolean;
         };
         /**
          * PushSubscribeRequest
@@ -4112,16 +4851,35 @@ export interface components {
             /** Text Answer */
             text_answer?: string | null;
         };
-        /** QuizAttemptResponse */
+        /**
+         * QuizAttemptResponse
+         * @description The learner's view of a freshly started attempt. The quiz's own
+         *     settings ride along so the sitting screen can state the pass mark and
+         *     what is left before the learner commits — `attempts_remaining` counts
+         *     what is left *after* this attempt, computed the same way
+         *     `services/quiz.py::start_attempt` enforces the limit.
+         */
         QuizAttemptResponse: {
             /** Attempt Id */
             attempt_id: string;
             /** Quiz Id */
             quiz_id: string;
+            /** Quiz Title */
+            quiz_title: string;
             /** Attempt Number */
             attempt_number: number;
             /** Time Limit Seconds */
             time_limit_seconds: number | null;
+            /** Pass Score */
+            pass_score: number;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Attempts Remaining */
+            attempts_remaining: number;
+            /** Randomise Questions */
+            randomise_questions: boolean;
+            /** Randomise Options */
+            randomise_options: boolean;
             /** Questions */
             questions: components["schemas"]["QuizQuestionView"][];
         };
@@ -4303,6 +5061,34 @@ export interface components {
             /** Items */
             items: components["schemas"]["QuizListItem"][];
         };
+        /** ReadinessCheckRow */
+        ReadinessCheckRow: {
+            /** Code */
+            code: string;
+            /** Level */
+            level: string;
+            /** Ok */
+            ok: boolean;
+            /** Message */
+            message: string;
+        };
+        /** ReadinessResponse */
+        ReadinessResponse: {
+            /** Course Id */
+            course_id: string;
+            /** Publishable */
+            publishable: boolean;
+            /** Score */
+            score: number;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Module Count */
+            module_count: number;
+            /** Lesson Count */
+            lesson_count: number;
+            /** Checks */
+            checks: components["schemas"]["ReadinessCheckRow"][];
+        };
         /** RecordBounceRequest */
         RecordBounceRequest: {
             /** Email Send Id */
@@ -4340,6 +5126,16 @@ export interface components {
              */
             processed_at: string;
         };
+        /** RegistrationsResponse */
+        RegistrationsResponse: {
+            period: components["schemas"]["PeriodResponse"];
+            /** Total Registered */
+            total_registered: number;
+            /** By Package */
+            by_package: components["schemas"]["PackageRow"][];
+            /** By Organisation */
+            by_organisation: components["schemas"]["OrganisationRow"][];
+        };
         /** RejectPaymentRequest */
         RejectPaymentRequest: {
             /** Reason */
@@ -4351,6 +5147,28 @@ export interface components {
             currency: string;
             /** Customer Type */
             customer_type: string;
+        };
+        /**
+         * ReorderRequest
+         * @description Every sibling id exactly once, in the desired order.
+         */
+        ReorderRequest: {
+            /** Ordered Ids */
+            ordered_ids: string[];
+        };
+        /** RevenueSummaryResponse */
+        RevenueSummaryResponse: {
+            period: components["schemas"]["PeriodResponse"];
+            paid_vs_waiting: components["schemas"]["PaidVsWaitingResponse"];
+            /** Payment Methods */
+            payment_methods: components["schemas"]["ProviderBreakdownRow"][];
+            /** Actual Revenue */
+            actual_revenue: components["schemas"]["MoneyByCurrency"][];
+            /** Payments Received */
+            payments_received: components["schemas"]["MoneyByCurrency"][];
+            /** Refunds Issued */
+            refunds_issued: components["schemas"]["MoneyByCurrency"][];
+            predicted_revenue: components["schemas"]["PredictedRevenueResponse"];
         };
         /** RevokeCertificateRequest */
         RevokeCertificateRequest: {
@@ -4877,7 +5695,17 @@ export interface components {
             /** Public Key */
             public_key?: string | null;
         };
-        /** VerificationResponse */
+        /**
+         * VerificationResponse
+         * @description What the public `/verify/{token}` page renders. Every field is null
+         *     on a miss — and a `private` certificate is deliberately a miss (see
+         *     services/credentials.py::verify), so none of the additions here can
+         *     leak a credential the holder chose not to publish.
+         *
+         *     `programme_title` is an alias of `course_title`, not a second fact:
+         *     the verify page speaks the customer's vocabulary ("programme") while
+         *     the rest of the API speaks the data model's ("course").
+         */
         VerificationResponse: {
             /** Found */
             found: boolean;
@@ -4885,12 +5713,22 @@ export interface components {
             holder_name?: string | null;
             /** Course Title */
             course_title?: string | null;
+            /** Programme Title */
+            programme_title?: string | null;
             /** Issued At */
             issued_at?: string | null;
             /** Expires At */
             expires_at?: string | null;
             /** Status */
             status?: string | null;
+            /** Credential Id */
+            credential_id?: string | null;
+            /** Issuer Name */
+            issuer_name?: string | null;
+            /** Cpd Points */
+            cpd_points?: number | null;
+            /** Visibility */
+            visibility?: string | null;
         };
         /** VideoAssetResponse */
         VideoAssetResponse: {
@@ -6967,6 +7805,35 @@ export interface operations {
             };
         };
     };
+    delete_module_api_v1_modules__module_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_module_api_v1_modules__module_id__patch: {
         parameters: {
             query?: never;
@@ -7056,6 +7923,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LessonResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lesson_api_v1_lessons__lesson_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_lesson_api_v1_lessons__lesson_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -7158,6 +8085,26 @@ export interface operations {
             };
         };
     };
+    list_public_courses_api_v1_public_courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicCoursesResponse"];
+                };
+            };
+        };
+    };
     get_public_curriculum_api_v1_public_courses__course_id__curriculum_get: {
         parameters: {
             query?: never;
@@ -7207,6 +8154,239 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicLessonPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_course_outline_api_v1_courses__course_id__outline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseOutlineResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_course_readiness_api_v1_courses__course_id__readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_course_api_v1_courses__course_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_course_templates_api_v1_courses__course_id__clear_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearTemplatesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_modules_api_v1_courses__course_id__modules_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModulesPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_lessons_api_v1_modules__module_id__lessons_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonsPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detach_lesson_activity_api_v1_lessons__lesson_id__activity_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8144,6 +9324,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_api_v1_learn_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardResponse"];
                 };
             };
         };
@@ -10039,6 +11239,150 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_summary_api_v1_analytics_revenue_summary_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registrations_api_v1_analytics_registrations_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_summary_csv_api_v1_analytics_revenue_summary_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registrations_csv_api_v1_analytics_registrations_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
