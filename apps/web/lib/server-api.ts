@@ -232,3 +232,8 @@ export async function getPublicArticles(): Promise<PublicArticle[]> {
 export async function getPublicArticle(slug: string): Promise<PublicArticle | null> {
   return publicGet<PublicArticle>(`/public/articles/${encodeURIComponent(slug)}`);
 }
+
+export async function getPublicRecommendations(): Promise<PublicRecommendation[]> {
+  const body = await publicGet<{ items: PublicRecommendation[] }>("/public/recommendations");
+  return body?.items ?? [];
+}

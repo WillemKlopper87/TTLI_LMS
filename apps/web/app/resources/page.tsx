@@ -1,39 +1,79 @@
 import Link from "next/link";
 
 import { formatClock } from "@/lib/format";
-import { getPublicArticles, getPublicCourses, getPublicEpisodes } from "@/lib/server-api";
+import {
+  getPublicArticles,
+  getPublicCourses,
+  getPublicEpisodes,
+  getPublicRecommendations,
+} from "@/lib/server-api";
 
 import { NewsletterSignup } from "./newsletter-signup";
 
+// Defense in depth for a raw <a href> — the backend already refuses
+// anything but http(s):// at write time (both podcasts' external_url and
+// recommendations' url), but the value still reaches this component as
+// untyped API JSON. Same check `podcasts/[slug]/page.tsx` already has.
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The resources hub (design doc §5 item 21, stage 2 per
+ * The resources hub (design doc §5 item 21, stages 2-3 per
  * `docs/research/resources-hub-design.md`). "Resources" used to point
  * straight at /podcasts — a bare list of episodes, which is a content
  * type rather than a section.
  *
  * This is the section: TTLI's own episodes, the third-party work the
- * faculty actually recommends (the podcast model already distinguishes
- * `authored` from `curated`), articles, the book, and the newsletter.
- * Articles are folded straight into this page rather than given their
- * own listing route yet — the design doc's own recommendation, matching
- * the pattern the podcast section itself used before volume justified
- * `/podcasts` as a separate page.
+ * faculty actually recommends (curated podcast episodes *and* the
+ * structured `recommendations` list, merged into one visual list per the
+ * design doc §3.2 — the reader doesn't need "recommended episode" and
+ * "recommended link" as two separate headings), articles, the book, and
+ * the newsletter. Articles and recommendations are folded straight into
+ * this page rather than given their own listing route yet — the design
+ * doc's own recommendation, matching the pattern the podcast section
+ * itself used before volume justified `/podcasts` as a separate page.
  */
 export const metadata = {
   title: "Resources",
 };
 
 export default async function ResourcesPage() {
-  const [episodes, courses, articles] = await Promise.all([
+  const [episodes, courses, articles, recommendations] = await Promise.all([
     getPublicEpisodes().catch(() => []),
     getPublicCourses().catch(() => []),
     getPublicArticles().catch(() => []),
+    getPublicRecommendations().catch(() => []),
   ]);
 
   const authored = episodes.filter((e) => e.kind === "authored");
   const curated = episodes.filter((e) => e.kind === "curated");
   const latest = authored[0] ?? episodes[0] ?? null;
   const rest = episodes.filter((e) => e.slug !== latest?.slug);
+
+  const recommended = [
+    ...curated.map((e) => ({
+      key: `episode:${e.slug}`,
+      title: e.title,
+      note: e.curator_name ? `Recommended by ${e.curator_name}` : "",
+      href: `/podcasts/${e.slug}`,
+      external: false,
+    })),
+    ...recommendations.map((r) => ({
+      key: `link:${r.id}`,
+      title: r.title,
+      note: [r.source_name, r.curator_name ? `via ${r.curator_name}` : null]
+        .filter(Boolean)
+        .join(" · "),
+      href: r.url,
+      external: true,
+    })),
+  ];
 
   return (
     <main>
