@@ -25,6 +25,7 @@ from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.routers import (
     analytics,
+    articles,
     assessment,
     auth,
     campaigns,
@@ -135,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(assessment.router, prefix="/api/v1")
     app.include_router(credentials.router, prefix="/api/v1")
     app.include_router(podcasts.router, prefix="/api/v1")
+    app.include_router(articles.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
 
