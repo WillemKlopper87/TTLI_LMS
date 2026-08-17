@@ -47,6 +47,7 @@ from src.core.db import get_sessionmaker, init_engine, set_tenant
 from src.models.article import Article
 from src.models.course import Course, CourseTenantAssignment
 from src.models.podcast import PodcastEpisode
+from src.models.recommendation import Recommendation
 
 TEST_PATTERNS = [
     "Catalogue Test Course%",
@@ -79,6 +80,12 @@ def _is_article_artifact(title: str) -> bool:
     """Same shape as `_is_episode_artifact` — `tests/test_articles.py`'s
     `_unique_title()` generates "Test Article <hex>"."""
     return title.lower().startswith("test article")
+
+
+def _is_recommendation_artifact(title: str) -> bool:
+    """Same shape again — `tests/test_recommendations.py`'s
+    `_unique_title()` generates "Test Recommendation <hex>"."""
+    return title.lower().startswith("test recommendation")
 
 
 DEMO_TENANT: uuid.UUID  # set in main() from the database
@@ -185,6 +192,28 @@ async def main() -> None:
         print(f"articles that stay visible  : {len(art_keep)}")
         for a in sorted(art_keep, key=lambda a: a.title)[:10]:
             print(f"  - {a.title}")
+
+        # --- Recommendations ------------------------------------------------
+        # Same lever again: /public/recommendations lists every published
+        # row, and tests/test_recommendations.py leaves "Test
+        # Recommendation <hex>" rows behind.
+        recommendations = (
+            await session.execute(
+                select(Recommendation.id, Recommendation.title).where(
+                    Recommendation.tenant_id == DEMO_TENANT,
+                    Recommendation.state == "published",
+                )
+            )
+        ).all()
+        rec_artifacts = [r for r in recommendations if _is_recommendation_artifact(r.title)]
+        rec_keep = [r for r in recommendations if not _is_recommendation_artifact(r.title)]
+
+        print()
+        print(f"published recommendations   : {len(recommendations)}")
+        print(f"test recommendations to hide: {len(rec_artifacts)}")
+        print(f"recommendations that stay   : {len(rec_keep)}")
+        for r in sorted(rec_keep, key=lambda r: r.title)[:10]:
+            print(f"  - {r.title}")
 
         if not apply:
             print()

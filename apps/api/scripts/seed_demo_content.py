@@ -505,9 +505,11 @@ async def main() -> None:
         print(f"seeded episode {EPISODE_SLUG}")
         await _article(session, first_course_id)
         print(f"seeded article {ARTICLE_SLUG}")
+        await _recommendation(session, first_course_id)
+        print(f"seeded recommendation {RECOMMENDATION_TITLE}")
     print(
         f"done — {len(PROGRAMMES)} programmes published, assigned and priced, "
-        "1 episode, 1 article"
+        "1 episode, 1 article, 1 recommendation"
     )
 
 
