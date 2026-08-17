@@ -2978,6 +2978,65 @@ smoke test through the actual restarted dev servers — `GET
 section and heading hierarchy screenshotted and confirmed correct,
 `/resources/articles/does-not-exist` correctly 404s.
 
+**Follow-up pass, same day: resources-hub stage 3 — recommendations, the
+last piece of the design doc.** `0031` adds `recommendations` (same
+tenant-scoped/RLS/`podcast:manage` shape as `articles`), one size smaller —
+no body, no reading time, no slug, no detail route (design doc §3.1: it
+links out, it doesn't host a page). `url` gets the same http(s)-only
+`javascript:`/`data:` refusal `external_url` has on podcasts, since it's
+rendered back out as a raw `<a href>`. 4 new tests in
+`test_recommendations.py`.
+
+**The actual point of stage 3, per the design doc §3.2**: curated podcast
+episodes and this new table now render as *one* merged list in "What our
+facilitators recommend" on `/resources`, not two headings — a reader
+doesn't need to know one is episode-shaped and the other is a bare link.
+`apps/web/app/resources/page.tsx` normalises both into a common
+`{title, note, href, external}` shape before rendering; external rows get
+the same `isSafeHttpUrl` defensive check `podcasts/[slug]/page.tsx`
+already has on `target="_blank"` anchors.
+
+**Two real incidents this pass, neither in the new code.** (1) Mid-build,
+the user reported the live site's styling was broken and content missing.
+Root cause: `npm run build` (a production build, run earlier to verify
+stage 2) writes to the same `.next/` directory `npm run dev` was actively
+serving from — running both against one `apps/web` checkout corrupts the
+dev server's output. Fixed by killing both stale processes, deleting
+`.next`, and restarting `dev` clean; confirmed via a fresh screenshot.
+Lesson: never run `next build` in the same checkout as a live `next dev`
+you intend to keep serving — use a second worktree/checkout, or only build
+right before deploying. (2) Chasing that fix surfaced the API dev server
+was *also* stale (started before this pass added the `recommendations`
+router, no `--reload`) — the same "silently serving old code" near-miss
+`docs/HANDOFF.md`'s eleventh-pass entry already named; restarted it too.
+(3) Not a code bug, a test-hygiene one found running the full suite for
+verification: `test_workshops.py`'s `_make_workshop` fixture uses a fixed
+title ("Executive Coaching Debrief") with no per-run uniqueification
+(unlike `_unique_title()` in the podcast/article/recommendation test
+files), so repeated full-suite runs across this long session had piled up
+16 identical future-dated sessions — enough to push
+`test_public_workshops_lists_upcoming_sessions_without_auth`'s own session
+past `GET /public/workshops`'s `limit=12` and fail. Cancelled the stale
+sessions (non-destructive — `status='cancelled'`, the same lever
+`services/workshops.py` already uses) to unblock verification; the
+fixture itself is unfixed and will re-accumulate on the next long run of
+the full suite — worth a `_unique_title()`-style fix or a
+`hide_test_courses.py`-style cleanup lever if it recurs.
+
+`scripts/seed_demo_content.py` gained one real recommendation ("Radical
+Candor", Kim Scott, matched by title since the model has no slug to key
+on); `scripts/hide_test_courses.py` gained the fourth copy of the same
+"unpublish, don't delete" pattern for `tests/test_recommendations.py`'s
+stray "Test Recommendation *" rows.
+
+Verified: `apps/api` full suite green (309 passed, 0 skipped) after the
+workshop-session cleanup above, `ruff`/`mypy` clean. `apps/web`
+`tsc --noEmit` clean (no `next build` run this time, for the reason
+above). Live smoke test through the restarted dev servers: `/resources`
+renders the merged recommendation list and the "Writing" section with
+only real content, `GET /public/recommendations` returns just the one
+seeded row after cleanup.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

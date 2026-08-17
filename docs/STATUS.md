@@ -1,6 +1,19 @@
 # STATUS
 
-**Updated:** 2026-08-17 (later the same day) — resources-hub stage 2: a real
+**Updated:** 2026-08-17 (later still, same day) — resources-hub stage 3:
+`recommendations` (`0031`, same shape as `articles` one size down — no
+body/reading-time/slug/detail route). The actual point: curated podcast
+episodes and recommendations now render as one merged list in "What our
+facilitators recommend" rather than two headings (design doc §3.2). 4 new
+tests. Design doc now fully built across all three stages. Two real
+incidents surfaced and fixed along the way, neither in the new code: a
+live-site outage from running `next build` against an already-serving
+`next dev` (both write `.next/`) — restarted clean; and 16 stale
+duplicate workshop-test sessions accumulated across this long session's
+repeated suite runs, enough to push a real test past `GET
+/public/workshops`'s `limit=12` — cancelled (non-destructively) to
+unblock verification. See `docs/HANDOFF.md`'s matching entry for detail.
+Prior, same day — resources-hub stage 2: a real
 `articles` subsystem (`0030`, tenant-scoped like `podcast_episodes`, reuses
 the `podcast:manage` permission rather than adding a new one). Backend:
 model/schema/service/router, `GET/POST/PATCH /articles*` (admin) and
