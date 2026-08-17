@@ -162,6 +162,19 @@ export interface PublicEpisode {
 }
 
 
+export interface PublicArticle {
+  id: string;
+  slug: string;
+  title: string;
+  dek: string | null;
+  body: string;
+  cover_image_url: string | null;
+  author_name: string | null;
+  related_course_id: string | null;
+  published_at: string | null;
+  reading_minutes: number | null;
+}
+
 export interface PublicSession {
   session_id: string;
   workshop_id: string;
@@ -199,4 +212,13 @@ export async function getPublicProducts(): Promise<PublicProduct[]> {
 export async function getPublicEpisodes(): Promise<PublicEpisode[]> {
   const body = await publicGet<{ items: PublicEpisode[] }>("/public/podcasts");
   return body?.items ?? [];
+}
+
+export async function getPublicArticles(): Promise<PublicArticle[]> {
+  const body = await publicGet<{ items: PublicArticle[] }>("/public/articles");
+  return body?.items ?? [];
+}
+
+export async function getPublicArticle(slug: string): Promise<PublicArticle | null> {
+  return publicGet<PublicArticle>(`/public/articles/${encodeURIComponent(slug)}`);
 }
