@@ -52,7 +52,7 @@ const BOOKS = [
     href: "/lead-with-intent",
     title: "Lead with Intent",
     cover: "/brand/book-lead-with-intent.jpg",
-    coverHeight: 243,
+    coverHeight: 244,
     blurb:
       "A ground-breaking book that reveals nine leadership principles and practices that drive engagement and commitment in the workplace — the foundation the Institute's own programmes are built from.",
   },
