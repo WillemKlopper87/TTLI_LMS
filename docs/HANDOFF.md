@@ -2911,6 +2911,73 @@ Verified: `apps/web` typecheck clean throughout, all eight public routes
 `/for-organisations`, `/login`, `/podcasts`) return 200, and the new
 workshops test passes alongside the other five in `test_workshops.py`.
 
+**Follow-up pass, same day: resources-hub stage 2 — articles, superseding
+the "designed, not built" line above.** `docs/research/resources-hub-
+design.md` §2 scoped the migration/model/schema/service/router/frontend
+shape in detail; this pass built exactly that. `0030` adds `articles`
+(tenant-scoped like `podcast_episodes`, same RLS/grant pattern as `0026`),
+reusing the `podcast:manage` permission rather than adding a new
+`content:manage` (design doc §4 decision 1 — the "one content author, one
+permission" precedent already covers this). `services/articles.py` mirrors
+`services/podcasts.py` minus the audio-upload path; `publish_article`
+refuses an empty body and computes `reading_minutes` from a ~200wpm
+heuristic at the publish transition, not on every read, so an edit to a
+*draft* can't silently change a number a reader already saw on the *live*
+article without an explicit republish. 5 new tests in `test_articles.py`
+(permission gate, blank-body publish refusal, reading-minutes computation,
+public-listing published-only, unpublish removes from listing).
+
+Frontend: `/resources/articles/[slug]` is a server component (unlike the
+podcast detail page — no player state, and design doc §4 decision 3
+explicitly defers per-article view events), rendering `body` through
+`react-markdown` rather than `dangerouslySetInnerHTML` — the body is
+author-authenticated content (same `podcast:manage` trust boundary as
+show_notes/transcript), but this way a compromised or careless author
+account still can't inject a script tag into a reader's page. Articles
+fold straight into `/resources` as a new "Writing" section rather than
+getting their own listing route yet — the design doc's own recommendation,
+the same pattern the podcast section itself used before volume justified
+`/podcasts` as a separate page.
+
+**One real bug, caught by screenshot, not by typecheck or build.** The
+first render of the article page showed `##`/`###` markdown headings with
+no visual hierarchy — barely distinguishable from body paragraphs.
+Tailwind's preflight resets default `h1`-`h6` sizing, and `.prose` in
+`globals.css` only had rules for `p` and `.lead`; nothing styled what
+`react-markdown` actually emits. Fixed with a `.prose` typography block
+(`h2`/`h3`/`h4`/`ul`/`ol`/`li`/`strong`/`a`/`blockquote`/`code`) — a second
+screenshot confirmed real heading hierarchy.
+
+`scripts/seed_demo_content.py` gained one real article ("The eleven-day
+gap", by-lined, related to `leading-through-ambiguity`) so the new
+"Writing" section has honest content, matching `_episode`'s existing
+"one real row over N test rows" convention. `scripts/hide_test_courses.py`
+gained the same treatment for articles that `_is_episode_artifact` already
+gives podcast episodes — `tests/test_articles.py`'s stray "Test Article
+&lt;hex&gt;" rows get unpublished (state → draft), never deleted.
+
+**A mid-pass crash, same shape as this session's prior ones.** The IDE
+crashed mid-write (the article detail page's first `Write` call never
+landed) and Docker Desktop had dropped entirely — `docker ps` failed to
+reach the daemon at all, not just an empty container list. The background
+autosave loop had already caught everything up to that point (the backend
+migration/model/schema/service/router/tests commit, plus `server-api.ts`
+and the `react-markdown` install) in its own commits, so nothing but the
+one in-flight file was lost. Restarted Docker Desktop from its actual
+install path (`%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe`
+— not the `Program Files` path `Start-Process` guessed first), brought
+the compose stack back up, relaunched the autosave loop, and recreated the
+lost file from scratch before continuing.
+
+Verified: `apps/api` `ruff`/`mypy`/`pytest` clean (test_articles.py +
+test_podcasts.py, 16 passed), `apps/web` `tsc --noEmit` and `next build`
+both clean (46 routes, `/resources/articles/[slug]` among them), a live
+smoke test through the actual restarted dev servers — `GET
+/public/articles` returns the one real seeded article, `/resources` and
+`/resources/articles/the-eleven-day-gap` both 200 with the "Writing"
+section and heading hierarchy screenshotted and confirmed correct,
+`/resources/articles/does-not-exist` correctly 404s.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
