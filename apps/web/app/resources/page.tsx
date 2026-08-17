@@ -180,7 +180,7 @@ export default async function ResourcesPage() {
               )}
             </section>
 
-            {curated.length > 0 ? (
+            {recommended.length > 0 ? (
               <section>
                 <h2 className="serif" style={{ fontSize: "1.25rem", marginBottom: ".35rem" }}>
                   What our facilitators recommend
@@ -191,17 +191,32 @@ export default async function ResourcesPage() {
                   Work by other people that we keep sending delegates to.
                 </p>
                 <div className="rowlist">
-                  {curated.slice(0, 6).map((e) => (
-                    <div className="rowitem" key={e.slug}>
-                      <span className="t">{e.title}</span>
-                      <span className="m">
-                        {e.curator_name ? `Recommended by ${e.curator_name}` : ""}
-                      </span>
-                      <Link className="btn btn--ghost" href={`/podcasts/${e.slug}`}>
-                        Open
-                      </Link>
-                    </div>
-                  ))}
+                  {recommended.slice(0, 8).map((r) =>
+                    r.external ? (
+                      <div className="rowitem" key={r.key}>
+                        <span className="t">{r.title}</span>
+                        <span className="m">{r.note}</span>
+                        {isSafeHttpUrl(r.href) ? (
+                          <a
+                            className="btn btn--ghost"
+                            href={r.href}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="rowitem" key={r.key}>
+                        <span className="t">{r.title}</span>
+                        <span className="m">{r.note}</span>
+                        <Link className="btn btn--ghost" href={r.href}>
+                          Open
+                        </Link>
+                      </div>
+                    ),
+                  )}
                 </div>
               </section>
             ) : null}
