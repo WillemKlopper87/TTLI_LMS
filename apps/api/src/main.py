@@ -43,6 +43,7 @@ from src.routers import (
     organisations,
     podcasts,
     push,
+    recommendations,
     subscriptions,
     tenant,
     webhooks,
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(credentials.router, prefix="/api/v1")
     app.include_router(podcasts.router, prefix="/api/v1")
     app.include_router(articles.router, prefix="/api/v1")
+    app.include_router(recommendations.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
 
