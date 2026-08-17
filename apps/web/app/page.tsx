@@ -43,6 +43,29 @@ const FACILITATORS: Array<[string, string, string]> = [
   ["team-erika-botha", "Erika Botha", "Management consultant"],
 ];
 
+// Real content only — see docs/brand/ttli-brand-identity.md ("Lead with
+// Intent") and cultivate-with-intent/page.tsx's own docstring (sourced
+// from the book's retail listing) for provenance. coverHeight preserves
+// each cover's real aspect ratio at width=160 rather than distorting it.
+const BOOKS = [
+  {
+    href: "/lead-with-intent",
+    title: "Lead with Intent",
+    cover: "/brand/book-lead-with-intent.jpg",
+    coverHeight: 243,
+    blurb:
+      "A ground-breaking book that reveals nine leadership principles and practices that drive engagement and commitment in the workplace — the foundation the Institute's own programmes are built from.",
+  },
+  {
+    href: "/cultivate-with-intent",
+    title: "Cultivate with Intent",
+    cover: "/brand/book-cultivate-with-intent.jpg",
+    coverHeight: 222,
+    blurb:
+      "A blueprint for leaders to become worldclass cultural architects — practical strategies for building healthier workplaces, drawn from 30+ years across 130+ organisations.",
+  },
+];
+
 export const dynamic = "force-dynamic";
 
 export default async function LandingPage() {
@@ -214,39 +237,51 @@ export default async function LandingPage() {
         </div>
       </div>
 
-      {/* ---- Lead with Intent ---- */}
+      {/* ---- The books ----
+          Two titles, so this is a static side-by-side shelf, not a
+          carousel: a carousel's arrows/dots earn their keep past ~4-5
+          items, and for two they'd just look like a control with nowhere
+          real to go. Revisit as a carousel only once a third title is
+          confirmed and this stops fitting comfortably in one row. */}
       <div className="pad-lg" id="programme">
+        <p className="eyebrow" style={{ textAlign: "center" }}>
+          By founder Hermann du Plessis
+        </p>
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "2rem",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))",
+            gap: "2.5rem",
             maxWidth: "56rem",
             marginInline: "auto",
+            marginTop: "1.25rem",
           }}
         >
-          <Image
-            src="/brand/book-lead-with-intent.jpg"
-            alt="Lead with Intent, by Hermann du Plessis"
-            width={220}
-            height={335}
-            style={{ flex: "none", boxShadow: "var(--shadow-2)" }}
-          />
-          <div style={{ flex: "1 1 20rem" }}>
-            <p className="eyebrow">By founder Hermann du Plessis</p>
-            <h2 className="serif" style={{ fontSize: "1.65rem", marginTop: "0.5rem" }}>
-              Lead with Intent
-            </h2>
-            <p style={{ fontSize: "0.9375rem", color: "var(--ink-2)", marginTop: "0.75rem" }}>
-              A ground-breaking book that reveals nine leadership principles and practices that
-              drive engagement and commitment in the workplace — the foundation the Institute&rsquo;s
-              own programmes are built from.
-            </p>
-            <Link href="/lead-with-intent" className="btn btn--ghost" style={{ marginTop: "1rem" }}>
-              Read more
-            </Link>
-          </div>
+          {BOOKS.map((book) => (
+            <div
+              key={book.href}
+              style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1.5rem" }}
+            >
+              <Image
+                src={book.cover}
+                alt={`${book.title}, by Hermann du Plessis`}
+                width={160}
+                height={book.coverHeight}
+                style={{ flex: "none", boxShadow: "var(--shadow-2)" }}
+              />
+              <div style={{ flex: "1 1 12rem" }}>
+                <h2 className="serif" style={{ fontSize: "1.375rem" }}>
+                  {book.title}
+                </h2>
+                <p style={{ fontSize: "0.875rem", color: "var(--ink-2)", marginTop: "0.6rem" }}>
+                  {book.blurb}
+                </p>
+                <Link href={book.href} className="btn btn--ghost" style={{ marginTop: "0.85rem" }}>
+                  Read more
+                </Link>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
