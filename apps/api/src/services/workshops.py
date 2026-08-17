@@ -243,6 +243,38 @@ async def seat_counts(session: AsyncSession, *, session_id: uuid.UUID) -> tuple[
     )
 
 
+async def list_public_sessions(
+    session: AsyncSession, *, tenant_id: uuid.UUID, limit: int = 12
+) -> list[tuple[WorkshopSession, Workshop, User | None, int]]:
+    """Upcoming, scheduled sessions for the public workshops page, with
+    their seat counts. Only `scheduled` sessions starting in the future
+    are returned — a cancelled or finished session is not something a
+    visitor can book, and showing it would be an invitation to try."""
+    # The facilitator's name lives on the encrypted User record, so the
+    # caller decrypts it — a facilitator is public-facing by design (they
+    # lead the session), but the decryption stays an explicit choice at
+    # the boundary rather than something this query leaks by default.
+    stmt = (
+        select(WorkshopSession, Workshop, User)
+        .join(Workshop, Workshop.id == WorkshopSession.workshop_id)
+        .outerjoin(Facilitator, Facilitator.id == WorkshopSession.facilitator_id)
+        .outerjoin(User, User.id == Facilitator.user_id)
+        .where(
+            WorkshopSession.tenant_id == tenant_id,
+            WorkshopSession.status == "scheduled",
+            WorkshopSession.starts_at > datetime.now(UTC),
+        )
+        .order_by(WorkshopSession.starts_at)
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+    out: list[tuple[WorkshopSession, Workshop, User | None, int]] = []
+    for workshop_session, workshop, user in rows:
+        registered, _ = await seat_counts(session, session_id=workshop_session.id)
+        out.append((workshop_session, workshop, user, registered))
+    return out
+
+
 async def book_session(
     session: AsyncSession,
     crypto: CryptoBox,
@@ -448,6 +480,7 @@ __all__ = [
     "create_workshop",
     "list_availability",
     "list_facilitators",
+    "list_public_sessions",
     "list_roster",
     "list_sessions",
     "list_workshops",

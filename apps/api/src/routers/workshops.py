@@ -16,7 +16,7 @@ import uuid
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from src.core.deps import CryptoDep, Principal, PrincipalDep, SessionDep, SettingsDep
+from src.core.deps import CryptoDep, Principal, PrincipalDep, SessionDep, SettingsDep, TenantDep
 from src.core.errors import AppError, Forbidden, NotFound
 from src.models.user import User
 from src.models.workshop import Booking, Facilitator, MeetingLink, WorkshopSession
@@ -31,6 +31,8 @@ from src.schemas.workshops import (
     FacilitatorResponse,
     FacilitatorsPage,
     MarkAttendanceRequest,
+    PublicSessionRow,
+    PublicWorkshopsResponse,
     RosterResponse,
     RosterRowResponse,
     SessionResponse,
@@ -340,6 +342,52 @@ async def list_roster(
             for r in rows
         ]
     )
+
+
+@router.get(
+    "/public/workshops",
+    response_model=PublicWorkshopsResponse,
+    summary="Upcoming bookable sessions, no auth required",
+)
+async def list_public_workshops(
+    session: SessionDep, tenant: TenantDep, crypto: CryptoDep
+) -> PublicWorkshopsResponse:
+    """The public face of the workshop subsystem (REQ-WS-*), which until
+    now was only reachable through the admin screens. Shows what a
+    visitor needs to decide whether to attend — when, who leads it, and
+    whether seats remain — and nothing that belongs to an attendee: no
+    join link, no roster, no attendance.
+    """
+    rows = await workshops_service.list_public_sessions(session, tenant_id=tenant.id)
+    items: list[PublicSessionRow] = []
+    for workshop_session, workshop, user, registered in rows:
+        # Facilitators are public-facing, but the name is encrypted at
+        # rest like every other; decrypt only this one field, and only
+        # when it exists.
+        name: str | None = None
+        if user is not None and user.full_name_encrypted is not None:
+            name = crypto.decrypt(user.full_name_encrypted)
+        seats_left = max(0, workshop_session.capacity - registered)
+        duration = int(
+            (workshop_session.ends_at - workshop_session.starts_at).total_seconds() // 60
+        )
+        items.append(
+            PublicSessionRow(
+                session_id=str(workshop_session.id),
+                workshop_id=str(workshop.id),
+                title=workshop.title,
+                description=workshop.description,
+                session_type=workshop.session_type,
+                facilitator_name=name,
+                starts_at=workshop_session.starts_at,
+                ends_at=workshop_session.ends_at,
+                duration_minutes=duration,
+                capacity=workshop_session.capacity,
+                seats_left=seats_left,
+                is_full=seats_left == 0,
+            )
+        )
+    return PublicWorkshopsResponse(items=items)
 
 
 __all__ = ["router"]

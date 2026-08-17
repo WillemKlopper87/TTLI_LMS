@@ -83,6 +83,30 @@ class SessionsPage(BaseModel):
     items: list[SessionResponse]
 
 
+class PublicSessionRow(BaseModel):
+    """A bookable session as an anonymous visitor may see it: when it
+    runs, who leads it and whether seats remain. Deliberately no
+    `join_url` and no roster — those belong to a learner who has booked
+    (`POST /sessions/{id}/book` returns the join link)."""
+
+    session_id: str
+    workshop_id: str
+    title: str
+    description: str | None
+    session_type: str
+    facilitator_name: str | None
+    starts_at: datetime
+    ends_at: datetime
+    duration_minutes: int
+    capacity: int
+    seats_left: int
+    is_full: bool
+
+
+class PublicWorkshopsResponse(BaseModel):
+    items: list[PublicSessionRow]
+
+
 class BookingResponse(BaseModel):
     id: str
     session_id: str
@@ -119,6 +143,8 @@ __all__ = [
     "FacilitatorResponse",
     "FacilitatorsPage",
     "MarkAttendanceRequest",
+    "PublicSessionRow",
+    "PublicWorkshopsResponse",
     "RosterResponse",
     "RosterRowResponse",
     "SessionResponse",

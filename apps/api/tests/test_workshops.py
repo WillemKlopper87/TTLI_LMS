@@ -352,3 +352,59 @@ async def test_facilitator_can_override_attendance_and_roster_is_gated(
         headers={"Authorization": f"Bearer {facilitator_token}"},
     )
     assert roster.json()["items"][0]["attendance_status"] == "attended"
+
+
+async def test_public_workshops_lists_upcoming_sessions_without_auth(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The public workshops page (REQ-WS-*) needs to show what a visitor
+    can book without making them sign in first — and must not leak the
+    join link, which belongs to someone who has actually booked."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    created = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 2,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+
+    # No Authorization header at all.
+    public = await client.get("/api/v1/public/workshops")
+    assert public.status_code == 200, public.text
+    rows = public.json()["items"]
+    row = next((r for r in rows if r["session_id"] == session_id), None)
+    assert row is not None, "the scheduled session should be publicly listed"
+    assert row["capacity"] == 2
+    assert row["seats_left"] == 2
+    assert row["is_full"] is False
+    assert row["duration_minutes"] == 60
+    assert "join_url" not in row
+    assert "roster" not in row
+
+    # A booking reduces the public seat count.
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booked = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert booked.status_code == 200, booked.text
+    after = await client.get("/api/v1/public/workshops")
+    row = next(r for r in after.json()["items"] if r["session_id"] == session_id)
+    assert row["seats_left"] == 1
