@@ -175,6 +175,16 @@ export interface PublicArticle {
   reading_minutes: number | null;
 }
 
+export interface PublicRecommendation {
+  id: string;
+  title: string;
+  url: string;
+  source_name: string | null;
+  curator_name: string | null;
+  curator_note: string | null;
+  related_course_id: string | null;
+}
+
 export interface PublicSession {
   session_id: string;
   workshop_id: string;
