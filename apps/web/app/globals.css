@@ -780,6 +780,27 @@ a {
   background: var(--surface);
 }
 
+/* A facilitator photo card that links to its own bio page — the same
+   restrained, no-shadow affordance the rest of the site uses (a border
+   and a slight lift, not a drop shadow) so it reads as "this opens
+   something" without breaking the flat editorial language. */
+.facilitator-card img {
+  transition: transform 0.15s ease, outline-color 0.15s ease;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+}
+
+.facilitator-card:hover img,
+.facilitator-card:focus-visible img {
+  transform: translateY(-2px);
+  outline-color: var(--rule);
+}
+
+.facilitator-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+
 /* ============ 3 guest signup ============ */
 
 .split {
