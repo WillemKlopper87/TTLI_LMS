@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { CourseCard } from "@/app/catalogue/course-card";
+import { FACILITATORS } from "@/lib/facilitators";
 import { formatClock } from "@/lib/format";
 import { getPublicCourses, getPublicEpisodes, getTheme } from "@/lib/server-api";
 
@@ -34,14 +35,6 @@ import { getPublicCourses, getPublicEpisodes, getTheme } from "@/lib/server-api"
 // API exposes no peak data, and inventing one per episode would imply a
 // precision that isn't there.
 const WAVE = [30, 55, 80, 45, 95, 60, 35, 70, 100, 50, 75, 40, 85, 30, 65, 45, 90, 55, 25, 60];
-
-const FACILITATORS: Array<[string, string, string]> = [
-  ["team-hermann-du-plessis", "Hermann du Plessis", "Founder"],
-  ["team-sizwe-kuzwayo", "Sizwe Kuzwayo", "Sustainability & business consultant"],
-  ["team-hano-du-plessis", "Hano du Plessis", "Training Manager"],
-  ["team-agnes-hove", "Agnes Hove", "Strategist"],
-  ["team-erika-botha", "Erika Botha", "Management consultant"],
-];
 
 // Real content only — see docs/brand/ttli-brand-identity.md ("Lead with
 // Intent") and cultivate-with-intent/page.tsx's own docstring (sourced
@@ -324,7 +317,13 @@ export default async function LandingPage() {
         </div>
       </div>
 
-      {/* ---- Facilitators ---- */}
+      {/* ---- Facilitators ----
+          Photos went from 120x160 (not even the source images' real 2:3
+          ratio — objectFit:cover was quietly cropping every one of them)
+          to 220x330 at the real ratio, in a tighter 3-4 column grid
+          rather than "as many as fit" — bigger portraits read as the
+          people behind the programmes, not a logo strip. Each card is
+          now a real link to its own /about/[slug] page. */}
       <div className="pad-lg">
         <p className="eyebrow" style={{ textAlign: "center" }}>
           Facilitators
@@ -332,25 +331,45 @@ export default async function LandingPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
             gap: "2rem",
             marginTop: "2rem",
+            maxWidth: "56rem",
+            marginInline: "auto",
           }}
         >
-          {FACILITATORS.map(([file, person, role]) => (
-            <div key={file} style={{ textAlign: "center" }}>
+          {FACILITATORS.map((person) => (
+            <Link
+              key={person.slug}
+              href={`/about/${person.slug}`}
+              style={{ textAlign: "center", color: "inherit", textDecoration: "none" }}
+              className="facilitator-card"
+            >
               <Image
-                src={`/brand/team/${file}.jpg`}
-                alt={person}
-                width={120}
-                height={160}
-                style={{ objectFit: "cover", borderRadius: "4px", marginInline: "auto" }}
+                src={`/brand/team/${person.photo}.jpg`}
+                alt={person.name}
+                width={220}
+                height={330}
+                style={{
+                  objectFit: "cover",
+                  borderRadius: "4px",
+                  marginInline: "auto",
+                  width: "100%",
+                  height: "auto",
+                }}
               />
-              <p style={{ fontSize: "0.8125rem", fontWeight: 600, marginTop: "0.5rem" }}>{person}</p>
-              <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{role}</p>
-            </div>
+              <p style={{ fontSize: "0.9375rem", fontWeight: 600, marginTop: "0.75rem" }}>
+                {person.name}
+              </p>
+              <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>{person.role}</p>
+            </Link>
           ))}
         </div>
+        <p style={{ textAlign: "center", marginTop: "2rem" }}>
+          <Link href="/about" className="btn btn--ghost">
+            Meet the whole team
+          </Link>
+        </p>
       </div>
 
       {/* ---- Footer / contact ---- */}
