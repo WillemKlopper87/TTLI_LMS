@@ -3037,6 +3037,89 @@ renders the merged recommendation list and the "Writing" section with
 only real content, `GET /public/recommendations` returns just the one
 seeded row after cleanup.
 
+**Follow-up pass, next day: sticky header, admin authoring for articles/
+recommendations, and a homepage/About Us pass — 2026-08-18.** Three
+separate pieces of user-facing follow-up, done in one long pass.
+
+**Sticky header.** `.site-head` (`globals.css`) had no `position` at all —
+it scrolled away like any other content on long pages. Added
+`position: sticky; top: 0; z-index: 50` (the highest in the file by a wide
+margin — max in use elsewhere was 2 — but left room below any future
+modal layer). Verified live: scrolled `/catalogue` 1000px, header stayed
+pinned while content scrolled under it.
+
+**Admin authoring for articles and recommendations** — the gap flagged at
+the end of the resources-hub stage-2/3 passes ("no admin authoring UI for
+either yet, content managed via the API directly"). `apps/web/app/admin/
+articles/page.tsx` and `apps/web/app/admin/recommendations/page.tsx`,
+both structurally copied from `admin/podcasts/page.tsx` (create form +
+expandable-row manage table + publish/unpublish), articles' form dropping
+the audio-upload path podcasts has (articles have no self-hosted media).
+Both wired into `admin/layout.tsx`'s nav. **Verified end to end through
+real browser interaction, not just API calls**: logged in as the demo
+`super_admin` via the actual login form (CDP-driven, simulated native
+input events so React's controlled inputs pick them up), created a
+smoke-test article and a smoke-test recommendation through the real
+forms, published both via the real "Publish" button, confirmed both on
+`GET /public/articles` and `GET /public/recommendations`, then unpublished
+both through the real "Unpublish" button to leave the demo tenant clean.
+
+**Homepage research pass**, dispatched as a background research agent
+(not code-writing) investigating five ideas the customer raised: a book
+carousel, a scrollable client-logo wall, footer social links, bigger
+facilitator photos, and an About Us section with per-person bios. Full
+findings and what was actually built (four of five — footer social links
+stayed blocked on real URLs) are in the new `docs/research/homepage-
+redesign.md`, written specifically so this research isn't lost to chat
+history. Headline items:
+
+- A real second book, *Cultivate with Intent*, confirmed via a customer-
+  supplied retail listing (https://exclusivebooks.co.za/products/
+  9781049251486) — this closes a gap `docs/STATUS.md` had named since
+  Phase 2 (no page ever built because no real content existed to build it
+  from; fabricating jacket copy for a real, named author was never on the
+  table). New page `app/cultivate-with-intent/page.tsx`, cover downloaded
+  to `public/brand/book-cultivate-with-intent.jpg`. The homepage's single-
+  book feature became a static two-book shelf (`BOOKS` array in
+  `page.tsx`) — **not** a carousel, even though the user's original ask
+  named one: two items don't justify slider mechanics, and the research
+  doc explains the sizing threshold for revisiting that call.
+- Facilitator photos grew from 120×160 (which didn't even match the
+  source photos' real 2:3 ratio) to 220×330 at the true ratio, each now a
+  real link to a new `/about/[slug]` bio page.
+- `lib/facilitators.ts` — one shared data source (name/role/photo/bio/
+  credentials/linkedin) replacing a duplicated inline tuple array,
+  feeding the homepage teaser, `/about`, and `/about/[slug]` alike.
+  `bio`/`credentials`/`linkedin` are `null` for everyone: no such copy was
+  ever extracted from the real site, and this project's own rule against
+  fabricating content about real people (`ttli-brand-identity.md`'s
+  "Explicitly not present on the site, so not fabricated here") extends
+  to biographies. `/about/[slug]` renders *"A fuller profile for {name}
+  is on its way"* rather than an invented paragraph — filling in real
+  copy later is a one-line edit per person, nothing else changes.
+
+**A real screenshot-methodology lesson, not a code bug.** Verifying the
+facilitator grid and book shelf, a full-page screenshot (the
+`Emulation.setDeviceMetricsOverride`-to-full-height trick this session's
+own CDP tooling uses) showed facilitator photos entirely missing and the
+second book cover a fraction of the first's size. Both were `next/image`
+lazy-loading racing the viewport resize, not real bugs — a second
+screenshot using a normal viewport with an actual `scrollTo` (giving the
+`IntersectionObserver` real time to fire) showed everything correct.
+Worth remembering for any future full-page verification screenshot on an
+image-heavy page: prefer scroll-and-capture over resize-to-full-height.
+
+Verified: `apps/web` `tsc --noEmit` clean throughout (including catching
+one real mistake before it shipped — `/about/[slug]/page.tsx` was
+initially written with the old synchronous `params` shape; this
+codebase's own Next 16 convention elsewhere, e.g. `courses/[courseId]/
+page.tsx`, is `params: Promise<{...}>`, awaited — fixed before any runtime
+check would have caught it as a blank page). Live smoke test through the
+restarted dev servers and a real logged-in session: `/`, `/about`,
+`/about/hermann-du-plessis`, `/cultivate-with-intent` all screenshotted
+and confirmed correct once the lazy-loading artifact above was accounted
+for. No `next build` run this pass, same reason as the entry above.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

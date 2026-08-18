@@ -1,6 +1,20 @@
 # STATUS
 
-**Updated:** 2026-08-17 (later still, same day) — resources-hub stage 3:
+**Updated:** 2026-08-18 — sticky site header (`position: sticky` on
+`.site-head`, previously absent); real admin authoring for articles and
+recommendations (`/admin/articles`, `/admin/recommendations`, mirroring
+`/admin/podcasts`), verified end to end through actual browser
+interaction; and a homepage/About Us pass — a second real book,
+*Cultivate with Intent* (closing a gap named since Phase 2, see
+`docs/research/homepage-redesign.md`), a static two-book shelf replacing
+the single-book feature, enlarged/correctly-aspect-ratioed facilitator
+photos, and a new `/about` + `/about/[slug]` bio-page section built on a
+shared `lib/facilitators.ts` data source (no fabricated bios — renders
+honestly where real copy doesn't exist yet). Footer social links remain
+unbuilt, blocked on the customer supplying real URLs. Full detail in
+`docs/HANDOFF.md`'s matching entry and `docs/research/homepage-
+redesign.md`.
+Prior: 2026-08-17 (later still, same day) — resources-hub stage 3:
 `recommendations` (`0031`, same shape as `articles` one size down — no
 body/reading-time/slug/detail route). The actual point: curated podcast
 episodes and recommendations now render as one merged list in "What our
