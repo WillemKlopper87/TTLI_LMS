@@ -40,6 +40,7 @@ const PUBLIC_NAV: NavItem[] = [
   { label: "Live Workshops", href: "/workshops" },
   { label: "Resources", href: "/resources" },
   { label: "For Organisations", href: "/for-organisations" },
+  { label: "About", href: "/about" },
 ];
 
 // The signed-in learner journey (prototype screens 7, 10). There is no
