@@ -318,12 +318,12 @@ export default async function LandingPage() {
       </div>
 
       {/* ---- Facilitators ----
-          Photos went from 120x160 (not even the source images' real 2:3
-          ratio — objectFit:cover was quietly cropping every one of them)
-          to 220x330 at the real ratio, in a tighter 3-4 column grid
-          rather than "as many as fit" — bigger portraits read as the
-          people behind the programmes, not a logo strip. Each card is
-          now a real link to its own /about/[slug] page. */}
+          This is a teaser, not the team showcase — /about is that page,
+          and keeps the larger 220x330 treatment. On the homepage, sized
+          back down close to the original 120x160 footprint (user
+          feedback: 220x330 felt "overpowering" here) but at 112x168, the
+          source photos' real 2:3 ratio — the original 120x160 wasn't
+          that ratio, so objectFit:cover was quietly cropping every one. */}
       <div className="pad-lg">
         <p className="eyebrow" style={{ textAlign: "center" }}>
           Facilitators
@@ -331,10 +331,10 @@ export default async function LandingPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-            gap: "2rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))",
+            gap: "1.75rem",
             marginTop: "2rem",
-            maxWidth: "56rem",
+            maxWidth: "48rem",
             marginInline: "auto",
           }}
         >
@@ -348,8 +348,8 @@ export default async function LandingPage() {
               <Image
                 src={`/brand/team/${person.photo}.jpg`}
                 alt={person.name}
-                width={220}
-                height={330}
+                width={112}
+                height={168}
                 style={{
                   objectFit: "cover",
                   borderRadius: "4px",
@@ -358,10 +358,10 @@ export default async function LandingPage() {
                   height: "auto",
                 }}
               />
-              <p style={{ fontSize: "0.9375rem", fontWeight: 600, marginTop: "0.75rem" }}>
+              <p style={{ fontSize: "0.8125rem", fontWeight: 600, marginTop: "0.5rem" }}>
                 {person.name}
               </p>
-              <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>{person.role}</p>
+              <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{person.role}</p>
             </Link>
           ))}
         </div>

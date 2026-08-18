@@ -192,19 +192,21 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
       </Link>
 
       <nav className="site-nav" aria-label="Main">
-        {items.map((item, index) => {
-          const on = index === onIndex;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={on ? "on" : undefined}
-              aria-current={on ? "page" : undefined}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
+        {status === "loading"
+          ? null
+          : items.map((item, index) => {
+              const on = index === onIndex;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={on ? "on" : undefined}
+                  aria-current={on ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
       </nav>
 
       <div className="head-actions">
