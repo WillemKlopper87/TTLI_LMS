@@ -3120,6 +3120,37 @@ restarted dev servers and a real logged-in session: `/`, `/about`,
 and confirmed correct once the lazy-loading artifact above was accounted
 for. No `next build` run this pass, same reason as the entry above.
 
+**Same-day follow-up, on user feedback: a real nav-flash bug, and the
+facilitator photos sized back down.** Two fixes.
+
+The facilitator size from the pass above (220×330) read as "overpowering"
+on the homepage per direct feedback — the homepage section is a teaser,
+not the team showcase `/about` is. Sized back down to 112×168 (close to
+the original 120×160 footprint, but at the source photos' real 2:3
+ratio, so it doesn't crop like the original did) with the grid's
+`minmax` back to `9rem`. `/about` itself keeps the larger 220×330
+treatment — that page's whole point is showing the team properly.
+
+**The nav-flash bug was real, not user perception**, and worth
+understanding: `components/site-header.tsx` computes `items` as
+`PUBLIC_NAV` (now including "About") whenever `!signedIn`, and
+`signedIn = status === "authenticated"` — but on every page load, `status`
+starts at `"loading"` before the silent session restore resolves, which
+`!signedIn` treats identically to "actually signed out." So a signed-in
+user's nav briefly rendered `PUBLIC_NAV` on every refresh before
+snapping to `LEARNER_NAV` (which has never had "About," or most of
+`PUBLIC_NAV`'s other items) once the real session state arrived — the
+user only named "About" because it's the one `PUBLIC_NAV` item with no
+`LEARNER_NAV` counterpart, so it's the one that visibly vanishes rather
+than silently changing hrefs. The `head-actions` block two dozen lines
+below already had the correct guard (`status === "loading" ? null : …`)
+for the exact same race on the Sign in/Try a free lesson buttons — the
+`<nav>` items list just never got it. Fixed by mirroring that guard.
+Confirmed the fix is the right shape (not confirmed by re-catching the
+race itself, which needs frame-accurate timing a screenshot can't easily
+prove) — mechanically identical to an already-working guard in the same
+component, on the same `status` value.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
