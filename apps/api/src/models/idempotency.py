@@ -11,10 +11,14 @@ what currently limits it to commerce.
 One row per (tenant, caller, key, path): the same key value legitimately
 means different things on different endpoints and for different callers,
 so all three are part of the identity, not just the client-supplied key.
-Append-only — a stored replay is a record of what actually happened and is
-never edited; a retention sweep for old rows is a real, separate,
-not-yet-built follow-up (STATUS.md tracks it), not something this table's
-shape blocks.
+
+A row's lifecycle (0032): it is INSERTed as an in-flight reservation
+(`response_status` NULL) *before* the handler runs — the unique index is
+what serialises two concurrent replays — and UPDATEd exactly once with
+the response when the handler finishes. A completed row is never edited
+again; a reservation whose request died (5xx, crash) is DELETEd so the
+key stays retryable. The nightly worker sweep prunes completed rows past
+the retention window.
 """
 
 from __future__ import annotations
@@ -67,7 +71,10 @@ class IdempotencyKey(Base):
     # sha256 hex of the exact raw request body bytes — "a hash of the
     # request body" per spec, literally, not a normalised/parsed form.
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    # NULL while the first attempt is still executing (an in-flight
+    # reservation, see the module docstring); set exactly once when the
+    # handler's response is recorded.
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Null for a 204. Stored exactly as the client received it, so a
     # replay is byte-identical, not just status-identical.
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

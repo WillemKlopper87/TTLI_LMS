@@ -15,7 +15,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter
 
-from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
+from src.core.deps import (
+    AuditedSessionDep,
+    CryptoDep,
+    PrincipalDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+)
 from src.core.errors import NotFound
 from src.schemas.learning import (
     DashboardCertificate,
@@ -249,7 +256,12 @@ async def start_lesson(lesson_id: str, principal: PrincipalDep, session: Session
 async def complete_lesson(
     lesson_id: str,
     principal: PrincipalDep,
-    session: SessionDep,
+    # Audited, not the default rollback-on-refusal session: REQ-BYPASS-11
+    # requires every progression decision to be audit-logged, refusals
+    # included — a LessonLocked refusal must still commit its
+    # lesson.completion_refused row and the rule-evaluation snapshot the
+    # service wrote before raising.
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     storage: StorageDep,
     settings: SettingsDep,

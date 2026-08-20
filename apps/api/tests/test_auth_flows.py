@@ -595,3 +595,55 @@ async def test_me_reports_a_guest_window_that_counts_down(
     assert body["is_guest"] is True
     assert body["guest_expires_at"] is not None
     assert body["guest_days_left"] == settings.guest_access_days
+
+
+async def test_mfa_pending_token_is_not_an_access_token(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The MFA challenge token is signed with the same secret and carries
+    the same sub/tid claims an access token does. Before the `purpose`
+    check in decode_access_token, that meant a password alone (no TOTP)
+    bought a working bearer for mfa_pending_minutes — the exact bypass
+    MFA exists to prevent. Regression for core/security.py."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    access_token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    enroll = await client.post("/api/v1/auth/mfa/enroll", headers=headers)
+    secret = enroll.json()["secret"]
+    code = pyotp.TOTP(secret).now()
+    confirm = await client.post(
+        "/api/v1/auth/mfa/enroll/confirm",
+        headers=headers,
+        json={"enrollment_token": enroll.json()["enrollment_token"], "code": code},
+    )
+    assert confirm.status_code == 200
+
+    challenge = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert challenge.status_code == 202
+    mfa_token = challenge.json()["mfa_token"]
+
+    # A PrincipalDep endpoint with no explicit permission check — exactly
+    # the surface the pre-fix token could reach.
+    smuggled = await client.get(
+        "/api/v1/enrolments", headers={"Authorization": f"Bearer {mfa_token}"}
+    )
+    assert smuggled.status_code == 401
+
+    # The enrolment-in-progress purpose token must be refused the same way.
+    fresh_enroll = await client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"mfa_token": mfa_token, "code": pyotp.TOTP(secret).now()},
+    )
+    assert fresh_enroll.status_code == 200
+    enrollment_headers = {"Authorization": f"Bearer {fresh_enroll.json()['access_token']}"}
+    re_enroll = await client.post("/api/v1/auth/mfa/enroll", headers=enrollment_headers)
+    assert re_enroll.status_code == 200
+    enrollment_token = re_enroll.json()["enrollment_token"]
+    smuggled_enrollment = await client.get(
+        "/api/v1/enrolments", headers={"Authorization": f"Bearer {enrollment_token}"}
+    )
+    assert smuggled_enrollment.status_code == 401

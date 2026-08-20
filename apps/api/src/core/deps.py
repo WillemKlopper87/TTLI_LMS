@@ -61,16 +61,51 @@ async def get_tenant(request: Request, settings: SettingsDep, redis: RedisDep) -
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 
 
+# The two session dependencies below are deliberately written out twice
+# rather than delegated through a shared inner generator. FastAPI delivers
+# an endpoint's exception by *throwing it into the dependency generator at
+# its yield* — and `async for s in inner(): yield s` does not forward that
+# throw to `inner()`: the exception lands in the for-loop body, the loop
+# unwinds, and `inner()` only ever sees GeneratorExit, so its
+# except-AppError branch never runs. That exact miswiring silently
+# disabled MFA lockout and refresh-reuse revocation when tried
+# (tests/test_auth_flows.py caught it); keep these flat.
+
+
 async def get_session(tenant: TenantDep) -> AsyncIterator[AsyncSession]:
     """A session already bound to the resolved tenant.
 
-    An AppError is a business decision the endpoint made deliberately — wrong
-    password, invalid MFA code — not a failure of the transaction itself.
-    Whatever it flushed before raising (a failed-attempt counter, a
-    LOGIN_FAILED audit row) still commits; only genuinely unexpected
-    exceptions roll back. A plain `async with session.begin():` cannot make
-    this distinction — it rolls back on every exception alike, which would
-    silently discard the very counters and audit rows lockout depends on.
+    Every exception — an AppError refusal included — rolls the transaction
+    back. A service that flushes half an aggregate and then raises a
+    business-rule refusal must not leave the half-written state behind;
+    `tests/test_commerce.py`'s orphaned-draft-order regression is the
+    precedent for exactly that failure. The one place a refusal must
+    *keep* its writes (failed-attempt counters, the LOGIN_FAILED audit
+    row that lockout depends on) is the auth router, which uses
+    AuditedSessionDep below instead.
+    """
+    factory = get_sessionmaker()
+    async with factory() as session:
+        await session.begin()
+        await set_tenant(session, tenant.id)
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
+
+
+async def get_audited_session(tenant: TenantDep) -> AsyncIterator[AsyncSession]:
+    """`get_session`, except an AppError commits what was flushed before it.
+
+    An auth refusal is a business decision, not a transaction failure: the
+    failed-attempt counter and LOGIN_FAILED audit row it just wrote are the
+    record lockout depends on, and rolling them back with the refusal would
+    silently disable lockout. Only the auth router should depend on this —
+    anywhere else, commit-on-refusal turns a mid-service raise into
+    persisted partial state.
     """
     factory = get_sessionmaker()
     async with factory() as session:
@@ -89,6 +124,7 @@ async def get_session(tenant: TenantDep) -> AsyncIterator[AsyncSession]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+AuditedSessionDep = Annotated[AsyncSession, Depends(get_audited_session)]
 
 
 def get_crypto(settings: SettingsDep) -> CryptoBox:
@@ -160,6 +196,7 @@ PrincipalDep = Annotated[Principal, Depends(get_principal)]
 
 
 __all__ = [
+    "AuditedSessionDep",
     "CryptoDep",
     "Principal",
     "PrincipalDep",
@@ -167,6 +204,7 @@ __all__ = [
     "SessionDep",
     "SettingsDep",
     "TenantDep",
+    "get_audited_session",
     "get_crypto",
     "get_principal",
     "get_redis_dep",

@@ -16,7 +16,14 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 
-from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, SettingsDep, TenantDep
+from src.core.deps import (
+    AuditedSessionDep,
+    CryptoDep,
+    PrincipalDep,
+    RedisDep,
+    SettingsDep,
+    TenantDep,
+)
 from src.core.errors import TooManyAttempts, Unauthenticated
 from src.core.security import (
     decode_purpose_token,
@@ -121,7 +128,7 @@ def _mfa_challenge(*, settings: SettingsDep, user: User, tenant: TenantDep) -> J
 
 
 async def _issue_session(
-    session: SessionDep,
+    session: AuditedSessionDep,
     *,
     tenant: TenantDep,
     user: User,
@@ -158,7 +165,7 @@ async def _issue_session(
 async def login(
     body: LoginRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
@@ -224,7 +231,7 @@ async def login(
 async def request_magic_link(
     body: MagicLinkRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
@@ -261,7 +268,7 @@ async def request_magic_link(
 async def consume_magic_link(
     body: MagicLinkConsumeRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     settings: SettingsDep,
     tenant: TenantDep,
 ) -> TokenResponse | JSONResponse:
@@ -295,7 +302,7 @@ async def consume_magic_link(
 async def mfa_verify(
     body: MfaVerifyRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
@@ -380,7 +387,7 @@ async def mfa_verify(
 async def refresh(
     body: RefreshRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     settings: SettingsDep,
     tenant: TenantDep,
 ) -> TokenResponse:
@@ -453,7 +460,7 @@ async def refresh(
 async def logout(
     body: LogoutRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     tenant: TenantDep,
 ) -> None:
     """Ends this session only — revoke_all_for_user (all devices) is reserved
@@ -476,7 +483,7 @@ async def logout(
 
 @router.post("/mfa/enroll", summary="Begin TOTP enrolment for the current user")
 async def mfa_enroll(
-    principal: PrincipalDep, session: SessionDep, crypto: CryptoDep, settings: SettingsDep
+    principal: PrincipalDep, session: AuditedSessionDep, crypto: CryptoDep, settings: SettingsDep
 ) -> MfaEnrollResponse:
     """Not yet in 03_API_SPEC.md §2 — that section documents verification, not
     the enrolment step it presupposes. Added here as the minimum plumbing
@@ -508,7 +515,7 @@ async def mfa_enroll_confirm(
     body: MfaEnrollConfirmRequest,
     request: Request,
     principal: PrincipalDep,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
@@ -553,7 +560,7 @@ async def mfa_enroll_confirm(
 async def request_password_reset(
     body: PasswordResetRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
     tenant: TenantDep,
@@ -599,7 +606,7 @@ async def request_password_reset(
 async def confirm_password_reset(
     body: PasswordResetConfirmRequest,
     request: Request,
-    session: SessionDep,
+    session: AuditedSessionDep,
     tenant: TenantDep,
 ) -> None:
     user = await identity.consume_password_reset(
@@ -627,7 +634,7 @@ async def confirm_password_reset(
 @router.get("/me", response_model=MeResponse, summary="The current principal")
 async def me(
     principal: PrincipalDep,
-    session: SessionDep,
+    session: AuditedSessionDep,
     crypto: CryptoDep,
     tenant: TenantDep,
 ) -> MeResponse:

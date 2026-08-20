@@ -51,6 +51,29 @@ async def purge_expired_auth(ctx: dict[str, Any]) -> int:
     return int(purged)
 
 
+async def prune_idempotency_keys(ctx: dict[str, Any]) -> int:
+    """Retention sweep for `idempotency_keys` (03 §1.6, 0032).
+
+    Two kinds of row age out (both handled inside the SECURITY DEFINER
+    function — the worker holds no tenant GUC, so a plain DELETE would
+    see zero rows through RLS, same reason purge_expired_auth works the
+    way it does):
+    - completed replays older than 30 days — matching purge_expired_auth's
+      forensic grace period; a client replaying a payment key later than
+      that re-executes, and the business layer's own double-refund /
+      already-approved guards are what protect it then (the exact window
+      is one of 03 §13's named open questions);
+    - dead in-flight reservations older than 1 day — normally released by
+      the middleware itself or taken over by a retry; this catches ones
+      whose caller never came back.
+    """
+    factory = get_sessionmaker()
+    async with factory() as session, session.begin():
+        pruned = (await session.execute(text("SELECT prune_idempotency_keys(30, 1)"))).scalar_one()
+    log.info("idempotency_keys_pruned", pruned=pruned)
+    return int(pruned)
+
+
 async def revoke_lapsed_subscriptions(ctx: dict[str, Any]) -> int:
     """Formal bookkeeping closure for lapsed subscriptions — access itself
     already lapses live the moment an entitlement's `expires_at` (which
@@ -198,6 +221,7 @@ class WorkerSettings:
     functions: ClassVar[list[Any]] = [
         extend_event_partitions,
         purge_expired_auth,
+        prune_idempotency_keys,
         revoke_lapsed_subscriptions,
         downgrade_expired_guests,
         func(send_email_job, max_tries=5),
@@ -214,6 +238,7 @@ class WorkerSettings:
         # runway, so a missed run is survivable for a long time.
         cron(extend_event_partitions, day=1, hour=2, minute=0),
         cron(purge_expired_auth, hour=3, minute=30),
+        cron(prune_idempotency_keys, hour=3, minute=45),
         cron(revoke_lapsed_subscriptions, hour=4, minute=0),
         # Hourly per 02 §12.4, not daily like the other sweeps above — a
         # guest's whole access window is measured in days (settings.
@@ -236,6 +261,7 @@ __all__ = [
     "WorkerSettings",
     "downgrade_expired_guests",
     "extend_event_partitions",
+    "prune_idempotency_keys",
     "purge_expired_auth",
     "revoke_lapsed_subscriptions",
     "send_email_job",

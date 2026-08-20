@@ -238,3 +238,101 @@ async def test_unscoped_endpoint_needs_no_idempotency_key(  # type: ignore[no-un
     token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
     resp = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
+
+
+async def test_concurrent_replays_execute_the_handler_exactly_once(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """The race the reservation flow (0032) exists for: two identical
+    requests in flight at once. Pre-fix, both missed the lookup, both
+    created an order, and the loser got a 500 from the unique index after
+    its duplicate was already durable. Now the index serialises them at
+    the INSERT: exactly one order row, and the loser is either the cached
+    replay (it arrived after the winner recorded its response) or an
+    honest 409 IDEMPOTENCY_REPLAY_IN_FLIGHT — never a second execution,
+    never a 5xx."""
+    import asyncio
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
+    user_id = _user_id_from_token(token)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+
+    body = {
+        "currency": "ZAR",
+        "customer_type": "individual",
+        "lines": [{"price_id": price_id, "quantity": 1}],
+    }
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": uuid.uuid4().hex}
+
+    first, second = await asyncio.gather(
+        client.post("/api/v1/orders", json=body, headers=headers),
+        client.post("/api/v1/orders", json=body, headers=headers),
+    )
+
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses[0] == 201, (first.text, second.text)
+    assert statuses[1] in (201, 409), (first.text, second.text)
+    if statuses[1] == 409:
+        loser = first if first.status_code == 409 else second
+        assert loser.json()["error"]["code"] == "IDEMPOTENCY_REPLAY_IN_FLIGHT"
+    else:
+        # Both 201 is only legal as replay-of-the-same-response —
+        # identical bodies, identical order id.
+        assert first.json() == second.json()
+
+    assert await _order_count(tenant_session_factory, tenant_id, user_id) == 1
+
+
+async def test_in_flight_reservation_is_released_when_the_attempt_dies(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """A refused attempt below 500 caches; a 5xx (or a crash) must not
+    poison the key. Simulated at the storage layer: an in-flight
+    reservation row with no response recorded blocks a retry only while
+    fresh — the middleware's takeover path reclaims a stale one rather
+    than refusing forever."""
+    import sqlalchemy as sa
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+
+    body = {
+        "currency": "ZAR",
+        "customer_type": "individual",
+        "lines": [{"price_id": price_id, "quantity": 1}],
+    }
+    key = uuid.uuid4().hex
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": key}
+
+    first = await client.post("/api/v1/orders", json=body, headers=headers)
+    assert first.status_code == 201, first.text
+
+    # Regress the stored row to a *stale* in-flight reservation — the
+    # on-disk state a crash between handler-commit and response-UPDATE
+    # leaves behind, five-plus minutes later.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "UPDATE idempotency_keys"
+                " SET response_status = NULL, response_body = NULL,"
+                "     created_at = now() - interval '6 minutes'"
+                " WHERE idempotency_key = :k"
+            ),
+            {"k": key},
+        )
+
+    retry = await client.post("/api/v1/orders", json=body, headers=headers)
+    # The takeover path re-executed the handler (a second order is
+    # correct here: the first attempt is presumed dead, this IS the
+    # retry) and recorded its response over the reclaimed reservation.
+    assert retry.status_code == 201, retry.text
+    async with tenant_session_factory(tenant_id) as s:
+        recorded = (
+            await s.execute(
+                sa.text("SELECT response_status FROM idempotency_keys WHERE idempotency_key = :k"),
+                {"k": key},
+            )
+        ).scalar_one()
+    assert recorded == 201

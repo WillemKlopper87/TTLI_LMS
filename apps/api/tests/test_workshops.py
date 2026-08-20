@@ -369,6 +369,25 @@ async def test_public_workshops_lists_upcoming_sessions_without_auth(
     )
     workshop_id = await _make_workshop(client, admin_token)
 
+    # The endpoint caps at 12 rows and the dev DB is shared with every
+    # previous run of this suite: this file leaves "Executive Coaching
+    # Debrief" sessions behind, and test_push's reminder tests leave
+    # "Reminder Test Workshop <hex>" sessions starting within 24h — which
+    # sort *before* this test's next-Monday session and push it off the
+    # list (16 stale rows cancelled by hand on 2026-08-17; recurred by
+    # 2026-08-20). Cancel every prior run's leftovers up front so the
+    # assertion depends on this run, not on history.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "UPDATE workshop_sessions SET status = 'cancelled'"
+                " WHERE status = 'scheduled'"
+                "   AND workshop_id IN (SELECT id FROM workshops"
+                "        WHERE title = 'Executive Coaching Debrief'"
+                "           OR title LIKE 'Reminder Test Workshop %')"
+            )
+        )
+
     starts = _next_weekday_at(1, 9)
     created = await client.post(
         f"/api/v1/workshops/{workshop_id}/sessions",

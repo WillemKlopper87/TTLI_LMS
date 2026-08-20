@@ -96,8 +96,19 @@ def issue_access_token(
 
 
 def decode_access_token(token: str, *, secret: str) -> dict[str, Any]:
-    """Raises jwt.PyJWTError on anything wrong with the token."""
+    """Raises jwt.PyJWTError on anything wrong with the token.
+
+    A purpose token (MFA challenge, MFA enrolment) is signed with the same
+    secret and carries the same `sub`/`tid` claims an access token does, so
+    signature + expiry alone cannot tell them apart. Rejecting any token
+    that carries `purpose` is what makes issue_purpose_token's "never
+    accepted as an access token" guarantee actually true — without it, an
+    attacker holding only a password could spend the MFA challenge token
+    as a bearer for its whole lifetime instead of completing TOTP.
+    """
     decoded: dict[str, Any] = jwt.decode(token, secret, algorithms=[ALGORITHM])
+    if "purpose" in decoded:
+        raise jwt.InvalidTokenError("not an access token")
     return decoded
 
 
