@@ -1,6 +1,35 @@
 # STATUS
 
-**Updated:** 2026-08-18 — sticky site header (`position: sticky` on
+**Updated:** 2026-08-20 — platform-hardening pass 1 (the first pass driven
+by `docs/NEXT_AGENT_BRIEF.md` §3a). CI unbroken: `ruff format` on the two
+files that failed it since 2026-08-17, api-client regenerated with the 12
+endpoints (articles, recommendations, `/public/workshops`) that had
+drifted, and `Article`/`Recommendation` registered in
+`src/models/__init__.py` — both tables were invisible to alembic
+autogenerate (the red Format step had been masking `alembic check` all
+along; the models package docstring warned about exactly this). Three
+core-layer defects fixed, each with a regression test: (1)
+`decode_access_token` now refuses any token carrying `purpose` — the
+MFA-pending challenge JWT (same secret, same `sub`/`tid`) was accepted as
+a full bearer for its 5-minute life, so a password alone bypassed TOTP on
+every `PrincipalDep` endpoint with no explicit `require()`;
+(2) `Idempotency-Key` handling is a real reservation now (migration
+`0032`: `response_status` nullable, in-flight row INSERTed `ON CONFLICT
+DO NOTHING` *before* the handler, 409 `IDEMPOTENCY_REPLAY_IN_FLIGHT`
+while the first attempt runs, stale takeover after 5 minutes, 5xx
+releases the key, nightly `prune_idempotency_keys(30, 1)` sweep) —
+previously two concurrent replays both executed and the loser got a 500
+after its duplicate order was already durable; (3) `get_session` rolls
+back on `AppError` everywhere except the auth router and
+`POST /lessons/{id}/complete`, which keep commit-on-refusal deliberately
+via the new `AuditedSessionDep` (lockout counters and REQ-BYPASS-11
+refusal audits must survive the refusal that wrote them). The flaky
+public-workshops test now clears prior runs' leftover sessions at setup
+instead of silently depending on a clean DB. Live smoke through the BFF
+at :3010: login, `/enrolments`, and a `POST /orders` replay returning
+the identical order id (and, for the cached-refusal case, the identical
+`request_id`). Full detail in `docs/HANDOFF.md`'s matching entry.
+Prior: 2026-08-18 — sticky site header (`position: sticky` on
 `.site-head`, previously absent); real admin authoring for articles and
 recommendations (`/admin/articles`, `/admin/recommendations`, mirroring
 `/admin/podcasts`), verified end to end through actual browser

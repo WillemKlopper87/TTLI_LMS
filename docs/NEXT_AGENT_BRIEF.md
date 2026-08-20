@@ -1,0 +1,168 @@
+# TTLI_LMS — Next-agent brief (updated 2026-08-20)
+
+Read this first. It is the short, current-state handoff; `STATUS.md` and `HANDOFF.md` are the
+long-form logs and only need to be opened for detail on a specific subsystem. Verified against
+the working tree on 2026-08-18; **updated 2026-08-20 after platform-hardening pass 1**, which
+closed §3a items 1–4 and 8 (CI unbroken, the three core defects fixed with regression tests,
+the flaky workshops test made self-cleaning). Struck-through items below are done; §7 is the
+gap list the user has chosen as the build queue — operational gaps (§7b) first, then product
+gaps (§7a).
+
+---
+
+## 1. State at a glance
+
+| Item | State (verified 2026-08-18) |
+|---|---|
+| Branch / HEAD | `main` @ `260e184`, in sync with `origin/main`, working tree clean |
+| CI (`.github/workflows/api.yml`, name `ci`) | **RED on every push since `0b289d5` (2026-08-17 15:20)**. Last green: `f6a1f14`. |
+| Why red | (1) `ruff format --check` fails on `src/services/recommendations.py` and `scripts/seed_demo_content.py`; (2) **api-client drift** — `apps/api/openapi.json` + `packages/api-client/src/schema.gen.ts` are missing 12 endpoints (`/articles*`, `/recommendations*`, `/public/articles*`, `/public/recommendations`, `/public/workshops`) and 10 schemas. The Format failure now masks the drift failure. |
+| `ruff check` / `mypy src` | pass (ruff 0.16.2 from the venv; the global `ruff` 0.5.5 on this machine disagrees — always use `apps/api/.venv/Scripts/ruff.exe`) |
+| `pytest` (local, Docker up) | 1 failure: `tests/test_workshops.py::test_public_workshops_lists_upcoming_sessions_without_auth` — the dev DB has accumulated stale workshop sessions past the endpoint's `limit=12`; the test is data-dependent, not the code. Passes on a fresh DB. |
+| Web `npm run typecheck` | pass |
+| `wip/enterprise-ui` branch | **Already merged** (squash commit `717dee2`; branch tree is byte-identical to it). Stale — safe to delete locally and on origin. |
+| Dev services | `docker compose -f infra/docker-compose.yml` — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145 (service is misleadingly named `mailhog`), clamav 3410. API :8010, web :3010. |
+| Dev login | `smoke-agent@example.com` / `SmokeTest123!agent` (demo tenant, created 2026-08-20; the older `podcast-smoke@` account no longer authenticates). `admin@ttli.local` cannot log in via API (`.local` fails `EmailStr`). |
+
+## 2. What is built
+
+Numbers are STATUS.md's own table (`STATUS.md:64-74`); the per-section headings further down that
+file are stale (they still say Phase 3 ~40%, Phase 1 ~95%) — trust the table.
+
+| Phase | Done | What exists |
+|---|---|---|
+| 0 Discovery / sign-off | 0% — **customer-blocked** | 10 open decisions in `01_PRD.md §1.4`; engineering proceeded regardless |
+| 1 Foundation | ~98% | Multi-tenant FastAPI + Next 16 BFF, RLS tenancy (double-asserted: host + JWT `tid`), JWT/Argon2id/magic-link/TOTP auth, storage adapters (local/S3/Azure), arq worker, error envelope, idempotency middleware, CI gate |
+| 2 Public site / funnel | ~85% | Marketing site, leads/consent/events, guest access + expiry sweep, contact form, book pages (2 books), podcast platform, resources hub (articles + recommendations, 3 stages, all built incl. admin authoring), About/facilitator bios |
+| 3 Commerce | ~85% | Catalogue, orders, SA VAT tax engine, EFT + PO purchase paths, sequential invoicing, append-only ledger, approval queue, `Idempotency-Key`, full refunds/credit notes, Payfast card checkout + webhook (**never run against a real Payfast sandbox — no credentials exist**), multi-tier subscriptions, free-preview lessons. Netcash not attempted. |
+| 4 Core LMS | 100% | Content model, completion-rule engine, enrolments, real ffmpeg→HLS transcode with signed playback, heartbeat anti-bypass, WebVTT captions, quizzes/surveys/assignments with auto-grading, certificates (PDF+QR, public verify, LinkedIn), transcript, full course/module/lesson/template authoring UI |
+| 4.5 PWA + a11y | ~95% | Manifest/SW/offline shell, WCAG 2.1 AA contrast pass, Web Push (VAPID, 3 triggers, verified live on Edge/WNS). **Missing: axe-core CI gate.** |
+| 5 Corporate / workshops / marketing | 100% | Organisations, seat pools, PO checkout, manager visibility, facilitators/workshops/sessions/waitlists, pluggable meeting provider (Teams), CRM (deals/tasks/notes), marketing engine (segments/templates/campaigns/unsubscribe) |
+| 6 AI insights | 0% | Not started (demo target: 500 survey responses summarised with zero identifiers transmitted) |
+| 7 Hardening + cloud | 0% | Not started. **There is no Dockerfile, no prod compose, no IaC, no reverse-proxy config, no deploy job anywhere.** `docs/research/devsecops-deployment.md` is a plan, not state. |
+| Enterprise UI pass (2026-08-17) | built | 11-screen prototype alignment, course-authoring wizard (`/admin/courses/new`), revenue analytics (`/admin/analytics`, migration 0028) |
+
+Scale: 24 routers / ~45 services / 27 models / 31 migrations (`0001`–`0031`) / ~26k LOC API;
+50 `page.tsx` + 6 BFF routes / ~20k LOC web; ~318 tests, all HTTP-level through the real
+middleware stack against real Postgres/Redis/Garage/ClamAV/ffmpeg.
+
+## 3. Open work
+
+### 3a. Engineering — actionable now
+1. ~~**Make CI green**~~ **DONE 2026-08-20.** Also fixed en route: `Article`/`Recommendation` were never registered in `src/models/__init__.py`, so `alembic check` compared against blind metadata (masked by the red Format step). Original item: `ruff format` the two files; export `openapi.json` and `npm run generate` in `packages/api-client`; commit both. Convention (see §6) is that any router/schema change regenerates the client in the same commit — the last three passes skipped it.
+2. ~~**Security: MFA-pending JWT is accepted as an access token.**~~ **FIXED 2026-08-20** — `decode_access_token` rejects `purpose` tokens; regression test in `tests/test_auth_flows.py`. Original finding: `src/core/security.py:98` `decode_access_token` checks signature + `exp` only; `issue_purpose_token` (`:104`) mints the MFA challenge token with the same secret and `sub`/`tid` claims (`routers/auth.py:110-118`). Result: with a password but no TOTP, an attacker gets a 5-minute bearer that passes `get_principal` (`core/deps.py:136`) with empty `perms`; every endpoint that takes `PrincipalDep` without `principal.require(...)` is reachable — `routers/learning.py` has 8 such endpoints and 0 `require` calls. The docstring on `issue_purpose_token` claims the opposite. Fix: reject any token carrying `purpose` in `decode_access_token` (or require a positive `typ: "access"` claim). Add a test.
+3. ~~**Idempotency middleware is replay-caching, not replay-protection.**~~ **FIXED 2026-08-20** — reservation flow + migration `0032` + nightly `prune_idempotency_keys` sweep; race + stale-takeover tests in `tests/test_idempotency.py`. Original finding: `core/idempotency.py:128-190` — SELECT key → `call_next` (handler commits) → INSERT key, in three transactions. Two concurrent replays both miss, both create the order, loser gets a 500 from the unique index after the side effect is durable. Fix: INSERT an in-flight row `ON CONFLICT DO NOTHING` *before* `call_next`, 0 rows = 409, update with the response after. Also nothing prunes `idempotency_keys`.
+4. ~~**`get_session` commits on every `AppError`, globally**~~ **FIXED 2026-08-20** — rollback default; `AuditedSessionDep` for the auth router and `POST /lessons/{id}/complete` (REQ-BYPASS-11). Beware: FastAPI yield-dependencies must stay flat generators (see HANDOFF 2026-08-20 entry). Original finding: (`core/deps.py:79-88`). Justified for login-failure counters, but it means any service that mutates and then raises a business-rule error commits the partial state. Give the auth path its own dependency; default everything else to rollback.
+5. `scripts/hide_test_courses.py --apply` — 1,320 test-course artefacts still pollute the catalogue; dry-run verified, reversible, never applied (a human must run it).
+6. `ProductSummary` lacks `course_id`/`course_slug` (product → course deep-link); PO checkout has no `ap_email` field. Both specified in the enterprise-UI contract, not delivered.
+7. axe-core CI gate (last Phase 4.5 item).
+8. Stale test data: ~~the workshops test above~~ (self-cleaning since 2026-08-20); the underlying issue — tests share the dev DB with the running app and leak rows — remains, tracked in §7b "Test environment isolation".
+
+### 3b. Engineering — planned, larger
+- Phase 6 AI insights (ship inert behind `ai_enabled=false`), then Phase 7 hardening/containerisation per `docs/research/devsecops-deployment.md`.
+- Payment analytics dashboard beyond what shipped in `/admin/analytics` (`docs/research/payment-analytics-dashboard.md`).
+- redis-py bump is blocked by `arq` (pins redis <6, maintenance-only); replacing arq (SAQ/Streaq) is a real migration across 4 job types.
+- Post-build cleanup the user has already asked for (see §5): docs consolidation + codebase shrink.
+
+### 3c. Customer-blocked (do not build around these)
+Decision register (10 items, `01_PRD.md §1.4`); VAT position for international sales; Payfast/Netcash sandbox accounts; Azure SA-North availability; content inventory (videos, podcast audio, book copy); brand/design system sign-off; footer social URLs; Information Officer registration.
+
+## 4. What I would have done differently
+
+Ranked by how much it will cost the next agent.
+
+### Correctness / security
+- The three items in §3a.2–4 above. They are small fixes; the pattern behind them is that middleware/dependency-level code was written with a docstring asserting a property (`never accepted as an access token`, replay protection, "only login needs commit-on-error") that no test checks. **Add a test per invariant at the `core/` layer.**
+- Access tokens carry a `jti` that is never used — no denylist, so logout doesn't revoke. 15-min TTL is the only mitigation. Either use it or drop it.
+
+### Frontend architecture
+- **The generated API client is 11,398 lines and is imported once** (`lib/server-api.ts:8`, for `getTheme()`). Everything else is raw `fetch` + hand-written interfaces (~12 in `lib/server-api.ts`, ~60 more inline in pages; 14 in `lesson-activity-panel.tsx` alone). The type contract, its CI drift gate and the regenerate step all exist and are bypassed — an API field rename typechecks clean and fails at runtime. I would have made every BFF/server call go through the generated types from day one; the fix now is a `lib/api.ts` wrapper typed from `schema.gen.ts` and a page-by-page migration.
+- **`authedFetch` is copy-pasted byte-identical into 18 files** and `readError` into 5. None handle 401→refresh→retry; that relies solely on the 80%-of-TTL timer in `SessionProvider`, which fails on backgrounded/suspended tabs. One `lib/authed-fetch.ts` with retry-on-401, abort-on-unmount and error normalisation.
+- **`components/` has two files** for a 50-page app; `lesson-activity-panel.tsx` is 964 lines and eight more pages exceed 430. Inline `style={{}}` is pervasive enough that the CSP keeps `style-src 'unsafe-inline'` *because of it* (`proxy.ts` says so). I would have extracted a small component set (card, table, form field, button, status pill, modal) when the enterprise design system landed, and moved styles to Tailwind classes so the CSP could drop `unsafe-inline`.
+- **No web tests, no lint, no format script at all** — the `web` CI job is `typecheck + build`. Every browser-verified claim in HANDOFF was manual. Minimum: ESLint (`next lint`) + Playwright smoke on login → learn → admin, + axe in that same run.
+- Static content in code (`lib/facilitators.ts`) is fine as a stopgap but is a third content source next to the DB and the CMS-ish admin pages; it should move behind the API once bios exist.
+
+### Backend architecture
+- `services/enrolment.py` (954 lines) and `routers/assessment.py` (746) are god-modules; `routers/auth.py` (653) mixes login, MFA, magic-link, reset and recovery. Split by use case before adding Phase 6.
+- **Test suite: right shape, implemented 25 times.** `conftest.py` provides 5 fixtures; 24 test files define their own `client`, 26 their own `_redis_reachable`, ~22 their own login helper — 13k test LOC for 318 tests. Any change to app construction or auth touches ~25 files. Centralise into `conftest.py`.
+- **False green when Docker is down**: 29/35 test files are `integration`-marked and skip if Postgres/Redis are unreachable; only CI's post-hoc "0 skipped" check catches it. Locally, `pytest` with no services = green run that tested nothing. Make the skip a hard failure unless `ALLOW_SKIP_INTEGRATION=1`.
+- Tests write into the same DB the dev server uses and don't clean up → the flaky workshops test, the 16 stale sessions HANDOFF describes, the 1,320 test courses. Use a separate `ttli_test` database (or per-run schema) and truncate between modules.
+- Note: the older claim that "tests run as table owner and bypass RLS" is **wrong** — `conftest.py:20-25` connects as `app_user` and migrations use `FORCE ROW LEVEL SECURITY`; RLS *is* exercised. Don't repeat that claim.
+- Migrations `0008`, `0020`, `0022` exist only to fix data/GRANTs earlier migrations missed. Add a test that, for every RLS-forced table, asserts `app_user` has each verb the service layer issues.
+
+### Dependency / repo / process
+- `apps/api/uv.lock` is a 128-byte stub that locks nothing; `pyproject.toml` declares no dependencies; `requirements.txt` is the real (well-commented) source. `uv sync` gives an empty env. Either adopt uv properly or delete the lock. Transitive deps are unpinned either way.
+- **29 of 135 commits on `main` are `autosave: in-flight agent work (HH:MM)`**, pushed to origin, so `git log`/`blame` carry no rationale and all rationale lives in the 209 KB HANDOFF.md instead. Zero merge commits, zero PRs, zero tags, everything direct-to-main; a red main is only discovered after the fact. I would have kept autosaves on a scratch branch and squash-merged named commits (a PR per pass gives you CI *before* main and a place for the security-review triage that currently happens in follow-up commits). Rewriting history now is technically cheap (single author) but is a decision, not a chore — flag it, don't do it silently.
+- **Docs bloat**: HANDOFF.md 209 KB, STATUS.md 185 KB, both append-only, both internally inconsistent (STATUS's gate table says 277 tests / migrations at `0021`; its headline says 320 / 29 migrations; reality is ~318 / 31). README says "Phase 0 blocked, Phase 1 in progress", "Next.js 15", "Redis 7", "187 tests". I would have kept STATUS to a phase table + gates + open items (~150 lines) and made HANDOFF a dated log that gets archived per phase. The user has already asked for this consolidation once the build settles — do it before Phase 6 rather than after; it is the single largest tax on every new agent.
+- `chat-export-1786178220416.json` (592 KB, the largest tracked file) sits at repo root; move it under `docs/source/`.
+- `.env.example` is at repo root and README says `cp .env.example .env`, but `config.py` loads `.env` relative to CWD and the API is started from `apps/api` — the documented first-run step copies to the wrong directory. No Makefile/justfile: the real local bring-up is ~8 hand-typed steps across 4 directories (venv + `pip install -r requirements-dev.txt`, `arq` worker in a second terminal, `npm ci` in `packages/api-client` before `apps/web` — none of which are in README's code block).
+- CI: file is `api.yml` but is the whole pipeline (rename `ci.yml`); no `concurrency` group; no `permissions:` block; actions pinned by mutable `@v4`; no `--cov-fail-under`; `docs/check_links.py` and `docs/source/extract.py --check` are documented as gates but not in the workflow; no Dependabot/Renovate (every bump has been a manual "sprint"); no secret scanning despite dev creds committed in compose/CI; ZAP/Grype/Snyk are manual-only. Trivy in CI is report-only by design (documented). `clamav/clamav-debian:stable` is the one floating image tag.
+- Compose service `mailhog` runs Mailpit — rename it.
+
+### Things done well that the next agent should keep
+RLS with `set_config(..., true)` + `FORCE ROW LEVEL SECURITY` + double tenant assertion; `check_production_safety()` fail-fast; the single error envelope; the BFF that overwrites `X-Tenant-Host` from its own `Host` and forwards bodies as `arrayBuffer`; refresh cookie path-scoped to `/api/bff/auth` with `navigator.locks` refresh serialisation; per-request CSP nonce; graceful degradation for every un-provisioned third party (Payfast, Spotify, VAPID, Graph); the ruff/mypy strictness; and — above all — the *why* comments throughout both apps. Do not strip those comments; they are the real documentation.
+
+## 5. Recommended order for the next agent
+
+1. Green CI (§3a.1) — one commit, push, wait for green. Delete `wip/enterprise-ui`.
+2. The three `core/` fixes (§3a.2–4) with a test each — one commit, live-smoke MFA login through the BFF.
+3. Docs consolidation the user asked for: shrink STATUS.md to table + gates + open items; archive HANDOFF passes into `docs/handoff/YYYY-MM.md`; fix README's stack/status lines; move the chat export; add a `justfile`/`Makefile` and fix the `.env` path. Do this **now** — every later agent pays for it.
+4. Test hygiene: shared fixtures in `conftest.py`, separate test DB, hard-fail on skip.
+5. Frontend: `lib/authed-fetch.ts` + typed `lib/api.ts` from `schema.gen.ts`; ESLint + Playwright smoke + axe in the `web` job (closes Phase 4.5).
+6. Then the product gaps in §7a in order (Passes A–K of `docs/research/enterprise-gaps-plan.md`), Phase 6 → Phase 7 per the existing research docs, and the payment-analytics extension.
+
+## 6. Conventions and gotchas (carry forward)
+
+- Per-pass gate: `ruff check` + `ruff format --check` + `mypy src` + full `pytest` + `alembic check` + downgrade/upgrade round-trip + web `typecheck`/`build` + `npm run generate` in `packages/api-client` if any router/schema/docstring changed → **live smoke through the BFF at :3010** (every real bug this project shipped was found there, not in pytest) → STATUS/HANDOFF → commit → push → CI green.
+- Restart uvicorn/next before smoke tests; a stale server silently serves old code. Never run `next build` while `next dev` is serving (both write `.next/`) — it took the site down once.
+- Windows: Python `write_text` produces CRLF (repo is `eol=lf`); use `write_bytes` or normalise. Run `arq` with `PYTHONIOENCODING=utf-8`. Drive Edge via `--remote-debugging-port` + a small CDP script rather than the browser-use MCP.
+- New RLS-forced tables: check the `GRANT` covers every verb the service issues (0009 is the precedent; 0020/0022 are the scars).
+- The machine is unstable — persist work to disk incrementally and tell subagents to do the same.
+
+## 7. Missing but beneficial — what the current solution does not have
+
+Two lists. The first is product scope, grounded in the 54-row audit in
+`docs/research/feature-matrix-coverage.md` (2026-08-16) and re-checked against the code on
+2026-08-18 — nothing below has been built since that audit unless stated. The sequenced build plan
+for the product items already exists as Passes A–K in `docs/research/enterprise-gaps-plan.md`;
+none of those passes has started. The second list is platform/operational capability the docs
+never planned as features but a production LMS needs.
+
+### 7a. Product gaps (in the order I would build them)
+
+| # | Gap | Today | Why it matters | Size |
+|---|---|---|---|---|
+| 1 | **Admin operations home + per-course analytics** (audit #41, #40; Pass A) | `apps/web/app/admin/page.tsx` is a 21-line "Welcome" stub with two inert nav items ("Learners", "Reports"); `/admin/analytics` covers revenue only | First screen any buyer or admin sees. Every input already exists in `orders`, `enrolments`, `lesson_completions`, `quiz_attempts` | S–M |
+| 2 | **Audit log read path + coverage** (#52; Pass B) | `audit_events` is written (auth, enrolment, quiz, survey, assignment, webhooks) but there is no `GET`, no UI, no export; payment approve/reject/refund, certificate revoke and role changes are not logged | Enterprise column promises "advanced audit logs"; also the first thing a POPIA reviewer asks for | M |
+| 3 | **Tenant self-service: branding, domains, users, roles** (#44, #45 + unlisted; Pass C) | Theme and domains change only by migration; there is **no UI or endpoint to create a staff user or assign a role** — `routers/tenant.py` has one PATCH (manager-visibility) | An admin cannot onboard a colleague without a developer | M |
+| 4 | **SSO — Entra ID / OIDC** (#46; Pass D) | Password, magic link, TOTP only; `msal` is named in README's stack table but nothing exists | Standard corporate procurement gate for the Team/Corporate tiers | L |
+| 5 | **Learning paths** (#7; Pass E) | Zero hits for `learning_path` | Core LMS vocabulary; the Professional tier lists it | L |
+| 6 | **Finance completeness** (#34, #39, #31; Pass H) | No invoice PDF, no `GET /invoices` for the buyer, no accounting CSV export (`/invoices/export`, `/ledger/export`), Payfast never run against a sandbox | Cheap to close; the rigorous ledger/invoicing work is invisible to a customer without it | S–M |
+| 7 | **Workshops end to end** (#20, #22, #24, #25; Pass G) | Teams provider is a stub that raises; no ICS/calendar invite; no learner "my sessions" page; single facilitator per session; no reschedule; workshop credits not decremented | Live workshops are half the commercial pitch | M–L |
+| 8 | **Departments / business units** (#30; Pass F) | Zero hits | Corporate reporting is flat per organisation | M |
+| 9 | **Assessment depth** (#8, #9, #13; Pass J) | No survey results/aggregate endpoint or UI, `minimum_group_size` never enforced (REQ-ASSESS-06); no pre/post pairing; no question banks | The anonymous-survey story is built on the write side only | S–M |
+| 10 | **Custom certificate design** (#19; Pass I) | Fixed reportlab layout, Helvetica, no logo | Certificates are the visible product of the LMS | M |
+| 11 | **AI insights vertical slice** (#42, #43; Pass K = Phase 6) | Only `Tenant.ai_enabled` / `ai_monthly_token_budget` columns | The Phase 6 demo target; ship inert behind the flag | L |
+| 12 | CRM depth (#36, #37) | No deal owner/assignee, org link, search/filter, lead→deal conversion, contact page; campaigns are plain-text, `scheduled_at` unused, no preference centre | Fine for a demo, thin for daily use | M |
+| 13 | Coaching / one-on-one (#21), Zoom/Meet (#23), CPD fields beyond one integer (#18), LinkedIn share for certificate-only courses (#17), guest→paid carry-over and sample watermark (REQ-LEAD-05/07) | Enum values or a single column each | Small, demo-visible | S each |
+| 14 | Mobile layout for the admin shell (#4) | Fixed `w-56` sidebar | Facilitators mark attendance on phones | S |
+| 15 | Learner-facing search across catalogue/resources; a learner notification centre (push exists, no in-app inbox); an email preference centre | None | Expected baseline UX in any LMS | S–M |
+| 16 | Deferred by the PRD but commonly asked for: API keys / outbound webhooks (#38, #48), SCORM/xAPI import, discussion or Q&A per lesson, ASR-generated captions, DRM (#50), offline downloads (#51) | Not built, by decision | Raise with the customer before Phase 7 rather than discover in a tender | — |
+
+### 7b. Platform and operational gaps
+
+| Gap | Today | Why it matters |
+|---|---|---|
+| **Deployment substrate** | No Dockerfile, no prod compose, no IaC, no reverse proxy, no deploy job, no migration-on-deploy | Nothing can be put in front of a customer without greenfield Phase 7 work; also there is no staging environment |
+| **Observability** | Sentry DSN is a config flag only; no metrics, tracing, log shipping, dashboards or alerts; `06_OPERATIONS.md` describes them | Incidents will be diagnosed from uvicorn stdout |
+| **Backups / restore drill** | Prose only (the PG16→18 dump/restore); no scheduled backup, no tested restore | Phase 7 demo target is "restore drill completed" |
+| **Global rate limiting / abuse controls** | `services/rate_limit.py` is called on auth paths only; no per-IP or per-tenant limits on public endpoints (`/public/*`, `/verify/*`, `/leads`, webhooks) | Public forms and verification are scrape/spam surfaces |
+| **Token revocation** | `jti` minted, never stored; logout doesn't invalidate a live access token | 15-min TTL is the only mitigation |
+| **Data-subject rights (POPIA)** | No export-my-data / delete-my-account flow, no retention jobs beyond guest expiry and auth purge; `04_SECURITY` §11 lists legal hold and breach notification as open | Compliance obligations the customer will be asked about |
+| **Frontend quality gates** | No ESLint, no unit/e2e tests, no axe, no Lighthouse; `web` CI job is typecheck + build | Every UI regression is found by hand |
+| **Automated dependency updates** | No Dependabot/Renovate; `arq` blocks redis-py; transitive deps unpinned | Every bump has been a manual sprint |
+| **Test environment isolation** | Tests write into the dev DB; no `ttli_test` DB; per-test engine churn | Flaky tests and polluted catalogue (1,320 test courses) |
+| **Developer ergonomics** | No Makefile/justfile, ~8 hand-typed bring-up steps, `.env` path trap, `uv.lock` stub, `mailhog` service runs Mailpit | Every new agent loses the first hour |
+| **Feature flags / kill switches** | Per-feature `*_ENABLED` settings exist for some (break-glass, DRM named but absent, AI) but no runtime toggle mechanism | Phase 6 AI must ship inert and be switchable without a deploy |
+| **Multi-currency / i18n** | Tax engine seeds SA VAT only and refuses international buyers; UI is English-only, ZAR-only | README's pitch is "South Africa and internationally"; blocked on the VAT decision, but the currency/locale plumbing could be laid now |
+| **Release management** | No tags, no changelog, no PRs; autosave commits on `main` | No way to say "what shipped in v0.x" |

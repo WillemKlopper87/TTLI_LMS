@@ -3151,6 +3151,60 @@ race itself, which needs frame-accurate timing a screenshot can't easily
 prove) — mechanically identical to an already-working guard in the same
 component, on the same `status` value.
 
+**Platform-hardening pass 1 — 2026-08-20.** The first pass driven by
+`docs/NEXT_AGENT_BRIEF.md` (which now supersedes this file as the
+entry-point read; this file remains the pass log). Two commits.
+
+*Commit 1 — CI unbroken.* `ruff format` on `services/recommendations.py`
+and `scripts/seed_demo_content.py` (red since 2026-08-17), api-client
+regenerated (12 endpoints, 10 schemas that had drifted), and — found only
+because the Format failure had been masking every later CI step —
+`Article`/`Recommendation` were never imported in `src/models/__init__.py`,
+so `alembic check` had been comparing against metadata blind to both
+tables. The models package docstring literally warns about this exact
+omission. Lesson recorded: when CI is red on an early step, the later
+steps are not "passing", they are unexecuted.
+
+*Commit 2 — three core defects, each with a regression test.*
+(1) `decode_access_token` refuses tokens carrying `purpose`. The MFA
+challenge token shares the access token's secret and `sub`/`tid` claims;
+signature+expiry alone cannot tell them apart, so a password alone bought
+a 5-minute bearer that reached every `PrincipalDep` endpoint with no
+explicit `require()` — `routers/learning.py` has eight. The docstring on
+`issue_purpose_token` claimed the check existed; nothing tested it.
+(2) Idempotency reservations (migration `0032`). The old flow was
+SELECT → handler → INSERT in three transactions: two concurrent replays
+both executed, the loser 500ing on the unique index after its duplicate
+was durable. Now the row is INSERTed in-flight (`response_status` NULL,
+`ON CONFLICT DO NOTHING`) before the handler, UPDATEd with the response
+after; a concurrent replay gets 409 `IDEMPOTENCY_REPLAY_IN_FLIGHT`; a 5xx
+releases the key; a stale (5 min) reservation is taken over by the next
+retry; `prune_idempotency_keys(30, 1)` (SECURITY DEFINER, the 0005
+pattern — the worker holds no tenant GUC) sweeps nightly at 03:45. 0023's
+SELECT,INSERT-only GRANT gained UPDATE,DELETE — the 0020/0022 scar again.
+(3) `get_session` now rolls back on `AppError`; only the auth router and
+`POST /lessons/{id}/complete` keep commit-on-refusal (new
+`AuditedSessionDep`) because their refusal writes — lockout counters,
+LOGIN_FAILED, REQ-BYPASS-11's `lesson.completion_refused` — are the
+product. **Gotcha that cost an hour and two briefly-broken auth tests:**
+delegating a FastAPI yield-dependency through `async for s in inner():
+yield s` does NOT forward the endpoint's exception to `inner()` — the
+inner generator only ever sees GeneratorExit, so its except-AppError
+branch never runs and refusal writes silently roll back. The two session
+dependencies are therefore written out flat, with a comment saying why.
+
+*Also:* the flaky `test_public_workshops_lists_upcoming_sessions_without_auth`
+now cancels prior runs' leftover "Executive Coaching Debrief" sessions at
+setup — the 16-stale-sessions incident recurred on schedule the moment the
+suite ran twice in a week. Real fix (separate test database) stays queued
+in the brief's §7b. Live smoke through the BFF at :3010: login,
+`/enrolments`, `POST /orders` twice with one `Idempotency-Key` — identical
+order id back, and for the cached-refusal variant the identical
+`request_id`, which is the replay path proving itself. Note for smoke
+logins: `podcast-smoke@example.com` no longer authenticates (suite runs
+mutated it); use `smoke-agent@example.com` / `SmokeTest123!agent`
+(created 2026-08-20, demo tenant).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.
