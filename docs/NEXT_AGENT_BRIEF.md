@@ -15,7 +15,7 @@ gaps (§7a).
 | Item | State (verified 2026-08-18) |
 |---|---|
 | Branch / HEAD | `main` @ `260e184`, in sync with `origin/main`, working tree clean |
-| CI (`.github/workflows/api.yml`, name `ci`) | **RED on every push since `0b289d5` (2026-08-17 15:20)**. Last green: `f6a1f14`. |
+| CI (`.github/workflows/api.yml`, name `ci`) | Code-red causes fixed 2026-08-20, but **GitHub Actions is now billing-blocked on this account** ("recent account payments have failed or your spending limit needs to be increased") — jobs die in 4s with zero steps. Until billing is fixed: run the full local gate sweep (§6) and push directly; do not gate on CI. Same block as the account's other repos. |
 | Why red | (1) `ruff format --check` fails on `src/services/recommendations.py` and `scripts/seed_demo_content.py`; (2) **api-client drift** — `apps/api/openapi.json` + `packages/api-client/src/schema.gen.ts` are missing 12 endpoints (`/articles*`, `/recommendations*`, `/public/articles*`, `/public/recommendations`, `/public/workshops`) and 10 schemas. The Format failure now masks the drift failure. |
 | `ruff check` / `mypy src` | pass (ruff 0.16.2 from the venv; the global `ruff` 0.5.5 on this machine disagrees — always use `apps/api/.venv/Scripts/ruff.exe`) |
 | `pytest` (local, Docker up) | 1 failure: `tests/test_workshops.py::test_public_workshops_lists_upcoming_sessions_without_auth` — the dev DB has accumulated stale workshop sessions past the endpoint's `limit=12`; the test is data-dependent, not the code. Passes on a fresh DB. |
