@@ -2,7 +2,7 @@
 
 A multi-tenant platform for selling and delivering executive and leadership training in South Africa and internationally: storefront, Payfast/Netcash/EFT/purchase-order payments, an LMS with enforced completion rules, verifiable certificates and LinkedIn-shareable badges, live workshops through Microsoft Teams, an in-house CRM and billing spine, and anonymised AI insights — launched on infrastructure lean enough that hosting cost does not consume early revenue.
 
-**Status: Phase 0 blocked on customer sign-off; Phase 1 foundation in progress.** See [docs/STATUS.md](docs/STATUS.md) for build state.
+**Status: Phases 1–5 built (Phase 4 and 5 complete); Phase 0 sign-off still with the customer; Phases 6–7 not started.** See [docs/NEXT_AGENT_BRIEF.md](docs/NEXT_AGENT_BRIEF.md) for the current-state handoff and [docs/STATUS.md](docs/STATUS.md) for the long-form build log.
 
 ---
 
@@ -27,11 +27,11 @@ A multi-tenant platform for selling and delivering executive and leadership trai
 
 | Layer | Choice |
 |---|---|
-| Web | Next.js 15 App Router, TypeScript, Tailwind — public site, storefront, learner and admin portals |
+| Web | Next.js 16 App Router, TypeScript, Tailwind — public site, storefront, learner and admin portals |
 | API | FastAPI, SQLAlchemy 2.0 async, Alembic, Pydantic v2 — the system of record |
 | Type contract | `openapi.json` → `openapi-typescript` → `packages/api-client`, with a CI drift gate |
 | Database | PostgreSQL 18, row-level security for tenant isolation |
-| Queue and cache | arq + Redis 7 |
+| Queue and cache | arq + Redis 8 |
 | Identity | Self-issued JWT, Argon2id, magic links, TOTP; per-tenant SAML/OIDC via `msal` |
 | Object storage | S3 / Azure Blob / local adapter — Garage in development |
 | Video | Self-hosted HLS ladder ported from the in-house `Streaming_Server`; DRM behind a flag |
@@ -48,7 +48,7 @@ Rationale and rejected alternatives for each: [docs/01_PRD.md §5](docs/01_PRD.m
 
 ```
 apps/
-  web/                     Next.js 15 — login + admin shell, BFF proxy   ✅
+  web/                     Next.js 16 — public site, storefront, learner + admin portals, BFF proxy ✅
   api/                     FastAPI — identity, tenancy, storage, worker  ✅
     src/{core,models,schemas,routers,services,workers}/
     alembic/  tests/
@@ -60,7 +60,6 @@ infra/
   garage/                  garage.toml — single-node dev config          ✅
 docs/                      the documentation set                         ✅
   source/                  preserved planning material                   ✅
-chat-export-1786178220416.json    original export, reference only
 ```
 
 ---
@@ -68,11 +67,23 @@ chat-export-1786178220416.json    original export, reference only
 ## Local development
 
 ```bash
-cp .env.example .env                      # DATABASE_URL has no default, by design
-docker compose -f infra/docker-compose.yml up -d
-cd apps/api && alembic upgrade head && uvicorn src.main:app --reload --port 8010
-cd apps/web && npm install && npm run dev # login + admin shell on :3010
+cp .env.example apps/api/.env             # config.py loads .env relative to apps/api, its CWD
+docker compose -f infra/docker-compose.yml up -d   # ClamAV's first boot fetches its DB — allow ~5 min
+
+cd apps/api
+python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # once
+.venv/Scripts/alembic upgrade head
+.venv/Scripts/uvicorn src.main:app --reload --port 8010
+PYTHONIOENCODING=utf-8 .venv/Scripts/arq src.workers.main.WorkerSettings    # second terminal — email/transcode/sweeps
+
+cd packages/api-client && npm ci          # once — apps/web consumes it as file:../../packages/api-client
+cd apps/web && npm install && npm run dev # everything on :3010
 ```
+
+Or, from Git Bash: `scripts/dev-up.sh` starts the stack and prints the two
+server commands; `scripts/gates.sh` runs the full pre-commit gate sweep
+(ruff, mypy, pytest, alembic check + round-trip, api-client drift, web
+typecheck + build).
 
 Visit http://localhost:3010 for the demo tenant; add `127.0.0.1 meridian.localhost`
 to your hosts file and visit http://meridian.localhost:3010 to see the second
@@ -86,7 +97,7 @@ maintenance jobs.
 Verification:
 
 ```bash
-cd apps/api && pytest                     # 187 tests; needs the compose stack up
+cd apps/api && .venv/Scripts/pytest    # the full suite; needs the compose stack up (integration tests skip without it)
 python docs/source/extract.py --check     # verify the extracted source against the export
 python docs/check_links.py                # every doc link resolves
 ```

@@ -1,6 +1,26 @@
 # STATUS
 
-**Updated:** 2026-08-20 — platform-hardening pass 1 (the first pass driven
+**Updated:** 2026-08-20 (later, same day) — platform-hardening pass 2,
+dev ergonomics and repo hygiene (`docs/NEXT_AGENT_BRIEF.md` §7b): compose
+service `mailhog` renamed `mailpit`/`ttli-mailpit` (it always ran
+Mailpit); `chat-export-*.json` moved from the repo root into
+`docs/source/` (`extract.py --check` still passes); the dead 128-byte
+`uv.lock` stub deleted (`requirements.txt` is the single declared
+source of truth); README's Local development block now documents the
+real bring-up (venv, arq worker terminal, api-client `npm ci`, `.env`
+copied to `apps/api/` where config.py actually loads it — the old
+instruction copied it to the wrong directory); new `scripts/dev-up.sh`
+and `scripts/gates.sh` automate bring-up and the full gate sweep; CI
+workflow renamed `api.yml`→`ci.yml` with `permissions: contents: read`,
+a concurrency group, `workflow_dispatch`, and the two doc checks
+(`check_links.py`, `extract.py --check`) as blocking steps;
+`.github/dependabot.yml` added (weekly, grouped, redis major pinned
+out while arq caps it). NOTE: GitHub Actions is billing-blocked on this
+account — jobs die in 4s with zero steps — so `scripts/gates.sh` is the
+gate until billing is fixed; this pass ran it end to end: ALL GATES
+GREEN (333 tests). `wip/enterprise-ui` (already squash-merged as
+`717dee2`) deleted locally and on origin.
+Prior, same day — platform-hardening pass 1 (the first pass driven
 by `docs/NEXT_AGENT_BRIEF.md` §3a). CI unbroken: `ruff format` on the two
 files that failed it since 2026-08-17, api-client regenerated with the 12
 endpoints (articles, recommendations, `/public/workshops`) that had

@@ -91,7 +91,7 @@ services:
   # file not found in $PATH"), so there is no shell, curl, or wget
   # inside the container to run a CMD-SHELL probe against the admin
   # API's /health endpoint with — the same constraint already
-  # documented on mailhog above, for the same reason (no CLI to probe
+  # documented on mailpit above, for the same reason (no CLI to probe
   # with), just newly hit here rather than previously known.
   garage:
     image: dxflrs/garage:v2.3.0
@@ -127,9 +127,9 @@ services:
   # v1.29.2 (bumped from v1.24, dependency-upgrade sprint A): fixes
   # CVE-2026-27808, where the Link Check API could be used to probe
   # internal network IPs.
-  mailhog:
+  mailpit:
     image: axllent/mailpit:v1.29.2
-    container_name: ttli-mailhog
+    container_name: ttli-mailpit
     ports:
       - "1145:1025"
       - "8145:8025"

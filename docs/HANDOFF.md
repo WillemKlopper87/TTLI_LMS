@@ -3205,6 +3205,22 @@ logins: `podcast-smoke@example.com` no longer authenticates (suite runs
 mutated it); use `smoke-agent@example.com` / `SmokeTest123!agent`
 (created 2026-08-20, demo tenant).
 
+**Platform-hardening pass 2 — 2026-08-20, same day.** Ergonomics and
+hygiene, all from the brief's §7b list: mailpit rename, chat export moved
+under `docs/source/`, `uv.lock` stub deleted, README bring-up rewritten to
+match reality (the `.env` copy went to the wrong directory for the
+project's whole life), `scripts/dev-up.sh` + `scripts/gates.sh` (bash —
+no make/just on this machine), CI workflow renamed `ci.yml` and hardened
+(permissions, concurrency, workflow_dispatch, doc checks as gates),
+Dependabot configured. Discovered en route: **GitHub Actions is
+billing-blocked on this account** — every job dies in 4 seconds with
+"recent account payments have failed or your spending limit needs to be
+increased", zero steps executed. Until that is fixed remotely,
+`scripts/gates.sh` is the gate; it ran green end to end for this pass
+(333 tests, web build, drift, docs). The stale `wip/enterprise-ui`
+branch (byte-identical to squash commit `717dee2`) was deleted locally
+and on origin.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

@@ -4,6 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# The GITHUB_TOKEN needs nothing beyond reading the checkout; say so
+# instead of inheriting whatever the repo default happens to be.
+permissions:
+  contents: read
+
+# A rapid push series (the autosave era proved it happens) should cancel
+# the runs it superseded rather than queue behind them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
   run:
@@ -42,9 +54,10 @@ jobs:
           --health-retries 12
 
       # Mailpit (infra/docker-compose.yml's docstring has the Trivy-scan
-      # reasoning for why it's not mailhog/mailhog) — no health-cmd, no
+      # reasoning for why it's not mailhog/mailhog; the service is named for
+      # what it actually runs) — no health-cmd, no
       # launch args, so it starts serving as soon as the container is up.
-      mailhog:
+      mailpit:
         image: axllent/mailpit:v1.29.2
         ports: ["1145:1025", "8145:8025"]
 
@@ -198,6 +211,17 @@ jobs:
       - name: Dependency scan (api-client)
         working-directory: packages/api-client
         run: npm audit --audit-level=high
+
+      # Both are cheap, deterministic, zero-service checks that README and
+      # STATUS have always listed as manual verification steps — which
+      # meant they ran only when someone remembered. Now they gate.
+      - name: Docs link integrity
+        working-directory: .
+        run: python docs/check_links.py
+
+      - name: Source extraction fidelity
+        working-directory: .
+        run: python docs/source/extract.py --check
 
       # Container image scan (04 §3, §10 — the same images independently
       # reviewed there). Installed via the official GPG-signed apt repo,

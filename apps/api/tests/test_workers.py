@@ -171,9 +171,9 @@ async def test_send_email_job_delivers_via_smtp() -> None:  # type: ignore[no-un
         async with httpx.AsyncClient() as http:
             resp = await http.get(f"{MAILPIT_API}/messages")
     except httpx.ConnectError:
-        pytest.skip("Mailpit is not reachable at :8145 — docker compose up -d mailhog")
+        pytest.skip("Mailpit is not reachable at :8145 — docker compose up -d mailpit")
     if resp.status_code != 200:
-        pytest.skip("Mailpit is not reachable at :8145 — docker compose up -d mailhog")
+        pytest.skip("Mailpit is not reachable at :8145 — docker compose up -d mailpit")
 
     await send_email_job({}, to=to, subject=subject, body="hello from the worker")
 

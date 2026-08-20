@@ -2,7 +2,7 @@
 
 ## Provenance
 
-Everything in this directory derives from `../../chat-export-1786178220416.json` (578 KB), an exported chat titled *"Advanced LMS with Payment and CRM Integration"*.
+Everything in this directory derives from `chat-export-1786178220416.json` (578 KB, in this directory), an exported chat titled *"Advanced LMS with Payment and CRM Integration"*.
 
 | | |
 |---|---|

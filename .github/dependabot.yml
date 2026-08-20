@@ -1,0 +1,44 @@
+# Automated dependency-update PRs. Until now every bump was a manual
+# "dependency-upgrade sprint" (A–G, see docs/STATUS.md) — thorough, but
+# it only happens when a human remembers. Weekly, grouped, so the noise
+# stays one PR per ecosystem per week.
+#
+# Note: requirements.txt pins carry inline rationale comments (the
+# redis<6/arq cap especially). Dependabot will respect the pin but not
+# the reasoning — review its PRs against those comments before merging,
+# and keep redis-py <6 until arq is replaced (NEXT_AGENT_BRIEF §3b).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ["*"]
+    ignore:
+      # arq (maintenance-only) hard-caps redis <6; replacing arq is a
+      # tracked migration, not a version bump.
+      - dependency-name: redis
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+    groups:
+      web-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /packages/api-client
+    schedule:
+      interval: weekly
+    groups:
+      client-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

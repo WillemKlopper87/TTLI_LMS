@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-EXPORT = HERE.parent.parent / "chat-export-1786178220416.json"
+EXPORT = HERE / "chat-export-1786178220416.json"
 
 # Expected character counts, asserted so a silent truncation cannot pass unnoticed.
 EXPECTED_USER = [2019, 1002, 2467, 432]
