@@ -73,7 +73,7 @@ Ranked by how much it will cost the next agent.
 
 ### Correctness / security
 - The three items in §3a.2–4 above. They are small fixes; the pattern behind them is that middleware/dependency-level code was written with a docstring asserting a property (`never accepted as an access token`, replay protection, "only login needs commit-on-error") that no test checks. **Add a test per invariant at the `core/` layer.**
-- Access tokens carry a `jti` that is never used — no denylist, so logout doesn't revoke. 15-min TTL is the only mitigation. Either use it or drop it.
+- ~~Access-token `jti` never used~~ — fixed 2026-08-20 (logout denylists it; `get_principal` refuses denylisted tokens).
 
 ### Frontend architecture
 - **The generated API client is 11,398 lines and is imported once** (`lib/server-api.ts:8`, for `getTheme()`). Everything else is raw `fetch` + hand-written interfaces (~12 in `lib/server-api.ts`, ~60 more inline in pages; 14 in `lesson-activity-panel.tsx` alone). The type contract, its CI drift gate and the regenerate step all exist and are bypassed — an API field rename typechecks clean and fails at runtime. I would have made every BFF/server call go through the generated types from day one; the fix now is a `lib/api.ts` wrapper typed from `schema.gen.ts` and a page-by-page migration.
@@ -156,8 +156,8 @@ never planned as features but a production LMS needs.
 | **Deployment substrate** | No Dockerfile, no prod compose, no IaC, no reverse proxy, no deploy job, no migration-on-deploy | Nothing can be put in front of a customer without greenfield Phase 7 work; also there is no staging environment |
 | **Observability** | Sentry DSN is a config flag only; no metrics, tracing, log shipping, dashboards or alerts; `06_OPERATIONS.md` describes them | Incidents will be diagnosed from uvicorn stdout |
 | **Backups / restore drill** | Prose only (the PG16→18 dump/restore); no scheduled backup, no tested restore | Phase 7 demo target is "restore drill completed" |
-| **Global rate limiting / abuse controls** | `services/rate_limit.py` is called on auth paths only; no per-IP or per-tenant limits on public endpoints (`/public/*`, `/verify/*`, `/leads`, webhooks) | Public forms and verification are scrape/spam surfaces |
-| **Token revocation** | `jti` minted, never stored; logout doesn't invalidate a live access token | 15-min TTL is the only mitigation |
+| **Global rate limiting / abuse controls** | CORRECTION: leads, guest-access and `/verify/*` always had per-IP limits (the 08-18 review missed them). Real defect fixed 2026-08-20: behind the BFF all "per-IP" buckets shared the BFF's address — the BFF now forwards `X-Forwarded-For` and the API honours it behind `TRUST_X_FORWARDED_FOR` (default false; enable only when the API is BFF-only). Still open: no limits on `/public/*` reads or webhooks; no per-tenant quotas |
+| **Token revocation** | ~~jti never read~~ — fixed 2026-08-20: logout denylists the presented token's jti (TTL = remaining life), `get_principal` checks it | Done |
 | **Data-subject rights (POPIA)** | No export-my-data / delete-my-account flow, no retention jobs beyond guest expiry and auth purge; `04_SECURITY` §11 lists legal hold and breach notification as open | Compliance obligations the customer will be asked about |
 | **Frontend quality gates** | No ESLint, no unit/e2e tests, no axe, no Lighthouse; `web` CI job is typecheck + build | Every UI regression is found by hand |
 | **Automated dependency updates** | No Dependabot/Renovate; `arq` blocks redis-py; transitive deps unpinned | Every bump has been a manual sprint |

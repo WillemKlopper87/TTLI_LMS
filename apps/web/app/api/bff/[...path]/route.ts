@@ -16,6 +16,14 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   const headers: Record<string, string> = {
     "X-Tenant-Host": request.headers.get("host") ?? "localhost",
   };
+  // Same overwrite-not-append stance as X-Tenant-Host: the value is what
+  // Next's own server observed (it populates x-forwarded-for from the
+  // socket), never something the browser chose. The API only honours it
+  // when TRUST_X_FORWARDED_FOR says this proxy is the sole path in —
+  // see apps/api/src/core/net.py. Without this, every per-IP rate limit
+  // saw one shared address for the entire site.
+  const clientAddr = request.headers.get("x-forwarded-for");
+  if (clientAddr) headers["X-Forwarded-For"] = clientAddr;
   const auth = request.headers.get("authorization");
   if (auth) headers["Authorization"] = auth;
   const contentType = request.headers.get("content-type");

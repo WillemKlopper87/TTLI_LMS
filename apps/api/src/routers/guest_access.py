@@ -10,8 +10,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, status
 from redis.asyncio import Redis
 
+from src.core.config import get_settings
 from src.core.deps import CryptoDep, RedisDep, SessionDep, SettingsDep, TenantDep
 from src.core.errors import AppError, TooManyAttempts
+from src.core.net import client_ip
 from src.schemas.leads import LeadRequest
 from src.services import consent, events, guest_access, identity, rate_limit
 from src.services.email import send_email
@@ -31,7 +33,7 @@ POLICY_VERSION = "unpublished-0"
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
 async def _enforce_rate_limit(redis: Redis, *, ip: str | None) -> None:

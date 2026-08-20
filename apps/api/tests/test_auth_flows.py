@@ -647,3 +647,30 @@ async def test_mfa_pending_token_is_not_an_access_token(
         "/api/v1/enrolments", headers={"Authorization": f"Bearer {enrollment_token}"}
     )
     assert smuggled_enrollment.status_code == 401
+
+
+async def test_logout_revokes_the_access_token_too(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    """Before the jti denylist, logout revoked only the refresh family —
+    the access token stayed a live bearer for up to access_token_minutes
+    with no mechanism able to revoke it. Now the presented token's jti is
+    denylisted for its remaining life and get_principal refuses it."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200
+    access_token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    before = await client.get("/api/v1/enrolments", headers=headers)
+    assert before.status_code == 200
+
+    out = await client.post(
+        "/api/v1/auth/logout", json={"refresh_token": refresh_token}, headers=headers
+    )
+    assert out.status_code == 204
+
+    after = await client.get("/api/v1/enrolments", headers=headers)
+    assert after.status_code == 401

@@ -63,7 +63,11 @@ class RefreshRequest(BaseModel):
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str = Field(min_length=1)
+    # Optional since the jti denylist (2026-08-20): a logout carrying only
+    # the Authorization bearer still has something real to revoke. Empty
+    # means "no refresh family to end" — revoke_family_for_token treats
+    # it as not-found, and logout stays an idempotent 204 either way.
+    refresh_token: str = ""
 
 
 class MfaEnrollResponse(BaseModel):

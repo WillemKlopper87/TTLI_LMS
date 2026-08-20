@@ -14,6 +14,7 @@ import uuid
 from fastapi import APIRouter, Request, status
 from sqlalchemy import select
 
+from src.core.config import get_settings
 from src.core.deps import (
     CryptoDep,
     PrincipalDep,
@@ -25,6 +26,7 @@ from src.core.deps import (
 )
 from src.core.errors import Forbidden, NotFound, TooManyAttempts
 from src.core.ids import uuid7
+from src.core.net import client_ip
 from src.models.credential import Badge, BadgeTemplate, Certificate, CertificateTemplate
 from src.models.learning import Enrolment
 from src.schemas.credentials import (
@@ -63,7 +65,7 @@ def _parse_uuid(value: str) -> uuid.UUID:
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
 async def _owns_certificate(

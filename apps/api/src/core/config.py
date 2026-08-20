@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # --- Redis ---
     redis_url: str = "redis://localhost:6399/0"
 
+    # --- Networking ---
+    # Honour X-Forwarded-For for per-IP rate limiting and audit rows.
+    # Enable ONLY when the API is reachable exclusively through the BFF
+    # (or another trusted proxy) — with the API directly reachable, any
+    # caller could spoof the header and dodge every per-IP limit. See
+    # src/core/net.py for the full reasoning.
+    trust_x_forwarded_for: bool = False
+
     # --- Auth ---
     access_token_minutes: int = 15
     refresh_token_days: int = 30

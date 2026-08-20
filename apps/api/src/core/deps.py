@@ -169,7 +169,9 @@ class Principal:
             raise Forbidden("You do not have access to this resource.")
 
 
-async def get_principal(request: Request, settings: SettingsDep, tenant: TenantDep) -> Principal:
+async def get_principal(
+    request: Request, settings: SettingsDep, tenant: TenantDep, redis: RedisDep
+) -> Principal:
     header = request.headers.get("authorization", "")
     if not header.startswith("Bearer "):
         raise Unauthenticated("Authentication required.")
@@ -178,6 +180,15 @@ async def get_principal(request: Request, settings: SettingsDep, tenant: TenantD
         claims = decode_access_token(header[7:].strip(), secret=settings.secret_key)
     except jwt.PyJWTError as exc:
         raise Unauthenticated("Authentication required.") from exc
+
+    # Logout denylists the access token's jti for its remaining life
+    # (routers/auth.py) — without this check the jti was minted and never
+    # read, and "logout" left a bearer no mechanism could revoke. One
+    # Redis EXISTS per authenticated request is the accepted cost; the
+    # key expires with the token, so the set stays bounded.
+    jti = claims.get("jti")
+    if jti and await redis.exists(f"denylist:jti:{jti}"):
+        raise Unauthenticated("Authentication required.")
 
     token_tenant = uuid.UUID(claims["tid"])
     # The tenant is asserted twice — by hostname and by token claim. A single

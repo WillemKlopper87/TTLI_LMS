@@ -1,6 +1,21 @@
 # STATUS
 
-**Updated:** 2026-08-20 (third pass, same day) — test-environment
+**Updated:** 2026-08-20 (fourth pass, same day) — abuse controls
+(`docs/NEXT_AGENT_BRIEF.md` §7b): (1) logout now denylists the presented
+access token's `jti` in Redis for its remaining life and `get_principal`
+refuses denylisted tokens — before this the jti was minted and never
+read, and logout left a live bearer nothing could revoke (one Redis
+EXISTS per authenticated request, keys expire with the token);
+(2) the BFF forwards `X-Forwarded-For` (its own server's socket view,
+overwrite-not-append like `X-Tenant-Host`) and the API honours it
+behind a new `TRUST_X_FORWARDED_FOR` setting, default false — until
+now every per-IP rate limit (login, leads, guest access, credential
+verify — all of which DID already exist, correcting the 08-18 brief's
+claim that rate limiting was auth-only) saw the BFF's address for all
+browser traffic, i.e. one shared bucket for the whole site. The four
+router-local `_client_ip` copies now route through `src/core/net.py`.
+Regression test: logout → the same access token is refused.
+Prior, same day — test-environment
 isolation (`docs/NEXT_AGENT_BRIEF.md` §7b): `tests/conftest.py` now
 unconditionally rewrites `DATABASE_URL`/`DATABASE_URL_SYNC` to
 `<dbname>_test` and `REDIS_URL` to db 1 *before* `src.core.config` is

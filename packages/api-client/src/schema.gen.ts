@@ -4289,7 +4289,10 @@ export interface components {
         };
         /** LogoutRequest */
         LogoutRequest: {
-            /** Refresh Token */
+            /**
+             * Refresh Token
+             * @default
+             */
             refresh_token: string;
         };
         /** MagicLinkConsumeRequest */

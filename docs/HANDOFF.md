@@ -3234,6 +3234,34 @@ carries a scoped E402 ignore in pyproject. 333 tests pass on the
 pristine database, which also retroactively proves the suite never
 depended on dev-DB seed-script data.
 
+**Platform-hardening pass 4 — 2026-08-20, same day.** Abuse controls.
+The jti denylist closes the "logout can't revoke a bearer" gap the
+2026-08-18 review flagged: logout best-effort-decodes its Authorization
+header and denylists the jti with TTL = the token's remaining life;
+get_principal does one Redis EXISTS per request. The X-Forwarded-For
+work corrects a wrong belief AND a real defect at once: the review
+brief claimed public endpoints had no rate limits — false, leads/guest/
+verify all had per-IP limits — but every one of those limits was
+keyed on the BFF's own address for browser traffic, one bucket for the
+entire site. The BFF now forwards its server's socket view of the
+client (overwrite, never append — the X-Tenant-Host stance) and the
+API honours it only behind TRUST_X_FORWARDED_FOR=false-by-default,
+because with the API directly reachable the header is spoofable and
+the flag must stay off. `src/core/net.py` carries the reasoning; the
+four routers' `_client_ip` copies now delegate to it.
+
+The live smoke then caught two defects pytest structurally cannot see,
+both in the BFF logout path: the proxy never forwarded the
+Authorization header (so the API's new denylist code ran with nothing
+to denylist — same class as the Idempotency-Key header the catch-all
+once dropped), and once forwarded, `LogoutRequest.refresh_token`'s
+`min_length=1` made the cookie-less bearer-only logout 422 before the
+denylist line was reached, invisibly, because the BFF's logout is
+deliberately best-effort-and-204. `refresh_token` is optional now
+(empty = "no family to end"), the proxy forwards the bearer and calls
+upstream even without a refresh cookie, and the smoke's final state is
+login 200 → logout 204 → same bearer 401 through the real :3010 path.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

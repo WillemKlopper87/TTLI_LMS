@@ -9,6 +9,7 @@ same rule extends to the magic-link and MFA endpoints added in Sprint 2.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import jwt
 from fastapi import APIRouter, Request, status
@@ -16,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 
+from src.core.config import get_settings
 from src.core.deps import (
     AuditedSessionDep,
     CryptoDep,
@@ -25,7 +27,9 @@ from src.core.deps import (
     TenantDep,
 )
 from src.core.errors import TooManyAttempts, Unauthenticated
+from src.core.net import client_ip
 from src.core.security import (
+    decode_access_token,
     decode_purpose_token,
     hash_token,
     issue_access_token,
@@ -72,7 +76,7 @@ LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
 def _anonymous_id(request: Request) -> uuid.UUID | None:
@@ -462,11 +466,29 @@ async def logout(
     request: Request,
     session: AuditedSessionDep,
     tenant: TenantDep,
+    settings: SettingsDep,
+    redis: RedisDep,
 ) -> None:
     """Ends this session only — revoke_all_for_user (all devices) is reserved
     for password-reset-confirm, where proof of mailbox justifies the wider
     blast radius. Always 204, whether or not the token was still live, so
     logout is idempotent and never leaks token state via status code."""
+    # The access token dies with the session, not just the refresh family.
+    # Its jti goes on the Redis denylist for exactly its remaining life —
+    # before this, "logout" left a live bearer valid for up to
+    # access_token_minutes, revocable by nothing. Best-effort decode: an
+    # absent/expired/garbage Authorization header changes nothing about
+    # logout's idempotent 204 contract.
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            claims = decode_access_token(auth_header[7:].strip(), secret=settings.secret_key)
+            remaining = int(claims["exp"]) - int(datetime.now(UTC).timestamp())
+            if claims.get("jti") and remaining > 0:
+                await redis.set(f"denylist:jti:{claims['jti']}", "1", ex=remaining)
+        except jwt.PyJWTError:
+            pass
+
     user_id = await tokens.revoke_family_for_token(session, raw_token=body.refresh_token)
     if user_id is not None:
         await audit.record(

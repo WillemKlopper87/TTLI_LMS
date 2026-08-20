@@ -18,6 +18,10 @@ export function authHeaders(request: NextRequest): Record<string, string> {
     "X-Tenant-Host": request.headers.get("host") ?? "localhost",
     "Content-Type": "application/json",
   };
+  // See the catch-all proxy's identical line for the reasoning — auth
+  // endpoints are exactly where per-IP limits matter most.
+  const clientAddr = request.headers.get("x-forwarded-for");
+  if (clientAddr) headers["X-Forwarded-For"] = clientAddr;
   const fingerprint = request.headers.get("x-device-fingerprint");
   if (fingerprint) headers["X-Device-Fingerprint"] = fingerprint;
   return headers;
