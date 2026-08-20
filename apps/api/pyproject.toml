@@ -21,6 +21,10 @@ ignore = [
 # Dev-only scripts put sys.path.insert before their src imports so they can
 # be run directly from apps/api without installing the package.
 "scripts/*" = ["E402"]
+# conftest must rewrite DATABASE_URL/REDIS_URL to the isolated test
+# database BEFORE src.core.config is imported (get_settings caches), so
+# its env-swap helpers necessarily precede the imports.
+"tests/conftest.py" = ["E402", "S101", "S105", "S106"]
 
 [tool.mypy]
 python_version = "3.11"

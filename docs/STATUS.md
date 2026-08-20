@@ -1,6 +1,17 @@
 # STATUS
 
-**Updated:** 2026-08-20 (later, same day) — platform-hardening pass 2,
+**Updated:** 2026-08-20 (third pass, same day) — test-environment
+isolation (`docs/NEXT_AGENT_BRIEF.md` §7b): `tests/conftest.py` now
+unconditionally rewrites `DATABASE_URL`/`DATABASE_URL_SYNC` to
+`<dbname>_test` and `REDIS_URL` to db 1 *before* `src.core.config` is
+imported, and provisions the test database itself on first use (CREATE
+DATABASE + the three extensions + `alembic upgrade head` — which also
+proves the empty-database migration path every session). Tests can no
+longer write into the dev catalogue, break the running dev server's
+Redis cache with `flushdb()`, or leave workshop sessions that flake
+`GET /public/workshops` — the three incidents that motivated this. Full
+suite: 333 passed against a pristine `ttli_test`.
+Prior, same day — platform-hardening pass 2,
 dev ergonomics and repo hygiene (`docs/NEXT_AGENT_BRIEF.md` §7b): compose
 service `mailhog` renamed `mailpit`/`ttli-mailpit` (it always ran
 Mailpit); `chat-export-*.json` moved from the repo root into

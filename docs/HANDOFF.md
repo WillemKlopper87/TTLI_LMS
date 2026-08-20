@@ -3221,6 +3221,19 @@ increased", zero steps executed. Until that is fixed remotely,
 branch (byte-identical to squash commit `717dee2`) was deleted locally
 and on origin.
 
+**Platform-hardening pass 3 — 2026-08-20, same day.** Test isolation:
+conftest swaps the env URLs to `ttli_test`/redis db 1 before the config
+module can cache them, and provisions the database itself (extensions
+mirrored from `infra/postgres-init/` because init-dir scripts only run
+on a volume's first boot; schema via the real migrations, so every test
+session re-proves `alembic upgrade head` on an empty database; 0001's
+role creation is idempotent so the pre-existing cluster-wide `app_user`
+is harmless). The env-swap block must stay ABOVE the `src.core.*`
+imports — `get_settings` caches — which is why `tests/conftest.py`
+carries a scoped E402 ignore in pyproject. 333 tests pass on the
+pristine database, which also retroactively proves the suite never
+depended on dev-DB seed-script data.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

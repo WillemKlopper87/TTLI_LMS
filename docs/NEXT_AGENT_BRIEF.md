@@ -86,7 +86,7 @@ Ranked by how much it will cost the next agent.
 - `services/enrolment.py` (954 lines) and `routers/assessment.py` (746) are god-modules; `routers/auth.py` (653) mixes login, MFA, magic-link, reset and recovery. Split by use case before adding Phase 6.
 - **Test suite: right shape, implemented 25 times.** `conftest.py` provides 5 fixtures; 24 test files define their own `client`, 26 their own `_redis_reachable`, ~22 their own login helper — 13k test LOC for 318 tests. Any change to app construction or auth touches ~25 files. Centralise into `conftest.py`.
 - **False green when Docker is down**: 29/35 test files are `integration`-marked and skip if Postgres/Redis are unreachable; only CI's post-hoc "0 skipped" check catches it. Locally, `pytest` with no services = green run that tested nothing. Make the skip a hard failure unless `ALLOW_SKIP_INTEGRATION=1`.
-- Tests write into the same DB the dev server uses and don't clean up → the flaky workshops test, the 16 stale sessions HANDOFF describes, the 1,320 test courses. Use a separate `ttli_test` database (or per-run schema) and truncate between modules.
+- ~~Tests write into the same DB the dev server uses~~ — fixed 2026-08-20 (conftest-provisioned `ttli_test` + redis db 1).
 - Note: the older claim that "tests run as table owner and bypass RLS" is **wrong** — `conftest.py:20-25` connects as `app_user` and migrations use `FORCE ROW LEVEL SECURITY`; RLS *is* exercised. Don't repeat that claim.
 - Migrations `0008`, `0020`, `0022` exist only to fix data/GRANTs earlier migrations missed. Add a test that, for every RLS-forced table, asserts `app_user` has each verb the service layer issues.
 
@@ -161,7 +161,7 @@ never planned as features but a production LMS needs.
 | **Data-subject rights (POPIA)** | No export-my-data / delete-my-account flow, no retention jobs beyond guest expiry and auth purge; `04_SECURITY` §11 lists legal hold and breach notification as open | Compliance obligations the customer will be asked about |
 | **Frontend quality gates** | No ESLint, no unit/e2e tests, no axe, no Lighthouse; `web` CI job is typecheck + build | Every UI regression is found by hand |
 | **Automated dependency updates** | No Dependabot/Renovate; `arq` blocks redis-py; transitive deps unpinned | Every bump has been a manual sprint |
-| **Test environment isolation** | Tests write into the dev DB; no `ttli_test` DB; per-test engine churn | Flaky tests and polluted catalogue (1,320 test courses) |
+| **Test environment isolation** | ~~No `ttli_test` DB~~ — since 2026-08-20 conftest provisions and targets `ttli_test` + redis db 1 unconditionally. Still open: per-test engine churn; the 1,320 historical test courses still pollute the dev catalogue (`scripts/hide_test_courses.py --apply`, human decision) | Root cause fixed; leftovers remain |
 | **Developer ergonomics** | No Makefile/justfile, ~8 hand-typed bring-up steps, `.env` path trap, `uv.lock` stub, `mailhog` service runs Mailpit | Every new agent loses the first hour |
 | **Feature flags / kill switches** | Per-feature `*_ENABLED` settings exist for some (break-glass, DRM named but absent, AI) but no runtime toggle mechanism | Phase 6 AI must ship inert and be switchable without a deploy |
 | **Multi-currency / i18n** | Tax engine seeds SA VAT only and refuses international buyers; UI is English-only, ZAR-only | README's pitch is "South Africa and internationally"; blocked on the VAT decision, but the currency/locale plumbing could be laid now |

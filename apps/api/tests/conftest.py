@@ -28,6 +28,36 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-32-characters-long
 os.environ.setdefault("FIELD_ENCRYPTION_KEY", base64.b64encode(b"F" * 32).decode())
 os.environ.setdefault("BLIND_INDEX_KEY", base64.b64encode(b"B" * 32).decode())
 
+# Tests never touch the database or Redis index the dev servers use.
+# For the project's whole life they shared `ttli` and redis db 0 with
+# the running app, and the leakage was not hypothetical: 1,320 test
+# courses in the catalogue, 16 stale workshop sessions breaking a real
+# test, and every `client` fixture's flushdb() nuking the dev server's
+# tenant cache mid-session. The rewrite below is unconditional — however
+# DATABASE_URL arrives (shell, .env, CI), tests run against
+# `<dbname>_test` on the same server and redis db 1, and provision the
+# test database themselves on first use (`_ensure_test_database`).
+TEST_DB_SUFFIX = "_test"
+
+
+def _swap_db_name(url: str, name: str) -> str:
+    base, _, _ = url.rpartition("/")
+    return f"{base}/{name}"
+
+
+def _test_db_name(url: str) -> str:
+    plain = url.rpartition("/")[2]
+    return plain if plain.endswith(TEST_DB_SUFFIX) else plain + TEST_DB_SUFFIX
+
+
+_TEST_DB = _test_db_name(os.environ["DATABASE_URL"])
+os.environ["DATABASE_URL"] = _swap_db_name(os.environ["DATABASE_URL"], _TEST_DB)
+os.environ["DATABASE_URL_SYNC"] = _swap_db_name(os.environ["DATABASE_URL_SYNC"], _TEST_DB)
+_redis = os.environ.get("REDIS_URL", "redis://localhost:6399/0")
+os.environ["REDIS_URL"] = (
+    _redis.rsplit("/", 1)[0] + "/1" if _redis.count("/") >= 3 else _redis + "/1"
+)
+
 from src.core.config import Settings, get_settings
 from src.core.crypto import CryptoBox
 from src.core.db import (
@@ -62,6 +92,49 @@ def crypto(settings: Settings) -> CryptoBox:
     return CryptoBox(settings.encryption_key_bytes(), settings.blind_index_key_bytes())
 
 
+_test_db_provisioned = False
+
+
+def _ensure_test_database(settings: Settings) -> None:
+    """Create + migrate the isolated test database, once per session.
+
+    The maintenance connection is the sync (owner) URL pointed at the
+    `postgres` database; extensions mirror infra/postgres-init/
+    01-extensions.sql (an init-dir script only runs on a volume's FIRST
+    boot, so the test database can never rely on it); the schema comes
+    from the real migrations — which also proves, every session, that
+    `alembic upgrade head` works on an empty database. Migration 0001's
+    role creation is idempotent, so the cluster-wide `app_user` existing
+    already (the dev database created it) is fine.
+    """
+    global _test_db_provisioned
+    if _test_db_provisioned:
+        return
+    import sqlalchemy as sa
+    from alembic import command as alembic_command
+    from alembic.config import Config as AlembicConfig
+
+    admin = sa.create_engine(
+        _swap_db_name(settings.database_url_sync, "postgres"), isolation_level="AUTOCOMMIT"
+    )
+    with admin.connect() as conn:
+        exists = conn.execute(
+            sa.text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": _TEST_DB}
+        ).scalar()
+        if not exists:
+            conn.execute(sa.text(f'CREATE DATABASE "{_TEST_DB}"'))
+    admin.dispose()
+
+    owner = sa.create_engine(settings.database_url_sync, isolation_level="AUTOCOMMIT")
+    with owner.connect() as conn:
+        for ext in ("citext", "pg_trgm", "pgcrypto"):
+            conn.execute(sa.text(f'CREATE EXTENSION IF NOT EXISTS "{ext}"'))
+    owner.dispose()
+
+    alembic_command.upgrade(AlembicConfig("alembic.ini"), "head")
+    _test_db_provisioned = True
+
+
 @pytest.fixture
 def database_url(settings: Settings) -> str:
     if not _database_reachable(settings.database_url):
@@ -69,6 +142,7 @@ def database_url(settings: Settings) -> str:
             "no Postgres on the configured DATABASE_URL — "
             "run: docker compose -f infra/docker-compose.yml up -d postgres"
         )
+    _ensure_test_database(settings)
     return settings.database_url
 
 
