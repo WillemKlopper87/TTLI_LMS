@@ -1,0 +1,14 @@
+# Root context is used by apps/web/Dockerfile (it needs packages/api-client
+# alongside apps/web). Keep the context small and secret-free.
+**/node_modules/
+**/.next/
+**/.venv/
+**/__pycache__/
+.git/
+.env
+.env.*
+apps/api/var/
+apps/api/.env
+docs/
+infra/
+*.log

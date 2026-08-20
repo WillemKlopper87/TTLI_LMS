@@ -1,0 +1,86 @@
+# Production-shaped topology, runnable locally.
+#
+# This is NOT the cloud deployment — `docs/research/devsecops-deployment.md`
+# §2.1 puts Tier 0 on Azure Container Apps with managed Postgres and Redis.
+# What this file does is prove the containers are real: the same three
+# images the cloud would run (api, worker, web), the migration job that
+# must precede them, and configuration supplied entirely by environment
+# rather than a baked-in .env. Bring it up before believing any deploy.
+#
+#   docker compose -f infra/docker-compose.prod.yml --env-file .env.prod up --build
+#
+# Differences from the cloud target, stated rather than hidden:
+#   - Postgres/Redis/Garage run as containers here; Azure uses Flexible
+#     Server, Cache for Redis, and Blob Storage (06_OPERATIONS.md §4).
+#   - No edge/TLS: Container Apps' ingress terminates TLS for free at
+#     Tier 0, and Front Door only arrives at the Pilot tier (§3.4).
+#   - ClamAV stays minReplicas 1 in cloud too — cold-starting it reloads
+#     virus definitions for 10–30s (§2.1).
+name: ttli-prod
+
+x-api-env: &api-env
+  ENVIRONMENT: production
+  DATABASE_URL: ${DATABASE_URL:?set in .env.prod}
+  DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:?set in .env.prod}
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set in .env.prod}
+  REDIS_URL: ${REDIS_URL:?set in .env.prod}
+  SECRET_KEY: ${SECRET_KEY:?set in .env.prod}
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set in .env.prod}
+  BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?set in .env.prod}
+  SENTRY_DSN: ${SENTRY_DSN:?check_production_safety refuses to start without it}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+  # The API is reachable only through the web BFF on this network, so the
+  # forwarded client address can be trusted for per-IP limits (core/net.py).
+  TRUST_X_FORWARDED_FOR: "true"
+
+services:
+  # Runs to completion before api/worker start. In Container Apps this is
+  # the same image as a pre-deploy job; keeping it a real service here
+  # means `up` cannot race an unmigrated schema.
+  migrate:
+    build:
+      context: ../apps/api
+    environment: *api-env
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: ../apps/api
+    environment: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # No published port: only the web BFF talks to it, which is the whole
+    # reason the API carries no CORS middleware (core/config.py).
+    expose:
+      - "8010"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../apps/api
+    environment:
+      <<: *api-env
+      # arq's log arrows crash a cp1252 console; harmless here, kept for
+      # parity with how the worker is run everywhere else.
+      PYTHONIOENCODING: utf-8
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["arq", "src.workers.main.WorkerSettings"]
+    restart: unless-stopped
+
+  web:
+    build:
+      # Repo root: apps/web consumes packages/api-client by file: path.
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:8010
+    depends_on:
+      - api
+    ports:
+      - "3010:3010"
+    restart: unless-stopped

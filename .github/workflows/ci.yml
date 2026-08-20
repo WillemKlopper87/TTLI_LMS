@@ -252,6 +252,44 @@ jobs:
             echo "::endgroup::"
           done
 
+  # The deployment artefacts are code too: a Dockerfile that stopped
+  # building is a broken deploy discovered at deploy time. Builds only —
+  # no registry push, because there is no deployment target yet
+  # (docs/research/devsecops-deployment.md §2.1 picks Azure Container
+  # Apps; nothing is provisioned). Trivy scans what was just built, at
+  # the same report-only setting as the upstream images above and for
+  # the same reason: base-image CVEs this project cannot fix.
+  images:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t ttli-api:ci apps/api
+
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t ttli-web:ci .
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://get.trivy.dev/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://get.trivy.dev/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Scan built images (report-only)
+        run: |
+          for img in ttli-api:ci ttli-web:ci; do
+            echo "::group::Trivy: $img"
+            trivy image --severity CRITICAL,HIGH "$img"
+            echo "::endgroup::"
+          done
+
   web:
     runs-on: ubuntu-latest
     defaults:

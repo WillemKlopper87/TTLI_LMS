@@ -1,6 +1,24 @@
 # STATUS
 
-**Updated:** 2026-08-20 (fifth pass, same day) — the web tier gets its
+**Updated:** 2026-08-20 (sixth pass, same day) — **the deployment
+substrate exists** (`docs/NEXT_AGENT_BRIEF.md` §7b's largest gap; Phase
+7's precondition). `apps/api/Dockerfile` (python:3.12-slim, ffmpeg as a
+real runtime dep, non-root uid 10001, one image serving API + arq worker
++ the migrate job by command), `apps/web/Dockerfile` (three-stage Next
+16 `output: "standalone"`, repo-root build context because the app
+consumes `@ttli/api-client` by file: path), `.dockerignore` at both
+levels, and `infra/docker-compose.prod.yml` — the production-shaped
+topology (migrate job gating api/worker, API unpublished so only the
+BFF reaches it, config entirely from environment, `TRUST_X_FORWARDED_FOR`
+on because the API is BFF-only there). A new CI `images` job builds both
+and Trivy-scans them report-only. **Verified, not assumed:** both images
+built (api 1.12 GB, web 434 MB) and ran against the dev services — login
+→ `/enrolments` 200 → logout → 401 through the containerised BFF, i.e.
+the jti denylist works in-container too. Still not done, deliberately:
+no registry push and no cloud provisioning — `docs/research/devsecops-
+deployment.md` §2.1 picks Azure Container Apps and nothing is
+provisioned; the images CI builds are the images that would run there.
+Prior, same day — the web tier gets its
 first lint gate (`docs/NEXT_AGENT_BRIEF.md` §7b "frontend quality
 gates"): ESLint flat config on `eslint-config-next/core-web-vitals`
 (Next 16 removed `next lint`; FlatCompat chokes on the config's

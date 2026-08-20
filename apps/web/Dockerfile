@@ -1,0 +1,38 @@
+# Next 16 standalone build. Three stages so the runtime image carries
+# neither the toolchain nor the full node_modules tree.
+#
+# Build context is the REPO ROOT, not apps/web: this app consumes
+# @ttli/api-client as `file:../../packages/api-client`, so that package
+# has to be inside the context. See infra/docker-compose.prod.yml.
+FROM node:24-slim AS deps
+WORKDIR /repo
+COPY packages/api-client/package.json packages/api-client/package-lock.json ./packages/api-client/
+RUN cd packages/api-client && npm ci
+COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
+RUN cd apps/web && npm ci
+
+FROM node:24-slim AS build
+WORKDIR /repo
+COPY --from=deps /repo/packages/api-client/node_modules ./packages/api-client/node_modules
+COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
+COPY packages/api-client ./packages/api-client
+COPY apps/web ./apps/web
+# --webpack (package.json's build script): Turbopack cannot resolve the
+# @ttli/api-client symlink — see apps/web/next.config.ts for the upstream
+# issue numbers. `output: "standalone"` is set in next.config.ts.
+RUN cd apps/web && npm run build
+
+FROM node:24-slim AS runtime
+RUN useradd --create-home --uid 10001 app
+WORKDIR /app
+ENV NODE_ENV=production PORT=3010 HOSTNAME=0.0.0.0
+# The standalone bundle carries its own minimal node_modules; static and
+# public are copied beside it exactly as Next's docs prescribe.
+COPY --from=build /repo/apps/web/.next/standalone ./
+COPY --from=build /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /repo/apps/web/public ./apps/web/public
+USER app
+EXPOSE 3010
+# API_URL must point at the API service (compose/Container Apps env) —
+# every browser request reaches the API through this BFF, never directly.
+CMD ["node", "apps/web/server.js"]

@@ -1,0 +1,15 @@
+# The image installs from requirements.txt and copies only src/alembic —
+# everything below is either irrelevant to runtime or actively harmful to
+# bake in (secrets, generated media, the local venv).
+.venv/
+.env
+.env.*
+var/
+tests/
+scripts/
+openapi.json
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

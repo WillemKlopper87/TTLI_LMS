@@ -39,7 +39,7 @@ file are stale (they still say Phase 3 ~40%, Phase 1 ~95%) — trust the table.
 | 4.5 PWA + a11y | ~95% | Manifest/SW/offline shell, WCAG 2.1 AA contrast pass, Web Push (VAPID, 3 triggers, verified live on Edge/WNS). **Missing: axe-core CI gate.** |
 | 5 Corporate / workshops / marketing | 100% | Organisations, seat pools, PO checkout, manager visibility, facilitators/workshops/sessions/waitlists, pluggable meeting provider (Teams), CRM (deals/tasks/notes), marketing engine (segments/templates/campaigns/unsubscribe) |
 | 6 AI insights | 0% | Not started (demo target: 500 survey responses summarised with zero identifiers transmitted) |
-| 7 Hardening + cloud | 0% | Not started. **There is no Dockerfile, no prod compose, no IaC, no reverse-proxy config, no deploy job anywhere.** `docs/research/devsecops-deployment.md` is a plan, not state. |
+| 7 Hardening + cloud | ~15% | Containerisation done 2026-08-20 (both Dockerfiles built and run, prod-shaped compose, CI image build + Trivy scan). Still absent: IaC, registry push, cloud provisioning, reverse proxy, staging, load test, restore drill. `docs/research/devsecops-deployment.md` remains the plan for the rest. |
 | Enterprise UI pass (2026-08-17) | built | 11-screen prototype alignment, course-authoring wizard (`/admin/courses/new`), revenue analytics (`/admin/analytics`, migration 0028) |
 
 Scale: 24 routers / ~45 services / 27 models / 31 migrations (`0001`–`0031`) / ~26k LOC API;
@@ -153,7 +153,7 @@ never planned as features but a production LMS needs.
 
 | Gap | Today | Why it matters |
 |---|---|---|
-| **Deployment substrate** | No Dockerfile, no prod compose, no IaC, no reverse proxy, no deploy job, no migration-on-deploy | Nothing can be put in front of a customer without greenfield Phase 7 work; also there is no staging environment |
+| **Deployment substrate** | ~~No Dockerfile, no prod compose, no migration-on-deploy~~ — all added and verified running 2026-08-20 (`apps/*/Dockerfile`, `infra/docker-compose.prod.yml`, CI `images` job). Still open: no IaC, no registry push, no cloud provisioning, no reverse proxy/TLS (Container Apps ingress covers TLS at Tier 0 per the research doc), no staging | Images are real; the cloud target is not provisioned |
 | **Observability** | Sentry DSN is a config flag only; no metrics, tracing, log shipping, dashboards or alerts; `06_OPERATIONS.md` describes them | Incidents will be diagnosed from uvicorn stdout |
 | **Backups / restore drill** | Prose only (the PG16→18 dump/restore); no scheduled backup, no tested restore | Phase 7 demo target is "restore drill completed" |
 | **Global rate limiting / abuse controls** | CORRECTION: leads, guest-access and `/verify/*` always had per-IP limits (the 08-18 review missed them). Real defect fixed 2026-08-20: behind the BFF all "per-IP" buckets shared the BFF's address — the BFF now forwards `X-Forwarded-For` and the API honours it behind `TRUST_X_FORWARDED_FOR` (default false; enable only when the API is BFF-only). Still open: no limits on `/public/*` reads or webhooks; no per-tenant quotas |

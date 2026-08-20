@@ -3275,6 +3275,22 @@ or mechanically "fix" them — those touches are behavioural refactors
 and are tracked cleanup, not lint chores. New deps: eslint,
 eslint-config-next, @eslint/eslintrc (npm audit clean).
 
+**Platform-hardening pass 6 — 2026-08-20, same day.** Containerisation.
+Both Dockerfiles were built AND run before being called done — an
+unbuilt Dockerfile is a guess. Two things worth knowing next time: the
+web image needs the REPO ROOT as build context (apps/web consumes
+packages/api-client as `file:../../packages/api-client`, so an
+apps/web-scoped context cannot see it), and `next.config.ts` gained
+`output: "standalone"` plus `outputFileTracingRoot` — without the
+latter Next guesses the workspace root and warns. During the container
+smoke the login failed at first with "credentials are not valid": not a
+container defect but conftest's test encryption keys passed against the
+dev database, so the email blind index could not match. That is the
+blind index working correctly, and it is worth remembering as the
+signature of a key mismatch rather than a code bug. Re-run with the dev
+keys: login → enrolments 200 → logout → 401, through the containerised
+BFF talking to the containerised API over the compose network.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

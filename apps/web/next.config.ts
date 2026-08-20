@@ -1,6 +1,16 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Standalone output: the container image ships a self-contained
+  // server.js plus a minimal node_modules instead of the whole install
+  // tree (apps/web/Dockerfile). No effect on `next dev`.
+  output: "standalone",
+  // The build runs from apps/web but the repo root is the Docker build
+  // context (@ttli/api-client lives outside this app), so Next must be
+  // told where the workspace root is or it guesses and warns.
+  outputFileTracingRoot: path.join(import.meta.dirname, "../.."),
   // The client package ships TypeScript source, not compiled JS — Next
   // transpiles it as part of this app's build.
   transpilePackages: ["@ttli/api-client"],

@@ -104,6 +104,25 @@ python docs/check_links.py                # every doc link resolves
 
 ---
 
+## Containers
+
+Both apps are containerised (`apps/api/Dockerfile`, `apps/web/Dockerfile`),
+and `infra/docker-compose.prod.yml` runs the production-shaped topology
+locally — migrate job, API, arq worker, and the web BFF, all configured
+purely by environment:
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file .env.prod up --build
+```
+
+The API image serves both the API and the worker (same code, different
+command). This is not the cloud deployment: `docs/research/devsecops-
+deployment.md` §2.1 targets Azure Container Apps with managed Postgres,
+Redis and Blob Storage, and nothing there is provisioned yet — but the
+images CI builds are the images that would run there.
+
+---
+
 ## Ports are deliberately non-default
 
 Several projects share this machine. Every port below was checked against `Agentic_development_worksorder` (5442/6389/9110/9111/1125/8125), `Agentic_development_collab_platform` (5433/6380/9002/9003) and `Agentic_development_Internal_Booking` (55532/56379/55672).
