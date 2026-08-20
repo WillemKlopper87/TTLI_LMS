@@ -23,8 +23,8 @@
 # maintainers point to SAQ or Streaq), a real migration, not a version
 # bump — tracked as its own future item, not silently deferred.
 fastapi==0.141.1
-uvicorn[standard]==0.52.1
-sqlalchemy[asyncio]==2.0.51
+uvicorn[standard]==0.52.3
+sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 alembic==1.19.1
 psycopg2-binary==2.9.12
@@ -34,10 +34,10 @@ structlog==26.1.0
 PyJWT==2.13.0
 argon2-cffi==25.1.0
 cryptography==50.0.0
-redis==5.2.1
+redis==5.3.1
 python-multipart==0.0.32
 pyotp==2.10.0
-boto3==1.43.67
+boto3==1.43.72
 azure-storage-blob==12.30.0
 arq==0.28.0
 # The Payfast ITN "confirm with provider" round-trip (03 §5.7,
