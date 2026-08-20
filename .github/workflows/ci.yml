@@ -183,7 +183,7 @@ jobs:
         run: |
           python -c "import json; from src.main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: openapi
           path: apps/api/openapi.json
