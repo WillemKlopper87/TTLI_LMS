@@ -43,9 +43,9 @@ async def create_recommendation(
     _validate_url(url)
     position = (
         await session.execute(
-            select(func.count()).select_from(Recommendation).where(
-                Recommendation.tenant_id == tenant_id
-            )
+            select(func.count())
+            .select_from(Recommendation)
+            .where(Recommendation.tenant_id == tenant_id)
         )
     ).scalar_one()
     recommendation = Recommendation(

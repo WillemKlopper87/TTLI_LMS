@@ -1486,6 +1486,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/workshops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Upcoming bookable sessions, no auth required
+         * @description The public face of the workshop subsystem (REQ-WS-*), which until
+         *     now was only reachable through the admin screens. Shows what a
+         *     visitor needs to decide whether to attend — when, who leads it, and
+         *     whether seats remain — and nothing that belongs to an attendee: no
+         *     join link, no roster, no attendance.
+         */
+        get: operations["list_public_workshops_api_v1_public_workshops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deals": {
         parameters: {
             query?: never;
@@ -2677,6 +2701,197 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Articles */
+        get: operations["list_articles_api_v1_articles_get"];
+        put?: never;
+        /** Create Article */
+        post: operations["create_article_api_v1_articles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Article */
+        get: operations["get_article_api_v1_articles__article_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Article */
+        patch: operations["update_article_api_v1_articles__article_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Article */
+        post: operations["publish_article_api_v1_articles__article_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/articles/{article_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Article */
+        post: operations["unpublish_article_api_v1_articles__article_id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Published articles, no auth required */
+        get: operations["list_public_articles_api_v1_public_articles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/articles/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A published article, no auth required */
+        get: operations["get_public_article_api_v1_public_articles__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recommendations */
+        get: operations["list_recommendations_api_v1_recommendations_get"];
+        put?: never;
+        /** Create Recommendation */
+        post: operations["create_recommendation_api_v1_recommendations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recommendations/{recommendation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Recommendation */
+        get: operations["get_recommendation_api_v1_recommendations__recommendation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Recommendation */
+        patch: operations["update_recommendation_api_v1_recommendations__recommendation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/recommendations/{recommendation_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Recommendation */
+        post: operations["publish_recommendation_api_v1_recommendations__recommendation_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recommendations/{recommendation_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Recommendation */
+        post: operations["unpublish_recommendation_api_v1_recommendations__recommendation_id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Published recommendations, no auth required */
+        get: operations["list_public_recommendations_api_v1_public_recommendations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/push/vapid-public-key": {
         parameters: {
             query?: never;
@@ -2863,6 +3078,72 @@ export interface components {
         AdminProductsPage: {
             /** Items */
             items: components["schemas"]["AdminProductResponse"][];
+        };
+        /** ArticleCreateRequest */
+        ArticleCreateRequest: {
+            /** Title */
+            title: string;
+            /** Slug */
+            slug?: string | null;
+            /** Dek */
+            dek?: string | null;
+            /** Body */
+            body: string;
+            /** Author Name */
+            author_name?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+        };
+        /** ArticleResponse */
+        ArticleResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Dek */
+            dek: string | null;
+            /** Body */
+            body: string;
+            /** Cover Image Url */
+            cover_image_url: string | null;
+            /** Author Name */
+            author_name: string | null;
+            /** Related Course Id */
+            related_course_id: string | null;
+            /** State */
+            state: string;
+            /** Published At */
+            published_at: string | null;
+            /** Reading Minutes */
+            reading_minutes: number | null;
+            /** Position */
+            position: number;
+        };
+        /**
+         * ArticleUpdateRequest
+         * @description Every field `None` means "leave unchanged" — matches
+         *     `PodcastEpisodeUpdateRequest`'s convention.
+         */
+        ArticleUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Dek */
+            dek?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Author Name */
+            author_name?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+            /** Position */
+            position?: number | null;
+        };
+        /** ArticlesPageResponse */
+        ArticlesPageResponse: {
+            /** Items */
+            items: components["schemas"]["ArticleResponse"][];
         };
         /** AssignSeatsRequest */
         AssignSeatsRequest: {
@@ -4820,6 +5101,50 @@ export interface components {
             includes_vat: boolean;
         };
         /**
+         * PublicSessionRow
+         * @description A bookable session as an anonymous visitor may see it: when it
+         *     runs, who leads it and whether seats remain. Deliberately no
+         *     `join_url` and no roster — those belong to a learner who has booked
+         *     (`POST /sessions/{id}/book` returns the join link).
+         */
+        PublicSessionRow: {
+            /** Session Id */
+            session_id: string;
+            /** Workshop Id */
+            workshop_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Session Type */
+            session_type: string;
+            /** Facilitator Name */
+            facilitator_name: string | null;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /** Capacity */
+            capacity: number;
+            /** Seats Left */
+            seats_left: number;
+            /** Is Full */
+            is_full: boolean;
+        };
+        /** PublicWorkshopsResponse */
+        PublicWorkshopsResponse: {
+            /** Items */
+            items: components["schemas"]["PublicSessionRow"][];
+        };
+        /**
          * PushSubscribeRequest
          * @description The shape `PushSubscription.toJSON()` already produces in the
          *     browser — passed straight through, not reshaped, beyond the endpoint
@@ -5088,6 +5413,68 @@ export interface components {
             lesson_count: number;
             /** Checks */
             checks: components["schemas"]["ReadinessCheckRow"][];
+        };
+        /** RecommendationCreateRequest */
+        RecommendationCreateRequest: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Source Name */
+            source_name?: string | null;
+            /** Curator Name */
+            curator_name?: string | null;
+            /** Curator Note */
+            curator_note?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+        };
+        /** RecommendationResponse */
+        RecommendationResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Source Name */
+            source_name: string | null;
+            /** Curator Name */
+            curator_name: string | null;
+            /** Curator Note */
+            curator_note: string | null;
+            /** Related Course Id */
+            related_course_id: string | null;
+            /** State */
+            state: string;
+            /** Position */
+            position: number;
+        };
+        /**
+         * RecommendationUpdateRequest
+         * @description Every field `None` means "leave unchanged" — matches
+         *     `ArticleUpdateRequest`'s convention.
+         */
+        RecommendationUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Source Name */
+            source_name?: string | null;
+            /** Curator Name */
+            curator_name?: string | null;
+            /** Curator Note */
+            curator_note?: string | null;
+            /** Related Course Id */
+            related_course_id?: string | null;
+            /** Position */
+            position?: number | null;
+        };
+        /** RecommendationsPageResponse */
+        RecommendationsPageResponse: {
+            /** Items */
+            items: components["schemas"]["RecommendationResponse"][];
         };
         /** RecordBounceRequest */
         RecordBounceRequest: {
@@ -8764,6 +9151,26 @@ export interface operations {
             };
         };
     };
+    list_public_workshops_api_v1_public_workshops_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicWorkshopsResponse"];
+                };
+            };
+        };
+    };
     list_deals_api_v1_deals_get: {
         parameters: {
             query?: {
@@ -11165,6 +11572,439 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_articles_api_v1_articles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticlesPageResponse"];
+                };
+            };
+        };
+    };
+    create_article_api_v1_articles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArticleCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_article_api_v1_articles__article_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_article_api_v1_articles__article_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArticleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_article_api_v1_articles__article_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_article_api_v1_articles__article_id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_articles_api_v1_public_articles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticlesPageResponse"];
+                };
+            };
+        };
+    };
+    get_public_article_api_v1_public_articles__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recommendations_api_v1_recommendations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationsPageResponse"];
+                };
+            };
+        };
+    };
+    create_recommendation_api_v1_recommendations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecommendationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recommendation_api_v1_recommendations__recommendation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recommendation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_recommendation_api_v1_recommendations__recommendation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recommendation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecommendationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_recommendation_api_v1_recommendations__recommendation_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recommendation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_recommendation_api_v1_recommendations__recommendation_id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recommendation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_recommendations_api_v1_public_recommendations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationsPageResponse"];
                 };
             };
         };

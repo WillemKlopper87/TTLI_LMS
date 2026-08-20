@@ -413,9 +413,7 @@ async def _article(session: AsyncSession, related_course_id: uuid.UUID | None) -
         )
     ).scalar_one_or_none()
     if article is None:
-        article = Article(
-            id=uuid7(), tenant_id=DEMO_TENANT, slug=ARTICLE_SLUG, title="", body=""
-        )
+        article = Article(id=uuid7(), tenant_id=DEMO_TENANT, slug=ARTICLE_SLUG, title="", body="")
         session.add(article)
         await session.flush()
     article.title = "The eleven-day gap"
