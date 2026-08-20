@@ -283,6 +283,12 @@ jobs:
       - name: Dependency scan (web)
         run: npm audit --audit-level=high
 
+      # eslint-config-next/core-web-vitals (flat config), errors blocking;
+      # react-hooks/set-state-in-effect is warn-only for the 34 sites that
+      # predate the gate — see apps/web/eslint.config.mjs.
+      - name: Lint
+        run: npm run lint
+
       - name: Type check
         run: npm run typecheck
 

@@ -157,7 +157,7 @@ export default function RecommendationsAdminScreen() {
         Recommendations
       </h1>
       <p className="mt-1" style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-        External "further reading" links for the Resources hub — books, articles, papers by other
+        External &ldquo;further reading&rdquo; links for the Resources hub — books, articles, papers by other
         people. For TTLI&rsquo;s own podcast, use Podcasts instead.
       </p>
 

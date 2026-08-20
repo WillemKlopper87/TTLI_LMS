@@ -46,14 +46,19 @@ export interface StepProps {
 /** "just now" for the first minute, then whole minutes — re-rendered on a
  * timer so the stamp doesn't silently go stale while the author works. */
 function useSavedLabel(savedAt: number | null): string | null {
-  const [, setTick] = useState(0);
+  // The tick state IS the clock the render reads — calling Date.now()
+  // during render is impure (react-hooks/purity) and the compiler may
+  // cache the result; keeping "now" in state makes the re-render carry
+  // the new time instead of hoping the render re-reads the wall clock.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (savedAt === null) return;
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, [savedAt]);
   if (savedAt === null) return null;
-  const seconds = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
+  const seconds = Math.max(0, Math.round((now - savedAt) / 1000));
   if (seconds < 60) return "just now";
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min ago`;

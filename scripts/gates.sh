@@ -21,8 +21,8 @@ echo "== api-client drift"
 ENVIRONMENT=local $V/python -c "import json; from src.main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
 (cd ../../packages/api-client && npm run generate >/dev/null && git diff --exit-code -- src/schema.gen.ts && npm run typecheck)
 
-echo "== web typecheck + build"
-(cd ../web && npm run typecheck && npm run build)
+echo "== web lint + typecheck + build"
+(cd ../web && npm run lint && npm run typecheck && npm run build)
 
 echo "== docs"
 (cd ../.. && python docs/check_links.py && python docs/source/extract.py --check)

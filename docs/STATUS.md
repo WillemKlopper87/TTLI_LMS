@@ -1,6 +1,19 @@
 # STATUS
 
-**Updated:** 2026-08-20 (fourth pass, same day) — abuse controls
+**Updated:** 2026-08-20 (fifth pass, same day) — the web tier gets its
+first lint gate (`docs/NEXT_AGENT_BRIEF.md` §7b "frontend quality
+gates"): ESLint flat config on `eslint-config-next/core-web-vitals`
+(Next 16 removed `next lint`; FlatCompat chokes on the config's
+circular plugin refs, so the flat export is imported directly), wired
+as `npm run lint` into `scripts/gates.sh` and CI's web job, errors
+blocking. Two real errors fixed — a render-time `Date.now()` in the
+wizard's saved-label hook (the tick state now carries the clock) and
+unescaped quotes in the recommendations admin copy; one targeted
+disable where the purity rule can't see an event callback; and
+`react-hooks/set-state-in-effect` demoted to warn for the 34
+pre-existing sites, tracked as cleanup, so the gate starts honest and
+blocks new violations. Playwright/axe remain open (§7b).
+Prior, same day — abuse controls
 (`docs/NEXT_AGENT_BRIEF.md` §7b): (1) logout now denylists the presented
 access token's `jti` in Redis for its remaining life and `get_principal`
 refuses denylisted tokens — before this the jti was minted and never

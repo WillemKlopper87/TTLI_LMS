@@ -3262,6 +3262,19 @@ deliberately best-effort-and-204. `refresh_token` is optional now
 upstream even without a refresh cookie, and the smoke's final state is
 login 200 → logout 204 → same bearer 401 through the real :3010 path.
 
+**Platform-hardening pass 5 — 2026-08-20, same day.** ESLint lands in
+`apps/web` (first lint of any kind there). Flat config importing
+`eslint-config-next/core-web-vitals` directly — Next 16 has no `next
+lint`, and @eslint/eslintrc's FlatCompat crashes on the config's
+circular plugin references. Retrofit policy worth keeping: fix the
+real errors (a genuine render-impurity in the saved-label ticker;
+unescaped JSX quotes), line-disable the demonstrable false positive
+(an event callback the purity rule can't see past), demote exactly one
+rule to warn for its 34 pre-existing sites rather than blanket-silence
+or mechanically "fix" them — those touches are behavioural refactors
+and are tracked cleanup, not lint chores. New deps: eslint,
+eslint-config-next, @eslint/eslintrc (npm audit clean).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

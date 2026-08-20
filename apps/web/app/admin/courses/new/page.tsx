@@ -35,6 +35,7 @@ export default function NewCoursePage() {
     reloadCourse: async () => undefined,
     reloadOutline: async () => undefined,
     reloadReadiness: async () => undefined,
+    // eslint-disable-next-line react-hooks/purity -- runs on the save click, not during render
     markSaved: () => setSavedAt(Date.now()),
     setError,
     setNotice,
