@@ -3387,6 +3387,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/sso/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether this tenant has SSO, and what the button should say
+         * @description Anonymous by necessity — the login page calls it before anyone has
+         *     a session. Deliberately says nothing about the issuer or the allowed
+         *     domains: "does this company use SSO" is a fair question for a login
+         *     page, "what is their identity infrastructure" is not.
+         */
+        get: operations["sso_available_api_v1_auth_sso_available_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sso/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Begin an SSO login — returns the URL to send the browser to */
+        post: operations["sso_start_api_v1_auth_sso_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sso/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish an SSO login — validates the id_token and issues a session
+         * @description Every check that matters lives in `services/oidc.py`; this reads
+         *     as a sequence because that is what it is. The order is not
+         *     cosmetic — the domain allowlist runs before any user lookup, so a
+         *     hostile IdP never even causes an account to be searched for.
+         */
+        post: operations["sso_callback_api_v1_auth_sso_callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/sso": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This tenant's identity-provider configuration */
+        get: operations["get_sso_config_api_v1_tenant_sso_get"];
+        /**
+         * Create or replace the identity-provider configuration
+         * @description The issuer is contacted before the config is saved. A tenant that
+         *     mistypes it should find out here, not at the moment a colleague
+         *     cannot sign in.
+         */
+        put: operations["put_sso_config_api_v1_tenant_sso_put"];
+        post?: never;
+        /** Remove the identity-provider configuration */
+        delete: operations["delete_sso_config_api_v1_tenant_sso_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6584,6 +6671,87 @@ export interface components {
             cover_image_url?: string | null;
             /** Embed Id */
             embed_id?: string | null;
+        };
+        /**
+         * SsoAvailableResponse
+         * @description What an anonymous login page may know. Deliberately not the
+         *     issuer, the client id or the allowed domains — "does this company
+         *     use SSO" is a fair question for a login page to ask, "what is their
+         *     identity infrastructure" is not.
+         */
+        SsoAvailableResponse: {
+            /** Available */
+            available: boolean;
+            /** Display Name */
+            display_name: string | null;
+        };
+        /** SsoCallbackRequest */
+        SsoCallbackRequest: {
+            /** Code */
+            code: string;
+            /** State */
+            state: string;
+            /** Redirect Uri */
+            redirect_uri: string;
+        };
+        /** SsoConfigRequest */
+        SsoConfigRequest: {
+            /** Display Name */
+            display_name: string;
+            /** Issuer */
+            issuer: string;
+            /** Client Id */
+            client_id: string;
+            /** Client Secret */
+            client_secret?: string | null;
+            /** Allowed Email Domains */
+            allowed_email_domains: string[];
+            /** Group Role Map */
+            group_role_map?: {
+                [key: string]: string;
+            };
+            /** Default Role Code */
+            default_role_code?: string | null;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+        };
+        /**
+         * SsoConfigResponse
+         * @description Never carries the client secret — not even masked. A field that
+         *     can only be written is clearer than one that returns asterisks.
+         */
+        SsoConfigResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Protocol */
+            protocol?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Issuer */
+            issuer?: string | null;
+            /** Client Id */
+            client_id?: string | null;
+            /** Allowed Email Domains */
+            allowed_email_domains?: string[];
+            /** Group Role Map */
+            group_role_map?: {
+                [key: string]: string;
+            };
+            /** Default Role Code */
+            default_role_code?: string | null;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+        };
+        /** SsoStartResponse */
+        SsoStartResponse: {
+            /** Authorization Url */
+            authorization_url: string;
         };
         /** StatusChangeRequest */
         StatusChangeRequest: {
@@ -13867,6 +14035,162 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    sso_available_api_v1_auth_sso_available_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoAvailableResponse"];
+                };
+            };
+        };
+    };
+    sso_start_api_v1_auth_sso_start_post: {
+        parameters: {
+            query?: {
+                redirect_uri?: string;
+                next?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sso_callback_api_v1_auth_sso_callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sso_config_api_v1_tenant_sso_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoConfigResponse"];
+                };
+            };
+        };
+    };
+    put_sso_config_api_v1_tenant_sso_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_sso_config_api_v1_tenant_sso_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

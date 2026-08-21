@@ -80,6 +80,7 @@ from src.models.podcast import PodcastEpisode
 from src.models.push import PushSubscription
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.recommendation import Recommendation
+from src.models.sso import TenantIdpConfig
 from src.models.subscription import (
     Subscription,
     SubscriptionPlan,
@@ -194,6 +195,7 @@ __all__ = [
     "TaxRule",
     "Tenant",
     "TenantDomain",
+    "TenantIdpConfig",
     "TenantMixin",
     "TenantTheme",
     "TimestampMixin",
