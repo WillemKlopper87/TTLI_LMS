@@ -1,6 +1,24 @@
 # STATUS
 
-**Updated:** 2026-08-21 (later, same day) — **P2 (product): the audit-log
+**Updated:** 2026-08-21 (third pass, same day) — **R1: revenue over
+time**, and a correction to what R1 claimed. The dashboard was not
+"numbers and tables only" — its proportions already rendered as `.bar`
+share rows with direct labels, which is the right form for part-to-whole
+(the three pies the research doc specified would have been downgrades).
+What was actually missing was **trend**, and no chart library could have
+supplied it: every analytics endpoint returned a single aggregate for
+the period. New: `GET /analytics/revenue-series` — net revenue from the
+ledger, bucketed day/week/month by a server-side choice, one figure per
+currency, with a test asserting the series sums to the headline
+`actual_revenue` figure. New `revenue-chart.tsx`: hand-rolled SVG (2px
+line, 8px end markers with a surface ring, area wash, hover crosshair,
+live-region readout, `<details>` table fallback). **recharts was not
+added** — the research doc justified that dependency with six charts;
+the honest count is one. Series colours are validated tokens
+(`--series-1`/`--series-2`, own dark-mode steps) rather than the brand
+or status hues, which fail the lightness band and are reserved for state
+respectively.
+Prior, same day — **P2 (product): the audit-log
 read path** (`docs/BACKLOG.md` P2 = enterprise-gaps-plan Pass B,
 feature-matrix gap #52). `audit_events` had been written to since 0001
 with no way to read it back, while `05_COMMERCIAL.md` §3 sells "advanced

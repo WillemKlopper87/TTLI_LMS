@@ -80,6 +80,32 @@ class RevenueSummaryResponse(BaseModel):
     predicted_revenue: PredictedRevenueResponse
 
 
+class RevenuePoint(BaseModel):
+    """One bucket of the revenue series. `amounts` is per currency for the
+    same reason every other money field is: currencies are never blended,
+    so a bucket carries one figure per currency present, not a total."""
+
+    bucket: datetime
+    label: str
+    amounts: list[MoneyByCurrency]
+
+
+class RevenueSeriesResponse(BaseModel):
+    """Net revenue over time — the one thing the dashboard could not show,
+    because every other figure it serves is a single aggregate for the
+    whole period.
+
+    Granularity is chosen server-side from the window's length, not by the
+    client: a year bucketed by day is 365 unreadable points, and a day
+    bucketed by month is one. The client renders what it is given.
+    """
+
+    period: PeriodResponse
+    granularity: str
+    currencies: list[str]
+    points: list[RevenuePoint]
+
+
 class PackageRow(BaseModel):
     package_label: str
     user_count: int

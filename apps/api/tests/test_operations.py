@@ -252,3 +252,57 @@ async def test_course_analytics_hides_a_course_this_tenant_cannot_see(  # type: 
     )
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+async def test_revenue_series_buckets_and_reconciles_with_the_headline(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """The series and the headline "actual revenue" figure are the same
+    ledger sliced two ways, so summing the series must reproduce the
+    total. If this ever fails, one of the two is lying to a finance
+    reader — the whole reason the series reuses actual_revenue's
+    definition rather than inventing a second one."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {admin}"}
+
+    series = await client.get("/api/v1/analytics/revenue-series?preset=last_1y", headers=headers)
+    assert series.status_code == 200, series.text
+    body = series.json()
+
+    assert body["granularity"] in ("day", "week", "month")
+    # A year of daily points would be unreadable; the server picks the
+    # bucket, the client does not.
+    assert body["granularity"] != "day"
+
+    summary = await client.get("/api/v1/analytics/revenue-summary?preset=last_1y", headers=headers)
+    assert summary.status_code == 200
+    headline = {row["currency"]: row["amount"] for row in summary.json()["actual_revenue"]}
+
+    summed: dict[str, float] = {}
+    for point in body["points"]:
+        # Every point carries every currency, so a quiet bucket reads as
+        # zero rather than as a gap in the line.
+        assert [a["currency"] for a in point["amounts"]] == body["currencies"]
+        for amount in point["amounts"]:
+            summed[amount["currency"]] = summed.get(amount["currency"], 0.0) + float(
+                amount["amount"]
+            )
+
+    for currency, total in headline.items():
+        assert round(summed.get(currency, 0.0), 2) == round(float(total), 2), (
+            f"the {currency} series must sum to the headline figure"
+        )
+
+
+async def test_revenue_series_requires_analytics_view(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
+    resp = await client.get(
+        "/api/v1/analytics/revenue-series", headers={"Authorization": f"Bearer {learner}"}
+    )
+    assert resp.status_code == 403

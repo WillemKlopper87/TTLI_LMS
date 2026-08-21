@@ -2,8 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 /**
- * The admin operations home, course reports and audit log
- * (enterprise-gaps-plan Passes A and B). These are the screens an
+ * The admin operations home, course reports, audit log and revenue chart
+ * (enterprise-gaps-plan Passes A and B, plus backlog R1). These are the screens an
  * enterprise buyer is shown first, so they get browser coverage rather
  * than the HTTP-status-only verification earlier admin passes settled
  * for.
@@ -18,9 +18,10 @@ import { expect, test } from "@playwright/test";
  * as "the page is broken" rather than "the fixture is". Cost half a pass
  * to diagnose on 2026-08-21.
  *
- * Three form logins per run stays inside the 5/min per-account limit;
+ * Four form logins per run stays inside the 5/min per-account limit;
  * the availability probe below deliberately uses a PUBLIC endpoint so it
- * does not spend one of them.
+ * does not spend one of them. Adding a fifth spec means giving it its own
+ * account, not reviving shared state.
  */
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? "ops-admin@example.com";
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "SmokeTest123!admin";
@@ -97,4 +98,22 @@ test("the audit log lists events and has no WCAG A/AA violations", async ({ page
     (v) => `${v.id}: ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
   );
   expect(summary, "axe violations on /admin/audit").toEqual([]);
+});
+
+test("the analytics dashboard draws a revenue line with a table fallback", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/analytics");
+
+  await expect(page.getByRole("heading", { name: "Revenue over time" })).toBeVisible();
+
+  // The chart is an <svg role="img"> with a real title, not a decorative
+  // blob: identity must survive with images off or a screen reader on.
+  const chart = page.getByRole("img", { name: /net revenue per (day|week|month)/i });
+  await expect(chart).toBeVisible();
+  // A 2px line, drawn — an empty <svg> would still be "visible".
+  expect(await chart.locator("path[stroke-width='2']").count()).toBeGreaterThan(0);
+
+  // Same numbers, readable without seeing the line at all.
+  await page.getByText("Show these figures as a table").click();
+  await expect(page.locator("details table tbody tr").first()).toBeVisible();
 });

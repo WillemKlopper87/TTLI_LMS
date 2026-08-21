@@ -3381,6 +3381,54 @@ in through the real form for itself (three logins per run, inside the
 endpoint so it does not spend a login. If a future pass adds more admin
 specs, give them separate accounts rather than reviving shared state.
 
+**R1 — revenue over time — 2026-08-21. The backlog item's premise was
+wrong, and the correction is the interesting part.**
+
+R1 said the payment-analytics dashboard was "numbers and tables only"
+because `payment-analytics-dashboard.md` §7 specified six recharts
+charts and none exist. Reading the page disproved both halves:
+
+- Every proportion on it **already renders as a chart** — the `.bar`
+  `.minibar` share rows, 4px with rounded ends, a direct label and a
+  percentage on each. For part-to-whole that is the *better* form than
+  the pies §7 asked for; a three-slice pie is harder to read than three
+  bars and a two-slice pie is not a chart at all. Building those pies
+  would have been a downgrade dressed as a feature.
+- What was genuinely absent was **trend over time**, and no chart
+  library could have supplied it: every analytics endpoint returns a
+  single aggregate for the whole window, with no time bucketing
+  anywhere in `services/analytics.py`. The missing piece was backend.
+
+So R1 shipped as `GET /analytics/revenue-series` — net revenue
+(payments received less refunds, same ledger definition as
+`actual_revenue`, so the series sums to the headline figure and a test
+asserts exactly that) bucketed by day/week/month. **Granularity is a
+server decision**: a year by day is 365 unreadable points, a day by
+month is one. Empty buckets are emitted as zero, because a gap in a
+revenue line reads as missing data while a zero reads as a quiet week,
+and only one of those is true.
+
+**recharts was not added.** §7's rationale for the dependency was six
+charts; the honest count is one, and one chart does not justify a
+charting library in a frontend that has deliberately avoided component
+libraries. `app/admin/analytics/revenue-chart.tsx` is hand-rolled SVG
+built to fixed mark specs (2px line, round caps, 8px end markers with a
+2px surface ring, ~10% area wash for a lone series, hairline solid
+gridlines, labels only on the endpoint and the peak), with a hover
+crosshair, a live-region caption instead of a floating tooltip, and a
+`<details>` table carrying the same numbers for anyone not reading the
+line.
+
+**Series colours are validated, not chosen by eye.** `--series-1` /
+`--series-2` in globals.css, with their own selected dark-mode steps.
+The brand and status tokens were both unusable: `--brand-primary` sits
+outside the OKLCH lightness band a chart mark needs, and
+`--done`/`--live`/`--stop` are reserved for state and must never stand
+in for "series 2". The chosen pair passes lightness band, chroma floor,
+CVD separation (worst adjacent ΔE 19.5 deutan), normal-vision
+separation and 3:1 contrast in both modes. A third currency needs
+re-validating, not inventing.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

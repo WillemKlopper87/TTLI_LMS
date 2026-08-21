@@ -34,6 +34,8 @@ from src.schemas.analytics import (
     MoneyByCurrency,
     PeriodResponse,
     RegistrationsResponse,
+    RevenuePoint,
+    RevenueSeriesResponse,
     RevenueSummaryResponse,
 )
 from src.services import analytics as analytics_service
@@ -114,6 +116,29 @@ async def revenue_summary(
 ) -> RevenueSummaryResponse:
     principal.require(PERMISSION)
     return await _revenue_summary(session, principal, period)
+
+
+@router.get(
+    "/revenue-series",
+    response_model=RevenueSeriesResponse,
+    summary="Net revenue over time, bucketed server-side, one figure per currency",
+)
+async def revenue_series(
+    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+) -> RevenueSeriesResponse:
+    principal.require(PERMISSION)
+    granularity, currencies, points = await analytics_service.revenue_series(
+        session, tenant_id=principal.tenant_id, period=period
+    )
+    return RevenueSeriesResponse(
+        period=_period_response(period),
+        granularity=granularity,
+        currencies=currencies,
+        points=[
+            RevenuePoint(bucket=stamp, label=label, amounts=amounts)
+            for stamp, label, amounts in points
+        ],
+    )
 
 
 @router.get(

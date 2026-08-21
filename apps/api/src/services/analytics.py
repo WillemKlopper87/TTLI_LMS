@@ -445,3 +445,102 @@ __all__ = [
     "resolve_period",
     "total_registered",
 ]
+
+
+# Granularity is a server decision, not a client one: a year bucketed by
+# day is 365 points nobody can read, and a day bucketed by month is one.
+# Thresholds are in days of window span.
+_DAY_MAX = 45
+_WEEK_MAX = 200
+
+
+def choose_granularity(period: Period) -> str:
+    span_days = (period.end - period.start).days
+    if span_days <= _DAY_MAX:
+        return "day"
+    if span_days <= _WEEK_MAX:
+        return "week"
+    return "month"
+
+
+def _bucket_label(bucket: datetime, granularity: str) -> str:
+    if granularity == "month":
+        return bucket.strftime("%b %Y")
+    return bucket.strftime("%d %b")
+
+
+async def revenue_series(
+    session: AsyncSession, *, tenant_id: uuid.UUID, period: Period
+) -> tuple[str, list[str], list[tuple[datetime, str, list[MoneyByCurrency]]]]:
+    """Net revenue per time bucket, per currency, from the ledger.
+
+    Same definition of "actual revenue" as `actual_revenue` — payments
+    received minus refunds issued, read from the append-only ledger — so
+    the series and the headline figure are the same number sliced two
+    ways, and summing the series must reproduce the total.
+
+    Buckets with no movement are emitted as zero rather than omitted: a
+    gap in a revenue line reads as missing data, while a zero reads as a
+    quiet week, and only one of those is true.
+    """
+    granularity = choose_granularity(period)
+    bucket = func.date_trunc(granularity, LedgerEntry.created_at)
+
+    rows = (
+        await session.execute(
+            select(
+                bucket.label("bucket"),
+                LedgerEntry.currency,
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                LedgerEntry.entry_type == EntryType.PAYMENT_RECEIVED,
+                                LedgerEntry.amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                )
+                - func.coalesce(
+                    func.sum(
+                        case(
+                            (LedgerEntry.entry_type == EntryType.REFUND_ISSUED, LedgerEntry.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .where(
+                LedgerEntry.tenant_id == tenant_id,
+                LedgerEntry.entry_type.in_((EntryType.PAYMENT_RECEIVED, EntryType.REFUND_ISSUED)),
+                LedgerEntry.created_at >= period.start,
+                LedgerEntry.created_at < period.end,
+            )
+            .group_by(bucket, LedgerEntry.currency)
+            .order_by(bucket)
+        )
+    ).all()
+
+    by_bucket: dict[datetime, dict[str, Decimal]] = {}
+    currencies: list[str] = []
+    for stamp, currency, net in rows:
+        if currency not in currencies:
+            currencies.append(currency)
+        by_bucket.setdefault(stamp, {})[currency] = Decimal(net)
+
+    currencies.sort()
+    points = [
+        (
+            stamp,
+            _bucket_label(stamp, granularity),
+            [
+                MoneyByCurrency(currency=c, amount=by_bucket[stamp].get(c, Decimal("0.00")))
+                for c in currencies
+            ],
+        )
+        for stamp in sorted(by_bucket)
+    ]
+    return granularity, currencies, points

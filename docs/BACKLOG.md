@@ -47,7 +47,7 @@ where it must be.
 | # | Item | Size | Detail | Status |
 |---|---|---|---|---|
 | **R14** | **`test_analytics.py` does not exist** | S | Found 2026-08-21: the four payment-analytics endpoints (`/revenue-summary`, `/registrations` and both CSV twins) shipped with **zero test coverage**. `test_operations.py` covers the three new operations endpoints; the original four are still untested | OPEN |
-| **R1** | **Charts on the payment analytics dashboard** | S–M | `payment-analytics-dashboard.md` §7 specified recharts. It is **not installed** and `/admin/analytics` has no chart markup — the dashboard is numbers and tables only. Endpoints, CSV exports, migration `0028` and the `finance` permission grant are all done | OPEN |
+| ~~**R1**~~ | ~~Charts on the payment analytics dashboard~~ **DONE 2026-08-21, and the premise was wrong.** The dashboard was NOT "numbers and tables only": every proportion already rendered as a `.bar` share row with a direct label and percentage, which is the correct form for part-to-whole — the three pies §7 specified would have been downgrades (a 2-slice pie is not a chart). The real gap was **trend over time**, which no endpoint could serve: every analytics figure was a single aggregate for the period. Delivered instead: `GET /analytics/revenue-series` (server-chosen day/week/month buckets, per currency, reconciling exactly with the headline figure) and a hand-rolled SVG line chart. recharts was **not** added — §7 justified the dependency by six charts; the honest count is one | S–M | — | DONE |
 | **R2** | **"Podcast engagement" panel on the analytics dashboard** | S | `podcast-platform-integration.md` §123 explicitly asked the analytics dashboard to surface plays / completion rate / CTR / top CTA-converting episodes from the six listen-stat event types. Never picked up | OPEN |
 | **R3** | **Article view events** | S | `resources-hub-design.md` open decision #3: articles should emit at least a "viewed" event for symmetry with podcasts' six. Still undecided and unbuilt | OPEN |
 | **R4** | **EFT ageing alert (>48h pending)** | S | `02_DATA_MODEL.md` §12.4 designed it, and `bank-eft-automation.md` names it as **the trigger** to revisit EFT automation. Zero hits in code — so the signal that would tell us to act can never fire | OPEN |
@@ -107,8 +107,8 @@ Do not build around these; they change the build, not just the schedule.
 
 1. ~~**P1**~~ — done 2026-08-21.
 2. ~~**P2**~~ — done 2026-08-21.
-3. **R1** — charts finish a dashboard that is already 90% built. **← next**
-4. **P6** — invoice PDF + CSV export; cheap, and it makes the finance work visible.
+3. ~~**R1**~~ — done 2026-08-21.
+4. **P6** — invoice PDF + CSV export; cheap, and it makes the finance work visible. **← next**
 5. **P3** → **P4** — tenant self-service, then SSO, together the enterprise procurement gate.
 6. Then the larger builds: **P5**, **P7**, **P11**.
 

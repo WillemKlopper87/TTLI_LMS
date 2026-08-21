@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
+import RevenueChart, { type RevenuePoint } from "./revenue-chart";
+
 import { useAdmin } from "../admin-context";
 
 /**
@@ -59,6 +61,12 @@ interface Registrations {
     organisation_name: string;
     user_count: number;
   }[];
+}
+
+interface RevenueSeries {
+  granularity: string;
+  currencies: string[];
+  points: RevenuePoint[];
 }
 
 const PRESETS: { value: string; label: string }[] = [
@@ -134,6 +142,7 @@ export default function AnalyticsScreen() {
   const [preset, setPreset] = useState("last_30d");
   const [revenue, setRevenue] = useState<RevenueSummary | null>(null);
   const [registrations, setRegistrations] = useState<Registrations | null>(null);
+  const [series, setSeries] = useState<RevenueSeries | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -147,17 +156,19 @@ export default function AnalyticsScreen() {
     const token = getAccessToken();
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [r1, r2] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         fetch(`/api/bff/analytics/revenue-summary?preset=${preset}`, { headers }),
         fetch(`/api/bff/analytics/registrations?preset=${preset}`, { headers }),
+        fetch(`/api/bff/analytics/revenue-series?preset=${preset}`, { headers }),
       ]);
-      if (!r1.ok || !r2.ok) {
+      if (!r1.ok || !r2.ok || !r3.ok) {
         setError("Could not load the report. Try again shortly.");
         setLoading(false);
         return;
       }
       setRevenue(await r1.json());
       setRegistrations(await r2.json());
+      setSeries(await r3.json());
     } catch {
       setError("Could not load the report. Try again shortly.");
     }
@@ -270,6 +281,19 @@ export default function AnalyticsScreen() {
             order(s) still awaiting payment plus{" "}
             {revenue.predicted_revenue.subscription_renewal_count} scheduled renewal(s) — not a
             forecast model.
+          </div>
+
+          <div>
+            <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".7rem" }}>
+              Revenue over time
+            </h2>
+            {series ? (
+              <RevenueChart
+                points={series.points}
+                currencies={series.currencies}
+                granularity={series.granularity}
+              />
+            ) : null}
           </div>
 
           <div>

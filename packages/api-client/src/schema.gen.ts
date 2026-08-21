@@ -2960,6 +2960,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/revenue-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net revenue over time, bucketed server-side, one figure per currency */
+        get: operations["revenue_series_api_v1_analytics_revenue_series_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/registrations": {
         parameters: {
             query?: never;
@@ -5953,6 +5970,42 @@ export interface components {
         ReorderRequest: {
             /** Ordered Ids */
             ordered_ids: string[];
+        };
+        /**
+         * RevenuePoint
+         * @description One bucket of the revenue series. `amounts` is per currency for the
+         *     same reason every other money field is: currencies are never blended,
+         *     so a bucket carries one figure per currency present, not a total.
+         */
+        RevenuePoint: {
+            /**
+             * Bucket
+             * Format: date-time
+             */
+            bucket: string;
+            /** Label */
+            label: string;
+            /** Amounts */
+            amounts: components["schemas"]["MoneyByCurrency"][];
+        };
+        /**
+         * RevenueSeriesResponse
+         * @description Net revenue over time — the one thing the dashboard could not show,
+         *     because every other figure it serves is a single aggregate for the
+         *     whole period.
+         *
+         *     Granularity is chosen server-side from the window's length, not by the
+         *     client: a year bucketed by day is 365 unreadable points, and a day
+         *     bucketed by month is one. The client renders what it is given.
+         */
+        RevenueSeriesResponse: {
+            period: components["schemas"]["PeriodResponse"];
+            /** Granularity */
+            granularity: string;
+            /** Currencies */
+            currencies: string[];
+            /** Points */
+            points: components["schemas"]["RevenuePoint"][];
         };
         /** RevenueSummaryResponse */
         RevenueSummaryResponse: {
@@ -12525,6 +12578,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevenueSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revenue_series_api_v1_analytics_revenue_series_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevenueSeriesResponse"];
                 };
             };
             /** @description Validation Error */
