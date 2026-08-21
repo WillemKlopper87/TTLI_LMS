@@ -3429,6 +3429,31 @@ CVD separation (worst adjacent ΔE 19.5 deutan), normal-vision
 separation and 3:1 contrast in both modes. A third currency needs
 re-validating, not inventing.
 
+**P6 — finance completeness — 2026-08-21.** Two defects worth carrying
+forward, both caught by doing the work rather than by review:
+
+- **`/invoices/export.csv` was being matched by `/invoices/{invoice_id}`**
+  and failing UUID validation with a 422. FastAPI matches in declaration
+  order, so a literal path that could also read as a path parameter must
+  be declared first. The export routes now sit above the parametrised
+  ones with a comment saying why, and a test pins it. Worth checking
+  whenever a router gains a `/{id}` sibling — `routers/audit.py` happens
+  to be safe because its literals hang off a path with no parameter.
+- **A plain `<a href="/api/bff/...">` cannot fetch anything
+  authenticated.** The access token lives in memory (`lib/session.ts`),
+  so a browser-initiated navigation sends no Authorization header and
+  gets a 401. The analytics CSV export had already solved this inline
+  with a fetch-and-blob; P6 needed three more of them, so it is now
+  `lib/authed-download.ts`. My first draft of both the invoice PDF link
+  and the export links were plain anchors, and the comment I wrote on
+  them claimed the BFF forwards a session cookie — it does not.
+
+Design note: the invoice PDF is **rendered on demand and never stored**,
+the opposite of certificates. A certificate embeds a verification token
+and QR and may be presented years later, so the artefact is the record;
+an invoice's record is the row and the PDF is a view of it. That choice
+is what kept P6 migration-free.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

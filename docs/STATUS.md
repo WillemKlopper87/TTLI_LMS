@@ -1,6 +1,28 @@
 # STATUS
 
-**Updated:** 2026-08-21 (third pass, same day) — **R1: revenue over
+**Updated:** 2026-08-21 (fourth pass, same day) — **P6: finance
+completeness** (`docs/BACKLOG.md` P6 = Pass H, feature-matrix gaps #34
+and #39). Invoicing had been gapless and ledger-backed since Phase 3 and
+entirely write-only: the buyer it was issued to could not read it, and
+finance could not export a period, so all that rigour was invisible to
+the people it was for. Now: `GET /invoices` (your own with no permission
+— it is a document about your own money — the tenant's with
+`order:view`), `/invoices/{id}`, `/invoices/{id}/pdf`, and
+`/invoices/export.csv` + `/ledger/export.csv` behind `invoice:create`,
+which `finance` already holds. The PDF is a real tax invoice (sequential
+number, issue date, both VAT snapshots, per-line VAT, VAT separated from
+subtotal) **rendered on demand and never stored** — the row is the
+record, the document is a view of it, so there is no `pdf_object_key`,
+no migration and no stored artefact that can drift from the figures.
+Frontend: `/account/invoices` for buyers, export buttons on
+`/admin/payments`. 4 API tests. Two real defects caught while building:
+`/invoices/export.csv` was being swallowed by `/invoices/{invoice_id}`
+(literal routes must be declared first — now pinned by a test), and the
+PDF/CSV links were plain `<a href>`, which cannot carry the in-memory
+bearer — extracted `lib/authed-download.ts` from the pattern the
+analytics export had already solved inline. **Gap #31 (Payfast verified
+against a live account) is untouched and blocked on B4.**
+Prior, same day — **R1: revenue over
 time**, and a correction to what R1 claimed. The dashboard was not
 "numbers and tables only" — its proportions already rendered as `.bar`
 share rows with direct labels, which is the right form for part-to-whole

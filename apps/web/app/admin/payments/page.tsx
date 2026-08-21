@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { authedDownload } from "@/lib/authed-download";
 import { getAccessToken } from "@/lib/session";
 
 interface PendingPayment {
@@ -141,12 +142,38 @@ export default function PaymentsScreen() {
 
   return (
     <>
-      <h1 className="serif" style={{ fontSize: "1.5rem" }}>
-        Payments
-      </h1>
-      <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-        {page.total} awaiting a decision
-      </p>
+      <div className="dash-top">
+        <div>
+          <h1 className="serif" style={{ fontSize: "1.5rem" }}>
+            Payments
+          </h1>
+          <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+            {page.total} awaiting a decision
+          </p>
+        </div>
+        {/* The accounting exports 05_COMMERCIAL §3 promises from the Team
+            tier up. Fetched with the bearer rather than linked — the
+            access token is in memory, so a plain <a href> navigation
+            sends no Authorization header and gets a 401
+            (lib/authed-download.ts). Gated server-side on invoice:create,
+            which finance holds. */}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            type="button"
+            className="btn btn--quiet"
+            onClick={() => void authedDownload("/api/bff/invoices/export.csv", "invoices.csv")}
+          >
+            Invoices CSV
+          </button>
+          <button
+            type="button"
+            className="btn btn--quiet"
+            onClick={() => void authedDownload("/api/bff/ledger/export.csv", "ledger.csv")}
+          >
+            Ledger CSV
+          </button>
+        </div>
+      </div>
 
       {page.items.length === 0 ? (
         <p className="mt-6" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>

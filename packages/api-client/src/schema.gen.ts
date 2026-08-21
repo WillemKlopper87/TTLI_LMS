@@ -3130,6 +3130,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Invoices — your own by default, the tenant's with order:view */
+        get: operations["list_invoices_api_v1_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Accounting export: every invoice in the window */
+        get: operations["export_invoices_api_v1_invoices_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ledger/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Accounting export: the append-only ledger for the window
+         * @description The ledger, not a re-derivation of it: this is the same
+         *     append-only table `services/analytics.py` computes revenue from, so
+         *     an accountant reconciling the export against the dashboard is
+         *     comparing one source with itself.
+         */
+        get: operations["export_ledger_api_v1_ledger_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices/{invoice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One invoice with its lines */
+        get: operations["get_invoice_api_v1_invoices__invoice_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invoices/{invoice_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The tax invoice as a PDF, rendered on demand */
+        get: operations["get_invoice_pdf_api_v1_invoices__invoice_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4333,6 +4424,57 @@ export interface components {
             /** Duration Seconds */
             duration_seconds?: number | null;
         };
+        /**
+         * InvoiceDetailResponse
+         * @description A full tax invoice: the header figures plus the lines behind them.
+         *
+         *     `supplier_vat_number` and `customer_vat_number` are snapshots taken at
+         *     issue, not joins (02 §6.4) — a customer's VAT number may change after
+         *     the invoice is issued, and a reissued document showing today's number
+         *     would misstate a historical transaction.
+         */
+        InvoiceDetailResponse: {
+            /** Id */
+            id: string;
+            /** Number */
+            number: string;
+            /** Status */
+            status: string;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /** Currency */
+            currency: string;
+            /** Subtotal */
+            subtotal: string;
+            /** Tax Total */
+            tax_total: string;
+            /** Grand Total */
+            grand_total: string;
+            /** Supplier Vat Number */
+            supplier_vat_number: string | null;
+            /** Customer Vat Number */
+            customer_vat_number: string | null;
+            /** Order Id */
+            order_id: string;
+            /** Items */
+            items: components["schemas"]["InvoiceItemResponse"][];
+        };
+        /** InvoiceItemResponse */
+        InvoiceItemResponse: {
+            /** Description */
+            description: string;
+            /** Quantity */
+            quantity: number;
+            /** Unit Amount */
+            unit_amount: string;
+            /** Tax Amount */
+            tax_amount: string;
+            /** Line Total */
+            line_total: string;
+        };
         /** InvoiceResponse */
         InvoiceResponse: {
             /** Id */
@@ -4354,6 +4496,11 @@ export interface components {
             tax_total: string;
             /** Grand Total */
             grand_total: string;
+        };
+        /** InvoicesPageResponse */
+        InvoicesPageResponse: {
+            /** Items */
+            items: components["schemas"]["InvoiceDetailResponse"][];
         };
         /** LeadRequest */
         LeadRequest: {
@@ -12893,6 +13040,172 @@ export interface operations {
                 };
                 content: {
                     "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invoices_api_v1_invoices_get: {
+        parameters: {
+            query?: {
+                /** @description False, with order:view, returns every invoice in the tenant */
+                mine?: boolean;
+                /** @description UTC day, inclusive */
+                date_from?: string | null;
+                /** @description UTC day, inclusive */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoicesPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_invoices_api_v1_invoices_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description UTC day, inclusive */
+                date_from?: string | null;
+                /** @description UTC day, inclusive */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_ledger_api_v1_ledger_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description UTC day, inclusive */
+                date_from?: string | null;
+                /** @description UTC day, inclusive */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_api_v1_invoices__invoice_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_invoice_pdf_api_v1_invoices__invoice_id__pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
                 };
             };
             /** @description Validation Error */

@@ -101,6 +101,41 @@ class InvoiceResponse(BaseModel):
     grand_total: Decimal
 
 
+class InvoiceItemResponse(BaseModel):
+    description: str
+    quantity: int
+    unit_amount: Decimal
+    tax_amount: Decimal
+    line_total: Decimal
+
+
+class InvoiceDetailResponse(BaseModel):
+    """A full tax invoice: the header figures plus the lines behind them.
+
+    `supplier_vat_number` and `customer_vat_number` are snapshots taken at
+    issue, not joins (02 §6.4) — a customer's VAT number may change after
+    the invoice is issued, and a reissued document showing today's number
+    would misstate a historical transaction.
+    """
+
+    id: str
+    number: str
+    status: str
+    issued_at: datetime
+    currency: str
+    subtotal: Decimal
+    tax_total: Decimal
+    grand_total: Decimal
+    supplier_vat_number: str | None
+    customer_vat_number: str | None
+    order_id: str
+    items: list[InvoiceItemResponse]
+
+
+class InvoicesPageResponse(BaseModel):
+    items: list[InvoiceDetailResponse]
+
+
 class PriceSummary(BaseModel):
     id: str
     currency: str

@@ -28,7 +28,7 @@ where it must be.
 | **P3** | **Tenant self-service: branding, domains, users, roles** (Pass C; audit #44, #45 + unlisted). `PATCH /tenant/theme` + logo upload with live preview; `GET/POST/DELETE /tenant/domains` with verification token + TLS status readout; **a user/role admin UI** | M | There is currently **no way to create a staff user or assign a role from inside the product** — `routers/tenant.py` has exactly one PATCH (manager-visibility). Theme and domains change only by migration | OPEN |
 | **P4** | **SSO — Entra ID / OIDC** (Pass D; audit #46). Per-tenant IdP config, OIDC via `msal`/`authlib`, JIT provisioning + role mapping; SAML later | L | The standard corporate procurement gate for Team/Corporate tiers. `msal` is named in README's stack table but **nothing exists** — password/magic-link/TOTP only | OPEN |
 | **P5** | **Learning paths** (Pass E; audit #7). `learning_paths` + `learning_path_courses`, path entitlement / `Product.kind="path"`, progress rollup, admin builder, learner page, path certificate | L | Core LMS vocabulary and a Professional-tier ✅ in the feature matrix. `learning_path` returns **zero hits** in the codebase | OPEN |
-| **P6** | **Finance completeness** (Pass H; audit #34, #39, #31). Invoice PDF; `GET /invoices` for the buyer; accounting CSV export (`/invoices/export`, `/ledger/export`, finance-gated) | S–M | Cheap to close, and the rigorous gapless-invoicing/ledger work is invisible to a customer without it | OPEN |
+| ~~**P6**~~ | ~~Finance completeness~~ **DONE 2026-08-21** (the #34/#39 half). `GET /invoices` (own by default, tenant-wide with `order:view`), `/invoices/{id}`, `/invoices/{id}/pdf` (tax invoice rendered on demand — no stored artefact, no migration), `/invoices/export.csv` and `/ledger/export.csv` behind `invoice:create`. Buyer page at `/account/invoices`, export buttons on `/admin/payments`, 4 API tests. **#31 (live Payfast verification) remains — blocked on B4.** | S–M | — | MOSTLY DONE |
 | **P7** | **Workshops end to end** (Pass G; audit #20, #22, #24, #25). Real Teams `onlineMeetings` create/cancel + join_url delivery; ICS/calendar invites; learner "my sessions" page; multiple facilitators per session (`session_facilitators`); reschedule (REQ-WS-03); decrement workshop credits | M–L | Live workshops are half the commercial pitch. The Teams provider is a **stub that raises**, `book_session` hard-codes `manual`, and there is no learner-facing workshops page | OPEN |
 | **P8** | **Departments / business units + dept-scoped reporting** (Pass F; audit #30). `departments` (org_id, parent_id), member FK, CSV import column, dept filter on reports, dept-scoped visibility, UI | M | Corporate reporting is flat per organisation. `department` returns **zero hits** | OPEN |
 | **P9** | **Assessment depth** (Pass J; audit #8, #9, #13). Survey results/aggregate endpoint + UI with `minimum_group_size` enforced (REQ-ASSESS-06); pre/post skills pairing (`evaluation_role` + `pair_id`, delta report); question banks | S–M | The anonymous-survey story is built on the write side only — responses go in, nothing reads them back. `minimum_group_size` is specified and never enforced | OPEN |
@@ -108,8 +108,8 @@ Do not build around these; they change the build, not just the schedule.
 1. ~~**P1**~~ — done 2026-08-21.
 2. ~~**P2**~~ — done 2026-08-21.
 3. ~~**R1**~~ — done 2026-08-21.
-4. **P6** — invoice PDF + CSV export; cheap, and it makes the finance work visible. **← next**
-5. **P3** → **P4** — tenant self-service, then SSO, together the enterprise procurement gate.
+4. ~~**P6**~~ — done 2026-08-21 (bar #31, blocked on Payfast credentials).
+5. **P3** → **P4** — tenant self-service, then SSO, together the enterprise procurement gate. **← next**
 6. Then the larger builds: **P5**, **P7**, **P11**.
 
 Quick wins that could ride along with any of the above: **R4**, **R6**, **O4**, **O5**, **O9**, **P14**.

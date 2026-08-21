@@ -37,6 +37,7 @@ from src.routers import (
     deals,
     guest_access,
     health,
+    invoices,
     leads,
     learning,
     media,
@@ -148,6 +149,7 @@ def create_app() -> FastAPI:
     # have doubled the revenue router's size (see its docstring).
     app.include_router(operations.router, prefix="/api/v1")
     app.include_router(audit.router, prefix="/api/v1")
+    app.include_router(invoices.router, prefix="/api/v1")
 
     return app
 
