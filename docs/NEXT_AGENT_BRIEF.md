@@ -119,6 +119,12 @@ RLS with `set_config(..., true)` + `FORCE ROW LEVEL SECURITY` + double tenant as
 - New RLS-forced tables: check the `GRANT` covers every verb the service issues (0009 is the precedent; 0020/0022 are the scars).
 - The machine is unstable — persist work to disk incrementally and tell subagents to do the same.
 
+> **The numbered backlog lives in [BACKLOG.md](BACKLOG.md)** — every outstanding
+> item as P1–P16 (product), R1–R13 (research leftovers), O1–O12 (operational)
+> and B1–B9 (customer-blocked), compiled 2026-08-20 by re-checking each
+> research document against the code. Work is picked by number from there;
+> §7 below is the narrative version of the same ground.
+
 ## 7. Missing but beneficial — what the current solution does not have
 
 Two lists. The first is product scope, grounded in the 54-row audit in
