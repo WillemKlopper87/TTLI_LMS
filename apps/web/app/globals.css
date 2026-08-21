@@ -56,17 +56,32 @@
   --chart-grid: var(--rule);
 
   --shadow-1: 0 1px 2px rgba(28, 23, 25, 0.06);
-  --shadow-2: 0 2px 4px rgba(28, 23, 25, 0.05), 0 12px 28px -18px rgba(28, 23, 25, 0.35);
+  --shadow-2:
+    0 2px 4px rgba(28, 23, 25, 0.05), 0 12px 28px -18px rgba(28, 23, 25, 0.35);
 
-  --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Palatino Linotype", Georgia, serif;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --serif:
+    Charter, "Bitstream Charter", "Sitka Text", Cambria, "Palatino Linotype",
+    Georgia, serif;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --mono:
+    ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "Roboto Mono",
+    Menlo, Consolas, monospace;
 
-  --r: 3px;
+  /* One radius scale, so a skin can square the whole app off by
+     redeclaring six values instead of hunting through 2 400 lines.
+     Every border-radius in this file resolves through one of these. */
+  --r: 3px; /* the default: cards, buttons, inputs */
+  --r-sm: 2px; /* chips, focus rings, small marks */
+  --r-lg: 8px; /* raised panels and table wrappers */
+  --r-hair: 1px; /* hairline marks (waveform bars) */
+  --r-pill: 999px; /* progress bars, scrub tracks */
+  --r-round: 50%; /* circles: avatars, step dots, round play */
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="light"]):not([data-skin="institute"]) {
     --stone: #141113;
     /* Chosen dark steps of the same two hues, re-validated against the
        dark surface — not an automatic lightening of the light values. */
@@ -94,6 +109,139 @@
   }
 }
 
+/* ============ skin: institute ============ */
+
+/* The "1a — The Institute" design direction (docs/design/institute/).
+   Restrained business-school register: serif display type, warm paper
+   neutrals, square corners, no shadows, and one red that only ever
+   means "primary action" or "you are here".
+
+   This is a token block and nothing else — no component renders
+   differently under it. That constraint is what makes the switch
+   trustworthy for a demo: the two looks cannot diverge in behaviour,
+   and any screen built after this lands gets both for free.
+
+   Three deliberate departures from the handoff, each because the
+   handoff's own value fails a check this codebase already enforces:
+
+   1. Four ink/status values are darkened. The design's #8A8578 faint
+      reads at 3.7:1 on white and 2.8:1 on its own fill colour, and it
+      is specified for 10px mono metadata; #8A6E2E pending fails on
+      three of the four surfaces it lands on. Both are re-stepped at the
+      same hue and saturation until they clear 4.5:1 on every surface in
+      this palette. The e2e axe run is the reason this is not optional.
+   2. The chart's secondary series is #929599, not the handoff's
+      #BCBEC0, which sits at 1.9:1 against white — a mark nobody with
+      low vision can find. Even re-stepped it reads as grey by design
+      (the validator's chroma floor FAILs it), which is the intent: it
+      is the recessive series. The relief the validator demands for that
+      is a table view, and the revenue chart already ships one.
+   3. Dark mode is not defined. The handoff excludes it, and inventing a
+      dark palette for someone else's direction is inventing design, so
+      the skin pins itself to light instead. See the guard on the
+      prefers-color-scheme block above.
+
+   The brand red is NOT set here. It flows from the tenant theme
+   (--brand-primary, set inline by app/layout.tsx from GET /tenant/theme)
+   exactly as it does in the classic skin, so the acme demo tenant keeps
+   its own colour under this skin too. */
+
+:root[data-skin="institute"] {
+  /* Anything the learner reads as a statement / acts on / is told as
+     fact — the direction's core rule. Families come from next/font in
+     app/layout.tsx; the stacks behind them are the classic skin's, so a
+     failed font load degrades to what the app looked like before. */
+  --serif:
+    var(--font-newsreader), Charter, "Bitstream Charter", "Sitka Text", Cambria,
+    Georgia, serif;
+  --sans:
+    var(--font-archivo), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --mono:
+    var(--font-plex-mono), ui-monospace, "SF Mono", "Cascadia Mono",
+    "Segoe UI Mono", Menlo, Consolas, monospace;
+
+  /* "Border radius: 0 everywhere. No exceptions. This is the
+     direction's most load-bearing decision — a single rounded card
+     breaks it." Six values, and the whole app squares off. */
+  --r: 0;
+  --r-sm: 0;
+  --r-lg: 0;
+  --r-hair: 0;
+  --r-pill: 0;
+  --r-round: 0;
+
+  /* Depth comes from borders and the paper/surface/wash tonal step. */
+  --shadow-1: none;
+  --shadow-2: none;
+
+  /* Warm, low-chroma neutrals — they read as paper, not as a second
+     brand colour. */
+  --stone: #f6f4ef;
+  --surface: #ffffff;
+  --surface-2: #efebe2;
+  --surface-3: #e4e0d6;
+  --ink: #16191b;
+  --ink-2: #3e4245;
+  --muted: #5c5a55;
+  /* Handoff #8A8578 → 3.68:1 on white, 2.79:1 on --surface-3, carrying
+     10px mono metadata. Re-stepped at the same hue to 5.99 / 5.45 /
+     5.04 / 4.54 across surface, stone, surface-2, surface-3. */
+  --faint: #676359;
+  --rule: #dcd7cc;
+  /* Handoff #CFC9BC → 1.65:1, and this token draws input and control
+     borders, which WCAG 1.4.11 puts at 3:1. Re-stepped to 3.31:1 on
+     white, 3.01:1 on paper. */
+  --rule-2: #998c71;
+
+  /* The two semantic additions the handoff flags for customer sign-off:
+     a red-only palette cannot distinguish "certified" from "failed". */
+  --done: #3e6b4f;
+  --done-wash: #e7ede8;
+  /* Handoff #8A6E2E → 4.39:1 on paper, 3.66:1 on --surface-3.
+     Re-stepped to 5.97 / 5.43 / 5.02 / 4.53. */
+  --live: #796028;
+  --live-wash: #f2ebdc;
+  /* Error stays its own red rather than following --brand-primary: a
+     tenant whose brand colour is green must not get green error text,
+     and an error that is exactly the primary-button colour is a state
+     nobody can tell from an affordance. */
+  --stop: #a32e24;
+  --stop-wash: #f6e6e4;
+
+  /* Chart series. --series-1 is the tenant's bright brand step, so the
+     chart is themed like everything else; --series-2 is the handoff's
+     recessive neutral, darkened to clear 3:1 against the chart surface.
+     See departure 2 above for why grey is allowed to read as grey. */
+  --series-1: var(--brand-secondary);
+  --series-2: #929599;
+
+  /* Mixed into paper, not white — a white-based tint reads cold against
+     this background and shows as a visible rectangle. */
+  --brand-wash: color-mix(in srgb, var(--brand-primary) 9%, #f6f4ef);
+  --on-brand: #f6f4ef;
+
+  /* The handoff draws every screen light. Telling the browser so keeps
+     form controls, scrollbars and autofill from being painted dark
+     around a light page. */
+  color-scheme: light;
+}
+
+/* Anything the system asserts as fact wears mono with tracking, and
+   headings sit tighter than the classic skin's. These are the two type
+   details the direction reads as, and neither is expressible as a
+   colour token. */
+:root[data-skin="institute"] h1,
+:root[data-skin="institute"] h2,
+:root[data-skin="institute"] h3 {
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+:root[data-skin="institute"] .eyebrow {
+  letter-spacing: 0.14em;
+}
+
 /* ============ base ============ */
 
 * {
@@ -110,7 +258,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
   margin: 0;
   font-weight: 600;
   line-height: 1.15;
@@ -211,7 +362,7 @@ a {
 .site-nav a:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 
 .site-nav .on {
@@ -250,7 +401,7 @@ a {
 .avatar {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   background: var(--brand-wash);
   color: var(--brand-ink);
   display: grid;
@@ -273,7 +424,7 @@ a {
   place-items: center;
   font-size: 0.625rem;
   font-weight: 700;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   flex: none;
 }
 
@@ -292,7 +443,10 @@ a {
   gap: 0.45rem;
   white-space: nowrap;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .btn:focus-visible {
@@ -366,16 +520,34 @@ a {
   text-transform: uppercase;
   padding: 0.2rem 0.45rem;
   border: 1px solid currentColor;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   white-space: nowrap;
   display: inline-block;
 }
 
-.tag--brand { color: var(--brand-ink); background: var(--brand-wash); border-color: transparent; }
-.tag--done  { color: var(--done);  background: var(--done-wash); border-color: transparent; }
-.tag--live  { color: var(--live);  background: var(--live-wash); border-color: transparent; }
-.tag--stop  { color: var(--stop);  background: var(--stop-wash); border-color: transparent; }
-.tag--mute  { color: var(--muted); }
+.tag--brand {
+  color: var(--brand-ink);
+  background: var(--brand-wash);
+  border-color: transparent;
+}
+.tag--done {
+  color: var(--done);
+  background: var(--done-wash);
+  border-color: transparent;
+}
+.tag--live {
+  color: var(--live);
+  background: var(--live-wash);
+  border-color: transparent;
+}
+.tag--stop {
+  color: var(--stop);
+  background: var(--stop-wash);
+  border-color: transparent;
+}
+.tag--mute {
+  color: var(--muted);
+}
 
 .eyebrow {
   font-family: var(--mono);
@@ -388,7 +560,7 @@ a {
 .bar {
   height: 4px;
   background: var(--surface-3);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   overflow: hidden;
 }
 
@@ -396,7 +568,7 @@ a {
   display: block;
   height: 100%;
   background: var(--brand);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   transition: width 0.35s ease;
 }
 
@@ -425,7 +597,7 @@ a {
 .card {
   border: 1px solid var(--rule-2);
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-2);
 }
 
@@ -505,7 +677,7 @@ a {
   flex: 1;
   background: var(--brand);
   opacity: 0.5;
-  border-radius: 1px;
+  border-radius: var(--r-hair);
   display: block;
 }
 
@@ -562,7 +734,10 @@ a {
   font: inherit;
   color: inherit;
   text-decoration: none;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
 }
 
 .ccard:hover {
@@ -589,7 +764,11 @@ a {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.10) 0 1px, transparent 1px 13px),
+    repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.1) 0 1px,
+      transparent 1px 13px
+    ),
     linear-gradient(160deg, rgba(255, 255, 255, 0.18), transparent 62%);
 }
 
@@ -667,7 +846,7 @@ a {
 .play-round {
   width: 44px;
   height: 44px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   background: var(--brand);
   color: var(--on-brand);
   border: 0;
@@ -802,7 +981,9 @@ a {
    and a slight lift, not a drop shadow) so it reads as "this opens
    something" without breaking the flat editorial language. */
 .facilitator-card img {
-  transition: transform 0.15s ease, outline-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    outline-color 0.15s ease;
   outline: 1px solid transparent;
   outline-offset: 2px;
 }
@@ -1015,7 +1196,7 @@ label.field b,
 .sent-glyph {
   width: 54px;
   height: 54px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   background: var(--done-wash);
   color: var(--done);
   display: grid;
@@ -1097,7 +1278,7 @@ label.field b,
   border: 1px solid var(--rule-2);
   display: block;
   flex: none;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 
 .facet li.on i {
@@ -1551,7 +1732,11 @@ p a:not(.btn) {
   content: "";
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.10) 0 1px, transparent 1px 13px);
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.1) 0 1px,
+    transparent 1px 13px
+  );
 }
 
 .rowlist {
@@ -1704,7 +1889,11 @@ button.lrow:not(.lrow--lock):hover {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 50% 42%, rgba(216, 138, 158, 0.18), transparent 62%);
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    rgba(216, 138, 158, 0.18),
+    transparent 62%
+  );
   pointer-events: none;
 }
 
@@ -1746,7 +1935,7 @@ button.lrow:not(.lrow--lock):hover {
   top: 1rem;
   font-family: var(--mono);
   font-size: 0.625rem;
-  color: rgba(255, 255, 255, 0.30);
+  color: rgba(255, 255, 255, 0.3);
   text-align: right;
   line-height: 1.4;
   pointer-events: none;
@@ -1757,9 +1946,15 @@ button.lrow:not(.lrow--lock):hover {
 /* Slow and small on purpose — a forensic overlay that jumps around is a
    distraction; one that drifts is hard to crop out of a screen recording. */
 @keyframes drift {
-  0%   { transform: translate(0, 0); }
-  50%  { transform: translate(-12px, 104px); }
-  100% { transform: translate(-3px, 38px); }
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-12px, 104px);
+  }
+  100% {
+    transform: translate(-3px, 38px);
+  }
 }
 
 .scrub {
@@ -1775,15 +1970,15 @@ button.lrow:not(.lrow--lock):hover {
 .track {
   position: relative;
   height: 4px;
-  background: rgba(255, 255, 255, 0.20);
-  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--r-pill);
 }
 
 .track .played {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--brand);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   transition: width 0.4s ease;
 }
 
@@ -1957,11 +2152,22 @@ button.lrow:not(.lrow--lock):hover {
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-5px); }
-  40% { transform: translateX(5px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
 }
 
 .foot-nav {
@@ -2050,7 +2256,7 @@ button.lrow:not(.lrow--lock):hover {
   height: 1.35rem;
   display: grid;
   place-items: center;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 
 .opt[aria-pressed="true"] .key,
@@ -2155,7 +2361,13 @@ button.lrow:not(.lrow--lock):hover {
   width: 62px;
   height: 62px;
   justify-self: center;
-  background: conic-gradient(from 0deg, var(--ink) 25%, transparent 0 50%, var(--ink) 0 75%, transparent 0);
+  background: conic-gradient(
+    from 0deg,
+    var(--ink) 25%,
+    transparent 0 50%,
+    var(--ink) 0 75%,
+    transparent 0
+  );
   background-size: 10px 10px;
   border: 3px solid var(--ink);
 }
@@ -2271,7 +2483,7 @@ img.qr {
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
 }
 
 table.data {
@@ -2311,6 +2523,88 @@ table.data tbody tr:last-child td {
   color: var(--faint);
   font-family: var(--mono);
   font-size: 0.6875rem;
+}
+
+/* ============ skin switcher (demo only) ============ */
+
+/* The floating control from components/skin-switcher.tsx, rendered only
+   when NEXT_PUBLIC_SKIN_SWITCHER=1. Built from the same tokens as
+   everything else, so it restyles itself along with the app it is
+   restyling — a control that stayed visually fixed while the page
+   changed around it would read as browser chrome rather than as part of
+   the demo. */
+
+.skin-switch {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 60; /* above .site-head's 50 */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  font-size: 0.75rem;
+}
+
+.skin-switch__legend {
+  float: left;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* A fieldset's legend is taken out of flow by `float`, so the options
+   need the row to themselves; this keeps the label above them without a
+   wrapper element that would break the fieldset/legend pairing screen
+   readers rely on. */
+.skin-switch__legend + .skin-switch__option {
+  clear: left;
+}
+
+.skin-switch__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.skin-switch__option input {
+  accent-color: var(--brand);
+  margin: 0;
+}
+
+.skin-switch__option:has(input:checked) {
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+.skin-switch__option:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* On a phone the control would sit on top of whatever is being
+   demonstrated. Pin it to the bottom edge as a full-width strip
+   instead, where it covers the least. */
+@media (max-width: 560px) {
+  .skin-switch {
+    right: 0;
+    left: 0;
+    bottom: 0;
+    justify-content: center;
+    border-width: 1px 0 0;
+    border-radius: 0;
+  }
 }
 
 /* ============ print & motion ============ */
@@ -2355,7 +2649,7 @@ table.data tbody tr:last-child td {
   background: var(--surface);
   color: var(--muted);
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   flex: none;
   transition:
     background 0.15s,
@@ -2437,7 +2731,9 @@ table.data tbody tr:last-child td {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
     transition: none !important;
   }
