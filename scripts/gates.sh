@@ -17,6 +17,11 @@ echo "== alembic upgrade head"; ENVIRONMENT=local $V/alembic upgrade head
 echo "== migration round-trip"; ENVIRONMENT=local $V/alembic downgrade -1 && ENVIRONMENT=local $V/alembic upgrade head
 echo "== alembic check";        ENVIRONMENT=local $V/alembic check
 
+# `git diff --exit-code` compares the working tree against the INDEX, so a
+# legitimately-regenerated client trips this until it is staged. That is
+# the intended workflow — `git add` the regenerated file, then gate — and
+# it matches CI, where the checkout is clean and a correct commit produces
+# no diff at all.
 echo "== api-client drift"
 ENVIRONMENT=local $V/python -c "import json; from src.main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json
 (cd ../../packages/api-client && npm run generate >/dev/null && git diff --exit-code -- src/schema.gen.ts && npm run typecheck)

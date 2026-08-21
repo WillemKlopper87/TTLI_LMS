@@ -17,12 +17,13 @@ Sources: `docs/research/enterprise-gaps-plan.md` (Passes A–K),
 
 ## P — Product gaps (the enterprise-gaps-plan Passes A–K)
 
-None of these have started. Ordered as the plan orders them: demo value per
-unit of effort, with the two procurement gates (P4) placed where they must be.
+P1 shipped 2026-08-21; the rest have not started. Ordered as the plan orders
+them: demo value per unit of effort, with the procurement gate (P4) placed
+where it must be.
 
 | # | Item | Size | Why it matters | Status |
 |---|---|---|---|---|
-| **P1** | **Admin operations home + per-course analytics** (Pass A; audit #41, #40). `GET /admin/overview` KPI block + "needs attention" lists; `GET /admin/courses/{id}/analytics` (funnel, completion rate, per-lesson drop-off, quiz distribution, at-risk); rebuild `/admin`; retire the two inert nav items | S–M | `/admin` is a 21-line "Welcome" stub with two dead nav links — the first screen any buyer or admin opens. Every input already exists in `orders`, `enrolments`, `lesson_completions`, `quiz_attempts` | OPEN |
+| ~~**P1**~~ | ~~Admin operations home + per-course analytics~~ **DONE 2026-08-21.** Shipped as `/analytics/overview`, `/analytics/courses`, `/analytics/courses/{id}` (path deviation from Pass A explained in `routers/operations.py`), plus `/admin`, `/admin/reports/courses` and the course detail screen. 6 API tests + 3 Playwright specs incl. axe. "Reports" nav is live; "Learners" is the last inert item (needs P3) | S–M | — | DONE |
 | **P2** | **Audit log read path + coverage** (Pass B; audit #52). `GET /audit-events` filterable + keyset-paginated + CSV export, `audit:read` permission, `/admin/audit` page; add `audit.record` to payment approve/reject/refund, certificate revoke, role changes, course publish, tenant settings | M | "Advanced audit logs" is an Enterprise-column promise. Events are written but there is **no read path at all**, and finance/credential/RBAC actions aren't logged. Also the first thing a POPIA reviewer asks for. Note: `events` is monthly-partitioned (`0004`) — the read path must respect partition range | OPEN |
 | **P3** | **Tenant self-service: branding, domains, users, roles** (Pass C; audit #44, #45 + unlisted). `PATCH /tenant/theme` + logo upload with live preview; `GET/POST/DELETE /tenant/domains` with verification token + TLS status readout; **a user/role admin UI** | M | There is currently **no way to create a staff user or assign a role from inside the product** — `routers/tenant.py` has exactly one PATCH (manager-visibility). Theme and domains change only by migration | OPEN |
 | **P4** | **SSO — Entra ID / OIDC** (Pass D; audit #46). Per-tenant IdP config, OIDC via `msal`/`authlib`, JIT provisioning + role mapping; SAML later | L | The standard corporate procurement gate for Team/Corporate tiers. `msal` is named in README's stack table but **nothing exists** — password/magic-link/TOTP only | OPEN |
@@ -45,6 +46,7 @@ unit of effort, with the two procurement gates (P4) placed where they must be.
 
 | # | Item | Size | Detail | Status |
 |---|---|---|---|---|
+| **R14** | **`test_analytics.py` does not exist** | S | Found 2026-08-21: the four payment-analytics endpoints (`/revenue-summary`, `/registrations` and both CSV twins) shipped with **zero test coverage**. `test_operations.py` covers the three new operations endpoints; the original four are still untested | OPEN |
 | **R1** | **Charts on the payment analytics dashboard** | S–M | `payment-analytics-dashboard.md` §7 specified recharts. It is **not installed** and `/admin/analytics` has no chart markup — the dashboard is numbers and tables only. Endpoints, CSV exports, migration `0028` and the `finance` permission grant are all done | OPEN |
 | **R2** | **"Podcast engagement" panel on the analytics dashboard** | S | `podcast-platform-integration.md` §123 explicitly asked the analytics dashboard to surface plays / completion rate / CTR / top CTA-converting episodes from the six listen-stat event types. Never picked up | OPEN |
 | **R3** | **Article view events** | S | `resources-hub-design.md` open decision #3: articles should emit at least a "viewed" event for symmetry with podcasts' six. Still undecided and unbuilt | OPEN |
@@ -76,7 +78,7 @@ These remain.
 | **O6** | **Deeper browser coverage** | M | Playwright + axe landed 2026-08-20 but coverage is deliberately shallow: public pages + one authenticated journey. Admin screens, the learner player and the checkout flow have no browser coverage | OPEN |
 | **O7** | **`react-hooks/set-state-in-effect` cleanup** | M | 34 pre-existing sites, warn-only in ESLint so the gate could start honest. Each is a real behavioural refactor | OPEN |
 | **O8** | **Docs consolidation + codebase shrink** | M | The user asked for this on 2026-08-16. `HANDOFF.md` is 209 KB and `STATUS.md` 185 KB, both append-only; `authedFetch` is copy-pasted into 18 files; the 11k-line generated API client is imported once; `components/` has 2 files for 50 pages | OPEN |
-| **O9** | **1,320 test courses in the dev catalogue** | S | `scripts/hide_test_courses.py --apply` — dry-run verified, reversible, never applied. Needs a human to run it | OPEN |
+| ~~**O9**~~ | ~~Test courses in the dev catalogue~~ **DONE 2026-08-21** — `--apply` run: 276 course assignments, 16 episodes, 8 articles, 8 recommendations hidden (nothing deleted, reversible). Catalogue is now the 7 real programmes | S | — | DONE |
 | **O10** | **Multi-currency / i18n plumbing** | M | Tax engine seeds SA VAT only and refuses international buyers; UI is English-only, ZAR-only. README's pitch is "South Africa and internationally" | BLOCKED on B2 |
 | **O11** | **Cloud provisioning: Azure Container Apps, Front Door, IaC, registry push, staging** | L | Containerisation is done and verified (2026-08-20). Everything above the image is not: no IaC, no registry, no environment, no TLS/edge, no staging | BLOCKED on B3 |
 | **O12** | **Load test at 100 concurrent** | M | Phase 7 demo target. Needs O11 first to be meaningful | BLOCKED on O11 |
@@ -103,8 +105,8 @@ Do not build around these; they change the build, not just the schedule.
 
 ## Suggested order, if you want one
 
-1. **P1** — the admin home is the worst first-impression in the product and the data already exists.
-2. **P2** — audit read path; small, and it unblocks the compliance conversation.
+1. ~~**P1**~~ — done 2026-08-21.
+2. **P2** — audit read path; small, and it unblocks the compliance conversation. **← next**
 3. **R1** — charts finish a dashboard that is already 90% built.
 4. **P6** — invoice PDF + CSV export; cheap, and it makes the finance work visible.
 5. **P3** → **P4** — tenant self-service, then SSO, together the enterprise procurement gate.

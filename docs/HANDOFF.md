@@ -3309,6 +3309,41 @@ underline rule `.prose a` already used, scoped `:not(.btn)` so buttons
 keep their box. The axe assertion prints rule + selector, not a count,
 because "1 violation" without a target is a scavenger hunt.
 
+**P1 — admin operations home and course analytics — 2026-08-21.** First
+item of the product backlog (`docs/BACKLOG.md`). Notes worth carrying:
+
+- **Two model facts that bite anyone writing aggregates here.** `courses`
+  has no `tenant_id` — it is a global catalogue reached through
+  `course_tenant_assignments`, so every course query joins that table.
+  And `transcode_jobs`/`video_assets` carry no tenant either; the only
+  route from a failed transcode to a tenant is
+  job -> asset -> lesson -> module -> course -> assignment.
+- **`Order` has no `order_number` and no buyer email of its own.** The
+  human-facing handle is `payment_reference`; the email lives on the
+  joined `User`. Both were assumed wrong on the first pass and caught by
+  the model read, not by a test.
+- **`Lesson.quiz_id` points lesson -> quiz**, not the reverse — a quiz is
+  an activity a lesson *is*.
+- **Every pending order in the dev database is encrypted under a rotated
+  key** (32/32). The dashboard shows an explicit "(unreadable — key
+  rotated)" marker rather than None, because None means "no address on
+  file" and conflating the two turns a key-rotation incident into what
+  looks like missing data.
+- **Playwright + the login rate limit.** Three admin specs each signing
+  in tripped `LOGIN_RATE_LIMIT_PER_ACCOUNT` (5/min) and failed with a
+  timeout that reads like a broken redirect. Fixed properly with a
+  `setup` project that signs in once and shares storage state
+  (`e2e/admin.setup.ts`) — the refresh cookie survives, the in-memory
+  access token is re-minted by the silent-refresh path, exactly as a
+  returning user's session would be.
+- **`scripts/gates.sh`'s api-client drift step compares the working tree
+  against the INDEX.** A legitimately regenerated client fails the gate
+  until it is `git add`ed. That is the intended workflow and now says so
+  in the script.
+- **`test_analytics.py` does not exist** — the payment-analytics
+  endpoints shipped with zero tests. `test_operations.py` covers the new
+  ones; the older four remain uncovered (backlog-worthy).
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

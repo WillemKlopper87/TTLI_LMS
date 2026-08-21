@@ -3011,6 +3011,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operations KPIs and what needs a human today */
+        get: operations["overview_api_v1_analytics_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every course this tenant can see, with enrolment and completion counts */
+        get: operations["course_summaries_api_v1_analytics_courses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/courses/{course_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Enrolment funnel, per-lesson drop-off and quiz distribution for one course */
+        get: operations["course_analytics_api_v1_analytics_courses__course_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3248,6 +3299,109 @@ export interface components {
         AssignmentsPageResponse: {
             /** Items */
             items: components["schemas"]["AssignmentListItem"][];
+        };
+        /**
+         * AtRiskLearnerRow
+         * @description Deliberately masked, like `services/reports.py` does: an operations
+         *     dashboard needs to know *that* someone is stalling and in which
+         *     course, not who they are — the manager-visibility rules in
+         *     REQ-TEN-03 govern naming a learner, and this screen does not carry
+         *     that gate.
+         */
+        AtRiskLearnerRow: {
+            /**
+             * Enrolment Id
+             * Format: uuid
+             */
+            enrolment_id: string;
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Learner Reference */
+            learner_reference: string;
+            /** Progress Percent */
+            progress_percent: number;
+            /** Last Active At */
+            last_active_at: string | null;
+            /** Days Inactive */
+            days_inactive: number;
+        };
+        /**
+         * AttentionOrderRow
+         * @description An order sitting in a state only a human can move on.
+         */
+        AttentionOrderRow: {
+            /**
+             * Order Id
+             * Format: uuid
+             */
+            order_id: string;
+            /** Order Number */
+            order_number: string;
+            /** Status */
+            status: string;
+            /** Currency */
+            currency: string;
+            /** Grand Total */
+            grand_total: number;
+            /** Buyer Email */
+            buyer_email: string | null;
+            /**
+             * Waiting Since
+             * Format: date-time
+             */
+            waiting_since: string;
+            /** Hours Waiting */
+            hours_waiting: number;
+        };
+        /** AttentionSubmissionRow */
+        AttentionSubmissionRow: {
+            /**
+             * Submission Id
+             * Format: uuid
+             */
+            submission_id: string;
+            /**
+             * Enrolment Id
+             * Format: uuid
+             */
+            enrolment_id: string;
+            /** Assignment Title */
+            assignment_title: string;
+            /** Course Title */
+            course_title: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Hours Waiting */
+            hours_waiting: number;
+        };
+        /** AttentionTranscodeRow */
+        AttentionTranscodeRow: {
+            /**
+             * Transcode Job Id
+             * Format: uuid
+             */
+            transcode_job_id: string;
+            /**
+             * Video Asset Id
+             * Format: uuid
+             */
+            video_asset_id: string;
+            /** Lesson Title */
+            lesson_title: string | null;
+            /** Course Title */
+            course_title: string | null;
+            /** Error */
+            error: string | null;
+            /** Failed At */
+            failed_at: string | null;
         };
         /** AvailabilityPage */
         AvailabilityPage: {
@@ -3501,6 +3655,32 @@ export interface components {
              */
             badge: boolean;
         };
+        /** CourseAnalyticsResponse */
+        CourseAnalyticsResponse: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            funnel: components["schemas"]["CourseFunnel"];
+            /** Completion Rate */
+            completion_rate: number;
+            /** Median Days To Complete */
+            median_days_to_complete: number | null;
+            /** Lesson Dropoff */
+            lesson_dropoff: components["schemas"]["LessonDropoffRow"][];
+            /** Quiz Scores */
+            quiz_scores: components["schemas"]["QuizScoreRow"][];
+            /** At Risk */
+            at_risk: components["schemas"]["AtRiskLearnerRow"][];
+        };
         /** CourseCreateRequest */
         CourseCreateRequest: {
             /** Title */
@@ -3527,6 +3707,19 @@ export interface components {
             includes_workshop?: boolean | null;
             /** Hero Colour */
             hero_colour?: string | null;
+        };
+        /**
+         * CourseFunnel
+         * @description Three states an enrolment can be in, and they nest: every started
+         *     enrolment was enrolled, every completed one was started.
+         */
+        CourseFunnel: {
+            /** Enrolled */
+            enrolled: number;
+            /** Started */
+            started: number;
+            /** Completed */
+            completed: number;
         };
         /** CourseOutlineResponse */
         CourseOutlineResponse: {
@@ -3578,6 +3771,39 @@ export interface components {
             includes_workshop: boolean;
             /** Hero Colour */
             hero_colour?: string | null;
+        };
+        /** CourseSummaryResponse */
+        CourseSummaryResponse: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Courses */
+            courses: components["schemas"]["CourseSummaryRow"][];
+        };
+        /**
+         * CourseSummaryRow
+         * @description One row of the course list the reports screen opens on.
+         */
+        CourseSummaryRow: {
+            /**
+             * Course Id
+             * Format: uuid
+             */
+            course_id: string;
+            /** Title */
+            title: string;
+            /** State */
+            state: string;
+            /** Enrolled */
+            enrolled: number;
+            /** Completed */
+            completed: number;
+            /** Completion Rate */
+            completion_rate: number;
+            /** At Risk */
+            at_risk: number;
         };
         /**
          * CourseUpdateRequest
@@ -4165,6 +4391,26 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** LessonDropoffRow */
+        LessonDropoffRow: {
+            /**
+             * Lesson Id
+             * Format: uuid
+             */
+            lesson_id: string;
+            /** Title */
+            title: string;
+            /** Position */
+            position: number;
+            /** Module Title */
+            module_title: string;
+            /** Reached */
+            reached: number;
+            /** Completed */
+            completed: number;
+            /** Completion Rate */
+            completion_rate: number;
+        };
         /** LessonOutlineRow */
         LessonOutlineRow: {
             lesson: components["schemas"]["LessonResponse"];
@@ -4518,6 +4764,45 @@ export interface components {
             organisation_name: string;
             /** User Count */
             user_count: number;
+        };
+        /** OverviewKpis */
+        OverviewKpis: {
+            /** Revenue Mtd */
+            revenue_mtd: components["schemas"]["MoneyByCurrency"][];
+            /** Active Learners */
+            active_learners: number;
+            /** Pending Approvals */
+            pending_approvals: number;
+            /** Completions This Month */
+            completions_this_month: number;
+            /** Certificates Issued This Month */
+            certificates_issued_this_month: number;
+            /** Upcoming Sessions */
+            upcoming_sessions: number;
+            /** At Risk Learners */
+            at_risk_learners: number;
+        };
+        /** OverviewResponse */
+        OverviewResponse: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Month Start
+             * Format: date-time
+             */
+            month_start: string;
+            kpis: components["schemas"]["OverviewKpis"];
+            /** Payment Approvals */
+            payment_approvals: components["schemas"]["AttentionOrderRow"][];
+            /** Ungraded Submissions */
+            ungraded_submissions: components["schemas"]["AttentionSubmissionRow"][];
+            /** Failed Transcodes */
+            failed_transcodes: components["schemas"]["AttentionTranscodeRow"][];
+            /** At Risk */
+            at_risk: components["schemas"]["AtRiskLearnerRow"][];
         };
         /** OwnEnrolmentResponse */
         OwnEnrolmentResponse: {
@@ -5378,6 +5663,24 @@ export interface components {
             id: string;
             /** Title */
             title: string;
+        };
+        /** QuizScoreRow */
+        QuizScoreRow: {
+            /**
+             * Quiz Id
+             * Format: uuid
+             */
+            quiz_id: string;
+            /** Lesson Title */
+            lesson_title: string;
+            /** Attempts */
+            attempts: number;
+            /** Average Score */
+            average_score: number | null;
+            /** Pass Rate */
+            pass_rate: number | null;
+            /** Score Buckets */
+            score_buckets: number[];
         };
         /** QuizSubmitRequest */
         QuizSubmitRequest: {
@@ -12225,6 +12528,77 @@ export interface operations {
                 };
                 content: {
                     "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_v1_analytics_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewResponse"];
+                };
+            };
+        };
+    };
+    course_summaries_api_v1_analytics_courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseSummaryResponse"];
+                };
+            };
+        };
+    };
+    course_analytics_api_v1_analytics_courses__course_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseAnalyticsResponse"];
                 };
             };
             /** @description Validation Error */

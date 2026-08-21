@@ -1,6 +1,31 @@
 # STATUS
 
-**Updated:** 2026-08-20 (seventh pass, same day) — **Phase 4.5 closes**:
+**Updated:** 2026-08-21 — **P1 (product): the admin operations home and
+course analytics** (`docs/BACKLOG.md` P1 = enterprise-gaps-plan Pass A,
+feature-matrix gaps #41 and #40). `/admin` was a 21-line "Welcome / here
+are your permissions" stub with two dead nav items; it is now a real
+operations dashboard. New backend: `src/services/operations.py`,
+`src/schemas/operations.py`, `src/routers/operations.py` — three
+read-only, tenant-scoped, `analytics:view`-gated GETs
+(`/analytics/overview`, `/analytics/courses`,
+`/analytics/courses/{id}`), 6 tests. Revenue MTD reuses
+`analytics.actual_revenue` and "at risk" reuses `reports._is_at_risk`
+rather than re-deriving either, so the admin home cannot disagree with
+the revenue screen or the manager report. New frontend: `/admin`
+rebuilt to the `.dash-top`/`.stats`/`.rowlist` idiom, plus
+`/admin/reports/courses` and `/admin/reports/courses/[courseId]`; the
+"Reports" nav placeholder now points at a real screen ("Learners" is
+the last inert one, waiting on Pass C). Browser-verified with 3 new
+Playwright specs including an axe pass on `/admin`.
+**Path deviation, deliberate:** Pass A wrote these as `/admin/*`; they
+live under `/analytics` because every router here is named for its
+domain, not for the UI shell that calls it.
+**Also done this pass:** backlog O9 — `scripts/hide_test_courses.py
+--apply` finally run (276 course assignments, 16 episodes, 8 articles,
+8 recommendations hidden; nothing deleted, fully reversible). The
+catalogue went from 283 courses to the 7 real programmes, which is what
+made the new course-reports screen demoable at all.
+Prior: 2026-08-20 (seventh pass) — **Phase 4.5 closes**:
 the axe-core gate exists (its last open item). Playwright + `@axe-core/
 playwright` drive a real Chromium over a PRODUCTION build on :3011 — 20
 specs: every public page renders (status < 400 AND its header is

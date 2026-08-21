@@ -15,15 +15,16 @@ import { AdminContext, type Me } from "./admin-context";
 // "Leads" (Phase 2), "Payments" (Phase 3, REQ-PAY-03's finance queue),
 // "Settings" (Phase 5 sprint 2, REQ-TEN-03's manager-visibility toggles),
 // "Courses"/"Templates" (Phase 4's authoring gap, closed after Phase 5),
-// "Grading" (frontend-completeness backlog item 3), and "Subscriptions"
-// (multi-tier subscription plan authoring, REQ-PAY-12) are the ones that
-// do so far.
+// "Grading" (frontend-completeness backlog item 3), "Subscriptions"
+// (multi-tier subscription plan authoring, REQ-PAY-12) and "Reports"
+// (Pass A's course analytics) are the ones that do so far.
 const WORKING_SECTIONS = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Deals", href: "/admin/deals" },
   { label: "Campaigns", href: "/admin/campaigns" },
   { label: "Payments", href: "/admin/payments" },
   { label: "Analytics", href: "/admin/analytics" },
+  { label: "Reports", href: "/admin/reports/courses" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
   { label: "Catalogue", href: "/admin/catalogue" },
@@ -35,7 +36,10 @@ const WORKING_SECTIONS = [
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },
 ];
-const INERT_SECTIONS = ["Learners", "Reports"];
+// "Learners" is the last placeholder: a people/organisations screen is
+// Pass C of docs/research/enterprise-gaps-plan.md, not built yet.
+// "Reports" left this list when Pass A gave it a real destination.
+const INERT_SECTIONS = ["Learners"];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -105,7 +109,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               // inherited value regardless of specificity. Without this the
               // links render in --brand-ink (#8e151c) on the --brand
               // (#8e151c) gradient — the exact same colour, 1:1 contrast,
-              // completely invisible. The neighbouring Learners/Reports
+              // completely invisible. The neighbouring inert-section
               // <div>s and the Sign out <button> were always fine precisely
               // because no element rule targets them, which is what made
               // this look like "only the nav links vanished".
