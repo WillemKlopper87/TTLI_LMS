@@ -1,6 +1,29 @@
 # STATUS
 
-**Updated:** 2026-08-21 (fifth pass, same day) — **P3 part one: staff
+**Updated:** 2026-08-21 (sixth pass, same day) — **P3 completes:
+branding and custom domains** (feature-matrix #44 and #45). White-label
+theming has worked since `0006` and custom hostnames since `0001`, and
+neither could be changed without writing another migration — the
+capability was built and left without a door. Now `GET/PATCH
+/tenant/branding`, `POST /tenant/branding/logo` (virus-scanned like
+every other upload, REQ-BYPASS-08 — an SVG is a script-carrying format
+and an administrator's upload is trusted no more than a learner's), and
+`GET/POST/DELETE /tenant/domains`, all behind `tenant:manage`, with a
+panel on `/admin/settings`.
+**Colours are measured, not trusted:** a brand colour is checked with
+WCAG 2.1's own contrast formula against the text that will sit on it and
+refused below 4.5:1, with the measured ratio in the message — verified
+live, `#ffe600` refused at 1.21:1. A tenant cannot undo the AA line the
+axe gate holds on every public page.
+**Domain verification is deliberately absent rather than faked.** A
+hostname is stored unverified with the HMAC-derived DNS TXT value its
+owner must publish; resolving that record is Phase 7 work alongside TLS
+automation, and the API says `verification_available: false` rather than
+offering a button that would make "verified" mean "someone clicked".
+The primary hostname cannot be removed — a settings screen should not be
+able to take a tenant off the internet — and hostnames stay globally
+unique because they are how a request finds its tenant. 9 API tests.
+Prior, same day — **P3 part one: staff
 administration** (`docs/BACKLOG.md` P3, the feature-matrix audit's
 "unlisted" gap). Until now a tenant could not create a colleague or give
 them a role without a developer: `role_assignments` was written by

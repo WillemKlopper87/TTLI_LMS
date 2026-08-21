@@ -3454,6 +3454,29 @@ and QR and may be presented years later, so the artefact is the record;
 an invoice's record is the row and the PDF is a view of it. That choice
 is what kept P6 migration-free.
 
+**P3 — tenant self-service, both halves — 2026-08-21.** Three decisions
+worth carrying:
+
+- **Privilege escalation is a service-layer invariant, not a permission.**
+  `assert_can_grant` refuses any role carrying a permission the caller
+  does not already hold. Without it, `user:invite` silently means "can
+  become anyone". Paired with a no-self-change rule, which exists for
+  the opposite mistake: revoking your own last `tenant:manage` locks the
+  tenant out with no in-product way back.
+- **A tenant cannot undo the accessibility line.** Brand colours are run
+  through WCAG 2.1's own contrast formula against `--on-brand` and
+  refused below 4.5:1, with the measured ratio in the error. The axe
+  gate protects the shipped pages; this protects the pages a customer
+  configures.
+- **Domain verification is absent on purpose, and says so.** The API
+  returns `verification_available: false`. Adding a hostname is what
+  routes traffic to a tenant, so a "mark verified" button an admin can
+  press would make the field mean "someone clicked". The DNS TXT token
+  is HMAC-derived from (tenant, hostname) rather than stored — stable,
+  unforgeable without the server secret, and needing no column, which
+  is what kept this pass migration-free. Actually resolving the record
+  belongs with TLS automation in Phase 7.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

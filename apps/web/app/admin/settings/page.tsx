@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 
 import { getAccessToken } from "@/lib/session";
 
+import { useAdmin } from "../admin-context";
+
+import BrandingPanel from "./branding-panel";
+
 interface Course {
   id: string;
   title: string;
@@ -23,6 +27,8 @@ const VISIBILITY_LABEL: Record<string, string> = {
  * manager sees any individual learner's result (services/reports.py).
  */
 export default function SettingsScreen() {
+  const { me } = useAdmin();
+  const canManageTenant = me.permissions.includes("tenant:manage");
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [tenantAllows, setTenantAllows] = useState<boolean | null>(null);
   const [error, setError] = useState<"forbidden" | "unknown" | null>(null);
@@ -97,6 +103,11 @@ export default function SettingsScreen() {
       <h1 className="serif" style={{ fontSize: "1.5rem" }}>
         Settings
       </h1>
+
+      {/* Branding and custom domains, both gated on tenant:manage
+          server-side. Rendered only for a caller who holds it so the
+          panel does not load two endpoints that would 403. */}
+      {canManageTenant ? <BrandingPanel /> : null}
 
       <section className="card mt-6 p-5">
         <b style={{ fontSize: "0.9375rem" }}>Manager visibility of individual results</b>

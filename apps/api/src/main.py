@@ -49,6 +49,7 @@ from src.routers import (
     recommendations,
     subscriptions,
     tenant,
+    tenant_branding,
     tenant_users,
     webhooks,
     workshops,
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix="/api/v1")
     app.include_router(invoices.router, prefix="/api/v1")
     app.include_router(tenant_users.router, prefix="/api/v1")
+    app.include_router(tenant_branding.router, prefix="/api/v1")
 
     return app
 

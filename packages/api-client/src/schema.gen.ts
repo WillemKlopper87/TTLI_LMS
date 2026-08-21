@@ -3313,6 +3313,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenant/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The editable branding record for this tenant */
+        get: operations["get_branding_api_v1_tenant_branding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change colours, support address and email footer
+         * @description Only the fields present in the request body are touched, so a
+         *     screen that edits one colour cannot blank the rest by omission.
+         */
+        patch: operations["update_branding_api_v1_tenant_branding_patch"];
+        trace?: never;
+    };
+    "/api/v1/tenant/branding/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a logo — virus-scanned like every other upload here */
+        post: operations["upload_logo_api_v1_tenant_branding_logo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hostnames pointing at this tenant, with the DNS record proving each */
+        get: operations["list_domains_api_v1_tenant_domains_get"];
+        put?: never;
+        /** Add a hostname — stored unverified until its DNS record is published */
+        post: operations["add_domain_api_v1_tenant_domains_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/domains/{domain_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a hostname — never the primary one */
+        delete: operations["remove_domain_api_v1_tenant_domains__domain_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3341,6 +3415,11 @@ export interface components {
             start_time: string;
             /** End Time */
             end_time: string;
+        };
+        /** AddDomainRequest */
+        AddDomainRequest: {
+            /** Hostname */
+            hostname: string;
         };
         /** AdminPriceRow */
         AdminPriceRow: {
@@ -3795,6 +3874,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_logo_api_v1_tenant_branding_logo_post */
+        Body_upload_logo_api_v1_tenant_branding_logo_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post */
         Body_upload_payment_proof_api_v1_orders__order_id__payment_proof_post: {
             /** File */
@@ -3822,6 +3906,40 @@ export interface components {
             status: string;
             /** Join Url */
             join_url: string | null;
+        };
+        /** BrandingResponse */
+        BrandingResponse: {
+            /** Logo Url */
+            logo_url: string | null;
+            /** Primary Color */
+            primary_color: string | null;
+            /** Secondary Color */
+            secondary_color: string | null;
+            /** Login Background Url */
+            login_background_url: string | null;
+            /** Support Email */
+            support_email: string | null;
+            /** Email Footer Text */
+            email_footer_text: string | null;
+        };
+        /**
+         * BrandingUpdateRequest
+         * @description Every field optional and nullable: an unset field is left alone,
+         *     an explicit null clears it. Colours are contrast-checked server-side
+         *     rather than accepted and rendered unreadable — see
+         *     `services/tenant_branding.py`.
+         */
+        BrandingUpdateRequest: {
+            /** Primary Color */
+            primary_color?: string | null;
+            /** Secondary Color */
+            secondary_color?: string | null;
+            /** Login Background Url */
+            login_background_url?: string | null;
+            /** Support Email */
+            support_email?: string | null;
+            /** Email Footer Text */
+            email_footer_text?: string | null;
         };
         /** CampaignResponse */
         CampaignResponse: {
@@ -4397,6 +4515,31 @@ export interface components {
             limit: number;
             /** Offset */
             offset: number;
+        };
+        /** DomainRow */
+        DomainRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Hostname */
+            hostname: string;
+            /** Is Primary */
+            is_primary: boolean;
+            /** Verified At */
+            verified_at: string | null;
+            /** Tls Status */
+            tls_status: string;
+            /** Dns Txt Record */
+            dns_txt_record: string;
+        };
+        /** DomainsResponse */
+        DomainsResponse: {
+            /** Items */
+            items: components["schemas"]["DomainRow"][];
+            /** Verification Available */
+            verification_available: boolean;
         };
         /** DuplicateCourseRequest */
         DuplicateCourseRequest: {
@@ -13540,6 +13683,174 @@ export interface operations {
                 "application/json": components["schemas"]["StatusChangeRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_branding_api_v1_tenant_branding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingResponse"];
+                };
+            };
+        };
+    };
+    update_branding_api_v1_tenant_branding_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandingUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_logo_api_v1_tenant_branding_logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_logo_api_v1_tenant_branding_logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_domains_api_v1_tenant_domains_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainsResponse"];
+                };
+            };
+        };
+    };
+    add_domain_api_v1_tenant_domains_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddDomainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_domain_api_v1_tenant_domains__domain_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                domain_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {

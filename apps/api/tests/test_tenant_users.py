@@ -269,3 +269,112 @@ async def test_roles_list_explains_what_each_role_confers(  # type: ignore[no-un
     # what lets the screen explain the choice.
     assert "audit:read" in roles["admin"]["permissions"]
     assert roles["learner"]["permissions"] == ["course:view", "lesson:complete"]
+
+
+async def test_branding_refuses_a_colour_nobody_can_read(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """A tenant picking its own brand colour can trivially produce
+    white-on-yellow buttons. This platform holds a WCAG AA line that an
+    axe gate enforces on every public page, so the colour is measured
+    against the text that will sit on it and refused below 4.5:1 — with
+    the ratio in the message, because "invalid" tells a designer
+    nothing."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {boss}"}
+
+    bad = await client.patch(
+        "/api/v1/tenant/branding", json={"primary_color": "#ffe600"}, headers=headers
+    )
+    assert bad.status_code == 400
+    body = bad.json()["error"]
+    assert body["details"]["contrast"] < 4.5
+    assert "4.5" in body["message"]
+
+    malformed = await client.patch(
+        "/api/v1/tenant/branding", json={"primary_color": "red"}, headers=headers
+    )
+    assert malformed.status_code == 400
+
+    # A dark brand colour carries light text comfortably and is accepted.
+    good = await client.patch(
+        "/api/v1/tenant/branding",
+        json={"primary_color": "#8e151c", "support_email": "help@example.com"},
+        headers=headers,
+    )
+    assert good.status_code == 200, good.text
+    assert good.json()["primary_color"] == "#8e151c"
+
+    # Absent fields are left alone rather than blanked by omission.
+    partial = await client.patch(
+        "/api/v1/tenant/branding", json={"email_footer_text": "Sent by TTLI"}, headers=headers
+    )
+    assert partial.status_code == 200
+    assert partial.json()["support_email"] == "help@example.com"
+
+
+async def test_branding_needs_tenant_manage(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    headers = {"Authorization": f"Bearer {admin}"}
+    assert (await client.get("/api/v1/tenant/branding", headers=headers)).status_code == 403
+    assert (
+        await client.patch(
+            "/api/v1/tenant/branding", json={"primary_color": "#8e151c"}, headers=headers
+        )
+    ).status_code == 403
+
+
+async def test_domains_are_globally_unique_and_the_primary_one_is_protected(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """A hostname is how a request finds its tenant, so two tenants
+    cannot hold one; and removing the primary would take the tenant off
+    the internet from a settings screen."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {boss}"}
+    hostname = f"p3-{uuid.uuid4().hex[:10]}.example.com"
+
+    added = await client.post(
+        "/api/v1/tenant/domains", json={"hostname": hostname}, headers=headers
+    )
+    assert added.status_code == 201, added.text
+    row = added.json()
+    assert row["hostname"] == hostname
+    assert row["verified_at"] is None, "a new hostname is never born verified"
+    assert row["tls_status"] == "pending"
+    assert row["dns_txt_record"].startswith("ttli-verify=")
+
+    duplicate = await client.post(
+        "/api/v1/tenant/domains", json={"hostname": hostname.upper()}, headers=headers
+    )
+    assert duplicate.status_code == 400
+
+    rubbish = await client.post(
+        "/api/v1/tenant/domains", json={"hostname": "not a hostname"}, headers=headers
+    )
+    assert rubbish.status_code == 400
+
+    listing = await client.get("/api/v1/tenant/domains", headers=headers)
+    assert listing.status_code == 200
+    body = listing.json()
+    # Stated rather than implied: nothing here can mark a domain verified.
+    assert body["verification_available"] is False
+    primary = next((d for d in body["items"] if d["is_primary"]), None)
+    assert primary is not None, "the demo tenant has a primary hostname"
+
+    protected = await client.delete(f"/api/v1/tenant/domains/{primary['id']}", headers=headers)
+    assert protected.status_code == 400
+
+    removed = await client.delete(f"/api/v1/tenant/domains/{row['id']}", headers=headers)
+    assert removed.status_code == 204
