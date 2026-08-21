@@ -39,11 +39,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
+import ipaddress
 import json
 import secrets
+import socket
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
@@ -76,6 +80,15 @@ class Discovery:
 
 
 @dataclass(frozen=True, slots=True)
+class Started:
+    """What `begin` produced: where to send the browser, and the secret
+    that proves the browser that comes back is the one that left."""
+
+    authorization_url: str
+    binding: str
+
+
+@dataclass(frozen=True, slots=True)
 class SsoIdentity:
     """What an IdP asserted, after everything above has been checked."""
 
@@ -94,12 +107,16 @@ async def get_config(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def discover(issuer: str) -> Discovery:
+async def discover(issuer: str, *, allow_local: bool = False) -> Discovery:
     """Read the IdP's own discovery document rather than guessing
     endpoint shapes. Entra, Okta and Google all differ in path, and a
     hardcoded template is a support ticket per provider."""
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    assert_reachable_publicly(url, allow_local=allow_local)
     try:
+        # follow_redirects stays off (httpx's default): a redirect is how
+        # a public issuer URL would otherwise be turned into a fetch of
+        # an internal one, after the check above has already passed.
         async with httpx.AsyncClient(timeout=DISCOVERY_TIMEOUT) as client:
             response = await client.get(url)
             response.raise_for_status()
@@ -122,6 +139,11 @@ async def discover(issuer: str) -> Discovery:
             "That issuer is not a complete OIDC provider.", {"missing": str(exc)}
         ) from exc
 
+    # The endpoints come out of a document, and a document can name
+    # anything. Each one is checked before it is ever fetched.
+    for endpoint in (found.authorization_endpoint, found.token_endpoint, found.jwks_uri):
+        assert_reachable_publicly(endpoint, allow_local=allow_local)
+
     # The discovery document must agree with the issuer we asked about,
     # or a redirect has moved us to somebody else's provider.
     if found.issuer.rstrip("/") != issuer.rstrip("/"):
@@ -130,6 +152,66 @@ async def discover(issuer: str) -> Discovery:
             {"configured": issuer, "document": found.issuer},
         )
     return found
+
+
+def assert_reachable_publicly(url: str, *, allow_local: bool = False) -> None:
+    """Refuse to make a request to anything that is not a public host.
+
+    Every URL this module fetches is ultimately named by a tenant
+    administrator (the issuer) or by a document that administrator
+    pointed us at (the token and JWKS endpoints). That is authenticated
+    and privileged, but it is still a request *this server* makes to an
+    address *somebody else* chose — the shape of an SSRF. Without this,
+    `PUT /tenant/sso` is a probe primitive: point the issuer at
+    `http://169.254.169.254/…` or an internal admin port and read the
+    outcome from the error.
+
+    Residual risk, stated rather than papered over: the name is resolved
+    here and connected to by name afterwards, so a DNS entry that
+    changes between the two can still land on a private address
+    (rebinding). Closing that properly means connecting to the pinned IP
+    with the hostname carried in SNI and Host, which is a custom
+    transport; for a `tenant:manage`-gated setting the check below is
+    the proportionate one, and it is applied at every fetch rather than
+    once at save time.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("https", "http"):
+        raise SsoError("An identity provider URL must be http(s).", {"url": url})
+    if parts.scheme == "http" and not allow_local:
+        raise SsoError(
+            "An identity provider must be reached over HTTPS — an id_token is a credential.",
+            {"url": url},
+        )
+    host = parts.hostname
+    if not host:
+        raise SsoError("That identity provider URL names no host.", {"url": url})
+
+    try:
+        resolved = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
+    except OSError as exc:
+        raise SsoError("That identity provider's hostname could not be resolved.") from exc
+
+    if allow_local:
+        # Non-production only, and the caller says so explicitly: a
+        # developer running a mock IdP on localhost needs both halves of
+        # this check relaxed, not one.
+        return
+
+    for info in resolved:
+        address = ipaddress.ip_address(info[4][0])
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            raise SsoError(
+                "An identity provider must be a public host.",
+                {"host": host},
+            )
 
 
 def _state_key(state: str) -> str:
@@ -143,12 +225,22 @@ async def begin(
     discovery: Discovery,
     redirect_uri: str,
     next_path: str | None,
-) -> str:
-    """Mint state + nonce + PKCE, park them, and return the URL to send
-    the browser to."""
+) -> Started:
+    """Mint state + nonce + PKCE + a browser binding, park them, and
+    return the URL to send the browser to."""
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(24)
     verifier = secrets.token_urlsafe(64)
+    # Login CSRF: `state` alone proves the callback belongs to a flow
+    # this server started — not that it belongs to *this browser's*
+    # flow. Without the binding, an attacker starts a login, keeps the
+    # resulting code and state, and hands the victim a link to our own
+    # callback; the victim's browser completes it and is silently signed
+    # in as the attacker, into the attacker's account. The binding is
+    # returned to the BFF, which keeps it in an HttpOnly cookie, so only
+    # the browser that began the flow can finish it. Stored as a digest:
+    # a Redis dump should not hand anybody a working half of the pair.
+    binding = secrets.token_urlsafe(32)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     )
@@ -160,6 +252,7 @@ async def begin(
                 "tenant_id": str(config.tenant_id),
                 "nonce": nonce,
                 "verifier": verifier,
+                "binding_hash": hashlib.sha256(binding.encode()).hexdigest(),
                 "redirect_uri": redirect_uri,
                 # Carried through the round-trip so a deep link survives
                 # the detour to the IdP.
@@ -181,15 +274,28 @@ async def begin(
             "code_challenge_method": "S256",
         }
     )
-    return f"{discovery.authorization_endpoint}?{query}"
+    return Started(authorization_url=f"{discovery.authorization_endpoint}?{query}", binding=binding)
 
 
-async def take_state(redis: Redis, state: str) -> dict[str, Any]:
-    """Single use, by deletion. A replayed callback finds nothing."""
+async def take_state(redis: Redis, state: str, *, binding: str | None) -> dict[str, Any]:
+    """Single use, by deletion, and only for the browser that started it.
+
+    The deletion is unconditional — including when the binding does not
+    match. A wrong binding means the flow is already compromised or
+    confused, and leaving the state redeemable would let an attacker
+    keep retrying against a victim who has one live state record.
+    """
     raw = await redis.getdel(_state_key(state))
     if raw is None:
         raise Unauthenticated("That sign-in attempt has expired or was already used.")
     parsed: dict[str, Any] = json.loads(raw)
+
+    expected = str(parsed.get("binding_hash") or "")
+    supplied = hashlib.sha256(binding.encode()).hexdigest() if binding else ""
+    # compare_digest, not ==: the comparison is over attacker-supplied
+    # input against a secret-derived value.
+    if not expected or not hmac.compare_digest(expected, supplied):
+        raise Unauthenticated("That sign-in attempt did not start in this browser.")
     return parsed
 
 
@@ -317,7 +423,9 @@ __all__ = [
     "Discovery",
     "SsoError",
     "SsoIdentity",
+    "Started",
     "assert_domain_allowed",
+    "assert_reachable_publicly",
     "begin",
     "discover",
     "exchange",

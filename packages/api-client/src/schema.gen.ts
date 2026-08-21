@@ -6691,8 +6691,6 @@ export interface components {
             code: string;
             /** State */
             state: string;
-            /** Redirect Uri */
-            redirect_uri: string;
         };
         /** SsoConfigRequest */
         SsoConfigRequest: {
@@ -6748,10 +6746,18 @@ export interface components {
              */
             enabled: boolean;
         };
-        /** SsoStartResponse */
+        /**
+         * SsoStartResponse
+         * @description `binding` is for the BFF tier, not for page JavaScript: it parks
+         *     it in an HttpOnly cookie and returns it on the callback, which is
+         *     what stops an attacker's half-finished login being completed in
+         *     somebody else's browser. See `services/oidc.py`'s `begin`.
+         */
         SsoStartResponse: {
             /** Authorization Url */
             authorization_url: string;
+            /** Binding */
+            binding: string;
         };
         /** StatusChangeRequest */
         StatusChangeRequest: {
@@ -14061,7 +14067,6 @@ export interface operations {
     sso_start_api_v1_auth_sso_start_post: {
         parameters: {
             query?: {
-                redirect_uri?: string;
                 next?: string | null;
             };
             header?: never;
@@ -14093,7 +14098,9 @@ export interface operations {
     sso_callback_api_v1_auth_sso_callback_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Sso-Binding"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };

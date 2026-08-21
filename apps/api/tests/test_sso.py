@@ -42,7 +42,9 @@ TENANT_HOST = "localhost"
 PASSWORD = "correct horse battery staple 9!"
 ISSUER = "https://idp.example.com"
 CLIENT_ID = "ttli-test-client"
-REDIRECT_URI = "https://localhost/auth/sso/callback"
+# What `routers/sso.callback_url` must derive for this tenant, given
+# the default PUBLIC_WEB_URL of http://localhost:3010 outside production.
+EXPECTED_REDIRECT = "http://localhost:3010/auth/sso/callback"
 
 _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _KID = "test-key-1"
@@ -153,6 +155,12 @@ def fake_idp(monkeypatch: pytest.MonkeyPatch) -> FakeIdp:
         kwargs["transport"] = idp
         return real_client(*args, **kwargs)
 
+    # The egress guard is real-network machinery: it resolves the host
+    # and refuses private addresses. `idp.example.com` does not resolve,
+    # so leaving it in would make every flow test fail on DNS rather
+    # than on anything about OIDC. It has its own tests below, against
+    # literal addresses that need no resolver.
+    monkeypatch.setattr(oidc, "assert_reachable_publicly", lambda url, **kw: None)
     # PyJWKClient fetches JWKS with urllib, not httpx, so it is pointed
     # at the same key material directly.
     monkeypatch.setattr(oidc.httpx, "AsyncClient", patched)
@@ -231,12 +239,21 @@ async def _configure(client, token: str, **overrides: Any) -> None:
     assert resp.status_code == 200, resp.text
 
 
-async def _start(client) -> tuple[str, str]:
-    """Begin a login and read back the state and nonce the server minted."""
-    resp = await client.post(f"/api/v1/auth/sso/start?redirect_uri={REDIRECT_URI}")
+async def _start(client) -> tuple[str, str, str]:
+    """Begin a login and read back the state, nonce and browser binding
+    the server minted."""
+    resp = await client.post("/api/v1/auth/sso/start")
     assert resp.status_code == 200, resp.text
-    params = parse_qs(urlparse(resp.json()["authorization_url"]).query)
-    return params["state"][0], params["nonce"][0]
+    body = resp.json()
+    params = parse_qs(urlparse(body["authorization_url"]).query)
+    return params["state"][0], params["nonce"][0], body["binding"]
+
+
+async def _callback(client, *, state: str, binding: str | None, code: str = "auth-code"):  # type: ignore[no-untyped-def]
+    headers = {"X-Sso-Binding": binding} if binding is not None else {}
+    return await client.post(
+        "/api/v1/auth/sso/callback", json={"code": code, "state": state}, headers=headers
+    )
 
 
 async def test_sso_config_is_write_only_for_the_secret(  # type: ignore[no-untyped-def]
@@ -275,13 +292,10 @@ async def test_a_valid_login_provisions_the_user_and_maps_group_roles(  # type: 
     email = f"jit-{uuid.uuid4().hex[:8]}@allowed.example"
     await _configure(client, boss)
 
-    state, nonce = await _start(client)
+    state, nonce, binding = await _start(client)
     fake_idp.id_token = make_id_token(nonce=nonce, email=email, groups=["finance-team"])
 
-    resp = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "auth-code", "state": state, "redirect_uri": REDIRECT_URI},
-    )
+    resp = await _callback(client, state=state, binding=binding)
     assert resp.status_code == 200, resp.text
     assert resp.json()["access_token"]
 
@@ -308,25 +322,16 @@ async def test_state_is_single_use(  # type: ignore[no-untyped-def]
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
     )
     await _configure(client, boss)
-    state, nonce = await _start(client)
+    state, nonce, binding = await _start(client)
     fake_idp.id_token = make_id_token(nonce=nonce)
 
-    first = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "c", "state": state, "redirect_uri": REDIRECT_URI},
-    )
+    first = await _callback(client, state=state, binding=binding, code="c")
     assert first.status_code == 200, first.text
 
-    replay = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "c", "state": state, "redirect_uri": REDIRECT_URI},
-    )
+    replay = await _callback(client, state=state, binding=binding, code="c")
     assert replay.status_code == 401
 
-    forged = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "c", "state": "never-issued", "redirect_uri": REDIRECT_URI},
-    )
+    forged = await _callback(client, state="never-issued", binding=binding, code="c")
     assert forged.status_code == 401
 
 
@@ -351,16 +356,13 @@ async def test_a_token_that_fails_any_check_is_refused(  # type: ignore[no-untyp
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
     )
     await _configure(client, boss)
-    state, nonce = await _start(client)
+    state, nonce, binding = await _start(client)
 
     token_args: dict[str, Any] = {"nonce": nonce}
     token_args.update(kwargs)
     fake_idp.id_token = make_id_token(**token_args)
 
-    resp = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "c", "state": state, "redirect_uri": REDIRECT_URI},
-    )
+    resp = await _callback(client, state=state, binding=binding, code="c")
     assert resp.status_code == 401, f"{reason} must be refused: {resp.text}"
 
 
@@ -374,15 +376,12 @@ async def test_a_token_signed_by_the_wrong_key_is_refused(  # type: ignore[no-un
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
     )
     await _configure(client, boss)
-    state, nonce = await _start(client)
+    state, nonce, binding = await _start(client)
 
     impostor = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     fake_idp.id_token = make_id_token(nonce=nonce, key=impostor)
 
-    resp = await client.post(
-        "/api/v1/auth/sso/callback",
-        json={"code": "c", "state": state, "redirect_uri": REDIRECT_URI},
-    )
+    resp = await _callback(client, state=state, binding=binding, code="c")
     assert resp.status_code == 401
 
 
@@ -441,3 +440,97 @@ async def test_a_group_mapping_cannot_grant_authority_the_configurer_lacks(sessi
         )
     # The same caller mapping a group to a role it does hold is fine.
     await people.assert_can_grant(session, role_code="finance", actor_permissions=finance_only)
+
+
+async def test_the_redirect_uri_is_derived_and_not_taken_from_the_caller(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp
+) -> None:
+    """`/auth/sso/start` is anonymous. If it accepted a `redirect_uri`,
+    a stranger could name one — and against an identity provider with a
+    loose or wildcard redirect registration, the authorisation code
+    would be delivered to a host of their choosing."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+
+    resp = await client.post("/api/v1/auth/sso/start?redirect_uri=https://evil.example.com/collect")
+    assert resp.status_code == 200, resp.text
+    params = parse_qs(urlparse(resp.json()["authorization_url"]).query)
+    assert params["redirect_uri"] == [EXPECTED_REDIRECT]
+    assert "evil.example.com" not in resp.json()["authorization_url"]
+
+
+@pytest.mark.parametrize("binding", [None, "", "a-binding-from-another-browser"])
+async def test_a_callback_without_this_browsers_binding_is_refused(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp, binding: str | None
+) -> None:
+    """Login CSRF. `state` proves the callback belongs to a flow this
+    server started; only the binding proves it belongs to *this*
+    browser's flow. Without it an attacker starts a login, keeps the
+    code and state, and links the victim at our own callback — the
+    victim ends up silently signed into the attacker's account."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+    state, nonce, _ = await _start(client)
+    fake_idp.id_token = make_id_token(nonce=nonce)
+
+    resp = await _callback(client, state=state, binding=binding)
+    assert resp.status_code == 401, resp.text
+
+
+async def test_a_wrong_binding_burns_the_state(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp
+) -> None:
+    """A mismatch means the flow is already confused or under attack.
+    Leaving the state redeemable would let an attacker keep retrying
+    against a victim who has one live record."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+    state, nonce, binding = await _start(client)
+    fake_idp.id_token = make_id_token(nonce=nonce)
+
+    assert (await _callback(client, state=state, binding="wrong")).status_code == 401
+    # Correct binding, same state — the record is gone.
+    assert (await _callback(client, state=state, binding=binding)).status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("url", "why"),
+    [
+        ("https://169.254.169.254/latest/meta-data/", "the cloud instance metadata service"),
+        ("https://127.0.0.1/.well-known/openid-configuration", "loopback"),
+        ("https://10.1.2.3/", "RFC1918 private space"),
+        ("https://192.168.0.5/", "RFC1918 private space"),
+        ("http://8.8.8.8/", "plain HTTP — an id_token is a credential"),
+        ("ftp://8.8.8.8/", "a scheme that is not http(s)"),
+        ("https:///no-host", "a URL naming no host"),
+    ],
+)
+def test_the_egress_guard_refuses_what_no_identity_provider_should_be(url: str, why: str) -> None:
+    """Post-authentication SSRF: the issuer is set by a tenant admin, so
+    this is privileged — but it is still this server making a request to
+    an address somebody else chose, and `PUT /tenant/sso` contacts the
+    issuer before saving, which makes it a probe primitive.
+
+    Literal addresses throughout: the guard resolves hostnames, and a
+    test that needs a resolver is a test that fails on a train."""
+    with pytest.raises(oidc.SsoError):
+        oidc.assert_reachable_publicly(url)
+
+
+def test_the_egress_guard_allows_a_public_https_host() -> None:
+    oidc.assert_reachable_publicly("https://8.8.8.8/.well-known/openid-configuration")
+
+
+def test_the_egress_guard_relaxes_only_when_the_caller_says_so() -> None:
+    """A developer running a mock IdP on localhost needs both halves
+    relaxed — scheme and address — and only outside production."""
+    oidc.assert_reachable_publicly("http://127.0.0.1:9999/", allow_local=True)

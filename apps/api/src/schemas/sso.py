@@ -16,7 +16,13 @@ class SsoAvailableResponse(BaseModel):
 
 
 class SsoStartResponse(BaseModel):
+    """`binding` is for the BFF tier, not for page JavaScript: it parks
+    it in an HttpOnly cookie and returns it on the callback, which is
+    what stops an attacker's half-finished login being completed in
+    somebody else's browser. See `services/oidc.py`'s `begin`."""
+
     authorization_url: str
+    binding: str
 
 
 class SsoConfigRequest(BaseModel):

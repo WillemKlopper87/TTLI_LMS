@@ -37,10 +37,14 @@ export async function forwardAndIssueCookie(
   request: NextRequest,
   apiPath: string,
   body: BodyInit,
+  extraHeaders: Record<string, string> = {},
 ): Promise<NextResponse> {
   const upstream = await fetch(`${API_URL}${apiPath}`, {
     method: "POST",
-    headers: authHeaders(request),
+    // `extraHeaders` carries values this tier holds and the browser must
+    // not — today that is the SSO browser binding, read out of an
+    // HttpOnly cookie by the route next door.
+    headers: { ...authHeaders(request), ...extraHeaders },
     body,
     cache: "no-store",
   });

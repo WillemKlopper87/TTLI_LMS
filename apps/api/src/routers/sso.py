@@ -24,10 +24,12 @@ the session cookie it has to set at the end.
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
+from src.core.config import Settings
 from src.core.deps import (
     AuditedSessionDep,
     CryptoDep,
@@ -60,7 +62,33 @@ MANAGE = "tenant:manage"
 class SsoCallbackRequest(BaseModel):
     code: str = Field(min_length=1, max_length=4096)
     state: str = Field(min_length=1, max_length=512)
-    redirect_uri: str = Field(min_length=1, max_length=500)
+
+
+def callback_url(settings: Settings, hostname: str) -> str:
+    """The one redirect URI this tenant's flow will ever use, built here
+    rather than accepted from the caller.
+
+    Taking `redirect_uri` as a parameter — which is how the OIDC examples
+    all read — makes an anonymous endpoint that will put any URL a
+    stranger names into an authorization request. Against an identity
+    provider with a loose or wildcard redirect registration, that hands
+    the authorisation code to whatever host the attacker chose, which is
+    the whole account. The provider's registration should also stop it;
+    relying on somebody else's configuration for our own security is not
+    a control.
+
+    The hostname comes from the resolved tenant (matched against the
+    Host header by the tenant middleware), so it is ours, not the
+    caller's. Outside production the port is carried over from
+    PUBLIC_WEB_URL, because a developer's tenant hostnames really do
+    live on :3010.
+    """
+    base = urlsplit(settings.public_web_url)
+    scheme = "https" if settings.is_production else (base.scheme or "http")
+    netloc = hostname
+    if not settings.is_production and base.port:
+        netloc = f"{hostname}:{base.port}"
+    return urlunsplit((scheme, netloc, "/auth/sso/callback", "", ""))
 
 
 @router.get(
@@ -90,23 +118,25 @@ async def sso_start(
     session: SessionDep,
     tenant: TenantDep,
     redis: RedisDep,
-    redirect_uri: Annotated[str, Field(max_length=500)] = "",
+    settings: SettingsDep,
     next: Annotated[str | None, Field(max_length=200)] = None,
 ) -> SsoStartResponse:
     config = await oidc.get_config(session, tenant_id=tenant.id)
     if config is None:
         raise NotFound("This organisation does not use single sign-on.")
 
-    target = redirect_uri or f"https://{tenant.hostname}/auth/sso/callback"
-    discovery = await oidc.discover(config.issuer)
-    url = await oidc.begin(
+    discovery = await oidc.discover(config.issuer, allow_local=not settings.is_production)
+    started = await oidc.begin(
         redis,
         config=config,
         discovery=discovery,
-        redirect_uri=target,
+        redirect_uri=callback_url(settings, tenant.hostname),
         next_path=next,
     )
-    return SsoStartResponse(authorization_url=url)
+    # `binding` is for the BFF, which parks it in an HttpOnly cookie and
+    # sends it back on the callback — it is never meant to reach page
+    # JavaScript. See services/oidc.py's `begin` for what it prevents.
+    return SsoStartResponse(authorization_url=started.authorization_url, binding=started.binding)
 
 
 @router.post(
@@ -122,12 +152,13 @@ async def sso_callback(
     crypto: CryptoDep,
     settings: SettingsDep,
     redis: RedisDep,
+    sso_binding: Annotated[str | None, Header(alias="X-Sso-Binding")] = None,
 ) -> TokenResponse:
     """Every check that matters lives in `services/oidc.py`; this reads
     as a sequence because that is what it is. The order is not
     cosmetic — the domain allowlist runs before any user lookup, so a
     hostile IdP never even causes an account to be searched for."""
-    parked = await oidc.take_state(redis, body.state)
+    parked = await oidc.take_state(redis, body.state, binding=sso_binding)
     if parked.get("tenant_id") != str(tenant.id):
         # State minted for another tenant's login, presented here.
         raise Unauthenticated("That sign-in attempt does not belong to this organisation.")
@@ -136,14 +167,17 @@ async def sso_callback(
     if config is None:
         raise NotFound("This organisation does not use single sign-on.")
 
-    discovery = await oidc.discover(config.issuer)
+    discovery = await oidc.discover(config.issuer, allow_local=not settings.is_production)
     id_token = await oidc.exchange(
         config=config,
         crypto=crypto,
         discovery=discovery,
         code=body.code,
         verifier=str(parked["verifier"]),
-        redirect_uri=str(parked.get("redirect_uri") or body.redirect_uri),
+        # The parked value only. It was derived by `callback_url` when
+        # the flow began; there is deliberately no caller-supplied
+        # fallback for it to drift to.
+        redirect_uri=str(parked["redirect_uri"]),
     )
     asserted = oidc.validate(
         id_token=id_token, config=config, discovery=discovery, nonce=str(parked["nonce"])
@@ -252,12 +286,13 @@ async def put_sso_config(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     crypto: CryptoDep,
+    settings: SettingsDep,
 ) -> SsoConfigResponse:
     """The issuer is contacted before the config is saved. A tenant that
     mistypes it should find out here, not at the moment a colleague
     cannot sign in."""
     principal.require(MANAGE)
-    await oidc.discover(body.issuer)
+    await oidc.discover(body.issuer, allow_local=not settings.is_production)
 
     for role_code in {*body.group_role_map.values(), *([body.default_role_code] or [])}:
         if role_code:
