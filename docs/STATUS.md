@@ -1,6 +1,23 @@
 # STATUS
 
-**Updated:** 2026-08-21 — **P1 (product): the admin operations home and
+**Updated:** 2026-08-21 (later, same day) — **P2 (product): the audit-log
+read path** (`docs/BACKLOG.md` P2 = enterprise-gaps-plan Pass B,
+feature-matrix gap #52). `audit_events` had been written to since 0001
+with no way to read it back, while `05_COMMERCIAL.md` §3 sells "advanced
+audit logs" in the Enterprise column. Now: `GET /audit-events`
+(action/actor/entity/date filters, keyset-paginated — the log only grows,
+and an OFFSET walk over a table being written to repeats or skips rows),
+`/audit-events/actions` for the filter control, `/audit-events/export.csv`
+built from the same query builder so the file cannot disagree with the
+screen, and the `/admin/audit` browser with expandable before/after JSON.
+Actor emails are masked; an unreadable one says so rather than showing
+blank. **Coverage added where there was none** — payment approve (in
+`_fulfil_order`, covering EFT, PO and the card webhook), payment reject,
+refund, certificate revoke, course publish/unpublish, tenant setting
+change. **No migration was required**: `audit:read` was seeded in 0002
+and `app_user` already held SELECT (0001), contrary to what Pass B
+assumed. 7 API tests + a browser spec with an axe pass.
+Prior, same day — **P1 (product): the admin operations home and
 course analytics** (`docs/BACKLOG.md` P1 = enterprise-gaps-plan Pass A,
 feature-matrix gaps #41 and #40). `/admin` was a 21-line "Welcome / here
 are your permissions" stub with two dead nav items; it is now a real

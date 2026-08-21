@@ -34,18 +34,7 @@ export default defineConfig({
     baseURL: process.env.WEB_URL ?? "http://localhost:3011",
     trace: "on-first-retry",
   },
-  projects: [
-    // One sign-in per run, saved and reused: the API rate-limits login to
-    // 5/min per account, which three admin specs signing in individually
-    // would trip. See e2e/admin.setup.ts.
-    { name: "setup", testMatch: /.*\.setup\.ts/ },
-    {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-      testIgnore: /.*\.setup\.ts/,
-      dependencies: ["setup"],
-    },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: process.env.WEB_URL
     ? undefined
     : {

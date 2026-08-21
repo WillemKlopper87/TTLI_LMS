@@ -17,14 +17,14 @@ Sources: `docs/research/enterprise-gaps-plan.md` (Passes A–K),
 
 ## P — Product gaps (the enterprise-gaps-plan Passes A–K)
 
-P1 shipped 2026-08-21; the rest have not started. Ordered as the plan orders
+P1 and P2 shipped 2026-08-21; the rest have not started. Ordered as the plan orders
 them: demo value per unit of effort, with the procurement gate (P4) placed
 where it must be.
 
 | # | Item | Size | Why it matters | Status |
 |---|---|---|---|---|
 | ~~**P1**~~ | ~~Admin operations home + per-course analytics~~ **DONE 2026-08-21.** Shipped as `/analytics/overview`, `/analytics/courses`, `/analytics/courses/{id}` (path deviation from Pass A explained in `routers/operations.py`), plus `/admin`, `/admin/reports/courses` and the course detail screen. 6 API tests + 3 Playwright specs incl. axe. "Reports" nav is live; "Learners" is the last inert item (needs P3) | S–M | — | DONE |
-| **P2** | **IN PROGRESS, NOT MERGED-CLEAN (2026-08-21)** — backend + screen built and committed on a WIP basis; **two admin Playwright specs fail** (`.stat` and the course-report table not found under the shared-storage-state session), so `scripts/gates.sh` exits 1. Finish that before treating P2 as done. Original scope: **Audit log read path + coverage** (Pass B; audit #52). `GET /audit-events` filterable + keyset-paginated + CSV export, `audit:read` permission, `/admin/audit` page; add `audit.record` to payment approve/reject/refund, certificate revoke, role changes, course publish, tenant settings | M | "Advanced audit logs" is an Enterprise-column promise. Events are written but there is **no read path at all**, and finance/credential/RBAC actions aren't logged. Also the first thing a POPIA reviewer asks for. Note: `events` is monthly-partitioned (`0004`) — the read path must respect partition range | OPEN |
+| ~~**P2**~~ | ~~Audit log read path + coverage~~ **DONE 2026-08-21.** `GET /audit-events` (action/actor/entity/date filters, keyset pagination), `/audit-events/actions`, `/audit-events/export.csv`, the `/admin/audit` browser, and `audit.record` added to payment approve/reject, refund, certificate revoke, course publish/unpublish and tenant settings. 7 API tests + a browser spec with axe. No migration needed — `audit:read` and the SELECT grant already existed. Original scope: (Pass B; audit #52). `GET /audit-events` filterable + keyset-paginated + CSV export, `audit:read` permission, `/admin/audit` page; add `audit.record` to payment approve/reject/refund, certificate revoke, role changes, course publish, tenant settings | M | "Advanced audit logs" is an Enterprise-column promise. Events are written but there is **no read path at all**, and finance/credential/RBAC actions aren't logged. Also the first thing a POPIA reviewer asks for. Note: `events` is monthly-partitioned (`0004`) — the read path must respect partition range | OPEN |
 | **P3** | **Tenant self-service: branding, domains, users, roles** (Pass C; audit #44, #45 + unlisted). `PATCH /tenant/theme` + logo upload with live preview; `GET/POST/DELETE /tenant/domains` with verification token + TLS status readout; **a user/role admin UI** | M | There is currently **no way to create a staff user or assign a role from inside the product** — `routers/tenant.py` has exactly one PATCH (manager-visibility). Theme and domains change only by migration | OPEN |
 | **P4** | **SSO — Entra ID / OIDC** (Pass D; audit #46). Per-tenant IdP config, OIDC via `msal`/`authlib`, JIT provisioning + role mapping; SAML later | L | The standard corporate procurement gate for Team/Corporate tiers. `msal` is named in README's stack table but **nothing exists** — password/magic-link/TOTP only | OPEN |
 | **P5** | **Learning paths** (Pass E; audit #7). `learning_paths` + `learning_path_courses`, path entitlement / `Product.kind="path"`, progress rollup, admin builder, learner page, path certificate | L | Core LMS vocabulary and a Professional-tier ✅ in the feature matrix. `learning_path` returns **zero hits** in the codebase | OPEN |
@@ -106,8 +106,8 @@ Do not build around these; they change the build, not just the schedule.
 ## Suggested order, if you want one
 
 1. ~~**P1**~~ — done 2026-08-21.
-2. **P2** — audit read path; small, and it unblocks the compliance conversation. **← next**
-3. **R1** — charts finish a dashboard that is already 90% built.
+2. ~~**P2**~~ — done 2026-08-21.
+3. **R1** — charts finish a dashboard that is already 90% built. **← next**
 4. **P6** — invoice PDF + CSV export; cheap, and it makes the finance work visible.
 5. **P3** → **P4** — tenant self-service, then SSO, together the enterprise procurement gate.
 6. Then the larger builds: **P5**, **P7**, **P11**.
