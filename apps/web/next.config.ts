@@ -3,10 +3,13 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Standalone output: the container image ships a self-contained
-  // server.js plus a minimal node_modules instead of the whole install
-  // tree (apps/web/Dockerfile). No effect on `next dev`.
-  output: "standalone",
+  // Standalone output builds a self-contained server.js plus a minimal
+  // node_modules — what the container image ships (apps/web/Dockerfile,
+  // which sets BUILD_STANDALONE=1). Deliberately opt-in rather than
+  // always on: `next start` refuses to serve a standalone build ("does
+  // not work with output: standalone"), and `next start` is what the
+  // Playwright gate uses locally and in CI. One flag keeps both honest.
+  output: process.env.BUILD_STANDALONE === "1" ? "standalone" : undefined,
   // The build runs from apps/web but the repo root is the Docker build
   // context (@ttli/api-client lives outside this app), so Next must be
   // told where the workspace root is or it guesses and warns.

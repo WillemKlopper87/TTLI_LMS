@@ -77,6 +77,16 @@ class AuditAction:
     ASSIGNMENT_REVIEWED = "assignment.reviewed"
     # 03 §5.7: "an invalid signature is 401 and an audit event."
     PAYMENT_WEBHOOK_REJECTED = "payment.webhook.rejected"
+    # Money and credentials moving on a human's say-so. Added with the
+    # audit read path (Pass B): the log existed, but the actions a
+    # compliance reviewer opens it for were the ones not being written.
+    PAYMENT_APPROVED = "payment.approved"
+    PAYMENT_REJECTED = "payment.rejected"
+    REFUND_ISSUED = "payment.refund.issued"
+    CERTIFICATE_REVOKED = "credential.certificate.revoked"
+    COURSE_PUBLISHED = "course.published"
+    COURSE_UNPUBLISHED = "course.unpublished"
+    TENANT_SETTING_CHANGED = "tenant.setting.changed"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

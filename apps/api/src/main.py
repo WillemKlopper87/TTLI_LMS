@@ -27,6 +27,7 @@ from src.routers import (
     analytics,
     articles,
     assessment,
+    audit,
     auth,
     campaigns,
     catalogue,
@@ -146,6 +147,7 @@ def create_app() -> FastAPI:
     # module because operations reads join half the domain models and would
     # have doubled the revenue router's size (see its docstring).
     app.include_router(operations.router, prefix="/api/v1")
+    app.include_router(audit.router, prefix="/api/v1")
 
     return app
 

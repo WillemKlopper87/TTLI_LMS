@@ -14,8 +14,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
+from src.models.audit import AuditAction
 from src.models.tenant import Tenant
 from src.models.theme import TenantTheme
+from src.services import audit
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -89,12 +91,25 @@ async def update_manager_visibility_setting(
     tenant = await session.get(Tenant, principal.tenant_id)
     if tenant is None:  # pragma: no cover - the request already resolved this tenant
         raise NotFound("No such tenant.")
+    before = tenant.settings.get("allow_manager_individual_results")
     tenant.settings = {
         **tenant.settings,
         "allow_manager_individual_results": body.allow_manager_individual_results,
     }
     flag_modified(tenant, "settings")
     await session.flush()
+    # A tenant-wide privacy toggle: exactly the kind of change a
+    # compliance reviewer needs attributed and dated (Pass B).
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.TENANT_SETTING_CHANGED,
+        actor_user_id=principal.user_id,
+        entity_type="tenant",
+        entity_id=principal.tenant_id,
+        before={"allow_manager_individual_results": before},
+        after={"allow_manager_individual_results": body.allow_manager_individual_results},
+    )
     return ManagerVisibilitySettingResponse(
         allow_manager_individual_results=tenant.settings["allow_manager_individual_results"]
     )

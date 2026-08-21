@@ -19,7 +19,10 @@ COPY packages/api-client ./packages/api-client
 COPY apps/web ./apps/web
 # --webpack (package.json's build script): Turbopack cannot resolve the
 # @ttli/api-client symlink — see apps/web/next.config.ts for the upstream
-# issue numbers. `output: "standalone"` is set in next.config.ts.
+# issue numbers. BUILD_STANDALONE switches on `output: "standalone"`,
+# which is opt-in because `next start` (used by the Playwright gate)
+# cannot serve a standalone build.
+ENV BUILD_STANDALONE=1
 RUN cd apps/web && npm run build
 
 FROM node:24-slim AS runtime

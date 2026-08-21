@@ -3344,6 +3344,45 @@ item of the product backlog (`docs/BACKLOG.md`). Notes worth carrying:
   endpoints shipped with zero tests. `test_operations.py` covers the new
   ones; the older four remain uncovered (backlog-worthy).
 
+**P2 — audit-log read path — 2026-08-21, WIP, STOPPED MID-PASS.** Read
+this before continuing it.
+
+**What is built and passing:** `services/audit_read.py`,
+`schemas/audit.py`, `routers/audit.py` — `GET /audit-events` (filters:
+action, actor, entity_type, entity_id, date range; keyset-paginated),
+`/audit-events/actions`, `/audit-events/export.csv`. Seven API tests in
+`tests/test_audit.py`, all green. Audit coverage added to the paths that
+had none: payment approve (in `_fulfil_order`, so it covers EFT, PO and
+the card webhook), payment reject, refund, certificate revoke, course
+publish/unpublish, tenant setting change — with new `AuditAction`
+constants. `/admin/audit` screen built, nav entry added. Verified live
+against the real API: masked actors, real IPs, working cursor.
+
+**No migration was needed** — `audit:read` already existed (0002, held
+by admin and super_admin) and `app_user` already had SELECT on
+`audit_events` (0001). Pass B assumed a migration; it does not need one.
+
+**What is NOT done — the reason this stopped:** `scripts/gates.sh`
+exits 1. Two admin Playwright specs fail — `a course report opens from
+the list` (`table tbody tr td a` not found) and `the admin home has no
+WCAG A/AA violations` (`.stat` not found). Everything else in the sweep
+is green: ruff, mypy, 346 API tests, migrations round-trip, alembic
+check, api-client drift, web lint/typecheck/build, and the other 22 e2e
+specs.
+
+**What was already ruled out:** a stale `next start` server on :3011
+serving a previous build (gates.sh now kills it first) and the
+`set -e` bug that made that new block abort the run silently. Neither
+fixed it. The remaining suspect is the shared storage state
+(`e2e/admin.setup.ts`): the saved session carries only the refresh
+cookie, so a page that fetches on mount with `getAccessToken()` can run
+before the silent refresh has produced a token — the request 401s, the
+page renders its error branch, and neither `.stat` nor the course table
+ever appears. The first admin spec passes, which fits a race rather
+than a broken page. Next step: make the admin pages wait for a ready
+session (or have the specs wait for the network idle / a settled
+`useRequireAuth`) rather than asserting immediately after `goto`.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

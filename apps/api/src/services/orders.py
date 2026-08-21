@@ -27,10 +27,11 @@ from src.core.crypto import CryptoBox
 from src.core.errors import AppError
 from src.core.ids import uuid7
 from src.core.logging import get_logger
+from src.models.audit import AuditAction
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
 from src.models.user import User
+from src.services import audit, entitlements, invoicing, ledger, push, tax
 from src.services import enrolment as enrolment_service
-from src.services import entitlements, invoicing, ledger, push, tax
 from src.services import subscriptions as subscriptions_service
 from src.services.payments.base import CheckoutRedirect, PaymentProvider
 
@@ -426,6 +427,26 @@ async def _fulfil_order(
         ),
         url="/learn",
     )
+    # Pass B: money moving on a human decision is the first thing a
+    # compliance reviewer looks for, and until now none of it was
+    # logged. `approved_by_user_id` is None on the card path (a gateway
+    # webhook confirmed it, not a person) — recorded as such rather than
+    # attributed to nobody in particular.
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.PAYMENT_APPROVED,
+        actor_user_id=approved_by_user_id,
+        entity_type="order",
+        entity_id=order.id,
+        after={
+            "payment_id": str(payment.id),
+            "payment_status": payment_status,
+            "currency": order.currency,
+            "grand_total": str(order.grand_total),
+            "invoice_number": invoice.number,
+        },
+    )
     return invoice
 
 
@@ -508,6 +529,14 @@ async def reject_eft(session: AsyncSession, *, order: Order, payment: Payment, r
     payment.rejection_reason = reason
     order.status = "eft_rejected"
     await session.flush()
+    await audit.record(
+        session,
+        tenant_id=order.tenant_id,
+        action=AuditAction.PAYMENT_REJECTED,
+        entity_type="order",
+        entity_id=order.id,
+        after={"payment_id": str(payment.id), "reason": reason},
+    )
     await push.notify_user(
         session,
         tenant_id=order.tenant_id,

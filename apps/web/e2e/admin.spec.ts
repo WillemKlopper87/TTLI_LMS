@@ -10,7 +10,7 @@ import { expect, test } from "@playwright/test";
  * Needs a live API on :8010 and an account holding `analytics:view`.
  * Skipped, loudly, when either is missing — the public specs still run.
  */
-import { ADMIN_STATE } from "./admin.setup";
+import { ADMIN_STATE } from "./auth-state";
 
 test.use({ storageState: ADMIN_STATE });
 

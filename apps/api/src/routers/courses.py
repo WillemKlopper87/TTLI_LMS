@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
+from src.models.audit import AuditAction
 from src.models.course import Course, Lesson, Module
 from src.schemas.courses import (
     CourseCreateRequest,
@@ -48,6 +49,7 @@ from src.schemas.courses import (
     TenantAssignmentsPageResponse,
     UpdateManagerVisibilityRequest,
 )
+from src.services import audit
 from src.services import course_wizard as wizard_service
 from src.services import courses as courses_service
 
@@ -196,6 +198,17 @@ async def publish_course(
 ) -> CourseResponse:
     principal.require("course:publish")
     course = await courses_service.publish_course(session, course_id=_parse_uuid(course_id))
+    # Publishing changes what learners can buy and enter; Pass B added it
+    # to the audit log for the same reason payment approval is there.
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.COURSE_PUBLISHED,
+        actor_user_id=principal.user_id,
+        entity_type="course",
+        entity_id=course.id,
+        after={"title": course.title, "state": course.state},
+    )
     return _course_response(course)
 
 
@@ -205,6 +218,15 @@ async def unpublish_course(
 ) -> CourseResponse:
     principal.require("course:publish")
     course = await courses_service.unpublish_course(session, course_id=_parse_uuid(course_id))
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.COURSE_UNPUBLISHED,
+        actor_user_id=principal.user_id,
+        entity_type="course",
+        entity_id=course.id,
+        after={"title": course.title, "state": course.state},
+    )
     return _course_response(course)
 
 

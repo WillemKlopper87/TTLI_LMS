@@ -14,10 +14,12 @@ import { expect, test as setup } from "@playwright/test";
  * lives in memory only (lib/session.ts), so the restored session
  * silently refreshes on first load exactly as a returning user's would.
  */
+import { ADMIN_STATE } from "./auth-state";
+
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? "ops-admin@example.com";
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "SmokeTest123!admin";
 
-export const ADMIN_STATE = "e2e/.auth/admin.json";
+
 
 setup("authenticate as an admin", async ({ page, request }) => {
   const probe = await request
@@ -37,7 +39,10 @@ setup("authenticate as an admin", async ({ page, request }) => {
   await page.getByLabel(/password/i).fill(PASSWORD);
   await page.getByRole("button", { name: /sign in|log ?in/i }).click();
   await page.waitForURL(/\/(admin|learn)/, { timeout: 30_000 });
-  await expect(page.locator("header").first()).toBeVisible();
+  // The admin shell is a sidebar, not a <header> — assert the sidebar
+  // navigation instead. Reaching a post-login URL with the shell
+  // rendered is what makes the saved state worth saving.
+  await expect(page.getByRole("navigation").first()).toBeVisible();
 
   await page.context().storageState({ path: ADMIN_STATE });
 });

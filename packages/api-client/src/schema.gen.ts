@@ -3062,6 +3062,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The audit log, newest first, filterable and keyset-paginated */
+        get: operations["list_audit_events_api_v1_audit_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit-events/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Action values present for this tenant, for the filter control */
+        get: operations["audit_actions_api_v1_audit_events_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit-events/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CSV of the audit log under the same filters as the screen */
+        get: operations["export_audit_events_api_v1_audit_events_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3402,6 +3453,60 @@ export interface components {
             error: string | null;
             /** Failed At */
             failed_at: string | null;
+        };
+        /**
+         * AuditActionsResponse
+         * @description The action values actually present for this tenant, so the filter
+         *     dropdown offers what exists rather than a hardcoded list that drifts
+         *     from `AuditAction` every time someone adds a constant.
+         */
+        AuditActionsResponse: {
+            /** Actions */
+            actions: string[];
+        };
+        /** AuditEventRow */
+        AuditEventRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Action */
+            action: string;
+            /** Actor User Id */
+            actor_user_id: string | null;
+            /** Actor Role */
+            actor_role: string | null;
+            /** Actor Email */
+            actor_email: string | null;
+            /** Entity Type */
+            entity_type: string | null;
+            /** Entity Id */
+            entity_id: string | null;
+            /** Before */
+            before: {
+                [key: string]: unknown;
+            } | null;
+            /** After */
+            after: {
+                [key: string]: unknown;
+            } | null;
+            /** Ip */
+            ip: string | null;
+            /** User Agent */
+            user_agent: string | null;
+        };
+        /** AuditEventsPage */
+        AuditEventsPage: {
+            /** Items */
+            items: components["schemas"]["AuditEventRow"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** AvailabilityPage */
         AvailabilityPage: {
@@ -12599,6 +12704,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CourseAnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_events_api_v1_audit_events_get: {
+        parameters: {
+            query?: {
+                /** @description Exact action, e.g. auth.login.failed */
+                action?: string | null;
+                actor_user_id?: string | null;
+                entity_type?: string | null;
+                entity_id?: string | null;
+                /** @description UTC day, inclusive */
+                date_from?: string | null;
+                /** @description UTC day, inclusive */
+                date_to?: string | null;
+                /** @description next_cursor from the previous page */
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_actions_api_v1_audit_events_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditActionsResponse"];
+                };
+            };
+        };
+    };
+    export_audit_events_api_v1_audit_events_export_csv_get: {
+        parameters: {
+            query?: {
+                action?: string | null;
+                actor_user_id?: string | null;
+                entity_type?: string | null;
+                entity_id?: string | null;
+                /** @description UTC day, inclusive */
+                date_from?: string | null;
+                /** @description UTC day, inclusive */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
                 };
             };
             /** @description Validation Error */

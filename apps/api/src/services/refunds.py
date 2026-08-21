@@ -26,8 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError
 from src.core.ids import uuid7
+from src.models.audit import AuditAction
 from src.models.commerce import CreditNote, Entitlement, Invoice, Order, Payment, Refund
-from src.services import invoicing, ledger
+from src.services import audit, invoicing, ledger
 
 CREDIT_NOTE_SERIES = "CN"
 
@@ -179,6 +180,21 @@ async def process_refund(
         currency=refund.currency,
         reference=order.payment_reference,
         created_by=processed_by_user_id,
+    )
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REFUND_ISSUED,
+        actor_user_id=processed_by_user_id,
+        entity_type="order",
+        entity_id=order.id,
+        after={
+            "refund_id": str(refund.id),
+            "credit_note_number": credit_note.number,
+            "currency": order.currency,
+            "amount": str(refund.amount),
+            "reason": reason,
+        },
     )
     return refund, credit_note
 

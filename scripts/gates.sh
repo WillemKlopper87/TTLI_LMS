@@ -33,7 +33,23 @@ echo "== web lint + typecheck + build"
 # for why not the dev server). The authenticated spec skips itself when
 # the API isn't up on :8010 — the public + axe specs still run, so this
 # step is meaningful either way.
+#
+# Kill anything already on :3011 first. Playwright's reuseExistingServer
+# would otherwise hand the whole suite to a server left running from an
+# earlier gate run, which serves the PREVIOUS build — tests then fail
+# against code that no longer exists, or worse, pass against code that
+# was never rebuilt. Cost this exact confusion once (2026-08-21).
 echo "== web e2e (playwright + axe)"
+if command -v netstat >/dev/null 2>&1; then
+  # `|| true`: with `set -e`, a grep that matches nothing would make
+  # this assignment fail and kill the whole gate run.
+  stale_pid=$(netstat -ano 2>/dev/null | grep LISTENING | grep ':3011' | awk '{print $5}' | head -1 || true)
+  if [ -n "${stale_pid:-}" ]; then
+    echo "   (killing stale :3011 server, pid $stale_pid)"
+    taskkill //F //PID "$stale_pid" >/dev/null 2>&1 || kill -9 "$stale_pid" 2>/dev/null || true
+    sleep 2
+  fi
+fi
 (cd ../web && npm run test:e2e)
 
 echo "== docs"

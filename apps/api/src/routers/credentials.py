@@ -27,6 +27,7 @@ from src.core.deps import (
 from src.core.errors import Forbidden, NotFound, TooManyAttempts
 from src.core.ids import uuid7
 from src.core.net import client_ip
+from src.models.audit import AuditAction
 from src.models.credential import Badge, BadgeTemplate, Certificate, CertificateTemplate
 from src.models.learning import Enrolment
 from src.schemas.credentials import (
@@ -47,8 +48,8 @@ from src.schemas.credentials import (
     VerificationResponse,
     VisibilityRequest,
 )
+from src.services import audit, rate_limit
 from src.services import credentials as credentials_service
-from src.services import rate_limit
 from src.services.storage import Container
 
 router = APIRouter(tags=["credentials"])
@@ -180,6 +181,15 @@ async def revoke_certificate(
         certificate_id=_parse_uuid(certificate_id),
         reason=body.reason,
         revoker_user_id=principal.user_id,
+    )
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.CERTIFICATE_REVOKED,
+        actor_user_id=principal.user_id,
+        entity_type="certificate",
+        entity_id=certificate.id,
+        after={"certificate_number": certificate.certificate_number, "reason": body.reason},
     )
     return CertificateResponse(
         id=str(certificate.id),
