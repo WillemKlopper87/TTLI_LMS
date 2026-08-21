@@ -1,6 +1,27 @@
 # STATUS
 
-**Updated:** 2026-08-21 (fourth pass, same day) — **P6: finance
+**Updated:** 2026-08-21 (fifth pass, same day) — **P3 part one: staff
+administration** (`docs/BACKLOG.md` P3, the feature-matrix audit's
+"unlisted" gap). Until now a tenant could not create a colleague or give
+them a role without a developer: `role_assignments` was written by
+migration `0002` and by test fixtures and by nothing else, which is why
+`AuditAction.ROLE_ASSIGNED` had existed since 0001 with no code path
+able to emit it. Now: `GET /tenant/roles` (each role with the
+permissions behind it, so a screen can explain a choice rather than show
+a code), `GET/POST /tenant/users`, role grant/revoke, suspend/reinstate,
+and `/admin/people` — which retires the last inert nav item.
+**Two invariants carry this feature**, enforced in the service rather
+than left to the permission gate: you may only grant a role whose
+permissions you already hold (otherwise "can administer users" silently
+means "can become anyone"), and you may not change your own roles or
+status (revoking your own last `tenant:manage` locks the tenant out of
+its own administration with no way back). Invited accounts are created
+without a password and arrive by magic link, so an administrator never
+handles someone else's credentials. Every role and status change is
+audited. 6 API tests, escalation first.
+**Not done in this pass:** tenant branding (#44) and domain management
+(#45) — both still change only by migration.
+Prior, same day — **P6: finance
 completeness** (`docs/BACKLOG.md` P6 = Pass H, feature-matrix gaps #34
 and #39). Invoicing had been gapless and ledger-backed since Phase 3 and
 entirely write-only: the buyer it was issued to could not read it, and

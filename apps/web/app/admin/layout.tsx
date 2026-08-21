@@ -26,6 +26,7 @@ const WORKING_SECTIONS = [
   { label: "Analytics", href: "/admin/analytics" },
   { label: "Reports", href: "/admin/reports/courses" },
   { label: "Audit log", href: "/admin/audit" },
+  { label: "People", href: "/admin/people" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
   { label: "Catalogue", href: "/admin/catalogue" },
@@ -37,10 +38,11 @@ const WORKING_SECTIONS = [
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },
 ];
-// "Learners" is the last placeholder: a people/organisations screen is
-// Pass C of docs/research/enterprise-gaps-plan.md, not built yet.
-// "Reports" left this list when Pass A gave it a real destination.
-const INERT_SECTIONS = ["Learners"];
+// Nothing is inert any more. "Reports" left this list when Pass A gave it
+// a real destination, and "Learners" became "People" when Pass C built
+// staff administration — the organisations half of that screen is still
+// its own page under /organisations.
+const INERT_SECTIONS: string[] = [];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();

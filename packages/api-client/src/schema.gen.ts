@@ -3221,6 +3221,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenant/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Roles and the permissions they carry */
+        get: operations["list_roles_api_v1_tenant_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Staff in this tenant; add include_learners=true for everyone */
+        get: operations["list_users_api_v1_tenant_users_get"];
+        put?: never;
+        /**
+         * Invite a colleague — creates the account and emails a sign-in link
+         * @description No password is set. The invitee arrives through a magic link and
+         *     chooses their own credentials, so an administrator never handles
+         *     someone else's password — the same reasoning `auth/password-reset`
+         *     already follows.
+         */
+        post: operations["invite_user_api_v1_tenant_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/users/{user_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grant a role — never one carrying permissions you lack yourself */
+        post: operations["grant_role_api_v1_tenant_users__user_id__roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/users/{user_id}/roles/{role_code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a role */
+        delete: operations["revoke_role_api_v1_tenant_users__user_id__roles__role_code__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/users/{user_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suspend or reinstate an account */
+        post: operations["change_status_api_v1_tenant_users__user_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4423,6 +4515,18 @@ export interface components {
             required_percentage?: number | null;
             /** Duration Seconds */
             duration_seconds?: number | null;
+        };
+        /** InviteUserRequest */
+        InviteUserRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Full Name */
+            full_name?: string | null;
+            /** Roles */
+            roles?: string[];
         };
         /**
          * InvoiceDetailResponse
@@ -6173,6 +6277,29 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RoleChangeRequest */
+        RoleChangeRequest: {
+            /** Role Code */
+            role_code: string;
+        };
+        /**
+         * RoleSummary
+         * @description A role and what it actually confers. The permission list is what
+         *     lets the admin screen explain a choice instead of showing a code.
+         */
+        RoleSummary: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
+        };
+        /** RolesResponse */
+        RolesResponse: {
+            /** Roles */
+            roles: components["schemas"]["RoleSummary"][];
+        };
         /** RosterResponse */
         RosterResponse: {
             /** Items */
@@ -6314,6 +6441,11 @@ export interface components {
             cover_image_url?: string | null;
             /** Embed Id */
             embed_id?: string | null;
+        };
+        /** StatusChangeRequest */
+        StatusChangeRequest: {
+            /** Status */
+            status: string;
         };
         /** SubmissionDownloadResponse */
         SubmissionDownloadResponse: {
@@ -6566,6 +6698,34 @@ export interface components {
         TenantAssignmentsPageResponse: {
             /** Items */
             items: components["schemas"]["TenantAssignmentRow"][];
+        };
+        /** TenantUserRow */
+        TenantUserRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string | null;
+            /** Status */
+            status: string;
+            /** Is Guest */
+            is_guest: boolean;
+            /** Roles */
+            roles: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** TenantUsersResponse */
+        TenantUsersResponse: {
+            /** Items */
+            items: components["schemas"]["TenantUserRow"][];
         };
         /** ThemeResponse */
         ThemeResponse: {
@@ -13207,6 +13367,186 @@ export interface operations {
                 content: {
                     "application/pdf": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roles_api_v1_tenant_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolesResponse"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_tenant_users_get: {
+        parameters: {
+            query?: {
+                include_learners?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantUsersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_user_api_v1_tenant_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantUserRow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_role_api_v1_tenant_users__user_id__roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_role_api_v1_tenant_users__user_id__roles__role_code__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                role_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_status_api_v1_tenant_users__user_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
