@@ -51,7 +51,11 @@ MANAGE = "tenant:manage"
 # globals.css, which is what actually renders on a brand-coloured button.
 ON_BRAND = "#fdf8f9"
 
-LOGO_TYPES = {"image/png", "image/jpeg", "image/svg+xml", "image/webp"}
+# SVG is deliberately absent. It is a script-carrying format served from
+# a public container, and "an administrator uploaded it" is not a reason
+# to host active content — raster logos do the job. Flagged by a security
+# review of this file on 2026-08-21.
+LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 LOGO_MAX_BYTES = 2 * 1024 * 1024
 
 
@@ -129,7 +133,7 @@ async def upload_logo(
         raise AppError("A logo must be under 2 MB.")
     if file.content_type not in LOGO_TYPES:
         raise AppError(
-            "A logo must be a PNG, JPEG, SVG or WebP image.",
+            "A logo must be a PNG, JPEG or WebP image.",
             {"content_type": file.content_type},
         )
 
@@ -143,7 +147,10 @@ async def upload_logo(
     if not result.clean:
         raise AppError(f"That file was rejected by the virus scanner ({result.signature}).")
 
-    key = f"tenant-branding/{principal.tenant_id}/{file.filename or 'logo'}"
+    # The client filename is not used at all here: the extension comes
+    # from the content type we just validated, and the stem is fixed, so
+    # there is nothing caller-controlled in the key.
+    key = f"tenant-branding/{principal.tenant_id}/logo.{LOGO_TYPES[file.content_type]}"
     await storage.ensure_container(Container.PUBLIC_MARKETING)
     await storage.upload_object(
         Container.PUBLIC_MARKETING, key, data, content_type=file.content_type

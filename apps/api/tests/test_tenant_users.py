@@ -27,6 +27,10 @@ pytestmark = pytest.mark.integration
 TENANT_HOST = "localhost"
 PASSWORD = "correct horse battery staple 9!"
 
+# A minimal real PNG header; the endpoint validates the declared content
+# type, not the magic bytes, but a plausible payload keeps the test honest.
+_PNG_BYTES = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) + b"0" * 64
+
 
 def _redis_reachable(url: str) -> bool:
     parsed = urlparse(url)
@@ -378,3 +382,38 @@ async def test_domains_are_globally_unique_and_the_primary_one_is_protected(  # 
 
     removed = await client.delete(f"/api/v1/tenant/domains/{row['id']}", headers=headers)
     assert removed.status_code == 204
+
+
+async def test_a_logo_upload_refuses_svg_and_ignores_the_client_filename(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Both halves of a security-review finding on this endpoint
+    (2026-08-21). SVG is a script-carrying format served from a public
+    container, and "an administrator uploaded it" is not a reason to
+    host active content. The stored key takes nothing from the client
+    either — extension from the validated content type, fixed stem."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {boss}"}
+
+    svg = await client.post(
+        "/api/v1/tenant/branding/logo",
+        headers=headers,
+        files={"file": ("logo.svg", b"<svg onload=alert(1)></svg>", "image/svg+xml")},
+    )
+    assert svg.status_code == 400
+    assert "SVG" not in svg.json()["error"]["message"], "the message lists what IS allowed"
+
+    # A PNG whose filename tries to traverse still lands under this
+    # tenant's own prefix, named for its type.
+    png = await client.post(
+        "/api/v1/tenant/branding/logo",
+        headers=headers,
+        files={"file": ("../../evil.png", _PNG_BYTES, "image/png")},
+    )
+    assert png.status_code == 200, png.text
+    key = png.json()["logo_url"]
+    assert key == f"tenant-branding/{tenant_id}/logo.png"
+    assert ".." not in key

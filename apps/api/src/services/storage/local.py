@@ -12,6 +12,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from src.core.object_keys import assert_safe_key
 from src.services.storage.base import (
     Container,
     ObjectNotFound,
@@ -34,8 +35,12 @@ class LocalStorageAdapter(StorageService):
         return self._root / container
 
     def _object_path(self, container: str, key: str) -> Path:
-        if ".." in Path(key).parts:
-            raise StorageError(f"invalid key {key!r}")
+        # Shared with the S3 and Azure adapters so all three refuse the
+        # same shapes (src/core/object_keys.py).
+        try:
+            assert_safe_key(key)
+        except ValueError as exc:
+            raise StorageError(f"invalid key {key!r}") from exc
         return self._container_dir(container) / key
 
     async def ensure_container(self, container: str) -> None:

@@ -21,6 +21,7 @@ from sqlalchemy import select
 from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
+from src.core.object_keys import safe_filename
 from src.core.queue import get_queue
 from src.models.course import Lesson
 from src.models.media import VideoAsset
@@ -106,7 +107,7 @@ async def upload_video_asset(
         )
 
     asset_id = uuid7()
-    source_key = f"video-assets/{asset_id}/source/{file.filename or 'source'}"
+    source_key = f"video-assets/{asset_id}/source/{safe_filename(file.filename, fallback='source')}"
     await storage.ensure_container(Container.PRIVATE_CONTENT)
     await storage.upload_object(
         Container.PRIVATE_CONTENT, source_key, data, content_type=file.content_type
@@ -274,7 +275,7 @@ async def get_hls_file(
     # this asset's own flat storage prefix, nothing else on the backend.
     if "/" in filename or ".." in filename:
         raise NotFound("No such file.")
-    key = f"video-assets/{video_asset_id}/{filename}"
+    key = f"video-assets/{video_asset_id}/{safe_filename(filename, fallback='asset')}"
 
     try:
         data = await storage.get_object(Container.PRIVATE_CONTENT, key)

@@ -3477,6 +3477,38 @@ worth carrying:
   is what kept this pass migration-free. Actually resolving the record
   belongs with TLS automation in Phase 7.
 
+**Security fix: storage keys and the logo format — 2026-08-21.** A
+background review of the P3 branding commit found two issues in code
+written an hour earlier. Both were real; one turned out to be systemic.
+
+**Client filenames went into object keys unsanitised — at six sites,
+not one.** `tenant_branding.py` was the flagged instance, but
+`podcasts.py`, `media.py` (x2), `orders.py` (x2) and `assessment.py`
+all did the same, and the `uuid4().hex-` prefixes several of them use
+do not help: `abc123-../../evil` still traverses. Honest severity:
+`LocalStorage` already refused a key containing `..`, so the filesystem
+backend was never traversable, and in S3/Azure a key is a flat string
+where `../` is usually literal — this was defence-in-depth, not a live
+breach. But one adapter of three catching it is not a control. Now
+`core/object_keys.py` sanitises the leaf (`../../etc/passwd` becomes
+`passwd`, NFKC-normalised first so a fullwidth solidus cannot
+reintroduce structure), all six sites use it, and **all three adapters**
+call `assert_safe_key` so the guarantee no longer depends on which
+backend is configured. 13 tests.
+
+**SVG was accepted as a logo format.** The comment on that endpoint even
+said an SVG is script-carrying, and then allowed it — stored in
+`PUBLIC_MARKETING` and public. The current render path is
+`<img src=…>`, which does not execute scripts in an SVG, so this was
+also not live; but a public URL to attacker-authored active content is
+not something to leave sitting behind an `<img>` tag's good manners.
+SVG is out of the whitelist: PNG, JPEG and WebP do the job. The stored
+key now takes nothing from the client at all — extension from the
+validated content type, fixed stem.
+
+Worth carrying: when copying an upload handler in this codebase, the
+key-building line is the part to look at. It was wrong in every one.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

@@ -16,6 +16,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 
+from src.core.object_keys import assert_safe_key
 from src.services.storage.base import (
     ObjectNotFound,
     StorageError,
@@ -74,6 +75,11 @@ class S3StorageAdapter(StorageService):
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> None:
+        # Every backend refuses an unsafe key, not just the local one —
+        # a guarantee that depends on which adapter is configured is not
+        # a guarantee (src/core/object_keys.py).
+        assert_safe_key(key)
+
         def _put() -> None:
             kwargs: dict[str, object] = {"Bucket": container, "Key": key, "Body": data}
             if content_type:

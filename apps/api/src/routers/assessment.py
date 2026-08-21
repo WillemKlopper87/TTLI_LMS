@@ -20,6 +20,7 @@ from sqlalchemy import select
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
+from src.core.object_keys import safe_filename
 from src.models.assessment import (
     Assignment,
     AssignmentSubmission,
@@ -654,7 +655,7 @@ async def submit_assignment(
     filename = file.filename or "submission"
     key = (
         f"{principal.tenant_id}/assignments/{assignment_uuid}/{enrolment.id}/"
-        f"{uuid.uuid4().hex}-{filename}"
+        f"{uuid.uuid4().hex}-{safe_filename(filename, fallback='submission')}"
     )
     await storage.ensure_container(Container.USER_UPLOADS)
     await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)

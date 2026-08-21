@@ -24,6 +24,7 @@ from azure.storage.blob import (
     generate_blob_sas,
 )
 
+from src.core.object_keys import assert_safe_key
 from src.services.storage.base import (
     Container,
     ObjectNotFound,
@@ -58,6 +59,10 @@ class AzureBlobStorageAdapter(StorageService):
         content_type: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> None:
+        # Every backend refuses an unsafe key, not just the local one —
+        # a guarantee that depends on which adapter is configured is not
+        # a guarantee (src/core/object_keys.py).
+        assert_safe_key(key)
         blob = self._service.get_blob_client(container=container, blob=key)
         settings = ContentSettings(content_type=content_type) if content_type else None
         await asyncio.to_thread(
