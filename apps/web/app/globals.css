@@ -1351,6 +1351,18 @@ label.field b,
   color: var(--ink-2);
 }
 
+/* WCAG 1.4.1 (Use of Colour), caught by the axe gate on /catalogue and
+   /executive-programmes: a link sitting inside running text was brand-red
+   on near-black body copy — 1.15:1 against the surrounding text, i.e.
+   distinguishable by hue alone, invisible to a reader who cannot see that
+   hue difference. Underline is the same answer `.prose a` already uses;
+   `.btn` links opt out because a button is distinguished by its own box,
+   not by colour. */
+.callout a:not(.btn),
+p a:not(.btn) {
+  text-decoration: underline;
+}
+
 .callout--warn {
   border-left-color: var(--live);
   background: var(--live-wash);

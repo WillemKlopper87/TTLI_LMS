@@ -24,6 +24,13 @@ ENVIRONMENT=local $V/python -c "import json; from src.main import app; print(jso
 echo "== web lint + typecheck + build"
 (cd ../web && npm run lint && npm run typecheck && npm run build)
 
+# Playwright drives a PRODUCTION build on :3011 (see playwright.config.ts
+# for why not the dev server). The authenticated spec skips itself when
+# the API isn't up on :8010 — the public + axe specs still run, so this
+# step is meaningful either way.
+echo "== web e2e (playwright + axe)"
+(cd ../web && npm run test:e2e)
+
 echo "== docs"
 (cd ../.. && python docs/check_links.py && python docs/source/extract.py --check)
 

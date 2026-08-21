@@ -47,3 +47,9 @@ apps/api/var/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Playwright (apps/web/e2e) — artefacts, never sources
+test-results/
+playwright-report/
+blob-report/
+.playwright/

@@ -269,7 +269,7 @@ export function CatalogueBrowser({ courses, initialTopic, initialLevel }: Catalo
           <b>Buying for a team?</b>
           Seat bundles from five learners include a manager dashboard, invoice or EFT payment and
           purchase-order support.{" "}
-          <Link href="/organisations" style={{ color: "var(--brand-ink)" }}>
+          <Link href="/organisations">
             Talk to us about an organisation account
           </Link>
           .

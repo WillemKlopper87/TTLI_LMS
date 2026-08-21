@@ -1,6 +1,21 @@
 # STATUS
 
-**Updated:** 2026-08-20 (sixth pass, same day) — **the deployment
+**Updated:** 2026-08-20 (seventh pass, same day) — **Phase 4.5 closes**:
+the axe-core gate exists (its last open item). Playwright + `@axe-core/
+playwright` drive a real Chromium over a PRODUCTION build on :3011 — 20
+specs: every public page renders (status < 400 AND its header is
+visible, so a blank 200 fails), every public page is WCAG 2.1 A/AA
+clean, and a learner signs in through the real form and survives a
+reload on the HttpOnly refresh cookie alone. Wired into
+`scripts/gates.sh` and CI's web job. It found real defects on day one:
+two genuine WCAG 1.4.1 failures — in-text links on `/catalogue` and
+`/executive-programmes` at 1.15:1 against the surrounding copy with no
+underline — now fixed in `globals.css` the same way `.prose a` already
+did it. It also surfaced (and the config documents) that `next dev`
+under parallel requests intermittently 500s a route that renders fine
+(`__webpack_modules__[moduleId] is not a function`), which is why the
+gate runs the production build rather than the dev server.
+Prior, same day — **the deployment
 substrate exists** (`docs/NEXT_AGENT_BRIEF.md` §7b's largest gap; Phase
 7's precondition). `apps/api/Dockerfile` (python:3.12-slim, ffmpeg as a
 real runtime dep, non-root uid 10001, one image serving API + arq worker

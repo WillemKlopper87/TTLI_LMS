@@ -3291,6 +3291,24 @@ signature of a key mismatch rather than a code bug. Re-run with the dev
 keys: login → enrolments 200 → logout → 401, through the containerised
 BFF talking to the containerised API over the compose network.
 
+**Platform-hardening pass 7 — 2026-08-20, same day.** Browser tests, and
+Phase 4.5's last item closed. Two things a future agent should not have
+to rediscover. First: run e2e against a production build, not `next dev`
+— under Playwright's parallel workers the dev server's on-demand webpack
+compilation intermittently returns 500 for a route whose HTML renders
+perfectly (`__webpack_modules__[moduleId] is not a function` in the dev
+log, zero 500s in the API log). Chasing that as an app bug is a dead
+end; `playwright.config.ts` builds and serves on :3011 instead, clear of
+a dev server on :3010. Second: the axe gate earned itself immediately —
+`link-in-text-block` on /catalogue and /executive-programmes, brand-red
+links inside `.callout` body copy at 1.15:1 contrast *against the
+surrounding text* with no underline. Real WCAG 1.4.1 failures that the
+2026-08-16 contrast audit could not have caught, because that audit
+checked text-vs-background, not link-vs-text. Fixed with the same
+underline rule `.prose a` already used, scoped `:not(.btn)` so buttons
+keep their box. The axe assertion prints rule + selector, not a count,
+because "1 violation" without a target is a scavenger hunt.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

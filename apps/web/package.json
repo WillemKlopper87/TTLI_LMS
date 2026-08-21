@@ -8,7 +8,9 @@
     "build": "next build --webpack",
     "start": "next start -p 3010",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:e2e": "playwright test",
+    "start:e2e": "next start -p 3011"
   },
   "dependencies": {
     "@ttli/api-client": "file:../../packages/api-client",
@@ -21,7 +23,9 @@
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",

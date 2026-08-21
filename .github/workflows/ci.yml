@@ -336,3 +336,15 @@ jobs:
       # (vercel/next.js#85316, #88335, #77562). See apps/web/next.config.ts.
       - name: Build
         run: npm run build
+
+      # Phase 4.5's last open item: the WCAG audit was a one-time computed
+      # pass, so a globals.css change could silently reintroduce a contrast
+      # or use-of-colour failure. axe-core now runs on every public page on
+      # every push (it caught two real link-in-text-block violations the
+      # day it was added). No API runs in this job, so the authenticated
+      # spec skips itself and the public + axe specs carry the gate.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E and accessibility
+        run: npm run test:e2e
