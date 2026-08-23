@@ -1346,6 +1346,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/learning-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Learning Paths */
+        get: operations["list_learning_paths_api_v1_learning_paths_get"];
+        put?: never;
+        /** Create Learning Path */
+        post: operations["create_learning_path_api_v1_learning_paths_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Learning Path */
+        get: operations["get_learning_path_api_v1_learning_paths__learning_path_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Learning Path */
+        patch: operations["update_learning_path_api_v1_learning_paths__learning_path_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Path Courses */
+        get: operations["list_path_courses_api_v1_learning_paths__learning_path_id__courses_get"];
+        put?: never;
+        /** Add Path Course */
+        post: operations["add_path_course_api_v1_learning_paths__learning_path_id__courses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/courses/{course_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Path Course */
+        delete: operations["remove_path_course_api_v1_learning_paths__learning_path_id__courses__course_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/courses/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Path Courses */
+        post: operations["reorder_path_courses_api_v1_learning_paths__learning_path_id__courses_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Path Readiness */
+        get: operations["get_path_readiness_api_v1_learning_paths__learning_path_id__readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Learning Path */
+        post: operations["publish_learning_path_api_v1_learning_paths__learning_path_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Learning Path */
+        post: operations["unpublish_learning_path_api_v1_learning_paths__learning_path_id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/tenant-assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Path To Tenant */
+        post: operations["assign_path_to_tenant_api_v1_learning_paths__learning_path_id__tenant_assignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/facilitators": {
         parameters: {
             query?: never;
@@ -3508,6 +3664,11 @@ export interface components {
             /** Hostname */
             hostname: string;
         };
+        /** AddPathCourseRequest */
+        AddPathCourseRequest: {
+            /** Course Id */
+            course_id: string;
+        };
         /** AdminPriceRow */
         AdminPriceRow: {
             /** Id */
@@ -4951,6 +5112,48 @@ export interface components {
             /** Score Hidden */
             score_hidden: boolean;
         };
+        /** LearningPathCreateRequest */
+        LearningPathCreateRequest: {
+            /** Title */
+            title: string;
+            /** Slug */
+            slug?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** LearningPathResponse */
+        LearningPathResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** State */
+            state: string;
+            /** Certificate Template Id */
+            certificate_template_id: string | null;
+        };
+        /**
+         * LearningPathUpdateRequest
+         * @description Every field `None` means "leave unchanged" — same convention as
+         *     `CourseUpdateRequest`.
+         */
+        LearningPathUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Certificate Template Id */
+            certificate_template_id?: string | null;
+        };
+        /** LearningPathsPageResponse */
+        LearningPathsPageResponse: {
+            /** Items */
+            items: components["schemas"]["LearningPathResponse"][];
+        };
         /**
          * LessonCheckResponse
          * @description One completion rule, met or not. `unmet_requirements` stays the
@@ -5458,6 +5661,63 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /**
+         * PathCourseRow
+         * @description A member course as it appears inside a path — enough to render
+         *     the ordered list and add/remove UI, not the full `CourseResponse`.
+         */
+        PathCourseRow: {
+            /** Course Id */
+            course_id: string;
+            /** Title */
+            title: string;
+            /** Slug */
+            slug: string;
+            /** State */
+            state: string;
+            /** Level */
+            level: string | null;
+            /** Position */
+            position: number;
+        };
+        /** PathCoursesResponse */
+        PathCoursesResponse: {
+            /** Items */
+            items: components["schemas"]["PathCourseRow"][];
+        };
+        /** PathReadinessCheckRow */
+        PathReadinessCheckRow: {
+            /** Code */
+            code: string;
+            /** Level */
+            level: string;
+            /** Ok */
+            ok: boolean;
+            /** Message */
+            message: string;
+        };
+        /** PathReadinessResponse */
+        PathReadinessResponse: {
+            /** Learning Path Id */
+            learning_path_id: string;
+            /** Publishable */
+            publishable: boolean;
+            /** Course Count */
+            course_count: number;
+            /** Checks */
+            checks: components["schemas"]["PathReadinessCheckRow"][];
+        };
+        /** PathTenantAssignmentResponse */
+        PathTenantAssignmentResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Learning Path Id */
+            learning_path_id: string;
+            /** Is Bespoke */
+            is_bespoke: boolean;
         };
         /** PendingPaymentSummary */
         PendingPaymentSummary: {
@@ -6443,6 +6703,15 @@ export interface components {
             currency: string;
             /** Customer Type */
             customer_type: string;
+        };
+        /**
+         * ReorderPathCoursesRequest
+         * @description Every member course id exactly once, in the desired order — same
+         *     convention as `course_wizard.py`'s `ReorderRequest`.
+         */
+        ReorderPathCoursesRequest: {
+            /** Ordered Course Ids */
+            ordered_course_ids: string[];
         };
         /**
          * ReorderRequest
@@ -9862,6 +10131,386 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LessonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_learning_paths_api_v1_learning_paths_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathsPageResponse"];
+                };
+            };
+        };
+    };
+    create_learning_path_api_v1_learning_paths_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningPathCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_learning_path_api_v1_learning_paths__learning_path_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_learning_path_api_v1_learning_paths__learning_path_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningPathUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_path_courses_api_v1_learning_paths__learning_path_id__courses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathCoursesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_path_course_api_v1_learning_paths__learning_path_id__courses_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddPathCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathCoursesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_path_course_api_v1_learning_paths__learning_path_id__courses__course_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathCoursesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_path_courses_api_v1_learning_paths__learning_path_id__courses_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderPathCoursesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathCoursesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_path_readiness_api_v1_learning_paths__learning_path_id__readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathReadinessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_learning_path_api_v1_learning_paths__learning_path_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_learning_path_api_v1_learning_paths__learning_path_id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_path_to_tenant_api_v1_learning_paths__learning_path_id__tenant_assignments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantAssignmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathTenantAssignmentResponse"];
                 };
             };
             /** @description Validation Error */

@@ -1,6 +1,64 @@
 # STATUS
 
-**Updated:** 2026-08-23 (fifth pass, same day) — **R4: the EFT ageing
+**Updated:** 2026-08-23 (sixth pass, same day) — **P5 Phase 1: learning
+paths, schema and admin authoring.** `docs/BACKLOG.md` P5 (Pass E,
+feature-matrix gap #7) — a learning path is an ordered bundle of
+existing courses, sellable as one product, whose progress rolls up its
+member courses' and which issues its own certificate. Planned and built
+in four phases (full plan in this session's transcript); this pass is
+Phase 1 only — schema plus admin authoring, no commerce/progress/
+learner-facing surface yet.
+**Schema (`0035`)**: `learning_paths`/`learning_path_courses` global, no
+RLS — same split `0011` drew for `courses`/`modules`/`lessons`;
+`learning_path_tenant_assignments` tenant-scoped RLS, structurally
+identical to `course_tenant_assignments`; `path_enrolments` (also RLS)
+mirrors `enrolments` — a path has no `Enrolment` row of its own, so this
+is the anchor row Phase 3's rollup and certificate need.
+`products.learning_path_id` mirrors `products.subscription_plan_id`'s
+nullable-bridge pattern; `Product.kind`/`Entitlement.kind` are plain
+unconstrained strings, so `"path"` needs no constraint migration at all
+(confirmed by reading the actual columns before assuming otherwise).
+**The one real design call**: `certificates.enrolment_id` is now
+nullable with a new nullable `path_enrolment_id` and a `CHECK` that
+exactly one is set, rather than a second `path_certificates` table.
+Verified safe by reading `credentials.py` in full first — nothing on
+`Certificate` besides `enrolment_id` is course-specific, `snapshot`
+already denormalises everything the PDF/verify page read, so reusing it
+means the token/QR/revocation/public-verify machinery needs zero
+changes; duplicating it would have meant re-securing a token-
+verification subsystem for no reason. Documented as a deliberate,
+narrow exception to this codebase's general aversion to polymorphic FKs
+(`Entitlement.target_id`'s own docstring calls the *un-FK'd* version of
+that pattern a wart) — this one is real FKs plus a CHECK, not that.
+**Admin authoring**: `services/learning_paths.py` mirrors `services/
+courses.py`'s shape (create/get/list/update, `assign_path_to_tenant`
+mirrors `assign_course_to_tenant`) plus its own `get_path_readiness`
+(blockers: ≥2 member courses, every member published — own function,
+not a generalisation of the course one, since the checks are
+structurally different). `routers/learning_paths.py` behind `/admin/
+paths`: a **single-page editor**, deliberately not a clone of the
+course wizard's seven-step shell — a path has no lessons/content/
+assessments to author, only membership, order, a certificate and a
+publish/assign step. The course-reorder list lifts the wizard's
+Curriculum drag idiom (`curriculum-outline.tsx`'s `DragRef`/optimistic-
+state/rollback-on-refusal pattern) at a single flat level.
+**Two real bugs a test caught before either reached the database**: the
+migration's `content_state` enum reuse used bare `sa.Enum(...,
+create_type=False)`, which does not reliably suppress `CREATE TYPE`
+inside `create_table()` — fixed by switching to `postgresql.ENUM(...,
+create_type=False)`, matching `0030`/`0031`'s own precedent, found by
+actually running the migration rather than assuming the flag was
+enough; and an `index=True` column produced a different index name than
+the migration's own hand-named one, caught by `alembic check`, not
+assumed away.
+Verified: 3 new API tests (RBAC, publish blockers with two distinct
+refusal reasons, reorder + tenant-assignment gating), full suite still
+green (405 passed), `alembic check` + round-trip clean, web `typecheck`/
+`lint`/`build` clean, axe-clean on all three new admin pages, and a full
+live smoke through the real UI — create a path, add two real published
+courses, drag-reorder them, publish, assign to tenant, confirm on the
+list page.
+Prior, same day — **R4: the EFT ageing
 alert.** `02_DATA_MODEL.md` §12.4 designed a daily job to flag EFT/PO
 approvals stuck past 48h; nothing computed it, so — per
 `bank-eft-automation.md`, which names this exact signal as the trigger

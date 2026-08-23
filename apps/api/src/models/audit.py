@@ -86,6 +86,8 @@ class AuditAction:
     CERTIFICATE_REVOKED = "credential.certificate.revoked"
     COURSE_PUBLISHED = "course.published"
     COURSE_UNPUBLISHED = "course.unpublished"
+    LEARNING_PATH_PUBLISHED = "learning_path.published"
+    LEARNING_PATH_UNPUBLISHED = "learning_path.unpublished"
     TENANT_SETTING_CHANGED = "tenant.setting.changed"
     # 02 §12.4's EFT ageing alert (0034, BACKLOG.md R4) — system-actor
     # (actor_user_id null), so a compliance reviewer can see a backlog

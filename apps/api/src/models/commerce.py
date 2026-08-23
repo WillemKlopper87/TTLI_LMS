@@ -94,6 +94,13 @@ class Product(Base, TimestampMixin):
         ForeignKey("subscription_plans.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    # Set only for kind="path" products — same nullable-bridge treatment
+    # as course_id/subscription_plan_id above (0035).
+    learning_path_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("learning_paths.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
 
 class Price(Base, TimestampMixin):

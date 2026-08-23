@@ -29,6 +29,7 @@ const WORKING_SECTIONS = [
   { label: "People", href: "/admin/people" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
+  { label: "Learning paths", href: "/admin/paths" },
   { label: "Catalogue", href: "/admin/catalogue" },
   { label: "Podcasts", href: "/admin/podcasts" },
   { label: "Articles", href: "/admin/articles" },

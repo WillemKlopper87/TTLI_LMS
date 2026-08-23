@@ -74,6 +74,12 @@ from src.models.event import Event
 from src.models.idempotency import IdempotencyKey
 from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
+from src.models.learning_path import (
+    LearningPath,
+    LearningPathCourse,
+    LearningPathTenantAssignment,
+    PathEnrolment,
+)
 from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.podcast import PodcastEpisode
@@ -147,6 +153,9 @@ __all__ = [
     "InvoiceItem",
     "InvoiceNumberCounter",
     "Lead",
+    "LearningPath",
+    "LearningPathCourse",
+    "LearningPathTenantAssignment",
     "LedgerEntry",
     "Lesson",
     "LessonCompletion",
@@ -163,6 +172,7 @@ __all__ = [
     "Organisation",
     "OrganisationMember",
     "PasswordReset",
+    "PathEnrolment",
     "Payment",
     "PaymentWebhook",
     "Permission",

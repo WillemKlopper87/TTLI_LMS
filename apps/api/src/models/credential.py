@@ -11,7 +11,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, LargeBinary, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,11 +48,37 @@ class CertificateTemplate(Base, TimestampMixin):
 
 
 class Certificate(Base):
+    """`enrolment_id`/`path_enrolment_id` are a deliberate polymorphic
+    pair, not a design this codebase reaches for casually (`Entitlement.
+    target_id`'s own docstring calls the *un-FK'd* version of this a
+    wart) — the difference is these two are real FKs plus a `CHECK`
+    enforcing exactly one, and the alternative (a second `path_
+    certificates` table) would mean re-securing the token/QR/revocation/
+    public-verify machinery for no reason: nothing else here is
+    course-specific, `snapshot` already carries every course- or
+    path-title-shaped value the PDF and verify page read (0035's
+    migration docstring)."""
+
     __tablename__ = "certificates"
     __table_args__ = (
-        Index("uq_certificates_enrolment", "enrolment_id", unique=True),
+        Index(
+            "uq_certificates_enrolment",
+            "enrolment_id",
+            unique=True,
+            postgresql_where=text("enrolment_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_certificates_path_enrolment",
+            "path_enrolment_id",
+            unique=True,
+            postgresql_where=text("path_enrolment_id IS NOT NULL"),
+        ),
         Index("uq_certificates_number", "certificate_number", unique=True),
         Index("uq_certificates_token_blind_index", "verification_token_blind_index", unique=True),
+        CheckConstraint(
+            "(enrolment_id IS NOT NULL) != (path_enrolment_id IS NOT NULL)",
+            name="ck_certificates_exactly_one_enrolment",
+        ),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -51,8 +88,11 @@ class Certificate(Base):
         nullable=False,
         index=True,
     )
-    enrolment_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("enrolments.id", ondelete="CASCADE"), nullable=False
+    enrolment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("enrolments.id", ondelete="CASCADE"), nullable=True
+    )
+    path_enrolment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("path_enrolments.id", ondelete="CASCADE"), nullable=True
     )
     certificate_template_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
