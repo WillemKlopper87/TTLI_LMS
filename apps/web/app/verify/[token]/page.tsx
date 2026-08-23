@@ -20,6 +20,7 @@ interface VerificationResult {
   issuer_name: string | null;
   cpd_points: number | null;
   visibility: string | null;
+  is_learning_path: boolean;
 }
 
 const STATUS: Record<string, { head: string; glyph: string; tone: string }> = {
@@ -135,7 +136,7 @@ export default function VerifyPage() {
                 <span className="v">{result.holder_name ?? "—"}</span>
               </div>
               <div>
-                <span className="k">Programme</span>
+                <span className="k">{result.is_learning_path ? "Learning path" : "Programme"}</span>
                 <span className="v">{programme ?? "—"}</span>
               </div>
               <div>

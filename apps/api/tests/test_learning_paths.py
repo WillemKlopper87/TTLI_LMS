@@ -522,3 +522,176 @@ async def test_path_product_authoring_and_admin_listing(  # type: ignore[no-unty
         headers=auth,
     )
     assert rejected.status_code == 400, rejected.text
+
+
+async def _lessons_for_course(tenant_session_factory, tenant_id, course_id: str) -> list[str]:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(tenant_id) as s:
+        rows = (
+            await s.execute(
+                sa.text(
+                    "SELECT l.id FROM lessons l JOIN modules m ON m.id = l.module_id "
+                    "WHERE m.course_id = :c ORDER BY l.position"
+                ),
+                {"c": course_id},
+            )
+        ).all()
+    return [str(row[0]) for row in rows]
+
+
+async def test_completing_every_member_course_issues_one_path_certificate(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Phase 3's whole point: completing the last lesson of the last
+    member course completes the path_enrolment and issues exactly one
+    certificate — through the real lesson-completion API, the same way
+    test_credentials.py proves course completion does. The freshly
+    authored courses here carry no completion_rules (their
+    default), so no minimum_time_seconds backdating trick is needed —
+    start-then-complete succeeds immediately, unlike the seeded demo
+    course test_credentials.py uses."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    course_a = await _published_course(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Completable Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+
+    cert_template_id = uuid.uuid4()
+    async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO certificate_templates "
+                "(id, title, issuer_name, signatory_name, signatory_title, cpd_points) "
+                "VALUES (:id, 'Path Certificate', 'TTLI', 'Dr. Themba', 'Director', 3)"
+            ),
+            {"id": cert_template_id},
+        )
+    await client.patch(
+        f"/api/v1/learning-paths/{path_id}",
+        json={"certificate_template_id": str(cert_template_id)},
+        headers=admin_auth,
+    )
+
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"completable-path-{uuid.uuid4().hex[:8]}",
+                "name": "Completable Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "1000.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    buyer_auth = {"Authorization": f"Bearer {buyer_token}"}
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    order_id = order.json()["id"]
+    checkout = await client.post(f"/api/v1/orders/{order_id}/checkout/eft", headers=buyer_auth)
+    payment_id = checkout.json()["payment_id"]
+    await client.post(
+        f"/api/v1/orders/{order_id}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=buyer_auth,
+    )
+    finance = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{payment_id}/approve",
+        headers={"Authorization": f"Bearer {finance}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approved.status_code == 200, approved.text
+
+    for course_id in (course_a, course_b):
+        for lesson_id in await _lessons_for_course(tenant_session_factory, tenant_id, course_id):
+            start = await client.post(f"/api/v1/lessons/{lesson_id}/start", headers=buyer_auth)
+            assert start.status_code == 204, start.text
+            complete = await client.post(
+                f"/api/v1/lessons/{lesson_id}/complete", headers=buyer_auth
+            )
+            assert complete.status_code == 200, complete.text
+
+    async with tenant_session_factory(tenant_id) as s:
+        path_enrolment = (
+            await s.execute(
+                sa.text("SELECT completed_at FROM path_enrolments WHERE learning_path_id = :p"),
+                {"p": path_id},
+            )
+        ).first()
+        certificates = (
+            await s.execute(
+                sa.text(
+                    "SELECT id, pdf_object_key, verification_token_encrypted FROM certificates "
+                    "WHERE path_enrolment_id IS NOT NULL AND tenant_id = :t "
+                    "AND path_enrolment_id IN "
+                    "(SELECT id FROM path_enrolments WHERE learning_path_id = :p)"
+                ),
+                {"t": tenant_id, "p": path_id},
+            )
+        ).all()
+    assert path_enrolment is not None
+    assert path_enrolment.completed_at is not None
+    assert len(certificates) == 1  # exactly one, not one per member course
+    certificate = certificates[0]
+    assert certificate.pdf_object_key is not None
+
+    # New certificates default to private (same as a course's) — the
+    # holder has to opt in before /verify will show it, exactly the
+    # pattern test_credentials.py's own tests exercise.
+    made_public = await client.patch(
+        f"/api/v1/certificates/{certificate.id}",
+        json={"visibility": "public"},
+        headers=buyer_auth,
+    )
+    assert made_public.status_code == 200, made_public.text
+
+    raw_token = crypto.decrypt(certificate.verification_token_encrypted)
+    verified = await client.get(f"/api/v1/verify/{raw_token}")
+    assert verified.status_code == 200, verified.text
+    body = verified.json()
+    assert body["found"] is True
+    assert body["is_learning_path"] is True
+    assert body["course_title"] == "Completable Path"

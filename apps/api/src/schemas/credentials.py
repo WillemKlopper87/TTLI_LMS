@@ -30,6 +30,7 @@ class VerificationResponse(BaseModel):
     issuer_name: str | None = None
     cpd_points: int | None = None
     visibility: str | None = None
+    is_learning_path: bool = False
 
 
 class RevokeCertificateRequest(BaseModel):

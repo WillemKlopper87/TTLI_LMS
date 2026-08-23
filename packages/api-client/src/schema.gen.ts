@@ -7567,6 +7567,11 @@ export interface components {
             cpd_points?: number | null;
             /** Visibility */
             visibility?: string | null;
+            /**
+             * Is Learning Path
+             * @default false
+             */
+            is_learning_path: boolean;
         };
         /** VideoAssetResponse */
         VideoAssetResponse: {

@@ -439,6 +439,9 @@ async def test_verify_unknown_token_is_a_clean_miss_and_is_logged(
         "issuer_name": None,
         "cpd_points": None,
         "visibility": None,
+        # Not nullable (P5) — always False, same as every other field
+        # here reads as "nothing to tell", not a leak of which kind.
+        "is_learning_path": False,
     }
     async with tenant_session_factory(tenant_id) as s:
         count = (

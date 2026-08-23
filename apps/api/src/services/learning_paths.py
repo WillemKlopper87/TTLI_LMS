@@ -22,16 +22,20 @@ from datetime import UTC, datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.crypto import CryptoBox
 from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
 from src.models.commerce import Price, Product
 from src.models.course import Course
 from src.models.credential import CertificateTemplate
+from src.models.learning import Enrolment
 from src.models.learning_path import (
     LearningPath,
     LearningPathCourse,
     LearningPathTenantAssignment,
+    PathEnrolment,
 )
+from src.services import enrolment as enrolment_service
 from src.services.courses import PublicPriceRow
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -426,15 +430,149 @@ async def public_prices_for_paths(
     return result
 
 
+# --- Progress rollup and completion (Phase 3) ---------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PathCourseProgress:
+    course_id: uuid.UUID
+    course_title: str
+    enrolment_id: uuid.UUID
+    progress_percent: int
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class PathProgress:
+    path_enrolment_id: uuid.UUID
+    learning_path_id: uuid.UUID
+    progress_percent: int
+    completed_at: datetime | None
+    courses: list[PathCourseProgress]
+
+
+async def get_path_progress(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    path_enrolment_id: uuid.UUID,
+) -> PathProgress:
+    """Rolls up each member course's own progress — computed by
+    `enrolment_service.get_progress`, the one place the completion rule
+    engine's percent-complete is derived, reused unchanged rather than a
+    second, subtly different derivation (that function's own docstring
+    gives the same reasoning). `progress_percent` here is the equal-
+    weight average of the member percentages — one level up from how a
+    course's own percentage is already "completed lessons / total
+    lessons", not a distinct rollup semantic."""
+    path_enrolment = await session.get(PathEnrolment, path_enrolment_id)
+    if (
+        path_enrolment is None
+        or path_enrolment.tenant_id != tenant_id
+        or path_enrolment.user_id != user_id
+    ):
+        raise NotFound("No such path enrolment.")
+
+    members = await list_path_courses(session, learning_path_id=path_enrolment.learning_path_id)
+    courses: list[PathCourseProgress] = []
+    for _member, course in members:
+        enrolment = await enrolment_service.get_own_enrolment(
+            session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+        )
+        progress = await enrolment_service.get_progress(
+            session,
+            crypto,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            enrolment_id=enrolment.id,
+        )
+        courses.append(
+            PathCourseProgress(
+                course_id=course.id,
+                course_title=course.title,
+                enrolment_id=enrolment.id,
+                progress_percent=progress.progress_percent,
+                completed_at=enrolment.completed_at,
+            )
+        )
+
+    overall = round(sum(c.progress_percent for c in courses) / len(courses)) if courses else 0
+    return PathProgress(
+        path_enrolment_id=path_enrolment.id,
+        learning_path_id=path_enrolment.learning_path_id,
+        progress_percent=overall,
+        completed_at=path_enrolment.completed_at,
+        courses=courses,
+    )
+
+
+async def find_path_enrolments_for_course_completion(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, course_id: uuid.UUID
+) -> list[PathEnrolment]:
+    """Called from `services/enrolment.py::complete_lesson` right after a
+    course completes: every not-yet-completed `PathEnrolment` this
+    learner holds for a path that includes `course_id`, so the caller can
+    check whether *every* member course is now done. Membership lookup
+    only — `learning_path_courses` is global, so this needs no RLS-aware
+    join beyond the tenant-scoped `path_enrolments` filter."""
+    stmt = (
+        select(PathEnrolment)
+        .join(
+            LearningPathCourse,
+            LearningPathCourse.learning_path_id == PathEnrolment.learning_path_id,
+        )
+        .where(
+            LearningPathCourse.course_id == course_id,
+            PathEnrolment.tenant_id == tenant_id,
+            PathEnrolment.user_id == user_id,
+            PathEnrolment.completed_at.is_(None),
+        )
+        .distinct()
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def all_member_courses_completed(
+    session: AsyncSession, *, user_id: uuid.UUID, learning_path_id: uuid.UUID
+) -> bool:
+    """True if every member course has a completed `Enrolment` for this
+    user. Deliberately a raw count comparison, not `get_path_progress`
+    (which needs `crypto` and a live entitlement re-check that has no
+    place inside the completion transaction itself)."""
+    members = await list_path_courses(session, learning_path_id=learning_path_id)
+    if not members:
+        return False
+    course_ids = [course.id for _member, course in members]
+    completed_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(Enrolment)
+            .where(
+                Enrolment.user_id == user_id,
+                Enrolment.course_id.in_(course_ids),
+                Enrolment.completed_at.is_not(None),
+            )
+        )
+    ).scalar_one()
+    return completed_count >= len(course_ids)
+
+
 __all__ = [
     "MINIMUM_COURSES_TO_PUBLISH",
     "LearningPathError",
+    "PathCourseProgress",
+    "PathProgress",
     "PathReadiness",
     "PathReadinessCheck",
     "add_course_to_path",
+    "all_member_courses_completed",
     "assign_path_to_tenant",
     "create_learning_path",
+    "find_path_enrolments_for_course_completion",
     "get_learning_path",
+    "get_path_progress",
     "get_path_readiness",
     "get_public_path",
     "list_learning_paths",

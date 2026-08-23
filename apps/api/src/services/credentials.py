@@ -2,12 +2,12 @@
 
 Issuance is never a direct API call — REQ-CRED-01 requires it to happen
 "only when the rule engine confirms every requirement is met", so the
-only call site is `services/enrolment.py::complete_lesson`, at the exact
-moment the last lesson's rule evaluation already passed and
-`enrolment.completed_at` is set. There is deliberately no
-`POST /certificates` endpoint for the same reason `POST /invoices`
-doesn't exist — inventing one would be a second, unaudited path to the
-same effect.
+only call sites are `services/enrolment.py::complete_lesson` (course
+completion) and its own path-completion check right after (P5) — both
+at the exact moment the rule engine/membership check already passed.
+There is deliberately no `POST /certificates` endpoint for the same
+reason `POST /invoices` doesn't exist — inventing one would be a
+second, unaudited path to the same effect.
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from src.models.credential import (
     CredentialVerification,
 )
 from src.models.learning import Enrolment
+from src.models.learning_path import PathEnrolment
 from src.models.user import User
 from src.services import identity, push
 
@@ -148,6 +149,76 @@ async def issue_for_completed_enrolment(
     return IssuedCredentials(certificate=certificate, badge=badge, raw_verification_token=raw_token)
 
 
+async def issue_for_completed_path(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    path_enrolment: PathEnrolment,
+    path_title: str,
+    certificate_template_id: uuid.UUID | None,
+) -> IssuedCredentials:
+    """The path equivalent of `issue_for_completed_enrolment` — its own
+    function, not a generalisation of that one: that function is REQ-
+    CRED-01's single audited call site for *course* completion, and a
+    path completion is a structurally different event (no badge concept
+    for a path, per Pass E's scope) that deserves an equally narrow call
+    site of its own, the same "new precedent, own branch" reasoning
+    `services/orders.py::_fulfil_order`'s subscription branch already
+    established. No course-specific column exists on `Certificate` to
+    work around — `snapshot` already carries everything (0035's
+    migration docstring)."""
+    if certificate_template_id is None:
+        return IssuedCredentials(certificate=None, badge=None, raw_verification_token=None)
+
+    existing = (
+        await session.execute(
+            select(Certificate).where(Certificate.path_enrolment_id == path_enrolment.id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return IssuedCredentials(certificate=existing, badge=None, raw_verification_token=None)
+
+    user = await session.get(User, path_enrolment.user_id)
+    learner_name = identity.display_name(user, crypto) if user is not None else "Learner"
+
+    template = await session.get(CertificateTemplate, certificate_template_id)
+    if template is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such certificate template.")
+    raw_token = new_token()
+    certificate = Certificate(
+        id=uuid7(),
+        tenant_id=tenant_id,
+        path_enrolment_id=path_enrolment.id,
+        certificate_template_id=template.id,
+        certificate_number=_certificate_number(),
+        verification_token_encrypted=crypto.encrypt(raw_token),
+        verification_token_blind_index=crypto.blind_index(raw_token),
+        snapshot={
+            "learner_name": learner_name,
+            "course_title": path_title,
+            "issuer_name": template.issuer_name,
+            "signatory_name": template.signatory_name,
+            "signatory_title": template.signatory_title,
+            "cpd_points": template.cpd_points,
+            "issued_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    session.add(certificate)
+    await session.flush()
+
+    await push.notify_user(
+        session,
+        tenant_id=tenant_id,
+        user_id=path_enrolment.user_id,
+        title="Certificate issued!",
+        body=f"You've earned a certificate for completing {path_title}.",
+        url=f"/learn/paths/{path_enrolment.id}",
+    )
+
+    return IssuedCredentials(certificate=certificate, badge=None, raw_verification_token=raw_token)
+
+
 def render_certificate_pdf(
     *, snapshot: dict[str, Any], certificate_number: str, verification_url: str
 ) -> bytes:
@@ -229,6 +300,10 @@ class VerificationResult:
     issuer_name: str | None = None
     cpd_points: int | None = None
     visibility: str | None = None
+    # True when this certificate was issued for a learning path rather
+    # than a single course (P5) — the only thing the verify page needs
+    # to pick its copy; everything else about the row is identical.
+    is_learning_path: bool = False
 
 
 async def verify(
@@ -283,6 +358,7 @@ async def verify(
         issuer_name=snapshot.get("issuer_name"),
         cpd_points=int(cpd_points) if cpd_points is not None else None,
         visibility=certificate.visibility,
+        is_learning_path=certificate.path_enrolment_id is not None,
     )
 
 
@@ -341,6 +417,24 @@ async def get_for_enrolment(
     return certificate, badge
 
 
+async def _owns_certificate(
+    session: AsyncSession, *, certificate: Certificate, user_id: uuid.UUID
+) -> bool:
+    """Ownership check that follows whichever of the two exclusive FKs is
+    set (P5) — `session.get(Enrolment, None)` on a path certificate would
+    silently return `None` and read as "not owned" for the rightful
+    holder, not raise, which is what made this the one spot the nullable-
+    `enrolment_id` migration needed a real code change rather than
+    "it'll just work because the column allows it."."""
+    if certificate.path_enrolment_id is not None:
+        path_enrolment = await session.get(PathEnrolment, certificate.path_enrolment_id)
+        return path_enrolment is not None and path_enrolment.user_id == user_id
+    if certificate.enrolment_id is not None:
+        enrolment = await session.get(Enrolment, certificate.enrolment_id)
+        return enrolment is not None and enrolment.user_id == user_id
+    return False  # pragma: no cover - the CHECK constraint guarantees one is set
+
+
 async def set_certificate_visibility(
     session: AsyncSession,
     *,
@@ -354,8 +448,7 @@ async def set_certificate_visibility(
     certificate = await session.get(Certificate, certificate_id)
     if certificate is None or certificate.tenant_id != tenant_id:
         raise NotFound("No such certificate.")
-    enrolment = await session.get(Enrolment, certificate.enrolment_id)
-    if enrolment is None or enrolment.user_id != user_id:
+    if not await _owns_certificate(session, certificate=certificate, user_id=user_id):
         raise Forbidden("You do not have access to this certificate.")
 
     certificate.visibility = visibility

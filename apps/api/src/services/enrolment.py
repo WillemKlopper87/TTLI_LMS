@@ -32,6 +32,7 @@ from src.models.audit import AuditAction
 from src.models.course import Course, Lesson, Module
 from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
+from src.models.learning_path import LearningPath
 from src.models.media import VideoAsset
 from src.models.user import User
 from src.services import audit, course_wizard, entitlements, identity
@@ -657,6 +658,33 @@ async def start_lesson(
     return completion
 
 
+async def _persist_certificate_pdf(
+    session: AsyncSession,
+    storage: StorageService,
+    settings: Settings,
+    *,
+    tenant_id: uuid.UUID,
+    certificate: Certificate,
+    raw_verification_token: str,
+) -> None:
+    """Shared by the course- and path-completion branches below — same
+    render/upload/stamp sequence either way, the only difference is which
+    kind of completion triggered it."""
+    verification_url = f"{settings.public_web_url}/verify/{raw_verification_token}"
+    pdf_bytes = credentials_service.render_certificate_pdf(
+        snapshot=certificate.snapshot,
+        certificate_number=certificate.certificate_number,
+        verification_url=verification_url,
+    )
+    pdf_key = f"{tenant_id}/certificates/{certificate.id}.pdf"
+    await storage.ensure_container(Container.GENERATED_DOCUMENTS)
+    await storage.upload_object(
+        Container.GENERATED_DOCUMENTS, pdf_key, pdf_bytes, content_type="application/pdf"
+    )
+    certificate.pdf_object_key = pdf_key
+    await session.flush()
+
+
 async def complete_lesson(
     session: AsyncSession,
     crypto: CryptoBox,
@@ -744,19 +772,57 @@ async def complete_lesson(
             badge_template_id=course.badge_template_id,
         )
         if issued.certificate is not None and issued.raw_verification_token is not None:
-            verification_url = f"{settings.public_web_url}/verify/{issued.raw_verification_token}"
-            pdf_bytes = credentials_service.render_certificate_pdf(
-                snapshot=issued.certificate.snapshot,
-                certificate_number=issued.certificate.certificate_number,
-                verification_url=verification_url,
+            await _persist_certificate_pdf(
+                session,
+                storage,
+                settings,
+                tenant_id=tenant_id,
+                certificate=issued.certificate,
+                raw_verification_token=issued.raw_verification_token,
             )
-            pdf_key = f"{tenant_id}/certificates/{issued.certificate.id}.pdf"
-            await storage.ensure_container(Container.GENERATED_DOCUMENTS)
-            await storage.upload_object(
-                Container.GENERATED_DOCUMENTS, pdf_key, pdf_bytes, content_type="application/pdf"
-            )
-            issued.certificate.pdf_object_key = pdf_key
+
+        # P5: this course completing might also complete a learning path
+        # this learner is on. Checked here, not from a separate endpoint —
+        # the only trustworthy moment is the instant membership actually
+        # confirms it, same REQ-CRED-01 reasoning as the course branch
+        # above. Local import: services/learning_paths.py imports this
+        # module (for get_path_progress), so a module-level import here
+        # would cycle; by the time this function runs, both modules are
+        # already fully loaded.
+        from src.services import learning_paths as paths_service
+
+        for path_enrolment in await paths_service.find_path_enrolments_for_course_completion(
+            session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+        ):
+            if not await paths_service.all_member_courses_completed(
+                session, user_id=user_id, learning_path_id=path_enrolment.learning_path_id
+            ):
+                continue
+            path_enrolment.completed_at = datetime.now(UTC)
             await session.flush()
+            path = await session.get(LearningPath, path_enrolment.learning_path_id)
+            if path is None:  # pragma: no cover - FK guarantees this
+                continue
+            issued_path = await credentials_service.issue_for_completed_path(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                path_enrolment=path_enrolment,
+                path_title=path.title,
+                certificate_template_id=path.certificate_template_id,
+            )
+            if (
+                issued_path.certificate is not None
+                and issued_path.raw_verification_token is not None
+            ):
+                await _persist_certificate_pdf(
+                    session,
+                    storage,
+                    settings,
+                    tenant_id=tenant_id,
+                    certificate=issued_path.certificate,
+                    raw_verification_token=issued_path.raw_verification_token,
+                )
     await session.flush()
     return completion, next_lesson
 

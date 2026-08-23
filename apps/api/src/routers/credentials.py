@@ -30,6 +30,7 @@ from src.core.net import client_ip
 from src.models.audit import AuditAction
 from src.models.credential import Badge, BadgeTemplate, Certificate, CertificateTemplate
 from src.models.learning import Enrolment
+from src.models.learning_path import PathEnrolment
 from src.schemas.credentials import (
     BadgeResponse,
     BadgeTemplateCreateRequest,
@@ -72,6 +73,15 @@ def _client_ip(request: Request) -> str | None:
 async def _owns_certificate(
     session: SessionDep, certificate: Certificate, user_id: uuid.UUID
 ) -> bool:
+    """Follows whichever of the two exclusive FKs is set (P5) — a bare
+    `session.get(Enrolment, certificate.enrolment_id)` reads a path
+    certificate's `None` enrolment_id as "not owned" for anyone,
+    including the rightful holder (mirrors services/credentials.py's own
+    `_owns_certificate`, kept as a separate copy the same way this
+    router already duplicated the check rather than importing it)."""
+    if certificate.path_enrolment_id is not None:
+        path_enrolment = await session.get(PathEnrolment, certificate.path_enrolment_id)
+        return path_enrolment is not None and path_enrolment.user_id == user_id
     enrolment = await session.get(Enrolment, certificate.enrolment_id)
     return enrolment is not None and enrolment.user_id == user_id
 
@@ -164,6 +174,7 @@ async def verify_credential(
         issuer_name=result.issuer_name,
         cpd_points=result.cpd_points,
         visibility=result.visibility,
+        is_learning_path=result.is_learning_path,
     )
 
 

@@ -1,6 +1,50 @@
 # STATUS
 
-**Updated:** 2026-08-23 (seventh pass, same day) — **P5 Phase 2: learning
+**Updated:** 2026-08-23 (eighth pass, same day) — **P5 Phase 3: progress
+rollup and the path certificate.** `services/learning_paths.py::
+get_path_progress` rolls up each member course's own `enrolment_
+service.get_progress` (equal-weight average — one level up from how a
+course's own percentage already works, not a distinct rollup
+semantic), reusing that function unchanged rather than a second, subtly
+different derivation (its own docstring gives the same reasoning).
+`services/enrolment.py::complete_lesson` gains a hook, right after the
+existing course-completion block: every not-yet-completed
+`PathEnrolment` a finishing course belongs to gets checked, and once
+*every* member course is done, a new `credentials_service.issue_for_
+completed_path` issues the certificate — its own function, not a
+generalisation of `issue_for_completed_enrolment` (that one is REQ-
+CRED-01's single audited call site for course completion specifically).
+The service-to-service cycle this creates (`enrolment.py` needs
+`learning_paths` for the hook; `learning_paths.py` needs `enrolment` for
+the rollup) is broken with a function-scoped import on the `enrolment.
+py` side rather than restructuring either module — confirmed safe by
+actually booting the app (`python -c "from src.main import app"`), not
+assumed from mypy alone (mypy's cross-module resolution doesn't
+reproduce a real circular-import failure).
+**Two ownership-check bugs, both live-smoke-caught, not test-caught**:
+`services/credentials.py::set_certificate_visibility` and `routers/
+credentials.py`'s own separate `_owns_certificate` (a pre-existing
+duplication, not one introduced here) both did `session.get(Enrolment,
+certificate.enrolment_id)` unconditionally — for a path certificate
+that's `None`, which reads as "not owned" for the rightful holder
+rather than raising. Caught by clicking "make public" on a real path
+certificate in a live smoke run and getting a 403 for the owner; both
+fixed to check whichever of the two exclusive FKs is actually set.
+`GET /verify/{token}` gained `is_learning_path`; the verify page labels
+the row "Learning path" instead of "Programme" when it's set, confirmed
+live in a real browser, not just asserted server-side.
+Verified: 7 API tests (one drives a real purchase through real lesson-
+completion endpoints and asserts exactly one certificate issues,
+mirroring test_credentials.py's own course-completion test), full suite
+green (413 passed — one existing test in `test_credentials.py` needed a
+one-line update for the new always-present `is_learning_path` field, a
+legitimate consequence of extending a schema its own test pins by exact
+dict equality), `alembic check` clean (no schema change this phase),
+web `typecheck`/`lint`/`build` clean, axe-clean on the rendered verify
+page, and an end-to-end live-browser smoke: bought a path, completed
+both member courses through the real API, watched a real PDF-backed
+certificate render correctly labelled at `/verify/{token}`.
+Prior, same day — **P5 Phase 2: learning
 paths become sellable.** `services/orders.py::_fulfil_order` gains an
 `elif product.kind == "path":` branch, structured the same way as the
 existing `course`/`subscription` branches — grant the path entitlement,
