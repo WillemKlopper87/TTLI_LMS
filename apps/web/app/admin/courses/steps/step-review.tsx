@@ -21,8 +21,33 @@ export function StepReview({ ctx, stepStates, onStep, savedAt, error, notice }: 
   const router = useRouter();
   const course = ctx.course;
   const readiness = ctx.readiness;
+  const outline = ctx.outline;
   const [busy, setBusy] = useState(false);
   const [published, setPublished] = useState<string | null>(null);
+  const [flipping, setFlipping] = useState(false);
+
+  // R6: the readiness panel already told the author no lesson converts a
+  // guest into a lead (has_free_preview) — this is the one-click fix
+  // instead of sending them back to step 6 to find the per-lesson
+  // checkbox. Flips the first lesson in outline order, same PATCH
+  // step-pricing.tsx's own toggle uses.
+  async function makeFirstLessonFreePreview() {
+    const firstLesson = outline?.modules.flatMap((m) => m.lessons)[0]?.lesson;
+    if (!firstLesson) return;
+    setFlipping(true);
+    ctx.setError(null);
+    const resp = await sendJson(`/api/bff/lessons/${firstLesson.id}`, "PATCH", {
+      access_level: "public",
+    });
+    setFlipping(false);
+    if (!resp.ok) {
+      ctx.setError(await readError(resp, "That lesson's access level could not be changed."));
+      return;
+    }
+    ctx.markSaved();
+    await ctx.reloadOutline();
+    await ctx.reloadReadiness();
+  }
 
   async function togglePublish() {
     if (!course || !ctx.canPublish) return;
@@ -80,7 +105,26 @@ export function StepReview({ ctx, stepStates, onStep, savedAt, error, notice }: 
         <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>Loading readiness…</p>
       ) : (
         <>
-          <ReadinessPanel readiness={readiness} />
+          <ReadinessPanel
+            readiness={readiness}
+            actions={
+              outline?.modules.flatMap((m) => m.lessons)[0]
+                ? {
+                    has_free_preview: (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        style={{ padding: "0.3rem 0.7rem", fontSize: "0.75rem" }}
+                        disabled={flipping || !ctx.canEdit}
+                        onClick={() => void makeFirstLessonFreePreview()}
+                      >
+                        {flipping ? "Marking…" : "Mark a lesson free"}
+                      </button>
+                    ),
+                  }
+                : undefined
+            }
+          />
 
           {published ? (
             <div className="callout callout--done mt-5">

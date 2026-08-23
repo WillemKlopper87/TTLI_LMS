@@ -1,6 +1,21 @@
 # STATUS
 
-**Updated:** 2026-08-23 (third pass, same day) — **O5: release
+**Updated:** 2026-08-23 (fourth pass, same day) — **R6: the free-preview
+nudge's missing half.** The readiness warning BACKLOG.md's R6 named
+("No lesson is marked public — free previews feed the guest → lead
+funnel.") turned out to already exist — `course_wizard.py::get_readiness`
+and step-pricing.tsx's per-lesson toggle both predate this pass; the row
+was stale. What was actually missing was the "one-click flip":
+`readiness-panel.tsx` now takes an optional `actions` prop keyed by check
+code (rendered only for an unmet check, and the panel still decides
+nothing itself — a docstring addition says so), and step 7 wires a "Mark
+a lesson free" button into `has_free_preview` that PATCHes the first
+lesson to `access_level: "public"` and reloads, reusing step 6's own
+endpoint call rather than inventing a second path to the same effect.
+Verified against a real course created through the API and driven to
+step 7 in a browser: 70%→80% readiness score, the warning clears to
+"met", axe-clean before and after.
+Prior, same day — **O5: release
 management, partly.** `CHANGELOG.md` (Keep a Changelog format, linked
 from README's documentation table) plus a `v0.1.0` tag on this commit —
 the project's first version marker; nothing before it is backfilled,

@@ -10,6 +10,8 @@
  * sellable yet) that never blocks a publish.
  */
 
+import type { ReactNode } from "react";
+
 import type { Readiness, ReadinessCheck, ReadinessLevel } from "./types";
 import { formatMinutes } from "./wizard-api";
 
@@ -24,7 +26,18 @@ function mark(check: ReadinessCheck): string {
   return check.level === "blocker" ? "!" : "○";
 }
 
-export function ReadinessPanel({ readiness }: { readiness: Readiness }) {
+export function ReadinessPanel({
+  readiness,
+  actions,
+}: {
+  readiness: Readiness;
+  /** Keyed by check code, rendered next to an unmet check's row. Optional
+      — the panel still renders nothing here on its own, it only reserves
+      the slot; the caller decides what (if anything) fixing a check
+      looks like. Kept out of course_wizard.py entirely: this is a UI
+      convenience action, not a server-enforced rule. */
+  actions?: Partial<Record<string, ReactNode>>;
+}) {
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -86,7 +99,9 @@ export function ReadinessPanel({ readiness }: { readiness: Readiness }) {
               <div key={check.code} className={`req${check.ok ? " met" : ""}`}>
                 <span className="mk">{mark(check)}</span>
                 <span className="lbl">{check.message}</span>
-                <span className="val">{check.code}</span>
+                {!check.ok && actions?.[check.code] ? actions[check.code] : (
+                  <span className="val">{check.code}</span>
+                )}
               </div>
             ))}
           </div>
