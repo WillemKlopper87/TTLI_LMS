@@ -87,6 +87,10 @@ class AuditAction:
     COURSE_PUBLISHED = "course.published"
     COURSE_UNPUBLISHED = "course.unpublished"
     TENANT_SETTING_CHANGED = "tenant.setting.changed"
+    # 02 §12.4's EFT ageing alert (0034, BACKLOG.md R4) — system-actor
+    # (actor_user_id null), so a compliance reviewer can see a backlog
+    # forming even on a tenant where nobody is push-subscribed.
+    PAYMENT_AGEING_ALERTED = "payment.ageing_alerted"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

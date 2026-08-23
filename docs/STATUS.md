@@ -1,6 +1,33 @@
 # STATUS
 
-**Updated:** 2026-08-23 (fourth pass, same day) — **R6: the free-preview
+**Updated:** 2026-08-23 (fifth pass, same day) — **R4: the EFT ageing
+alert.** `02_DATA_MODEL.md` §12.4 designed a daily job to flag EFT/PO
+approvals stuck past 48h; nothing computed it, so — per
+`bank-eft-automation.md`, which names this exact signal as the trigger
+to revisit manual EFT handling — the backlog could grow indefinitely
+with no way to notice. New: migration `0034` adds
+`orders.ageing_alert_sent_at` and `due_eft_ageing_alerts()` (SECURITY
+DEFINER, atomically marks and returns aged orders — same idiom `0027`'s
+`due_workshop_reminders()` established); `workers/main.py`'s new daily
+cron `send_eft_ageing_alerts` writes a `payment.ageing_alerted` audit
+event for every returned order unconditionally, then best-effort
+push-notifies each `payment:approve` holder in that tenant. The
+tenant/permission lookup is deliberately kept *outside* the SECURITY
+DEFINER function: joining it in would mean a tenant with nobody
+currently holding `payment:approve` produces zero rows and the order
+goes unflagged with no record at all — exactly the silent-signal
+failure this item exists to fix. A test caught two real bugs before
+either reached the DB: the function's `RETURNS TABLE` declared
+`payment_reference text` against the column's actual
+`character varying(32)` (Postgres requires an exact match, not an
+implicit cast — fixed with `::text` in the `RETURNING` clause), and the
+test's own cleanup step, scoped to a bare `EFT-` prefix, collided with
+another test file's unrelated fixture sharing that prefix and hit a
+live `RESTRICT` foreign key — fixed by namespacing the test's own rows
+under `AGEINGTEST-`. Verified: full suite (402 passed), and a live run
+against the dev DB with a real 72h-stale order, confirmed visible in
+`/admin/audit`.
+Prior, same day — **R6: the free-preview
 nudge's missing half.** The readiness warning BACKLOG.md's R6 named
 ("No lesson is marked public — free previews feed the guest → lead
 funnel.") turned out to already exist — `course_wizard.py::get_readiness`

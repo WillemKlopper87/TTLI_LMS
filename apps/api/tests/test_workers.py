@@ -20,6 +20,7 @@ from src.core.ids import uuid7
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.models.auth import RefreshToken
+from src.models.commerce import Order
 from src.models.push import PushSubscription
 from src.models.workshop import Booking, Facilitator, Workshop, WorkshopSession
 from src.services import identity
@@ -30,6 +31,7 @@ from src.workers.main import (
     extend_event_partitions,
     purge_expired_auth,
     revoke_lapsed_subscriptions,
+    send_eft_ageing_alerts,
     send_email_job,
     send_push_job,
     send_workshop_reminders,
@@ -526,6 +528,119 @@ async def test_send_workshop_reminders_only_notifies_sessions_in_window_once(
     # (already reminded) and nothing yet in the far one (still outside
     # the window).
     second_run = await send_workshop_reminders({})
+    assert second_run == 0
+
+
+async def test_send_eft_ageing_alerts_flags_stale_orders_once_and_audits(
+    engine, queue, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """02 §12.4 / BACKLOG.md R4: an EFT/PO approval stuck past 48h must
+    get flagged — exactly once — and the flag must be a durable audit
+    row, not only a push notification nobody may be subscribed to."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+
+    async with tenant_session_factory(tenant_id) as s:
+        buyer = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"eft-buyer-{uuid.uuid4().hex[:10]}@example.com"
+        )
+        # A namespaced prefix, not a generic "EFT-" one: other test files
+        # legitimately use that prefix for their own payment references,
+        # and due_eft_ageing_alerts() is deliberately cross-tenant (no
+        # tenant GUC to filter by — see 0034's docstring), so a DELETE or
+        # a count assertion scoped too broadly either collides with a
+        # live FK (payments_order_id_fkey, RESTRICT) or double-counts
+        # unrelated rows. Self-cleaning against a prior aborted run of
+        # this same test, same shape as the workshops reminder test's own
+        # fix for exactly this class of flake (NEXT_AGENT_BRIEF.md
+        # 2026-08-20).
+        await s.execute(sa.text("DELETE FROM orders WHERE payment_reference LIKE 'AGEINGTEST-%'"))
+
+    suffix = uuid.uuid4().hex[:8]
+    stale_id = uuid7()
+    fresh_id = uuid7()
+    already_alerted_id = uuid7()
+    async with tenant_session_factory(tenant_id) as s:
+        s.add_all(
+            [
+                Order(
+                    id=stale_id,
+                    tenant_id=tenant_id,
+                    user_id=buyer.id,
+                    status="eft_pending_approval",
+                    currency="ZAR",
+                    payment_reference=f"AGEINGTEST-STALE-{suffix}",
+                ),
+                Order(
+                    id=fresh_id,
+                    tenant_id=tenant_id,
+                    user_id=buyer.id,
+                    status="eft_pending_approval",
+                    currency="ZAR",
+                    payment_reference=f"AGEINGTEST-FRESH-{suffix}",
+                ),
+                Order(
+                    id=already_alerted_id,
+                    tenant_id=tenant_id,
+                    user_id=buyer.id,
+                    status="po_pending_approval",
+                    currency="ZAR",
+                    payment_reference=f"AGEINGTEST-ALREADY-{suffix}",
+                ),
+            ]
+        )
+        await s.flush()
+        # Backdate via raw SQL, bypassing the ORM's onupdate=func.now() —
+        # an ordinary UPDATE through the mapped object would just reset
+        # updated_at to now(), defeating the whole setup.
+        await s.execute(
+            sa.text("UPDATE orders SET updated_at = now() - interval '50 hours' WHERE id = :i"),
+            {"i": stale_id},
+        )
+        await s.execute(
+            sa.text(
+                "UPDATE orders SET updated_at = now() - interval '50 hours', "
+                "ageing_alert_sent_at = now() - interval '2 hours' WHERE id = :i"
+            ),
+            {"i": already_alerted_id},
+        )
+        # fresh_id keeps its just-created updated_at — inside the window.
+
+    # >=1 rather than ==1: due_eft_ageing_alerts() is intentionally
+    # cross-tenant, so an unrelated pending order elsewhere in the shared
+    # test database aging past the same threshold is a real positive,
+    # not a bug in this test. The per-ID assertions below are what
+    # actually pin this test's own behaviour.
+    alerted = await send_eft_ageing_alerts({})
+    assert alerted >= 1
+
+    async with tenant_session_factory(tenant_id) as s:
+        stale_alert = (
+            await s.execute(
+                sa.text("SELECT ageing_alert_sent_at FROM orders WHERE id = :i"), {"i": stale_id}
+            )
+        ).scalar_one()
+        fresh_alert = (
+            await s.execute(
+                sa.text("SELECT ageing_alert_sent_at FROM orders WHERE id = :i"), {"i": fresh_id}
+            )
+        ).scalar_one()
+        audit_row = (
+            await s.execute(
+                sa.text(
+                    "SELECT action, entity_id, actor_user_id FROM audit_events "
+                    "WHERE entity_id = :i AND action = 'payment.ageing_alerted'"
+                ),
+                {"i": stale_id},
+            )
+        ).first()
+    assert stale_alert is not None
+    assert fresh_alert is None
+    assert audit_row is not None
+    assert audit_row.actor_user_id is None  # system-triggered, not a human action
+
+    # Idempotent: a second run finds nothing — stale_id is now marked,
+    # fresh_id is still too young.
+    second_run = await send_eft_ageing_alerts({})
     assert second_run == 0
 
 

@@ -12,17 +12,22 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from arq import func
 from arq.connections import RedisSettings
 from arq.cron import cron
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from src.core.config import get_settings
 from src.core.db import dispose_engine, get_sessionmaker, init_engine, set_tenant
 from src.core.logging import configure_logging, get_logger
+from src.models.audit import AuditAction
 from src.models.push import PushSubscription
+from src.models.rbac import RoleAssignment, RolePermission
+from src.models.user import User
+from src.services import audit
 from src.services import push as push_service
 from src.services.email import send_sync
 from src.services.media.pipeline import transcode_video_asset
@@ -179,6 +184,73 @@ async def send_workshop_reminders(ctx: dict[str, Any]) -> int:
     return len(due)
 
 
+async def send_eft_ageing_alerts(ctx: dict[str, Any]) -> int:
+    """02 §12.4's daily EFT ageing alert (BACKLOG.md R4) — until this job
+    existed, nothing computed "an approval has been pending too long", so
+    a growing manual-approval backlog had no way to surface itself
+    (`docs/research/bank-eft-automation.md` names this exact signal as
+    the trigger to revisit EFT automation).
+
+    `due_eft_ageing_alerts()` (SECURITY DEFINER, 0034) atomically flags
+    each order once and returns it — same one-statement mark-and-return
+    shape `due_workshop_reminders()` established, for the same "can't
+    mark without also acting on it" reason. Unlike that function, this
+    one deliberately does *not* also resolve who to notify: an audit
+    event is written for every returned order regardless (the durable,
+    always-fires signal), and only the push fan-out below depends on a
+    tenant actually having someone in `payment:approve` — best-effort on
+    top of the record, not the record itself."""
+    factory = get_sessionmaker()
+    async with factory() as lookup_session, lookup_session.begin():
+        due = (await lookup_session.execute(text("SELECT * FROM due_eft_ageing_alerts(48)"))).all()
+
+    for row in due:
+        async with factory() as session, session.begin():
+            await set_tenant(session, row.tenant_id)
+            hours_waiting = int((datetime.now(UTC) - row.updated_at).total_seconds() // 3600)
+            await audit.record(
+                session,
+                tenant_id=row.tenant_id,
+                action=AuditAction.PAYMENT_AGEING_ALERTED,
+                entity_type="order",
+                entity_id=row.order_id,
+                after={
+                    "payment_reference": row.payment_reference,
+                    "hours_waiting": hours_waiting,
+                },
+            )
+            approvers = (
+                (
+                    await session.execute(
+                        select(RoleAssignment.user_id)
+                        .join(RolePermission, RolePermission.role_code == RoleAssignment.role_code)
+                        .join(User, User.id == RoleAssignment.user_id)
+                        .where(
+                            RoleAssignment.tenant_id == row.tenant_id,
+                            RolePermission.permission_code == "payment:approve",
+                            User.status == "active",
+                        )
+                        .distinct()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for user_id in approvers:
+                await push_service.notify_user(
+                    session,
+                    tenant_id=row.tenant_id,
+                    user_id=user_id,
+                    title="An EFT/PO approval is ageing",
+                    body=(
+                        f"Payment reference {row.payment_reference or str(row.order_id)[:8]} has "
+                        f"been awaiting approval for over {hours_waiting}h."
+                    ),
+                )
+    log.info("eft_ageing_alerts_sent", count=len(due))
+    return len(due)
+
+
 async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
     """Raises on any SMTP failure so arq retries with backoff (max_tries
     below) instead of the message being silently dropped — the one thing
@@ -232,6 +304,7 @@ class WorkerSettings:
         # the same doomed ffmpeg invocation.
         func(transcode_video_job, max_tries=1),
         send_workshop_reminders,
+        send_eft_ageing_alerts,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         # Partitions monthly on the 1st; 0004 bootstrapped ~13 months of
@@ -251,6 +324,9 @@ class WorkerSettings:
         # session first entered the window, not how often the sweep runs
         # relative to the sessions it actually finds.
         cron(send_workshop_reminders, minute={0, 15, 30, 45}),
+        # Daily per 02 §12.4's own table; same off-peak hour band as the
+        # other daily sweeps above.
+        cron(send_eft_ageing_alerts, hour=4, minute=15),
     ]
     on_startup = startup
     on_shutdown = shutdown
@@ -264,6 +340,7 @@ __all__ = [
     "prune_idempotency_keys",
     "purge_expired_auth",
     "revoke_lapsed_subscriptions",
+    "send_eft_ageing_alerts",
     "send_email_job",
     "send_push_job",
     "send_workshop_reminders",

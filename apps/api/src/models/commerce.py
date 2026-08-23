@@ -198,6 +198,13 @@ class Order(Base, TimestampMixin):
     subscription_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="RESTRICT"), nullable=True
     )
+    # 02 §12.4's EFT ageing alert (0034) marks an order here once it has
+    # been flagged, so the daily sweep never re-alerts the same stuck
+    # order — set only by due_eft_ageing_alerts(), never by application
+    # code.
+    ageing_alert_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class OrderItem(Base):
