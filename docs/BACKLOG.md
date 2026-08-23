@@ -110,7 +110,6 @@ Do not build around these; they change the build, not just the schedule.
 2. ~~**P2**~~ — done 2026-08-21.
 3. ~~**R1**~~ — done 2026-08-21.
 4. ~~**P6**~~ — done 2026-08-21 (bar #31, blocked on Payfast credentials).
-5. ~~**P3**~~ — done 2026-08-21. **P4 — SSO is next**, the remaining half of the enterprise procurement gate.
-6. Then the larger builds: **P5**, **P7**, **P11**.
-
-Quick wins that could ride along with any of the above: **R4**, **R6**, **O4**, **O5**, **O9**, **P14**.
+5. ~~**P3**~~ — done 2026-08-21. ~~**P4**~~ — SSO done 2026-08-22/23 (see git log; not yet given its own STATUS pass header).
+6. ~~Quick wins~~ — **R4**, **R6**, **O4**, **O5** (partly — no PRs/autosave-rewrite deliberately left alone), **O9**, **P14** all done 2026-08-21/23.
+7. Next: the larger builds — **P5**, **P7**, **P11** — in that order, per the plan's own demo-value-per-effort ranking.
