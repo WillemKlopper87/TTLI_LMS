@@ -1,6 +1,38 @@
 # STATUS
 
-**Updated:** 2026-08-21 (sixth pass, same day) — **P3 completes:
+**Updated:** 2026-08-23 — **Institute skin: storefront hero, first
+slice** (`docs/design/institute/IMPLEMENTATION.md` "What is not built
+yet" #1, partial). The homepage hero (`app/page.tsx`) now matches the
+design handoff's structure: `hero-texture.jpg` full-bleed behind a
+`color-mix`'d scrim (light-on-dark text, tenant/skin-correct rather than
+the handoff's literal `rgba(22,25,27,…)`), plus a new dark "Buying for a
+team?" CTA band reusing the catalogue page's existing seat-bundle pitch,
+and the partner logo row dimmed/greyscaled per the handoff's partner-band
+spec (the band container itself already existed). **Not done**: the
+catalogue page's own header row (eyebrow + filter chips) and the
+three-variant course card — both still open per IMPLEMENTATION.md.
+**Two real WCAG contrast failures caught by `e2e/skin.spec.ts` /
+`public.spec.ts`'s axe gate on `/`, both fixed**: `.hero-band .sub` and
+`.hero .sub` were equal-specificity rules with the pre-existing one
+winning by source order, painting the subhead in dark ink-on-dark-maroon
+(fixed by raising the new rule's specificity to `.hero-band .hero .sub`);
+and `.hero-band .eyebrow` unintentionally reached into `.hero-card`'s own
+opaque `var(--surface-2)` surface, painting its "Podcast" label
+light-on-light (fixed with a scoped `.hero-band .hero-card .eyebrow`
+override). Both are the exact class of bug this gate exists to catch —
+neither showed up in `typecheck`/`lint`/`build`, only in axe. Verified:
+full `typecheck`, `lint` (0 errors), production `build`, and the full
+Playwright suite (27 passed; the 4 `admin.spec.ts` failures are a fresh
+machine missing seeded demo accounts, unrelated — see this pass's
+environment note below).
+**Environment note, this machine**: this was the first `scripts/dev-up.sh`
+run here — `apps/api/.env` had blank `SECRET_KEY`/`FIELD_ENCRYPTION_KEY`/
+`BLIND_INDEX_KEY` (migration `0002` fails without them), filled locally
+per `.env.example`'s own instructions. No demo-account seed script has
+been run yet, which is why `admin.spec.ts`'s authenticated specs skip
+here; `scripts/seed_demo_content.py` / `seed_demo_enrolment.py` exist for
+that and are unrun on this checkout.
+Prior, 2026-08-21 (sixth pass, same day) — **P3 completes:
 branding and custom domains** (feature-matrix #44 and #45). White-label
 theming has worked since `0006` and custom hostnames since `0001`, and
 neither could be changed without writing another migration — the

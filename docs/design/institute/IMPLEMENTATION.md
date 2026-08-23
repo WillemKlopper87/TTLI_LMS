@@ -99,10 +99,13 @@ The skin changes the app's whole character — type, colour, geometry — on
 every page. It does **not** yet reproduce the four handoff screens
 structurally. Outstanding, roughly in order of visible payoff:
 
-1. **Storefront hero** — the 392px image hero with the gradient scrim,
-   partner band, and the three-variant course card (flagship / group /
-   free taster). Currently the classic hero layout wearing Institute
-   tokens.
+1. **Storefront hero** — **partially done 2026-08-23**: the image hero
+   with the gradient scrim, the greyscaled partner band, and a "buying
+   for a team?" CTA band are built on `app/page.tsx` (STATUS.md has the
+   pass). Still outstanding: the catalogue page's own header row
+   (eyebrow + filter chips) and the three-variant course card (flagship
+   / group / free taster) — `course-card.tsx` still wears Institute
+   tokens on the classic card shape.
 2. **Admin overview** — the dark 216px sidebar, the 1px-gap hairline
    stat grid, and the payments table with mono numerics.
 3. **Course player** — the `290px 1fr 300px` grid, the dark app bar, the

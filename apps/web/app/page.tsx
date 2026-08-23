@@ -89,63 +89,84 @@ export default async function LandingPage() {
 
   return (
     <main>
-      {/* ---- Hero ---- */}
-      <div className="pad-lg">
-        <div className="hero">
-          <div>
-            <p className="eyebrow">Leadership &middot; Strategy &middot; Organisational behaviour</p>
-            <h1>Leadership training that can prove someone actually did it.</h1>
-            <p className="sub">
-              Executive programmes with enforced completion, verifiable certificates and live
-              facilitated workshops. Built for individuals and for organisations that need the
-              completion report to mean something.
-            </p>
-            <div className="hero-cta">
-              <Link href="/catalogue" className="btn btn--primary btn--lg">
-                Explore courses
-              </Link>
-              <Link href="/guest-access" className="btn btn--ghost btn--lg">
-                Try a free lesson
-              </Link>
+      {/* ---- Hero ----
+          Full-bleed hero-texture.jpg behind a scrim, per the design
+          handoff (docs/design/institute/README.md §"2. Storefront"). The
+          scrim's stops are mixed from --ink via color-mix rather than the
+          handoff's literal rgba(22,25,27,…) — same numeric value under
+          the institute skin (#16191B), but tenant/skin-correct instead of
+          hardcoded. Copy and links are unchanged from before this pass;
+          only the container and its text colours (now light-on-dark)
+          moved. hero-card keeps its own opaque surface and needs no
+          colour override. */}
+      <div className="hero-band">
+        <Image
+          src="/brand/hero-texture.jpg"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="hero-band__bg"
+          style={{ objectFit: "cover" }}
+        />
+        <div className="hero-band__scrim" aria-hidden="true" />
+        <div className="pad-lg hero-band__content">
+          <div className="hero">
+            <div>
+              <p className="eyebrow">Leadership &middot; Strategy &middot; Organisational behaviour</p>
+              <h1>Leadership training that can prove someone actually did it.</h1>
+              <p className="sub">
+                Executive programmes with enforced completion, verifiable certificates and live
+                facilitated workshops. Built for individuals and for organisations that need the
+                completion report to mean something.
+              </p>
+              <div className="hero-cta">
+                <Link href="/catalogue" className="btn btn--primary btn--lg">
+                  Explore courses
+                </Link>
+                <Link href="/guest-access" className="btn btn--ghost btn--lg">
+                  Try a free lesson
+                </Link>
+              </div>
+              <div className="hero-trust">
+                <div>
+                  <strong>{executiveCount}</strong>
+                  <span>Executive programmes</span>
+                </div>
+                <div>
+                  <strong>{FACILITATORS.length}</strong>
+                  <span>Facilitators</span>
+                </div>
+                <div>
+                  <strong>100%</strong>
+                  <span>Server-verified completion</span>
+                </div>
+              </div>
             </div>
-            <div className="hero-trust">
-              <div>
-                <strong>{executiveCount}</strong>
-                <span>Executive programmes</span>
-              </div>
-              <div>
-                <strong>{FACILITATORS.length}</strong>
-                <span>Facilitators</span>
-              </div>
-              <div>
-                <strong>100%</strong>
-                <span>Server-verified completion</span>
-              </div>
-            </div>
-          </div>
 
-          <div className="hero-card">
-            <p className="eyebrow">{latest ? "Latest episode" : "Podcast"}</p>
-            <h3 className="serif" style={{ fontSize: "1.1875rem" }}>
-              {latest ? latest.title : "Conversations on leadership, free to everyone"}
-            </h3>
-            <div className="wave" aria-hidden="true">
-              {WAVE.map((height, index) => (
-                <i key={index} style={{ height: `${height}%` }} />
-              ))}
-            </div>
-            {latest?.duration_seconds ? (
-              <div className="times">
-                <span>00:00</span>
-                <span>{formatClock(latest.duration_seconds)}</span>
+            <div className="hero-card">
+              <p className="eyebrow">{latest ? "Latest episode" : "Podcast"}</p>
+              <h3 className="serif" style={{ fontSize: "1.1875rem" }}>
+                {latest ? latest.title : "Conversations on leadership, free to everyone"}
+              </h3>
+              <div className="wave" aria-hidden="true">
+                {WAVE.map((height, index) => (
+                  <i key={index} style={{ height: `${height}%` }} />
+                ))}
               </div>
-            ) : null}
-            <Link
-              href={latest ? `/podcasts/${latest.slug}` : "/podcasts"}
-              className="btn btn--ghost btn--block"
-            >
-              Listen &middot; free, no account
-            </Link>
+              {latest?.duration_seconds ? (
+                <div className="times">
+                  <span>00:00</span>
+                  <span>{formatClock(latest.duration_seconds)}</span>
+                </div>
+              ) : null}
+              <Link
+                href={latest ? `/podcasts/${latest.slug}` : "/podcasts"}
+                className="btn btn--ghost btn--block"
+              >
+                Listen &middot; free, no account
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -288,7 +309,7 @@ export default async function LandingPage() {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(7rem, 1fr))",
-              gap: "2rem",
+              gap: "2.375rem",
               alignItems: "center",
               marginTop: "2rem",
             }}
@@ -310,11 +331,38 @@ export default async function LandingPage() {
                 alt={alt}
                 width={140}
                 height={60}
-                style={{ objectFit: "contain", width: "100%", height: "auto", opacity: 0.85 }}
+                style={{
+                  objectFit: "contain",
+                  width: "100%",
+                  height: "auto",
+                  opacity: 0.55,
+                  filter: "grayscale(1)",
+                }}
               />
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ---- Buying for a team? ----
+          Same message as the seat-bundle callout on /catalogue
+          (catalogue-browser.tsx), promoted to a dark CTA band per the
+          design handoff — copy reused verbatim, not reinvented. */}
+      <div className="cta-band">
+        <div>
+          <h2 className="serif">Buying for a team?</h2>
+          <p>
+            Seat bundles from five learners include a manager dashboard, invoice or EFT payment
+            and purchase-order support.
+          </p>
+        </div>
+        <Link
+          href="/organisations"
+          className="btn"
+          style={{ background: "var(--on-brand)", color: "var(--ink)", flex: "none" }}
+        >
+          Talk to us
+        </Link>
       </div>
 
       {/* ---- Facilitators ----
