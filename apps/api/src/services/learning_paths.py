@@ -22,8 +22,9 @@ from datetime import UTC, datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import Settings
 from src.core.crypto import CryptoBox
-from src.core.errors import AppError, NotFound
+from src.core.errors import AppError, Forbidden, NotFound
 from src.core.ids import uuid7
 from src.models.commerce import Price, Product
 from src.models.course import Course
@@ -35,8 +36,10 @@ from src.models.learning_path import (
     LearningPathTenantAssignment,
     PathEnrolment,
 )
+from src.services import credentials as credentials_service
 from src.services import enrolment as enrolment_service
 from src.services.courses import PublicPriceRow
+from src.services.storage import StorageService
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -120,6 +123,22 @@ async def update_learning_path(
     return path
 
 
+async def clear_certificate_template(
+    session: AsyncSession, *, learning_path_id: uuid.UUID
+) -> LearningPath:
+    """`update_learning_path`'s `None = leave unchanged` PATCH semantics
+    have no way to express "set this to null" — a course wizard's own
+    `POST /courses/{id}/clear-templates` faces the same gap and solves
+    it the same way, a dedicated endpoint rather than overloading PATCH
+    (F6, docs/research/p5-review-findings.md; a path has only the one
+    nullable FK to manage, not a course's certificate-and-badge pair,
+    so this needs no request body at all)."""
+    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path.certificate_template_id = None
+    await session.flush()
+    return path
+
+
 async def list_path_courses(
     session: AsyncSession, *, learning_path_id: uuid.UUID
 ) -> list[tuple[LearningPathCourse, Course]]:
@@ -135,7 +154,19 @@ async def list_path_courses(
 async def add_course_to_path(
     session: AsyncSession, *, learning_path_id: uuid.UUID, course_id: uuid.UUID
 ) -> LearningPathCourse:
-    await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    if path.state == "published":
+        # A learner who already bought this path has no Enrolment for a
+        # course added after purchase — get_path_progress would raise
+        # Forbidden the moment it tries to look one up, and the path
+        # could never complete for them (F2, docs/research/p5-review-
+        # findings.md). Unpublish first, edit membership, republish —
+        # the same honest workflow publish_learning_path already forces
+        # for "every member course must be published".
+        raise LearningPathError(
+            "Unpublish this path before changing its member courses — "
+            "editing a published path's membership breaks existing learners' progress."
+        )
     course = await session.get(Course, course_id)
     if course is None:
         raise NotFound("No such course.")
@@ -149,13 +180,20 @@ async def add_course_to_path(
     ).scalar_one_or_none()
     if existing is not None:
         raise LearningPathError("That course is already in this path.")
-    position = (
+    # max(position) + 1, not count(*): after a removal mid-list, count()
+    # collides with a position already in use (member 3 of 3 removed
+    # leaves positions 0/1; count() on the next add is 2, colliding with
+    # nothing yet, but remove the *first* of three and count() gives 2
+    # again — the same value position 2 already holds) — F6, docs/
+    # research/p5-review-findings.md.
+    max_position = (
         await session.execute(
-            select(func.count())
-            .select_from(LearningPathCourse)
-            .where(LearningPathCourse.learning_path_id == learning_path_id)
+            select(func.max(LearningPathCourse.position)).where(
+                LearningPathCourse.learning_path_id == learning_path_id
+            )
         )
     ).scalar_one()
+    position = 0 if max_position is None else max_position + 1
     member = LearningPathCourse(
         id=uuid7(), learning_path_id=learning_path_id, course_id=course_id, position=position
     )
@@ -167,6 +205,16 @@ async def add_course_to_path(
 async def remove_course_from_path(
     session: AsyncSession, *, learning_path_id: uuid.UUID, course_id: uuid.UUID
 ) -> None:
+    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    if path.state == "published":
+        # Same reasoning as add_course_to_path's guard: removing the
+        # only incomplete member of a purchased path leaves no lesson
+        # left to trigger complete_lesson's completion check, so
+        # completed_at (and the certificate) would never fire.
+        raise LearningPathError(
+            "Unpublish this path before changing its member courses — "
+            "editing a published path's membership breaks existing learners' progress."
+        )
     member = (
         await session.execute(
             select(LearningPathCourse).where(
@@ -386,6 +434,23 @@ async def list_public_paths(session: AsyncSession, *, tenant_id: uuid.UUID) -> l
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def course_counts_for_paths(
+    session: AsyncSession, *, path_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """One grouped query for `GET /public/learning-paths`'s card grid,
+    not a `list_path_courses` call per path in a loop (F6, docs/
+    research/p5-review-findings.md) — the same grouped-count pattern
+    `list_own_path_enrolments` already uses ten lines away."""
+    if not path_ids:
+        return {}
+    stmt = (
+        select(LearningPathCourse.learning_path_id, func.count())
+        .where(LearningPathCourse.learning_path_id.in_(path_ids))
+        .group_by(LearningPathCourse.learning_path_id)
+    )
+    return dict((await session.execute(stmt)).tuples().all())
+
+
 async def get_public_path(
     session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
 ) -> tuple[LearningPath, list[tuple[LearningPathCourse, Course]]]:
@@ -441,6 +506,11 @@ class OwnPathEnrolmentRow:
     course_count: int
     started_at: datetime
     completed_at: datetime | None
+    # Whether this path issues a certificate at all — without it, a
+    # completed path showing "Certified" is simply wrong (F6, docs/
+    # research/p5-review-findings.md); the dashboard uses this to label
+    # a completed-but-uncertificated path "Completed" instead.
+    has_certificate: bool
 
 
 async def list_own_path_enrolments(
@@ -477,6 +547,7 @@ async def list_own_path_enrolments(
             course_count=counts.get(path.id, 0),
             started_at=path_enrolment.started_at,
             completed_at=path_enrolment.completed_at,
+            has_certificate=path.certificate_template_id is not None,
         )
         for path_enrolment, path in rows
     ]
@@ -486,7 +557,11 @@ async def list_own_path_enrolments(
 class PathCourseProgress:
     course_id: uuid.UUID
     course_title: str
-    enrolment_id: uuid.UUID
+    # None when this learner has no reachable enrolment for the course —
+    # a course added to the path after purchase, or an expired
+    # entitlement (F2, docs/research/p5-review-findings.md). The row
+    # still renders, just with no progress and nowhere to "Continue" to.
+    enrolment_id: uuid.UUID | None
     progress_percent: int
     completed_at: datetime | None
 
@@ -500,9 +575,67 @@ class PathProgress:
     courses: list[PathCourseProgress]
 
 
+async def _repair_completion_if_all_members_done(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    storage: StorageService,
+    settings: Settings,
+    *,
+    tenant_id: uuid.UUID,
+    path_enrolment: PathEnrolment,
+) -> None:
+    """F5 (docs/research/p5-review-findings.md): a learner who already
+    held every member course before buying the path gets a
+    `PathEnrolment` whose completion can never be detected the normal
+    way — `services/enrolment.py::complete_lesson`'s hook only runs when
+    a lesson actually completes, and there is no lesson left to complete
+    for a course finished before the purchase. Checked here, the one
+    place this state is guaranteed to be read at least once (a learner
+    who buys a path they've already finished has every reason to open
+    its progress page), rather than at purchase time — reaching for it
+    there would mean threading `storage`/`settings` through the payment-
+    approval hot path (`services/orders.py`'s three fulfilment entry
+    points) for an edge case this read-repair already covers just as
+    correctly, and idempotently (`issue_for_completed_path`'s own
+    existing-certificate check makes a second read a no-op)."""
+    if path_enrolment.completed_at is not None:
+        return
+    if not await all_member_courses_completed(
+        session,
+        tenant_id=tenant_id,
+        user_id=path_enrolment.user_id,
+        learning_path_id=path_enrolment.learning_path_id,
+    ):
+        return
+    path_enrolment.completed_at = datetime.now(UTC)
+    await session.flush()
+    path = await session.get(LearningPath, path_enrolment.learning_path_id)
+    if path is None:  # pragma: no cover - FK guarantees this
+        return
+    issued = await credentials_service.issue_for_completed_path(
+        session,
+        crypto,
+        tenant_id=tenant_id,
+        path_enrolment=path_enrolment,
+        path_title=path.title,
+        certificate_template_id=path.certificate_template_id,
+    )
+    if issued.certificate is not None and issued.raw_verification_token is not None:
+        await enrolment_service.persist_certificate_pdf(
+            session,
+            storage,
+            settings,
+            tenant_id=tenant_id,
+            certificate=issued.certificate,
+            raw_verification_token=issued.raw_verification_token,
+        )
+
+
 async def get_path_progress(
     session: AsyncSession,
     crypto: CryptoBox,
+    storage: StorageService,
+    settings: Settings,
     *,
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -524,12 +657,36 @@ async def get_path_progress(
     ):
         raise NotFound("No such path enrolment.")
 
+    await _repair_completion_if_all_members_done(
+        session, crypto, storage, settings, tenant_id=tenant_id, path_enrolment=path_enrolment
+    )
+
     members = await list_path_courses(session, learning_path_id=path_enrolment.learning_path_id)
     courses: list[PathCourseProgress] = []
     for _member, course in members:
-        enrolment = await enrolment_service.get_own_enrolment(
-            session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
-        )
+        try:
+            enrolment = await enrolment_service.get_own_enrolment(
+                session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
+            )
+        except Forbidden:
+            # No reachable enrolment for this member course — it was
+            # added to the path after this learner bought it (a
+            # published path's membership is meant to be frozen, but a
+            # path sold before this guard existed can still be in this
+            # state), or the course's own entitlement lapsed. Either way
+            # this is a display concern, not a reason to fail the whole
+            # rollup for every other course the learner *can* see (F2,
+            # docs/research/p5-review-findings.md).
+            courses.append(
+                PathCourseProgress(
+                    course_id=course.id,
+                    course_title=course.title,
+                    enrolment_id=None,
+                    progress_percent=0,
+                    completed_at=None,
+                )
+            )
+            continue
         progress = await enrolment_service.get_progress(
             session,
             crypto,
@@ -584,12 +741,16 @@ async def find_path_enrolments_for_course_completion(
 
 
 async def all_member_courses_completed(
-    session: AsyncSession, *, user_id: uuid.UUID, learning_path_id: uuid.UUID
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, learning_path_id: uuid.UUID
 ) -> bool:
     """True if every member course has a completed `Enrolment` for this
     user. Deliberately a raw count comparison, not `get_path_progress`
     (which needs `crypto` and a live entitlement re-check that has no
-    place inside the completion transaction itself)."""
+    place inside the completion transaction itself). `tenant_id` is
+    filtered explicitly rather than left to RLS alone (F6, docs/
+    research/p5-review-findings.md) — every sibling query in this
+    module does, and this one is one call away from a completion
+    transaction, not a place to be the one exception."""
     members = await list_path_courses(session, learning_path_id=learning_path_id)
     if not members:
         return False
@@ -599,6 +760,7 @@ async def all_member_courses_completed(
             select(func.count())
             .select_from(Enrolment)
             .where(
+                Enrolment.tenant_id == tenant_id,
                 Enrolment.user_id == user_id,
                 Enrolment.course_id.in_(course_ids),
                 Enrolment.completed_at.is_not(None),
@@ -619,6 +781,8 @@ __all__ = [
     "add_course_to_path",
     "all_member_courses_completed",
     "assign_path_to_tenant",
+    "clear_certificate_template",
+    "course_counts_for_paths",
     "create_learning_path",
     "find_path_enrolments_for_course_completion",
     "get_learning_path",

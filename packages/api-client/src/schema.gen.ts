@@ -1382,6 +1382,23 @@ export interface paths {
         patch: operations["update_learning_path_api_v1_learning_paths__learning_path_id__patch"];
         trace?: never;
     };
+    "/api/v1/learning-paths/{learning_path_id}/clear-certificate-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear Path Certificate Template */
+        post: operations["clear_path_certificate_template_api_v1_learning_paths__learning_path_id__clear_certificate_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/learning-paths/{learning_path_id}/courses": {
         parameters: {
             query?: never;
@@ -1496,6 +1513,30 @@ export interface paths {
         put?: never;
         /** Assign Path To Tenant */
         post: operations["assign_path_to_tenant_api_v1_learning_paths__learning_path_id__tenant_assignments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant-path-assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tenant Path Assignments
+         * @description The path twin of `courses.py::list_tenant_assignments` — the read
+         *     half of tenant assignment that `assign_path_to_tenant` never had
+         *     (F6, docs/research/p5-review-findings.md): before this, the admin
+         *     editor's "Assign to this tenant" gave only a transient success
+         *     notice and could never show whether a path was already assigned.
+         */
+        get: operations["list_tenant_path_assignments_api_v1_tenant_path_assignments_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5738,6 +5779,8 @@ export interface components {
             started_at: string;
             /** Completed At */
             completed_at: string | null;
+            /** Has Certificate */
+            has_certificate: boolean;
         };
         /** PackageRow */
         PackageRow: {
@@ -5785,7 +5828,7 @@ export interface components {
             /** Course Title */
             course_title: string;
             /** Enrolment Id */
-            enrolment_id: string;
+            enrolment_id: string | null;
             /** Progress Percent */
             progress_percent: number;
             /** Completed At */
@@ -5860,6 +5903,28 @@ export interface components {
             learning_path_id: string;
             /** Is Bespoke */
             is_bespoke: boolean;
+        };
+        /**
+         * PathTenantAssignmentRow
+         * @description `GET /tenant-path-assignments` — the path twin of courses.py's
+         *     `TenantAssignmentRow` (F6, docs/research/p5-review-findings.md):
+         *     drops `tenant_id`, since it's always the caller's own, and adds
+         *     `learning_path_title` for display.
+         */
+        PathTenantAssignmentRow: {
+            /** Id */
+            id: string;
+            /** Learning Path Id */
+            learning_path_id: string;
+            /** Learning Path Title */
+            learning_path_title: string;
+            /** Is Bespoke */
+            is_bespoke: boolean;
+        };
+        /** PathTenantAssignmentsPageResponse */
+        PathTenantAssignmentsPageResponse: {
+            /** Items */
+            items: components["schemas"]["PathTenantAssignmentRow"][];
         };
         /** PendingPaymentSummary */
         PendingPaymentSummary: {
@@ -10466,6 +10531,37 @@ export interface operations {
             };
         };
     };
+    clear_path_certificate_template_api_v1_learning_paths__learning_path_id__clear_certificate_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_path_courses_api_v1_learning_paths__learning_path_id__courses_get: {
         parameters: {
             query?: never;
@@ -10723,6 +10819,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tenant_path_assignments_api_v1_tenant_path_assignments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathTenantAssignmentsPageResponse"];
                 };
             };
         };

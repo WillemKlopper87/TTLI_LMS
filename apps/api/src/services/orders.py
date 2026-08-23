@@ -87,6 +87,21 @@ async def create_order(
         product = await session.get(Product, price.product_id)
         if product is None or not product.is_active:
             raise OrderError(f"Product for price {line.price_id} is not available.")
+        if organisation_id is not None and product.kind != "course":
+            # Seat-pool fulfilment (the branch below, and
+            # organisations.py::assign_seat downstream of it) only knows
+            # how to draw a course-kind entitlement from a pool — a path
+            # or subscription product routed through an organisation
+            # order would take the buyer's money with no way to ever
+            # deliver it (a path pool entitlement nothing can assign) or
+            # crash mid-approval (a subscription order with no
+            # subscription_id, since only routers/subscriptions.py's own
+            # flow ever sets that). Refused here, before any money moves,
+            # rather than discovered at fulfilment time.
+            raise OrderError(
+                f"'{product.name}' can't be bought for an organisation yet — "
+                "only individual courses support seat purchases."
+            )
 
         tax_rule = await tax.resolve(
             session, tenant_id=tenant_id, customer_type=customer_type, product_kind=product.kind
@@ -427,11 +442,15 @@ async def _fulfil_order(
 
         if order.organisation_id is not None:
             # The seat pool itself — no user_id, drawn from later by
-            # assign_seat (0016's migration docstring). A path's member
-            # courses get their own pool entitlements only once a real
-            # seat is assigned to a real learner (assign_seat's own
-            # concern, unchanged by P5) — granting them here, with no
-            # user to enrol yet, would just be N rows nothing reads.
+            # assign_seat (0016's migration docstring). Always a
+            # course-kind product here: create_order refuses any other
+            # kind for an organisation order (organisations.py::
+            # assign_seat and its pool queries only know "course",
+            # so a path or subscription pool entitlement would sit
+            # here undeliverable — see docs/research/p5-review-
+            # findings.md F1). Granting the entitlement here, with no
+            # user to enrol yet, is still correct for a course: real
+            # enrolment happens later, per employee, in assign_seat.
             entitlement = await entitlements.grant(
                 session,
                 tenant_id=tenant_id,

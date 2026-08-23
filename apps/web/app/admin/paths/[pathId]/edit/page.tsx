@@ -52,6 +52,13 @@ interface PathReadiness {
   checks: ReadinessCheckRow[];
 }
 
+interface PathTenantAssignmentRow {
+  id: string;
+  learning_path_id: string;
+  learning_path_title: string;
+  is_bespoke: boolean;
+}
+
 export default function EditLearningPathPage() {
   const params = useParams<{ pathId: string }>();
   const pathId = params.pathId;
@@ -65,6 +72,7 @@ export default function EditLearningPathPage() {
   const [allCourses, setAllCourses] = useState<CourseItem[] | null>(null);
   const [certificates, setCertificates] = useState<CertificateTemplate[] | null>(null);
   const [product, setProduct] = useState<ProductItem | null>(null);
+  const [assignments, setAssignments] = useState<PathTenantAssignmentRow[] | null>(null);
 
   const [addCourseId, setAddCourseId] = useState("");
   const [priceAmount, setPriceAmount] = useState("");
@@ -76,14 +84,16 @@ export default function EditLearningPathPage() {
   const canManageProducts = me.permissions.includes("product:manage");
 
   async function loadAll() {
-    const [pathResp, membersResp, readinessResp] = await Promise.all([
+    const [pathResp, membersResp, readinessResp, assignmentsResp] = await Promise.all([
       getJson<LearningPathItem>(`/api/bff/learning-paths/${pathId}`),
       getJson<{ items: PathCourseRow[] }>(`/api/bff/learning-paths/${pathId}/courses`),
       getJson<PathReadiness>(`/api/bff/learning-paths/${pathId}/readiness`),
+      getJson<{ items: PathTenantAssignmentRow[] }>("/api/bff/tenant-path-assignments"),
     ]);
     setPath(pathResp);
     setMembers(membersResp?.items ?? []);
     setReadiness(readinessResp);
+    setAssignments(assignmentsResp?.items ?? []);
     if (canManageProducts) {
       const products = await getJson<{ items: ProductItem[] }>("/api/bff/catalogue/products");
       setProduct((products?.items ?? []).find((p) => p.learning_path_id === pathId) ?? null);
@@ -230,12 +240,30 @@ export default function EditLearningPathPage() {
   }
 
   async function attachCertificate(templateId: string) {
+    if (!templateId) {
+      await clearCertificate();
+      return;
+    }
     setError(null);
     const resp = await sendJson(`/api/bff/learning-paths/${pathId}`, "PATCH", {
       certificate_template_id: templateId,
     });
     if (!resp.ok) {
       setError(await readError(resp, "The certificate template could not be attached."));
+      return;
+    }
+    await loadAll();
+  }
+
+  async function clearCertificate() {
+    setError(null);
+    const resp = await sendJson(
+      `/api/bff/learning-paths/${pathId}/clear-certificate-template`,
+      "POST",
+      {},
+    );
+    if (!resp.ok) {
+      setError(await readError(resp, "The certificate template could not be removed."));
       return;
     }
     await loadAll();
@@ -281,6 +309,7 @@ export default function EditLearningPathPage() {
   const availableCourses = (allCourses ?? []).filter(
     (c) => !(members ?? []).some((m) => m.course_id === c.id),
   );
+  const isAssigned = (assignments ?? []).some((a) => a.learning_path_id === pathId);
 
   return (
     <div className="dash">
@@ -544,14 +573,17 @@ export default function EditLearningPathPage() {
           </button>
         ) : null}
         {canPublish && path.state === "published" ? (
-          <button
-            type="button"
-            className="btn btn--ghost"
-            disabled={busy}
-            onClick={() => void assignToTenant()}
-          >
-            Assign to my tenant
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={busy}
+              onClick={() => void assignToTenant()}
+            >
+              {isAssigned ? "Reassign to my tenant" : "Assign to my tenant"}
+            </button>
+            {isAssigned ? <span className="tag tag--done">Assigned to your tenant</span> : null}
+          </>
         ) : null}
       </div>
     </div>

@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -43,4 +44,27 @@ test("a learner can sign in and reach their dashboard", async ({ page }) => {
   // likely to break without anyone noticing.
   await page.reload();
   await expect(page).toHaveURL(/\/learn/);
+});
+
+test("the learner dashboard, including its Learning paths section, has no WCAG A/AA violations", async ({
+  page,
+}) => {
+  // Covers whichever state the seeded account is actually in — the
+  // dashboard's "Learning paths" section (P5 Phase 4) renders nothing
+  // when the account holds none, so this isn't contingent on a specific
+  // path being purchased the way the pytest integration suite's own
+  // fixtures are (F4, docs/research/p5-review-findings.md).
+  await page.goto("/login");
+  await page.getByLabel(/email/i).fill(EMAIL);
+  await page.getByLabel(/password/i).fill(PASSWORD);
+  await page.getByRole("button", { name: /sign in|log ?in/i }).click();
+  await page.waitForURL(/\/learn/, { timeout: 30_000 });
+
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const summary = results.violations.map(
+    (v) => `${v.id}: ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
+  );
+  expect(summary, "axe violations on /learn").toEqual([]);
 });

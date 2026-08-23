@@ -12,7 +12,10 @@ import { CredentialsPanel } from "../../[enrolmentId]/credentials-panel";
 interface PathCourseProgress {
   course_id: string;
   course_title: string;
-  enrolment_id: string;
+  // Null when this learner has no reachable enrolment for the course —
+  // added to the path after purchase, or an expired entitlement (F2,
+  // docs/research/p5-review-findings.md).
+  enrolment_id: string | null;
   progress_percent: number;
   completed_at: string | null;
 }
@@ -103,13 +106,17 @@ export default function LearnPathEnrolmentPage() {
         <div className="rowlist">
           {progress.courses.map((c) => (
             <div className="rowitem" key={c.course_id}>
-              <span className={`tag ${c.completed_at ? "tag--done" : "tag--live"}`}>
-                {c.completed_at ? "Completed" : `${c.progress_percent}%`}
+              <span
+                className={`tag ${c.completed_at ? "tag--done" : c.enrolment_id ? "tag--live" : "tag--mute"}`}
+              >
+                {c.completed_at ? "Completed" : c.enrolment_id ? `${c.progress_percent}%` : "Not enrolled"}
               </span>
               <span className="t">{c.course_title}</span>
-              <Link className="btn btn--ghost" href={`/learn/${c.enrolment_id}`}>
-                {c.completed_at ? "Review" : "Continue"}
-              </Link>
+              {c.enrolment_id ? (
+                <Link className="btn btn--ghost" href={`/learn/${c.enrolment_id}`}>
+                  {c.completed_at ? "Review" : "Continue"}
+                </Link>
+              ) : null}
             </div>
           ))}
         </div>

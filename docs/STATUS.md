@@ -1,6 +1,73 @@
 # STATUS
 
-**Updated:** 2026-08-23 (ninth pass, same day) — **P5 Phase 4: the
+**Updated:** 2026-08-24 — **P5 post-ship code review, and every finding
+fixed.** A cold read of all four shipped phases (`docs/research/p5-
+review-findings.md`) turned up two HIGH-severity money-adjacent gaps
+and four smaller ones — none caught by the phase-by-phase verification,
+because each was a cross-feature seam (orders↔organisations,
+authoring↔purchase, purchase-order↔lesson-completion) that no single
+phase's own tests exercised.
+**F1 (HIGH):** an organisation could pay for a learning-path seat pool
+that nothing could ever assign — `organisations.py::assign_seat` and
+every pool query are hardcoded to `kind == "course"`, so a path (or,
+found on closer reading, a subscription) product routed through an org
+PO either stranded the money or crashed the approval transaction.
+`services/orders.py::create_order` now refuses any non-course product
+on an organisation order before any money moves; `buy-seats/page.tsx`
+filters its picker to match.
+**F2 (HIGH):** a published path's membership was fully mutable, but
+`get_path_progress` assumed it was frozen — a course added after
+purchase raised `Forbidden` on the whole rollup, not just that one row.
+`add_course_to_path`/`remove_course_from_path` now refuse outright
+while published; `get_path_progress` also degrades a single
+unreachable member course to a 0%, no-enrolment row instead of failing
+the request, for any path sold before this guard existed.
+**F3 (MEDIUM):** `update_product` enforced no course/path mutual
+exclusion (`create_product` did) — a PATCH could leave both FKs set
+with a stale `kind`. Fixed.
+**F5 (MEDIUM):** a learner who finished every member course
+individually, then bought the bundling path for its credential, got a
+`PathEnrolment` that could never complete — no lesson would ever
+complete again to trigger `complete_lesson`'s hook. `get_path_progress`
+now read-repairs this (sets `completed_at`, issues the certificate,
+idempotently) the first time the progress page is opened, rather than
+threading `storage`/`settings` through the payment-approval hot path
+for an edge case a read already covers correctly.
+**F6 batch:** `add_course_to_path`'s position came from `count(*)`,
+colliding after a mid-list removal — now `max(position) + 1`. The
+dashboard labelled every completed path "Certified" even with no
+template attached — `OwnPathEnrolmentRow` gained `has_certificate`.
+`list_tenant_path_assignments` was dead code with no route — added
+`GET /tenant-path-assignments`, wired into the admin editor so it can
+finally show assignment state. Added `POST /learning-paths/{id}/
+clear-certificate-template` (the PATCH's "`None` = unchanged" semantics
+had no way to detach one). `all_member_courses_completed` gained an
+explicit `tenant_id` filter to match every sibling query in the module.
+`list_public_paths` no longer counts members per path in a loop.
+**F4:** the approved plan's own Phase 4 "Verify" step — a Playwright
+spec + axe pass for the new pages — had been skipped; added to
+`public.spec.ts` (`/paths`, plus the `/paths/[id]` not-found shell,
+which needs no seeded data) and `learner.spec.ts` (axe on `/learn`
+including the new Learning-paths section).
+`persist_certificate_pdf` (`services/enrolment.py`) was promoted from
+private to exported once `learning_paths.py`'s read-repair needed it
+too — confirmed no new import cycle by actually booting the app, same
+discipline Phase 3's original cycle-break used.
+Verified: 5 new API tests (organisation-order refusal, PATCH mutual-
+exclusion, published-path membership guard + degraded rollup, retro-
+active completion + idempotent certificate re-issue, tenant-assignment
+listing + certificate-clear + position-collision), full suite green,
+`ruff`/`mypy`/`alembic check` clean (no migration — every fix is
+application-level). The e2e run surfaced a real, unrelated problem
+before it surfaced the new tests working: a stale `.next` production
+build left over from earlier in the session was serving HTML that
+referenced a deleted chunk file, failing every single page including
+ones untouched by this pass — not a regression, but real enough that a
+completely clean `rm -rf .next && npm run build` was needed before the
+35-passed e2e run (2 skipped, no matching seeded account locally) could
+prove anything. Confirmed the two skipped specs pass for real against a
+genuine account and the production build once pointed at one.
+Prior, 2026-08-23 (ninth pass, same day) — **P5 Phase 4: the
 learner-facing surface, and P5 is now DONE.** `GET /path-enrolments`
 (list) + `GET /path-enrolments/{id}/progress` (detail) mirror the
 existing `GET /enrolments`/`GET /enrolments/{id}/progress` list-vs-

@@ -11,7 +11,7 @@ import uuid
 
 from fastapi import APIRouter, status
 
-from src.core.deps import CryptoDep, PrincipalDep, SessionDep, TenantDep
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
 from src.core.errors import NotFound
 from src.models.audit import AuditAction
 from src.models.course import Course
@@ -31,6 +31,8 @@ from src.schemas.learning_paths import (
     PathReadinessCheckRow,
     PathReadinessResponse,
     PathTenantAssignmentResponse,
+    PathTenantAssignmentRow,
+    PathTenantAssignmentsPageResponse,
     PublicPathCard,
     PublicPathCourseRow,
     PublicPathDetailResponse,
@@ -125,6 +127,20 @@ async def update_learning_path(
         certificate_template_id=(
             _parse_uuid(body.certificate_template_id) if body.certificate_template_id else None
         ),
+    )
+    return _path_response(path)
+
+
+@router.post(
+    "/learning-paths/{learning_path_id}/clear-certificate-template",
+    response_model=LearningPathResponse,
+)
+async def clear_path_certificate_template(
+    learning_path_id: str, principal: PrincipalDep, session: SessionDep
+) -> LearningPathResponse:
+    principal.require("course:edit")
+    path = await paths_service.clear_certificate_template(
+        session, learning_path_id=_parse_uuid(learning_path_id)
     )
     return _path_response(path)
 
@@ -281,6 +297,30 @@ async def assign_path_to_tenant(
     )
 
 
+@router.get("/tenant-path-assignments", response_model=PathTenantAssignmentsPageResponse)
+async def list_tenant_path_assignments(
+    principal: PrincipalDep, session: SessionDep
+) -> PathTenantAssignmentsPageResponse:
+    """The path twin of `courses.py::list_tenant_assignments` — the read
+    half of tenant assignment that `assign_path_to_tenant` never had
+    (F6, docs/research/p5-review-findings.md): before this, the admin
+    editor's "Assign to this tenant" gave only a transient success
+    notice and could never show whether a path was already assigned."""
+    principal.require("course:view")
+    rows = await paths_service.list_tenant_path_assignments(session, tenant_id=principal.tenant_id)
+    return PathTenantAssignmentsPageResponse(
+        items=[
+            PathTenantAssignmentRow(
+                id=str(assignment.id),
+                learning_path_id=str(path.id),
+                learning_path_title=path.title,
+                is_bespoke=assignment.is_bespoke,
+            )
+            for assignment, path in rows
+        ]
+    )
+
+
 def _public_price(row: PublicPriceRow | None) -> PublicPrice | None:
     if row is None:
         return None
@@ -301,24 +341,25 @@ def _public_price(row: PublicPriceRow | None) -> PublicPrice | None:
 )
 async def list_public_paths(session: SessionDep, tenant: TenantDep) -> PublicPathsResponse:
     paths = await paths_service.list_public_paths(session, tenant_id=tenant.id)
+    path_ids = [p.id for p in paths]
     prices = await paths_service.public_prices_for_paths(
-        session, tenant_id=tenant.id, path_ids=[p.id for p in paths]
+        session, tenant_id=tenant.id, path_ids=path_ids
     )
-    items: list[PublicPathCard] = []
-    for path in paths:
-        members = await paths_service.list_path_courses(session, learning_path_id=path.id)
-        items.append(
+    counts = await paths_service.course_counts_for_paths(session, path_ids=path_ids)
+    return PublicPathsResponse(
+        items=[
             PublicPathCard(
                 id=str(path.id),
                 slug=path.slug,
                 title=path.title,
                 description=path.description,
-                course_count=len(members),
+                course_count=counts.get(path.id, 0),
                 has_certificate=path.certificate_template_id is not None,
                 price=_public_price(prices.get(path.id)),
             )
-        )
-    return PublicPathsResponse(items=items)
+            for path in paths
+        ]
+    )
 
 
 @router.get(
@@ -375,6 +416,7 @@ async def list_own_path_enrolments(
             course_count=row.course_count,
             started_at=row.started_at,
             completed_at=row.completed_at,
+            has_certificate=row.has_certificate,
         )
         for row in rows
     ]
@@ -386,11 +428,18 @@ async def list_own_path_enrolments(
     summary="Per-course progress rollup for one of the caller's path enrolments",
 )
 async def get_path_enrolment_progress(
-    path_enrolment_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+    path_enrolment_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    storage: StorageDep,
+    settings: SettingsDep,
 ) -> PathProgressResponse:
     progress = await paths_service.get_path_progress(
         session,
         crypto,
+        storage,
+        settings,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         path_enrolment_id=_parse_uuid(path_enrolment_id),
@@ -404,7 +453,7 @@ async def get_path_enrolment_progress(
             PathCourseProgressRow(
                 course_id=str(c.course_id),
                 course_title=c.course_title,
-                enrolment_id=str(c.enrolment_id),
+                enrolment_id=str(c.enrolment_id) if c.enrolment_id is not None else None,
                 progress_percent=c.progress_percent,
                 completed_at=c.completed_at,
             )

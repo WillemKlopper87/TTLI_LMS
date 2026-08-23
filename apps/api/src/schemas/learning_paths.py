@@ -92,6 +92,22 @@ class PathTenantAssignmentResponse(BaseModel):
     is_bespoke: bool
 
 
+class PathTenantAssignmentRow(BaseModel):
+    """`GET /tenant-path-assignments` — the path twin of courses.py's
+    `TenantAssignmentRow` (F6, docs/research/p5-review-findings.md):
+    drops `tenant_id`, since it's always the caller's own, and adds
+    `learning_path_title` for display."""
+
+    id: str
+    learning_path_id: str
+    learning_path_title: str
+    is_bespoke: bool
+
+
+class PathTenantAssignmentsPageResponse(BaseModel):
+    items: list[PathTenantAssignmentRow]
+
+
 class PublicPathCourseRow(BaseModel):
     course_id: str
     title: str
@@ -136,12 +152,16 @@ class OwnPathEnrolmentResponse(BaseModel):
     course_count: int
     started_at: datetime
     completed_at: datetime | None
+    has_certificate: bool
 
 
 class PathCourseProgressRow(BaseModel):
     course_id: str
     course_title: str
-    enrolment_id: str
+    # None when the learner has no reachable enrolment for this member
+    # course (F2, docs/research/p5-review-findings.md) — the frontend
+    # renders the row with no "Continue" link rather than a dead one.
+    enrolment_id: str | None
     progress_percent: int
     completed_at: datetime | None
 
@@ -168,6 +188,8 @@ __all__ = [
     "PathReadinessCheckRow",
     "PathReadinessResponse",
     "PathTenantAssignmentResponse",
+    "PathTenantAssignmentRow",
+    "PathTenantAssignmentsPageResponse",
     "PublicPathCard",
     "PublicPathCourseRow",
     "PublicPathDetailResponse",

@@ -68,7 +68,19 @@ export default function BuySeatsPage() {
   useEffect(() => {
     if (!ready || !getAccessToken()) return;
     fetch("/api/bff/products")
-      .then(async (resp) => (resp.ok ? setProducts((await resp.json()).items) : setProducts([])))
+      .then(async (resp) => {
+        if (!resp.ok) {
+          setProducts([]);
+          return;
+        }
+        const items: ProductSummary[] = (await resp.json()).items;
+        // Only a course product can be bought for an organisation today
+        // — seat assignment only knows how to draw a course entitlement
+        // from a pool (server-enforced in orders.py::create_order; this
+        // filter just keeps the picker from offering something the
+        // server will refuse).
+        setProducts(items.filter((p) => p.kind === "course"));
+      })
       .catch(() => setProducts([]));
   }, [ready]);
 

@@ -203,6 +203,356 @@ async def test_publish_refuses_below_minimum_courses_and_unpublished_members(  #
     assert published.json()["state"] == "published"
 
 
+async def test_published_path_membership_is_frozen_and_a_late_add_degrades_not_403s(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F2 (docs/research/p5-review-findings.md): editing a published
+    path's membership used to be able to strand an existing purchaser —
+    a course added after purchase has no reachable Enrolment, and
+    get_path_progress used to raise Forbidden the moment it hit one,
+    failing the whole rollup for every other course too. add_course_to_
+    path/remove_course_from_path now refuse outright while published;
+    this test also proves the defence-in-depth half still holds for a
+    path that somehow reaches that state anyway (unpublish, edit,
+    republish, exactly the workflow the refusal message tells an admin
+    to use) — the learner's progress page degrades that one row instead
+    of 403ing the whole response."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    course_a = await _published_course(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Frozen Membership Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+
+    # Refused outright while published — add and remove both.
+    course_c = await _published_course(client, admin_auth)
+    add_refused = await client.post(
+        f"/api/v1/learning-paths/{path_id}/courses",
+        json={"course_id": course_c},
+        headers=admin_auth,
+    )
+    assert add_refused.status_code == 400, add_refused.text
+    remove_refused = await client.request(
+        "DELETE", f"/api/v1/learning-paths/{path_id}/courses/{course_a}", headers=admin_auth
+    )
+    assert remove_refused.status_code == 400, remove_refused.text
+
+    # A real purchaser, bought before the membership edit below.
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"frozen-path-{uuid.uuid4().hex[:8]}",
+                "name": "Frozen Membership Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "800.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+    finance_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    finance_auth = {"Authorization": f"Bearer {finance_token}"}
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    buyer_auth = {"Authorization": f"Bearer {buyer_token}"}
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 201, order.text
+    checkout = await client.post(
+        f"/api/v1/orders/{order.json()['id']}/checkout/eft", headers=buyer_auth
+    )
+    assert checkout.status_code == 200, checkout.text
+    await client.post(
+        f"/api/v1/orders/{order.json()['id']}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=buyer_auth,
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{checkout.json()['payment_id']}/approve",
+        headers={**finance_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approved.status_code == 200, approved.text
+    path_enrolment_id = next(
+        r
+        for r in (await client.get("/api/v1/path-enrolments", headers=buyer_auth)).json()
+        if r["learning_path_id"] == path_id
+    )["path_enrolment_id"]
+
+    # Defence-in-depth: unpublish, add a member the existing purchaser
+    # was never enrolled in, republish — the workflow the refusal above
+    # itself recommends. get_path_progress must degrade, not 403.
+    await client.post(f"/api/v1/learning-paths/{path_id}/unpublish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/courses",
+        json={"course_id": course_c},
+        headers=admin_auth,
+    )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+
+    progress = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth
+    )
+    assert progress.status_code == 200, progress.text
+    rows_by_course = {c["course_id"]: c for c in progress.json()["courses"]}
+    assert len(rows_by_course) == 3
+    assert rows_by_course[course_c]["enrolment_id"] is None
+    assert rows_by_course[course_c]["progress_percent"] == 0
+    assert rows_by_course[course_a]["enrolment_id"] is not None
+
+
+async def test_a_path_bought_after_its_courses_are_already_complete_still_completes(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F5 (docs/research/p5-review-findings.md): completion used to be
+    detected only inside complete_lesson, so a learner who finished both
+    courses individually first, then bought the bundling path for its
+    credential, got a PathEnrolment stuck at 100% forever — no lesson
+    ever completes again to trigger the check. get_path_progress now
+    read-repairs this the first time the progress page is opened."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+    finance_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    finance_auth = {"Authorization": f"Bearer {finance_token}"}
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    buyer_auth = {"Authorization": f"Bearer {buyer_token}"}
+
+    course_a = await _published_course(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+
+    # Buy and complete both courses individually — before the path that
+    # will later bundle them even exists.
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/courses/{course_id}/tenant-assignments",
+            json={"is_bespoke": False},
+            headers=admin_auth,
+        )
+        product_resp = await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"standalone-{uuid.uuid4().hex[:8]}",
+                "name": "Standalone Course Product",
+                "course_id": course_id,
+            },
+            headers=admin_auth,
+        )
+        assert product_resp.status_code == 201, product_resp.text
+        product = product_resp.json()
+        price = (
+            await client.post(
+                f"/api/v1/catalogue/products/{product['id']}/prices",
+                json={"currency": "ZAR", "unit_amount": "400.00"},
+                headers=admin_auth,
+            )
+        ).json()
+        await client.patch(
+            f"/api/v1/catalogue/products/{product['id']}",
+            json={"is_active": True},
+            headers=admin_auth,
+        )
+        order = await client.post(
+            "/api/v1/orders",
+            json={
+                "currency": "ZAR",
+                "customer_type": "individual",
+                "lines": [{"price_id": price["id"], "quantity": 1}],
+            },
+            headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+        )
+        assert order.status_code == 201, order.text
+        checkout = await client.post(
+            f"/api/v1/orders/{order.json()['id']}/checkout/eft", headers=buyer_auth
+        )
+        assert checkout.status_code == 200, checkout.text
+        await client.post(
+            f"/api/v1/orders/{order.json()['id']}/payment-proof",
+            files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+            headers=buyer_auth,
+        )
+        approved = await client.post(
+            f"/api/v1/payments/{checkout.json()['payment_id']}/approve",
+            headers={**finance_auth, "Idempotency-Key": uuid.uuid4().hex},
+        )
+        assert approved.status_code == 200, approved.text
+        for lesson_id in await _lessons_for_course(tenant_session_factory, tenant_id, course_id):
+            await client.post(f"/api/v1/lessons/{lesson_id}/start", headers=buyer_auth)
+            complete = await client.post(
+                f"/api/v1/lessons/{lesson_id}/complete", headers=buyer_auth
+            )
+            assert complete.status_code == 200, complete.text
+
+    # Now build and sell the path bundling those same two, already-
+    # completed courses.
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Retroactive Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+    cert_template_id = uuid.uuid4()
+    async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO certificate_templates "
+                "(id, title, issuer_name, signatory_name, signatory_title, cpd_points) "
+                "VALUES (:id, 'Retroactive Path Certificate', 'TTLI', 'Dr. Themba', 'Director', 5)"
+            ),
+            {"id": cert_template_id},
+        )
+    await client.patch(
+        f"/api/v1/learning-paths/{path_id}",
+        json={"certificate_template_id": str(cert_template_id)},
+        headers=admin_auth,
+    )
+    path_product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"retroactive-path-{uuid.uuid4().hex[:8]}",
+                "name": "Retroactive Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    path_price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{path_product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "1200.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{path_product['id']}",
+        json={"is_active": True},
+        headers=admin_auth,
+    )
+    path_order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": path_price["id"], "quantity": 1}],
+        },
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert path_order.status_code == 201, path_order.text
+    path_checkout = await client.post(
+        f"/api/v1/orders/{path_order.json()['id']}/checkout/eft", headers=buyer_auth
+    )
+    assert path_checkout.status_code == 200, path_checkout.text
+    await client.post(
+        f"/api/v1/orders/{path_order.json()['id']}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=buyer_auth,
+    )
+    path_approved = await client.post(
+        f"/api/v1/payments/{path_checkout.json()['payment_id']}/approve",
+        headers={**finance_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert path_approved.status_code == 200, path_approved.text
+
+    path_enrolment_id = next(
+        r
+        for r in (await client.get("/api/v1/path-enrolments", headers=buyer_auth)).json()
+        if r["learning_path_id"] == path_id
+    )["path_enrolment_id"]
+    # Before the fix: this would return progress_percent == 100 with
+    # completed_at == None, forever — no future lesson-completion event
+    # can ever fire for this path again.
+    progress = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth
+    )
+    assert progress.status_code == 200, progress.text
+    body = progress.json()
+    assert body["progress_percent"] == 100
+    assert body["completed_at"] is not None
+
+    credentials = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/credentials", headers=buyer_auth
+    )
+    assert credentials.status_code == 200, credentials.text
+    assert credentials.json()["certificate"] is not None
+    assert credentials.json()["certificate"]["pdf_available"] is True
+
+    # Idempotent: a second read doesn't issue a second certificate.
+    async with tenant_session_factory(tenant_id) as s:
+        certs = (
+            await s.execute(
+                sa.text("SELECT COUNT(*) FROM certificates WHERE path_enrolment_id = :p"),
+                {"p": path_enrolment_id},
+            )
+        ).scalar_one()
+    await client.get(f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth)
+    async with tenant_session_factory(tenant_id) as s:
+        certs_after = (
+            await s.execute(
+                sa.text("SELECT COUNT(*) FROM certificates WHERE path_enrolment_id = :p"),
+                {"p": path_enrolment_id},
+            )
+        ).scalar_one()
+    assert certs == 1
+    assert certs_after == 1
+
+
 async def test_reorder_courses_and_tenant_assignment(  # type: ignore[no-untyped-def]
     client, tenant_session_factory, crypto
 ) -> None:
@@ -255,6 +605,101 @@ async def test_reorder_courses_and_tenant_assignment(  # type: ignore[no-untyped
     )
     assert assigned.status_code == 201, assigned.text
     assert assigned.json()["is_bespoke"] is True
+
+    # F6 (docs/research/p5-review-findings.md): the read half of tenant
+    # assignment — assign_path_to_tenant previously had no way for the
+    # admin editor to ever show whether a path was already assigned.
+    listed_assignments = await client.get("/api/v1/tenant-path-assignments", headers=auth)
+    assert listed_assignments.status_code == 200, listed_assignments.text
+    row = next(r for r in listed_assignments.json()["items"] if r["learning_path_id"] == path_id)
+    assert row["is_bespoke"] is True
+    assert row["learning_path_title"] == "Reorder Test Path"
+
+
+async def test_clearing_a_paths_certificate_template(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F6: update_learning_path's PATCH treats `None` as "leave
+    unchanged", so there was previously no way to detach a certificate
+    template once attached — the same gap course_wizard.py's own
+    clear-templates endpoint exists to close."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    auth = {"Authorization": f"Bearer {token}"}
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Clearable Cert Path"}, headers=auth
+        )
+    ).json()
+    path_id = path["id"]
+
+    cert_template_id = uuid.uuid4()
+    async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO certificate_templates "
+                "(id, title, issuer_name, signatory_name, signatory_title, cpd_points) "
+                "VALUES (:id, 'Clearable Cert', 'TTLI', 'Dr. Themba', 'Director', 2)"
+            ),
+            {"id": cert_template_id},
+        )
+    attached = await client.patch(
+        f"/api/v1/learning-paths/{path_id}",
+        json={"certificate_template_id": str(cert_template_id)},
+        headers=auth,
+    )
+    assert attached.status_code == 200, attached.text
+    assert attached.json()["certificate_template_id"] == str(cert_template_id)
+
+    cleared = await client.post(
+        f"/api/v1/learning-paths/{path_id}/clear-certificate-template", headers=auth
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["certificate_template_id"] is None
+
+
+async def test_adding_a_course_after_a_removal_does_not_collide_positions(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F6: position used to come from count(*), which collides with an
+    existing position once a mid-list removal has happened — removing
+    course A of [A, B] and adding C used to give C position 1, the same
+    position B already holds. Now max(position) + 1."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    auth = {"Authorization": f"Bearer {token}"}
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "No Position Collision"}, headers=auth
+        )
+    ).json()
+    path_id = path["id"]
+
+    course_a = await _published_course(client, auth)
+    course_b = await _published_course(client, auth)
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=auth,
+        )
+
+    removed = await client.request(
+        "DELETE", f"/api/v1/learning-paths/{path_id}/courses/{course_a}", headers=auth
+    )
+    assert removed.status_code == 200, removed.text
+
+    course_c = await _published_course(client, auth)
+    added = await client.post(
+        f"/api/v1/learning-paths/{path_id}/courses",
+        json={"course_id": course_c},
+        headers=auth,
+    )
+    assert added.status_code == 201, added.text
+    ordered_ids = [row["course_id"] for row in added.json()["items"]]
+    assert ordered_ids == [course_b, course_c]
 
 
 async def test_path_purchase_grants_all_member_enrolments_via_eft(  # type: ignore[no-untyped-def]
@@ -522,6 +967,124 @@ async def test_path_product_authoring_and_admin_listing(  # type: ignore[no-unty
         headers=auth,
     )
     assert rejected.status_code == 400, rejected.text
+
+    # F3: the same "never both" rule applies to PATCH, not just POST — a
+    # course product can't be edited to also carry a learning_path_id,
+    # and vice versa (docs/research/p5-review-findings.md).
+    await client.post(
+        f"/api/v1/courses/{course}/tenant-assignments", json={"is_bespoke": False}, headers=auth
+    )
+    course_product = await client.post(
+        "/api/v1/catalogue/products",
+        json={
+            "slug": f"course-only-{uuid.uuid4().hex[:8]}",
+            "name": "Course Only",
+            "course_id": course,
+        },
+        headers=auth,
+    )
+    assert course_product.status_code == 201, course_product.text
+    course_product_id = course_product.json()["id"]
+
+    patch_course_to_path = await client.patch(
+        f"/api/v1/catalogue/products/{course_product_id}",
+        json={"learning_path_id": path_id},
+        headers=auth,
+    )
+    assert patch_course_to_path.status_code == 400, patch_course_to_path.text
+
+    patch_path_to_course = await client.patch(
+        f"/api/v1/catalogue/products/{body['id']}",
+        json={"course_id": course},
+        headers=auth,
+    )
+    assert patch_path_to_course.status_code == 400, patch_path_to_course.text
+
+    # Neither refusal mutated anything — both products still sell what
+    # they sold before the rejected PATCH.
+    unchanged_course = await client.get("/api/v1/catalogue/products", headers=auth)
+    rows_by_id = {p["id"]: p for p in unchanged_course.json()["items"]}
+    assert rows_by_id[course_product_id]["learning_path_id"] is None
+    assert rows_by_id[body["id"]]["course_id"] is None
+
+
+async def test_organisation_order_refuses_a_path_product(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F1 (docs/research/p5-review-findings.md): organisations.py's seat
+    pool (assign_seat, _pool_entitlements, list_assigned_seats) only ever
+    knows kind == "course" — a path-kind entitlement granted to an
+    organisation's pool would be undeliverable forever. create_order
+    must refuse the line before any money moves, not let it reach
+    fulfilment and silently strand it there."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Org-Refused Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for _ in range(2):
+        member = await _published_course(client, admin_auth)
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": member},
+            headers=admin_auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"org-refused-path-{uuid.uuid4().hex[:8]}",
+                "name": "Org-Refused Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "1000.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+
+    org_admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    org_admin_auth = {"Authorization": f"Bearer {org_admin_token}"}
+    org = await client.post(
+        "/api/v1/organisations", json={"name": "Path-Curious Org"}, headers=org_admin_auth
+    )
+    assert org.status_code == 201, org.text
+    org_id = org.json()["id"]
+
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "registered_business",
+            "lines": [{"price_id": price["id"], "quantity": 3}],
+            "organisation_id": org_id,
+        },
+        headers={**org_admin_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 400, order.text
 
 
 async def _lessons_for_course(tenant_session_factory, tenant_id, course_id: str) -> list[str]:  # type: ignore[no-untyped-def]

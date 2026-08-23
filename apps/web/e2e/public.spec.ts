@@ -19,6 +19,14 @@ const PUBLIC_PAGES = [
   { path: "/about", name: "about" },
   { path: "/contact", name: "contact" },
   { path: "/login", name: "login" },
+  // The public learning-path browse page (P5 Phase 4) — added on review
+  // (F4, docs/research/p5-review-findings.md): the approved P5 plan's
+  // own Phase 4 "Verify" step called for this and it was skipped. The
+  // detail page (`/paths/[pathId]`) needs a real, tenant-assigned path
+  // to render anything but its "not found" shell, so it isn't listed
+  // here the same way `/catalogue/[courseId]` isn't — this table is for
+  // pages that render meaningfully with no seeded data.
+  { path: "/paths", name: "learning paths" },
 ];
 
 for (const page_ of PUBLIC_PAGES) {
@@ -52,4 +60,28 @@ test("the header exposes the primary navigation", async ({ page }) => {
   const nav = page.locator("header nav").first();
   await expect(nav).toBeVisible();
   await expect(nav.getByRole("link")).not.toHaveCount(0);
+});
+
+// A learning path detail page for an id that doesn't exist — the "not
+// found" shell (app/paths/[pathId]/page.tsx) renders identically
+// whether the API has no such path or is down entirely (F4, docs/
+// research/p5-review-findings.md), so it needs no seeded data the way
+// a real path's own page would.
+test("a learning path detail page for an unknown id renders its not-found shell", async ({
+  page,
+}) => {
+  const response = await page.goto("/paths/00000000-0000-0000-0000-000000000000");
+  expect(response?.status()).toBeLessThan(400);
+  await expect(page.getByText(/could not be found/i)).toBeVisible();
+});
+
+test("that not-found shell has no WCAG A/AA violations", async ({ page }) => {
+  await page.goto("/paths/00000000-0000-0000-0000-000000000000");
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const summary = results.violations.map(
+    (v) => `${v.id}: ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
+  );
+  expect(summary, "axe violations on the path not-found shell").toEqual([]);
 });

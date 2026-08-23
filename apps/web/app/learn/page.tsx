@@ -79,6 +79,7 @@ interface OwnPathEnrolment {
   course_count: number;
   started_at: string;
   completed_at: string | null;
+  has_certificate: boolean;
 }
 
 /** Only `#rrggbb`/`#rgb` reaches a style attribute — the colour is author
@@ -279,12 +280,20 @@ export default function LearnDashboardPage() {
               {paths.map((p) => (
                 <div className="rowitem" key={p.path_enrolment_id}>
                   <span className={`tag ${p.completed_at ? "tag--done" : "tag--live"}`}>
-                    {p.completed_at ? "Certified" : "In progress"}
+                    {p.completed_at
+                      ? p.has_certificate
+                        ? "Certified"
+                        : "Completed"
+                      : "In progress"}
                   </span>
                   <span className="t">{p.learning_path_title}</span>
                   <span className="m">{p.course_count} courses</span>
                   <Link className="btn btn--ghost" href={`/learn/paths/${p.path_enrolment_id}`}>
-                    {p.completed_at ? "View certificate" : "View progress"}
+                    {p.completed_at
+                      ? p.has_certificate
+                        ? "View certificate"
+                        : "View path"
+                      : "View progress"}
                   </Link>
                 </div>
               ))}

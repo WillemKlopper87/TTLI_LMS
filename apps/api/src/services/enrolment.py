@@ -658,7 +658,7 @@ async def start_lesson(
     return completion
 
 
-async def _persist_certificate_pdf(
+async def persist_certificate_pdf(
     session: AsyncSession,
     storage: StorageService,
     settings: Settings,
@@ -667,9 +667,11 @@ async def _persist_certificate_pdf(
     certificate: Certificate,
     raw_verification_token: str,
 ) -> None:
-    """Shared by the course- and path-completion branches below — same
-    render/upload/stamp sequence either way, the only difference is which
-    kind of completion triggered it."""
+    """Shared by the course- and path-completion branches below, and by
+    `services/learning_paths.py`'s F5 read-repair (docs/research/
+    p5-review-findings.md) — same render/upload/stamp sequence
+    regardless of which kind of completion triggered it, so exported
+    rather than kept private once a second module needed it."""
     verification_url = f"{settings.public_web_url}/verify/{raw_verification_token}"
     pdf_bytes = credentials_service.render_certificate_pdf(
         snapshot=certificate.snapshot,
@@ -772,7 +774,7 @@ async def complete_lesson(
             badge_template_id=course.badge_template_id,
         )
         if issued.certificate is not None and issued.raw_verification_token is not None:
-            await _persist_certificate_pdf(
+            await persist_certificate_pdf(
                 session,
                 storage,
                 settings,
@@ -795,7 +797,10 @@ async def complete_lesson(
             session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
         ):
             if not await paths_service.all_member_courses_completed(
-                session, user_id=user_id, learning_path_id=path_enrolment.learning_path_id
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                learning_path_id=path_enrolment.learning_path_id,
             ):
                 continue
             path_enrolment.completed_at = datetime.now(UTC)
@@ -815,7 +820,7 @@ async def complete_lesson(
                 issued_path.certificate is not None
                 and issued_path.raw_verification_token is not None
             ):
-                await _persist_certificate_pdf(
+                await persist_certificate_pdf(
                     session,
                     storage,
                     settings,
@@ -1011,6 +1016,7 @@ __all__ = [
     "get_transcript",
     "has_access_to_video",
     "list_own_enrolments",
+    "persist_certificate_pdf",
     "resolve_enrolment_for_assignment",
     "resolve_enrolment_for_lesson",
     "resolve_enrolment_for_quiz",

@@ -277,10 +277,24 @@ async def update_product(
         product.name = name
     if description is not None:
         product.description = description
+    # Same "never both" rule create_product enforces (F3, docs/research/
+    # p5-review-findings.md) — checked against the product's *existing*
+    # opposite field, not just the two incoming params, since a PATCH
+    # only ever sends one of them at a time. Without this, a course
+    # product could gain a learning_path_id (or vice versa) with `kind`
+    # left stale, and fulfilment would grant the wrong thing silently.
     if course_id is not None:
+        if product.learning_path_id is not None:
+            raise CatalogueError(
+                "This product already sells a learning path — it can't also sell a course."
+            )
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
         product.course_id = course_id
     if learning_path_id is not None:
+        if product.course_id is not None:
+            raise CatalogueError(
+                "This product already sells a course — it can't also sell a learning path."
+            )
         await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
         product.learning_path_id = learning_path_id
 
