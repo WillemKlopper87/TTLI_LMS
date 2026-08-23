@@ -11,11 +11,12 @@ import uuid
 
 from fastapi import APIRouter, status
 
-from src.core.deps import PrincipalDep, SessionDep
+from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
 from src.models.audit import AuditAction
 from src.models.course import Course
 from src.models.learning_path import LearningPath, LearningPathCourse
+from src.schemas.courses import PublicPrice
 from src.schemas.learning_paths import (
     AddPathCourseRequest,
     LearningPathCreateRequest,
@@ -27,11 +28,16 @@ from src.schemas.learning_paths import (
     PathReadinessCheckRow,
     PathReadinessResponse,
     PathTenantAssignmentResponse,
+    PublicPathCard,
+    PublicPathCourseRow,
+    PublicPathDetailResponse,
+    PublicPathsResponse,
     ReorderPathCoursesRequest,
     TenantAssignmentCreateRequest,
 )
 from src.services import audit
 from src.services import learning_paths as paths_service
+from src.services.courses import PublicPriceRow
 
 router = APIRouter(tags=["learning-paths"])
 
@@ -269,6 +275,81 @@ async def assign_path_to_tenant(
         tenant_id=str(assignment.tenant_id),
         learning_path_id=str(assignment.learning_path_id),
         is_bespoke=assignment.is_bespoke,
+    )
+
+
+def _public_price(row: PublicPriceRow | None) -> PublicPrice | None:
+    if row is None:
+        return None
+    return PublicPrice(
+        product_id=str(row.product_id),
+        price_id=str(row.price_id),
+        currency=row.currency,
+        unit_amount=row.unit_amount,
+        tax_behaviour=row.tax_behaviour,
+        includes_vat=row.includes_vat,
+    )
+
+
+@router.get(
+    "/public/learning-paths",
+    response_model=PublicPathsResponse,
+    summary="Every published learning path this tenant offers, no auth required",
+)
+async def list_public_paths(session: SessionDep, tenant: TenantDep) -> PublicPathsResponse:
+    paths = await paths_service.list_public_paths(session, tenant_id=tenant.id)
+    prices = await paths_service.public_prices_for_paths(
+        session, tenant_id=tenant.id, path_ids=[p.id for p in paths]
+    )
+    items: list[PublicPathCard] = []
+    for path in paths:
+        members = await paths_service.list_path_courses(session, learning_path_id=path.id)
+        items.append(
+            PublicPathCard(
+                id=str(path.id),
+                slug=path.slug,
+                title=path.title,
+                description=path.description,
+                course_count=len(members),
+                has_certificate=path.certificate_template_id is not None,
+                price=_public_price(prices.get(path.id)),
+            )
+        )
+    return PublicPathsResponse(items=items)
+
+
+@router.get(
+    "/public/learning-paths/{learning_path_id}",
+    response_model=PublicPathDetailResponse,
+    summary="A published learning path's member courses, no auth required",
+)
+async def get_public_path(
+    learning_path_id: str, session: SessionDep, tenant: TenantDep
+) -> PublicPathDetailResponse:
+    path, members = await paths_service.get_public_path(
+        session, tenant_id=tenant.id, learning_path_id=_parse_uuid(learning_path_id)
+    )
+    prices = await paths_service.public_prices_for_paths(
+        session, tenant_id=tenant.id, path_ids=[path.id]
+    )
+    return PublicPathDetailResponse(
+        id=str(path.id),
+        slug=path.slug,
+        title=path.title,
+        description=path.description,
+        has_certificate=path.certificate_template_id is not None,
+        courses=[
+            PublicPathCourseRow(
+                course_id=str(course.id),
+                title=course.title,
+                summary=course.summary,
+                level=course.level,
+                topic=course.topic,
+                position=member.position,
+            )
+            for member, course in members
+        ],
+        price=_public_price(prices.get(path.id)),
     )
 
 

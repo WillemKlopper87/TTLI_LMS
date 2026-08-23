@@ -20,12 +20,16 @@ class ProductCreateRequest(BaseModel):
     # Optional so a product can be drafted before its course exists, and
     # because 02 §6.1 allows a sellable wrapper with no course behind it.
     course_id: str | None = None
+    # Mutually exclusive with course_id — services/catalogue.py::
+    # create_product refuses both set (P5).
+    learning_path_id: str | None = None
 
 
 class ProductUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     course_id: str | None = None
+    learning_path_id: str | None = None
     is_active: bool | None = None
 
 
@@ -51,6 +55,8 @@ class AdminProductResponse(BaseModel):
     is_active: bool
     course_id: str | None
     course_title: str | None
+    learning_path_id: str | None
+    learning_path_title: str | None
     # Non-null means this product is owned by a subscription plan and must
     # be edited through the plan, not here.
     subscription_plan_id: str | None

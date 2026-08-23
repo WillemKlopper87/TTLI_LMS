@@ -1,6 +1,47 @@
 # STATUS
 
-**Updated:** 2026-08-23 (sixth pass, same day) — **P5 Phase 1: learning
+**Updated:** 2026-08-23 (seventh pass, same day) — **P5 Phase 2: learning
+paths become sellable.** `services/orders.py::_fulfil_order` gains an
+`elif product.kind == "path":` branch, structured the same way as the
+existing `course`/`subscription` branches — grant the path entitlement,
+then a new `_fulfil_path_purchase` helper grants one `course`-kind
+entitlement and one `Enrolment` per member course (in `position` order)
+plus a get-or-create `PathEnrolment` anchor row. The course-level
+entitlements exist only because `entitlements.has_valid_course_
+entitlement` and `enrolment_service.get_own_enrolment`'s live re-check
+are both hardcoded to `kind == "course"` — deliberately not generalised
+(that function's docstring already treats `target_id` as polymorphic on
+purpose); granting one extra row per member course is lower-risk than
+loosening a security check.
+`GET /public/learning-paths` + `/{id}` mirror `courses.py`'s own public
+endpoints exactly — same `_visible_course`-style join-and-filter, same
+"draft or unassigned is invisible" rule, verified with a dedicated test.
+`services/catalogue.py::create_product`/`update_product` now accept
+`learning_path_id` (mutually exclusive with `course_id` — a product
+sells one thing), inferring `kind` from which is set, gated through a
+new `_assert_path_sellable` mirroring `_assert_course_sellable`. The
+admin editor gained a "Sell this path" section reusing the exact
+create-product/add-price/toggle-active calls `step-pricing.tsx` already
+established for courses.
+**A live-smoke run — not pytest, not typecheck — caught a real bug**:
+`list_all_products`'s `SELECT` grew a third joined column
+(`LearningPath.title`, alongside the pre-existing `Course.title`) but a
+few lines down a tuple-unpacking loop still assumed two columns,
+raising `ValueError: too many values to unpack` and 500ing `GET /
+catalogue/products` — invisible to the whole test suite because nothing
+in it called that endpoint with a real product row present (every
+existing test either got 403 first or only ever POSTed). Caught by
+clicking "Create product" in a real browser and watching the list never
+update; fixed, and a new test creates a real path-kind product and
+lists it, pinning the exact regression.
+Verified: 6 API tests (the new purchase-to-enrolment integration test,
+public-visibility test, and product-authoring/listing test alongside
+Phase 1's 3), full suite green, `alembic check` clean (no schema change
+this phase), web `typecheck`/`lint`/`build` clean, axe-clean, and two
+independent live-smoke passes — a pytest-driven EFT buy-to-enrolment
+run and a real browser session creating a product, pricing it,
+activating it, and confirming it on the public endpoint.
+Prior, same day — **P5 Phase 1: learning
 paths, schema and admin authoring.** `docs/BACKLOG.md` P5 (Pass E,
 feature-matrix gap #7) — a learning path is an ordered bundle of
 existing courses, sellable as one product, whose progress rolls up its

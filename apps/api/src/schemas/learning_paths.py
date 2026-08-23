@@ -1,13 +1,13 @@
-"""Request/response shapes for learning-path authoring (`routers/
-learning_paths.py`). Kept as its own module the same way `schemas/
-course_wizard.py` is kept out of `schemas/courses.py`. Public/catalogue
-shapes (browsing, buying) land alongside their own endpoints — Pass E's
-commerce phase, not this authoring one.
+"""Request/response shapes for learning-path authoring and public
+browsing (`routers/learning_paths.py`). Kept as its own module the same
+way `schemas/course_wizard.py` is kept out of `schemas/courses.py`.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+
+from src.schemas.courses import PublicPrice
 
 
 class LearningPathCreateRequest(BaseModel):
@@ -90,6 +90,39 @@ class PathTenantAssignmentResponse(BaseModel):
     is_bespoke: bool
 
 
+class PublicPathCourseRow(BaseModel):
+    course_id: str
+    title: str
+    summary: str | None
+    level: str | None
+    topic: str | None
+    position: int
+
+
+class PublicPathCard(BaseModel):
+    id: str
+    slug: str
+    title: str
+    description: str | None
+    course_count: int
+    has_certificate: bool
+    price: PublicPrice | None
+
+
+class PublicPathsResponse(BaseModel):
+    items: list[PublicPathCard]
+
+
+class PublicPathDetailResponse(BaseModel):
+    id: str
+    slug: str
+    title: str
+    description: str | None
+    has_certificate: bool
+    courses: list[PublicPathCourseRow]
+    price: PublicPrice | None
+
+
 __all__ = [
     "AddPathCourseRequest",
     "LearningPathCreateRequest",
@@ -101,6 +134,10 @@ __all__ = [
     "PathReadinessCheckRow",
     "PathReadinessResponse",
     "PathTenantAssignmentResponse",
+    "PublicPathCard",
+    "PublicPathCourseRow",
+    "PublicPathDetailResponse",
+    "PublicPathsResponse",
     "ReorderPathCoursesRequest",
     "TenantAssignmentCreateRequest",
 ]

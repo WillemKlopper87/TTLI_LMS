@@ -255,3 +255,270 @@ async def test_reorder_courses_and_tenant_assignment(  # type: ignore[no-untyped
     )
     assert assigned.status_code == 201, assigned.text
     assert assigned.json()["is_bespoke"] is True
+
+
+async def test_path_purchase_grants_all_member_enrolments_via_eft(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Phase 2's whole point: buying a path through the real EFT approve
+    flow grants entitlement + enrolment for every member course, plus a
+    path_enrolment anchor row — the commerce bridge works end to end,
+    not just the authoring API. Mirrors test_catalogue.py's own
+    course-purchase test shape."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    course_a = await _published_course(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "EFT Purchase Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        added = await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+        assert added.status_code == 201, added.text
+    published = await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    assert published.status_code == 200, published.text
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"path-prod-{uuid.uuid4().hex[:8]}",
+                "name": "EFT Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    assert product["kind"] == "path"
+    assert product["learning_path_id"] == path_id
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "3000.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    buyer_auth = {"Authorization": f"Bearer {buyer_token}"}
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 201, order.text
+    order_id = order.json()["id"]
+
+    checkout = await client.post(f"/api/v1/orders/{order_id}/checkout/eft", headers=buyer_auth)
+    assert checkout.status_code == 200, checkout.text
+    payment_id = checkout.json()["payment_id"]
+
+    proof = await client.post(
+        f"/api/v1/orders/{order_id}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=buyer_auth,
+    )
+    assert proof.status_code == 204, proof.text
+
+    finance = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{payment_id}/approve",
+        headers={"Authorization": f"Bearer {finance}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approved.status_code == 200, approved.text
+
+    enrolments = await client.get("/api/v1/enrolments", headers=buyer_auth)
+    assert enrolments.status_code == 200, enrolments.text
+    enrolled_course_ids = {row["course_id"] for row in enrolments.json()}
+    assert course_a in enrolled_course_ids
+    assert course_b in enrolled_course_ids
+
+    # path_enrolments and the course-kind entitlements it depends on have
+    # no read endpoint yet (that's Phase 3/4) — asserted directly.
+    async with tenant_session_factory(tenant_id) as s:
+        path_enrolment = (
+            await s.execute(
+                sa.text("SELECT id, completed_at FROM path_enrolments WHERE learning_path_id = :p"),
+                {"p": path_id},
+            )
+        ).first()
+        course_entitlement_count = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(*) FROM entitlements WHERE kind = 'course' "
+                    "AND target_id IN (:a, :b) AND source_order_id = :o"
+                ),
+                {"a": course_a, "b": course_b, "o": order_id},
+            )
+        ).scalar_one()
+    assert path_enrolment is not None
+    assert path_enrolment.completed_at is None
+    assert course_entitlement_count == 2
+
+
+async def test_public_path_browsing_respects_publish_and_assignment(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """`GET /public/learning-paths` is unauthenticated — a draft or
+    unassigned path must stay invisible, the same visibility rule
+    `_visible_course` already enforces for courses."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    course_a = await _published_course(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Public Browse Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+
+    # Draft, unassigned: invisible.
+    before = await client.get("/api/v1/public/learning-paths")
+    assert before.status_code == 200
+    assert all(p["id"] != path_id for p in before.json()["items"])
+    detail_before = await client.get(f"/api/v1/public/learning-paths/{path_id}")
+    assert detail_before.status_code == 404
+
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+
+    listed = await client.get("/api/v1/public/learning-paths")
+    assert listed.status_code == 200
+    card = next(p for p in listed.json()["items"] if p["id"] == path_id)
+    assert card["course_count"] == 2
+    assert card["price"] is None  # no product/price created for it in this test
+
+    detail = await client.get(f"/api/v1/public/learning-paths/{path_id}")
+    assert detail.status_code == 200, detail.text
+    assert [c["course_id"] for c in detail.json()["courses"]] == [course_a, course_b]
+
+
+async def test_path_product_authoring_and_admin_listing(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """The admin editor's "Sell this path" section: create a product
+    bound to a path, price it, activate it — and confirm `GET /catalogue/
+    products` (the admin list every product page loads) actually returns
+    it with the path linkage populated. This is the one admin list
+    endpoint nothing else in the suite exercises with a real path-kind
+    row present."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    auth = {"Authorization": f"Bearer {token}"}
+
+    path = (
+        await client.post("/api/v1/learning-paths", json={"title": "Sellable Path"}, headers=auth)
+    ).json()
+    path_id = path["id"]
+    for _ in range(2):
+        member = await _published_course(client, auth)
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": member},
+            headers=auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=auth)
+    # _assert_path_sellable (mirrors _assert_course_sellable) requires the
+    # path be assigned to this tenant before a product can sell it.
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=auth,
+    )
+
+    product = await client.post(
+        "/api/v1/catalogue/products",
+        json={
+            "slug": f"sellable-path-{uuid.uuid4().hex[:8]}",
+            "name": "Sellable Path Product",
+            "learning_path_id": path_id,
+        },
+        headers=auth,
+    )
+    assert product.status_code == 201, product.text
+    body = product.json()
+    assert body["kind"] == "path"
+    assert body["learning_path_id"] == path_id
+    assert body["course_id"] is None
+
+    price = await client.post(
+        f"/api/v1/catalogue/products/{body['id']}/prices",
+        json={"currency": "ZAR", "unit_amount": "2500.00"},
+        headers=auth,
+    )
+    assert price.status_code == 201, price.text
+
+    activated = await client.patch(
+        f"/api/v1/catalogue/products/{body['id']}", json={"is_active": True}, headers=auth
+    )
+    assert activated.status_code == 200, activated.text
+
+    # The bug this test exists to pin: list_all_products' SELECT gained a
+    # third column (LearningPath.title) but a later unpacking loop still
+    # assumed two, raising ValueError on any real row — invisible to the
+    # rest of the suite because nothing else GETs this list with a
+    # path-kind product actually present.
+    listed = await client.get("/api/v1/catalogue/products", headers=auth)
+    assert listed.status_code == 200, listed.text
+    row = next(p for p in listed.json()["items"] if p["id"] == body["id"])
+    assert row["learning_path_id"] == path_id
+    assert row["learning_path_title"] == "Sellable Path"
+    assert row["is_active"] is True
+    assert len(row["prices"]) == 1
+
+    # A product can't sell both a course and a path.
+    course = await _published_course(client, auth)
+    rejected = await client.post(
+        "/api/v1/catalogue/products",
+        json={
+            "slug": f"both-{uuid.uuid4().hex[:8]}",
+            "name": "Both",
+            "course_id": course,
+            "learning_path_id": path_id,
+        },
+        headers=auth,
+    )
+    assert rejected.status_code == 400, rejected.text

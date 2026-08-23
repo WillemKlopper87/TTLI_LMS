@@ -54,6 +54,8 @@ def _row_response(row: catalogue_service.AdminProductRow) -> AdminProductRespons
         is_active=row.is_active,
         course_id=str(row.course_id) if row.course_id is not None else None,
         course_title=row.course_title,
+        learning_path_id=str(row.learning_path_id) if row.learning_path_id is not None else None,
+        learning_path_title=row.learning_path_title,
         subscription_plan_id=(
             str(row.subscription_plan_id) if row.subscription_plan_id is not None else None
         ),
@@ -69,7 +71,11 @@ def _row_response(row: catalogue_service.AdminProductRow) -> AdminProductRespons
     )
 
 
-def _product_response(product: Product, course_title: str | None = None) -> AdminProductResponse:
+def _product_response(
+    product: Product,
+    course_title: str | None = None,
+    learning_path_title: str | None = None,
+) -> AdminProductResponse:
     """For the single-object create/update replies, which have no prices
     joined yet — the list endpoint is what carries the full picture."""
     return AdminProductResponse(
@@ -81,6 +87,10 @@ def _product_response(product: Product, course_title: str | None = None) -> Admi
         is_active=product.is_active,
         course_id=str(product.course_id) if product.course_id is not None else None,
         course_title=course_title,
+        learning_path_id=(
+            str(product.learning_path_id) if product.learning_path_id is not None else None
+        ),
+        learning_path_title=learning_path_title,
         subscription_plan_id=(
             str(product.subscription_plan_id) if product.subscription_plan_id is not None else None
         ),
@@ -128,6 +138,7 @@ async def create_product(
         name=body.name,
         description=body.description,
         course_id=_parse_uuid(body.course_id) if body.course_id else None,
+        learning_path_id=_parse_uuid(body.learning_path_id) if body.learning_path_id else None,
     )
     return _product_response(product)
 
@@ -147,6 +158,7 @@ async def update_product(
         name=body.name,
         description=body.description,
         course_id=_parse_uuid(body.course_id) if body.course_id else None,
+        learning_path_id=_parse_uuid(body.learning_path_id) if body.learning_path_id else None,
         is_active=body.is_active,
     )
     return _product_response(product)

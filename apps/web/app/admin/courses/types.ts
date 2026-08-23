@@ -142,6 +142,8 @@ export interface ProductItem {
   is_active: boolean;
   course_id: string | null;
   course_title: string | null;
+  learning_path_id: string | null;
+  learning_path_title: string | null;
   subscription_plan_id: string | null;
   prices: PriceRow[];
 }

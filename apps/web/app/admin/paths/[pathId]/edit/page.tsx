@@ -18,7 +18,7 @@ import { type DragEvent, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { useAdmin } from "../../../admin-context";
-import type { CertificateTemplate, CourseItem } from "../../../courses/types";
+import type { CertificateTemplate, CourseItem, ProductItem } from "../../../courses/types";
 import { authedFetch, getJson, readError, sendJson } from "../../../courses/wizard-api";
 
 interface LearningPathItem {
@@ -64,12 +64,16 @@ export default function EditLearningPathPage() {
   const [readiness, setReadiness] = useState<PathReadiness | null>(null);
   const [allCourses, setAllCourses] = useState<CourseItem[] | null>(null);
   const [certificates, setCertificates] = useState<CertificateTemplate[] | null>(null);
+  const [product, setProduct] = useState<ProductItem | null>(null);
 
   const [addCourseId, setAddCourseId] = useState("");
+  const [priceAmount, setPriceAmount] = useState("");
+  const [priceCurrency, setPriceCurrency] = useState("ZAR");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const dragRef = useRef<string | null>(null);
+  const canManageProducts = me.permissions.includes("product:manage");
 
   async function loadAll() {
     const [pathResp, membersResp, readinessResp] = await Promise.all([
@@ -80,6 +84,10 @@ export default function EditLearningPathPage() {
     setPath(pathResp);
     setMembers(membersResp?.items ?? []);
     setReadiness(readinessResp);
+    if (canManageProducts) {
+      const products = await getJson<{ items: ProductItem[] }>("/api/bff/catalogue/products");
+      setProduct((products?.items ?? []).find((p) => p.learning_path_id === pathId) ?? null);
+    }
   }
 
   useEffect(() => {
@@ -134,6 +142,58 @@ export default function EditLearningPathPage() {
       setError(await readError(resp, "That course could not be removed."));
       return;
     }
+    await loadAll();
+  }
+
+  async function createProduct() {
+    if (!path) return;
+    setBusy(true);
+    setError(null);
+    const resp = await sendJson("/api/bff/catalogue/products", "POST", {
+      slug: path.slug,
+      name: path.title,
+      description: path.description,
+      learning_path_id: pathId,
+    });
+    setBusy(false);
+    if (!resp.ok) {
+      setError(await readError(resp, "The product could not be created."));
+      return;
+    }
+    setNotice("Product created — add a price to make it purchasable.");
+    await loadAll();
+  }
+
+  async function addPrice() {
+    if (!product || !priceAmount) return;
+    setBusy(true);
+    setError(null);
+    const resp = await sendJson(`/api/bff/catalogue/products/${product.id}/prices`, "POST", {
+      currency: priceCurrency,
+      unit_amount: priceAmount,
+    });
+    setBusy(false);
+    if (!resp.ok) {
+      setError(await readError(resp, "The price could not be added."));
+      return;
+    }
+    setPriceAmount("");
+    await loadAll();
+  }
+
+  async function setProductActive(isActive: boolean) {
+    if (!product) return;
+    setBusy(true);
+    setError(null);
+    const resp = await sendJson(`/api/bff/catalogue/products/${product.id}`, "PATCH", {
+      is_active: isActive,
+    });
+    setBusy(false);
+    if (!resp.ok) {
+      setError(await readError(resp, "The product could not be updated."));
+      return;
+    }
+    setNotice(isActive ? "Now on sale." : "Taken off sale.");
     await loadAll();
   }
 
@@ -376,6 +436,83 @@ export default function EditLearningPathPage() {
           </select>
         </label>
       </div>
+
+      {canManageProducts ? (
+        <div className="card p-4 mt-4">
+          <b>Sell this path</b>
+          {product === null ? (
+            <>
+              <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                No product yet — a path needs one to be purchasable.
+              </p>
+              <button
+                type="button"
+                className="btn btn--primary mt-2"
+                disabled={busy}
+                onClick={() => void createProduct()}
+              >
+                Create product
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 flex items-center gap-2" style={{ fontSize: "0.8125rem" }}>
+                <span>{product.name}</span>
+                <span className={`tag ${product.is_active ? "tag--done" : "tag--mute"}`}>
+                  {product.is_active ? "on sale" : "inactive"}
+                </span>
+              </p>
+              <ul className="mt-2 flex flex-col gap-1">
+                {product.prices.map((p) => (
+                  <li key={p.id} style={{ fontSize: "0.8125rem" }}>
+                    {p.currency} {p.unit_amount}
+                  </li>
+                ))}
+                {product.prices.length === 0 ? (
+                  <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>No price yet.</p>
+                ) : null}
+              </ul>
+              <div className="mt-2 flex items-end gap-2">
+                <label className="field">
+                  <span>Currency</span>
+                  <input
+                    className="input"
+                    style={{ width: "5rem" }}
+                    value={priceCurrency}
+                    onChange={(e) => setPriceCurrency(e.target.value.toUpperCase())}
+                    maxLength={3}
+                  />
+                </label>
+                <label className="field">
+                  <span>Amount</span>
+                  <input
+                    className="input"
+                    value={priceAmount}
+                    onChange={(e) => setPriceAmount(e.target.value)}
+                    placeholder="e.g. 3000.00"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={busy || !priceAmount}
+                  onClick={() => void addPrice()}
+                >
+                  Add price
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn btn--ghost mt-2"
+                disabled={busy || product.prices.length === 0}
+                onClick={() => void setProductActive(!product.is_active)}
+              >
+                {product.is_active ? "Take off sale" : "Put on sale"}
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {readiness ? (
         <div className="reqs mt-4">

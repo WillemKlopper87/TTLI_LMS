@@ -29,9 +29,11 @@ from src.core.ids import uuid7
 from src.core.logging import get_logger
 from src.models.audit import AuditAction
 from src.models.commerce import Invoice, Order, OrderItem, Payment, Price, Product, TaxRule
+from src.models.learning_path import PathEnrolment
 from src.models.user import User
 from src.services import audit, entitlements, invoicing, ledger, push, tax
 from src.services import enrolment as enrolment_service
+from src.services import learning_paths as paths_service
 from src.services import subscriptions as subscriptions_service
 from src.services.payments.base import CheckoutRedirect, PaymentProvider
 
@@ -280,6 +282,72 @@ async def checkout_card(
     return payment, redirect
 
 
+async def _fulfil_path_purchase(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    source_order_id: uuid.UUID,
+    learning_path_id: uuid.UUID,
+    path_entitlement_id: uuid.UUID,
+) -> None:
+    """The path entitlement alone isn't enough to unlock its member
+    courses: `entitlements.has_valid_course_entitlement` and `enrolment_
+    service.get_own_enrolment`'s live re-check are both hardcoded to
+    `kind == "course"` (deliberately narrow, not a bug — see `entitlements
+    .py`'s own docstring on `target_id` being polymorphic). So a path
+    purchase grants one `course`-kind entitlement and one `Enrolment`
+    per member course, in `learning_path_courses.position` order, on top
+    of the path entitlement `_fulfil_order` already granted — the same
+    "one purchase, several entitlement rows for different purposes"
+    shape `services/organisations.py::assign_seat` already uses for a
+    pool entitlement plus a per-employee one.
+
+    `PathEnrolment` is get-or-create, not a plain insert: a learner who
+    already holds this path (e.g. a second purchase after the first
+    lapsed) must not violate `path_enrolments`' one-row-per-user-per-path
+    unique index, same reasoning `enrolment_service.get_or_create_
+    enrolment`'s own docstring gives for a course."""
+    members = await paths_service.list_path_courses(session, learning_path_id=learning_path_id)
+    for _member, course in members:
+        course_entitlement = await entitlements.grant(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            source_order_id=source_order_id,
+            kind="course",
+            target_id=course.id,
+        )
+        await enrolment_service.get_or_create_enrolment(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            course_id=course.id,
+            entitlement_id=course_entitlement.id,
+        )
+
+    existing = (
+        await session.execute(
+            select(PathEnrolment).where(
+                PathEnrolment.tenant_id == tenant_id,
+                PathEnrolment.user_id == user_id,
+                PathEnrolment.learning_path_id == learning_path_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        session.add(
+            PathEnrolment(
+                id=uuid7(),
+                tenant_id=tenant_id,
+                user_id=user_id,
+                learning_path_id=learning_path_id,
+                entitlement_id=path_entitlement_id,
+            )
+        )
+        await session.flush()
+
+
 async def _fulfil_order(
     session: AsyncSession,
     *,
@@ -336,10 +404,10 @@ async def _fulfil_order(
             )
             continue
 
-        # Product.kind is "course" for everything sold so far — target_id
-        # resolves to the real course now (Phase 4), not the product's own
-        # id used as a stand-in before courses existed (see git history on
-        # services/entitlements.py's docstring).
+        # Product.kind is "course"/"path" for everything sold so far —
+        # target_id resolves to the real course/path (Phase 4/P5), not the
+        # product's own id used as a stand-in before courses existed (see
+        # git history on services/entitlements.py's docstring).
         if product.kind == "course":
             if product.course_id is None:
                 raise OrderError(
@@ -347,12 +415,23 @@ async def _fulfil_order(
                     "cannot grant entitlement."
                 )
             target_id = product.course_id
+        elif product.kind == "path":
+            if product.learning_path_id is None:
+                raise OrderError(
+                    f"Product {product.slug!r} is a path product with no linked learning "
+                    "path; cannot grant entitlement."
+                )
+            target_id = product.learning_path_id
         else:
             target_id = product.id
 
         if order.organisation_id is not None:
             # The seat pool itself — no user_id, drawn from later by
-            # assign_seat (0016's migration docstring).
+            # assign_seat (0016's migration docstring). A path's member
+            # courses get their own pool entitlements only once a real
+            # seat is assigned to a real learner (assign_seat's own
+            # concern, unchanged by P5) — granting them here, with no
+            # user to enrol yet, would just be N rows nothing reads.
             entitlement = await entitlements.grant(
                 session,
                 tenant_id=tenant_id,
@@ -382,6 +461,15 @@ async def _fulfil_order(
                 user_id=order.user_id,
                 course_id=target_id,
                 entitlement_id=entitlement.id,
+            )
+        elif product.kind == "path":
+            await _fulfil_path_purchase(
+                session,
+                tenant_id=tenant_id,
+                user_id=order.user_id,
+                source_order_id=order.id,
+                learning_path_id=target_id,
+                path_entitlement_id=entitlement.id,
             )
 
     order.status = "fulfilled"

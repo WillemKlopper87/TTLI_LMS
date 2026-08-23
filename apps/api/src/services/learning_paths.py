@@ -17,12 +17,14 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
+from src.models.commerce import Price, Product
 from src.models.course import Course
 from src.models.credential import CertificateTemplate
 from src.models.learning_path import (
@@ -30,6 +32,7 @@ from src.models.learning_path import (
     LearningPathCourse,
     LearningPathTenantAssignment,
 )
+from src.services.courses import PublicPriceRow
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -334,6 +337,95 @@ async def get_path_readiness(
     )
 
 
+# --- Public browsing (Phase 2) ----------------------------------------
+
+
+async def _visible_path(
+    session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
+) -> LearningPath:
+    """A published path this tenant has actually been assigned — the
+    path equivalent of `services/courses.py::_visible_course`, same
+    visibility rule, same unauthenticated use (the public detail page)."""
+    stmt = (
+        select(LearningPath)
+        .join(
+            LearningPathTenantAssignment,
+            LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+        )
+        .where(
+            LearningPath.id == learning_path_id,
+            LearningPath.state == "published",
+            LearningPathTenantAssignment.tenant_id == tenant_id,
+        )
+    )
+    path = (await session.execute(stmt)).scalars().first()
+    if path is None:
+        raise NotFound("No such learning path.")
+    return path
+
+
+async def list_public_paths(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[LearningPath]:
+    """Every published path assigned to this tenant — the anonymous
+    catalogue/landing grid (`GET /public/learning-paths`). Same
+    visibility rule as `_visible_path`, just as a list."""
+    stmt = (
+        select(LearningPath)
+        .join(
+            LearningPathTenantAssignment,
+            LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+        )
+        .where(
+            LearningPath.state == "published", LearningPathTenantAssignment.tenant_id == tenant_id
+        )
+        .order_by(LearningPath.title)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_public_path(
+    session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
+) -> tuple[LearningPath, list[tuple[LearningPathCourse, Course]]]:
+    path = await _visible_path(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
+    members = await list_path_courses(session, learning_path_id=path.id)
+    return path, members
+
+
+async def public_prices_for_paths(
+    session: AsyncSession, *, tenant_id: uuid.UUID, path_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, PublicPriceRow]:
+    """The path equivalent of `services/courses.py::public_prices_for_
+    courses` — same "first active, currently-valid-priced product of
+    this tenant" rule, reusing that function's own `PublicPriceRow`
+    shape rather than a duplicate."""
+    if not path_ids:
+        return {}
+    now = datetime.now(UTC)
+    stmt = (
+        select(Product, Price)
+        .join(Price, Price.product_id == Product.id)
+        .where(
+            Product.tenant_id == tenant_id,
+            Product.is_active.is_(True),
+            Product.learning_path_id.in_(path_ids),
+            or_(Price.valid_until.is_(None), Price.valid_until > now),
+        )
+        .order_by(Product.name, Price.valid_from)
+    )
+    result: dict[uuid.UUID, PublicPriceRow] = {}
+    for product, price in (await session.execute(stmt)).tuples().all():
+        if product.learning_path_id is None or product.learning_path_id in result:
+            continue
+        result[product.learning_path_id] = PublicPriceRow(
+            product_id=product.id,
+            price_id=price.id,
+            currency=price.currency,
+            unit_amount=str(price.unit_amount),
+            tax_behaviour=price.tax_behaviour,
+            includes_vat=price.tax_behaviour == "inclusive",
+        )
+    return result
+
+
 __all__ = [
     "MINIMUM_COURSES_TO_PUBLISH",
     "LearningPathError",
@@ -344,9 +436,12 @@ __all__ = [
     "create_learning_path",
     "get_learning_path",
     "get_path_readiness",
+    "get_public_path",
     "list_learning_paths",
     "list_path_courses",
+    "list_public_paths",
     "list_tenant_path_assignments",
+    "public_prices_for_paths",
     "publish_learning_path",
     "remove_course_from_path",
     "reorder_path_courses",

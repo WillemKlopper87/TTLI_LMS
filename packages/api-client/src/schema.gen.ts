@@ -1502,6 +1502,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/learning-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every published learning path this tenant offers, no auth required */
+        get: operations["list_public_paths_api_v1_public_learning_paths_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/learning-paths/{learning_path_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A published learning path's member courses, no auth required */
+        get: operations["get_public_path_api_v1_public_learning_paths__learning_path_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/facilitators": {
         parameters: {
             query?: never;
@@ -3698,6 +3732,10 @@ export interface components {
             course_id: string | null;
             /** Course Title */
             course_title: string | null;
+            /** Learning Path Id */
+            learning_path_id: string | null;
+            /** Learning Path Title */
+            learning_path_title: string | null;
             /** Subscription Plan Id */
             subscription_plan_id: string | null;
             /** Prices */
@@ -6004,6 +6042,8 @@ export interface components {
             description?: string | null;
             /** Course Id */
             course_id?: string | null;
+            /** Learning Path Id */
+            learning_path_id?: string | null;
         };
         /** ProductSummary */
         ProductSummary: {
@@ -6032,6 +6072,8 @@ export interface components {
             description?: string | null;
             /** Course Id */
             course_id?: string | null;
+            /** Learning Path Id */
+            learning_path_id?: string | null;
             /** Is Active */
             is_active?: boolean | null;
         };
@@ -6228,6 +6270,58 @@ export interface components {
              * @default 0
              */
             lesson_count: number;
+        };
+        /** PublicPathCard */
+        PublicPathCard: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Course Count */
+            course_count: number;
+            /** Has Certificate */
+            has_certificate: boolean;
+            price: components["schemas"]["PublicPrice"] | null;
+        };
+        /** PublicPathCourseRow */
+        PublicPathCourseRow: {
+            /** Course Id */
+            course_id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string | null;
+            /** Level */
+            level: string | null;
+            /** Topic */
+            topic: string | null;
+            /** Position */
+            position: number;
+        };
+        /** PublicPathDetailResponse */
+        PublicPathDetailResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Has Certificate */
+            has_certificate: boolean;
+            /** Courses */
+            courses: components["schemas"]["PublicPathCourseRow"][];
+            price: components["schemas"]["PublicPrice"] | null;
+        };
+        /** PublicPathsResponse */
+        PublicPathsResponse: {
+            /** Items */
+            items: components["schemas"]["PublicPathCard"][];
         };
         /**
          * PublicPrice
@@ -10511,6 +10605,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PathTenantAssignmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_paths_api_v1_public_learning_paths_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPathsResponse"];
+                };
+            };
+        };
+    };
+    get_public_path_api_v1_public_learning_paths__learning_path_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPathDetailResponse"];
                 };
             };
             /** @description Validation Error */

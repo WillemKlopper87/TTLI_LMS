@@ -28,6 +28,7 @@ from src.core.errors import AppError, NotFound
 from src.core.ids import uuid7
 from src.models.commerce import OrderItem, Price, Product
 from src.models.course import Course, CourseTenantAssignment
+from src.models.learning_path import LearningPath, LearningPathTenantAssignment
 from src.models.subscription import SubscriptionPlanCourse
 
 
@@ -139,6 +140,8 @@ class AdminProductRow:
     is_active: bool
     course_id: uuid.UUID | None
     course_title: str | None
+    learning_path_id: uuid.UUID | None
+    learning_path_title: str | None
     subscription_plan_id: uuid.UUID | None
     prices: list[PriceRow]
 
@@ -172,6 +175,32 @@ async def _assert_course_sellable(
     return course
 
 
+async def _assert_path_sellable(
+    session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
+) -> LearningPath:
+    """The path equivalent of `_assert_course_sellable` — a tenant may
+    only sell a learning path actually assigned to it, checked against
+    `learning_path_tenant_assignments` the same way a course is checked
+    against `course_tenant_assignments`."""
+    path = (
+        await session.execute(select(LearningPath).where(LearningPath.id == learning_path_id))
+    ).scalar_one_or_none()
+    if path is None:
+        raise NotFound("Learning path not found.")
+
+    assigned = (
+        await session.execute(
+            select(LearningPathTenantAssignment.id).where(
+                LearningPathTenantAssignment.tenant_id == tenant_id,
+                LearningPathTenantAssignment.learning_path_id == learning_path_id,
+            )
+        )
+    ).first()
+    if assigned is None:
+        raise CatalogueError("That learning path is not assigned to this tenant.")
+    return path
+
+
 async def create_product(
     session: AsyncSession,
     *,
@@ -180,14 +209,22 @@ async def create_product(
     name: str,
     description: str | None,
     course_id: uuid.UUID | None,
+    learning_path_id: uuid.UUID | None = None,
 ) -> Product:
-    """Create a one-time-purchase product, optionally bound to a course.
+    """Create a one-time-purchase product, optionally bound to a course
+    or a learning path (never both — a product sells one sellable thing).
 
-    `kind` is always "course" here. Subscription products are created by
-    `subscriptions.create_plan` instead, which owns the plan/product/price
-    triple as one unit — creating one through this path would leave a
-    subscription product with no plan behind it.
+    `kind` is "path" when `learning_path_id` is given, "course"
+    otherwise — the same inference `Product.course_id`'s own docstring
+    already made unavoidable once a second bridge column existed.
+    Subscription products are created by `subscriptions.create_plan`
+    instead, which owns the plan/product/price triple as one unit —
+    creating one through this path would leave a subscription product
+    with no plan behind it.
     """
+    if course_id is not None and learning_path_id is not None:
+        raise CatalogueError("A product sells a course or a learning path, never both.")
+
     clash = (
         await session.execute(
             select(Product.id).where(Product.tenant_id == tenant_id, Product.slug == slug)
@@ -198,6 +235,8 @@ async def create_product(
 
     if course_id is not None:
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
+    if learning_path_id is not None:
+        await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
 
     product = Product(
         id=uuid7(),
@@ -205,8 +244,9 @@ async def create_product(
         slug=slug,
         name=name,
         description=description,
-        kind="course",
+        kind="path" if learning_path_id is not None else "course",
         course_id=course_id,
+        learning_path_id=learning_path_id,
         # Inactive on creation, deliberately: a product with no price yet
         # would otherwise appear in the public catalogue with nothing to
         # buy. Publishing is a second, explicit step once a price exists.
@@ -226,6 +266,7 @@ async def update_product(
     description: str | None,
     course_id: uuid.UUID | None,
     is_active: bool | None,
+    learning_path_id: uuid.UUID | None = None,
 ) -> Product:
     product = await _get_own_product(session, tenant_id=tenant_id, product_id=product_id)
 
@@ -239,6 +280,9 @@ async def update_product(
     if course_id is not None:
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
         product.course_id = course_id
+    if learning_path_id is not None:
+        await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
+        product.learning_path_id = learning_path_id
 
     if is_active is True:
         # Refuse to publish a product nobody can actually buy. The
@@ -328,11 +372,14 @@ async def _get_own_product(
 async def list_all_products(
     session: AsyncSession, *, tenant_id: uuid.UUID
 ) -> list[AdminProductRow]:
-    """Every product this tenant owns, active or not, with its course."""
+    """Every product this tenant owns, active or not, with its course or
+    learning path (a product has at most one of the two — services.
+    catalogue::create_product refuses both set)."""
     rows = (
         await session.execute(
-            select(Product, Course.title)
+            select(Product, Course.title, LearningPath.title)
             .outerjoin(Course, Course.id == Product.course_id)
+            .outerjoin(LearningPath, LearningPath.id == Product.learning_path_id)
             .where(Product.tenant_id == tenant_id)
             .order_by(Product.name)
         )
@@ -340,7 +387,7 @@ async def list_all_products(
     if not rows:
         return []
 
-    product_ids = [p.id for p, _ in rows]
+    product_ids = [p.id for p, _, _ in rows]
     prices = (
         (await session.execute(select(Price).where(Price.product_id.in_(product_ids))))
         .scalars()
@@ -366,11 +413,13 @@ async def list_all_products(
             kind=p.kind,
             is_active=p.is_active,
             course_id=p.course_id,
-            course_title=title,
+            course_title=course_title,
+            learning_path_id=p.learning_path_id,
+            learning_path_title=path_title,
             subscription_plan_id=p.subscription_plan_id,
             prices=prices_by_product.get(p.id, []),
         )
-        for p, title in rows
+        for p, course_title, path_title in rows
     ]
 
 
