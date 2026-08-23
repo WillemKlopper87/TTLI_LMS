@@ -1,6 +1,31 @@
 # STATUS
 
-**Updated:** 2026-08-23 — **Institute skin: storefront hero, first
+**Updated:** 2026-08-23 (second pass, same day) — **Two backlog quick
+wins: secret scanning (O4) and the mobile admin shell (P14).**
+**O4**: a `secrets` CI job runs gitleaks (checksum-verified release
+download — same reasoning as the `quality` job's Trivy step, not
+`gitleaks/gitleaks-action` pinned by a mutable tag) over full commit
+history, gated on any finding. `.gitleaks.toml` allowlists the nine
+pre-existing dev/test fixtures an actual run turned up (Garage's fixed
+dev access/secret keys and its rpc/admin tokens in
+`infra/docker-compose.yml`/`.env.example`/`infra/garage/garage.toml`,
+plus two fabricated test-fixture secrets in `apps/api/tests`) —
+allowlisted by the literal secret value, not by path, so a genuinely new
+secret added to any of those same files still fails the gate (verified
+with a planted fake Stripe key). **P14**: `app/admin/layout.tsx`'s
+`w-56` sidebar is now off-canvas below `md` — a fixed top bar (logo +
+hamburger) toggles a slide-in overlay with a backdrop, closing itself on
+navigation; `md:` and up is pixel-identical to before. Verified axe-clean
+at 390px in both nav states and at 1280px.
+**Environment note, this pass**: to smoke-test either change in a
+browser this machine needed a working admin login, which the seeded
+break-glass account can't provide (`admin@ttli.local` fails the login
+endpoint's `EmailStr` check, a known issue — see the prior pass's
+environment note). Created one `super_admin` user with a normal-format
+email directly via `CryptoBox`/`hash_password`, mirroring migration
+`0002`'s own seeding code exactly; this is local DB state only; nothing
+migration- or fixture-worthy was added to the repo.
+Prior, same day — **Institute skin: storefront hero, first
 slice** (`docs/design/institute/IMPLEMENTATION.md` "What is not built
 yet" #1, partial). The homepage hero (`app/page.tsx`) now matches the
 design handoff's structure: `hero-texture.jpg` full-bleed behind a

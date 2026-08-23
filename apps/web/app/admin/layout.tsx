@@ -51,6 +51,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { logout } = useSession();
   const [me, setMe] = useState<Me | null>(null);
   const [theme, setTheme] = useState<Theme | null>(null);
+  // Mobile-only: the sidebar is off-canvas below `md` (facilitators marking
+  // attendance on a phone — backlog P14, `app/admin/layout.tsx` used to be a
+  // fixed w-56 sidebar with no narrow-viewport handling at all).
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     if (!ready || !accessToken) return;
@@ -65,6 +69,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, [ready, accessToken, router]);
 
+  // Close the slide-in nav on navigation rather than leaving it open over
+  // the page the link just went to.
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+
   async function handleLogout() {
     await logout();
     router.replace("/login");
@@ -74,8 +84,68 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* Mobile top bar: hidden at md and above, where the sidebar is
+          always visible and needs no toggle. */}
+      <div
+        className="fixed inset-x-0 top-0 z-30 flex items-center justify-between p-3 md:hidden"
+        style={{
+          background: `linear-gradient(165deg, var(--brand) 0%, var(--brand-deep) 100%)`,
+          color: "var(--on-brand)",
+        }}
+      >
+        <Link href="/admin" style={{ color: "var(--on-brand)" }}>
+          {theme?.logo_url ? (
+            <Image src={theme.logo_url} alt={theme.tenant_name} width={120} height={63} />
+          ) : (
+            <span className="serif" style={{ fontSize: "1.0625rem", fontWeight: 600 }}>
+              {theme?.tenant_name ?? me.tenant_slug}
+            </span>
+          )}
+        </Link>
+        <button
+          type="button"
+          onClick={() => setNavOpen((open) => !open)}
+          aria-expanded={navOpen}
+          aria-controls="admin-nav"
+          aria-label={navOpen ? "Close menu" : "Open menu"}
+          className="rounded-md p-2"
+          style={{ border: "1px solid rgba(255,255,255,0.4)" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            {navOpen ? (
+              <path
+                d="M4 4l12 12M16 4L4 16"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            ) : (
+              <path
+                d="M3 5h14M3 10h14M3 15h14"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            )}
+          </svg>
+        </button>
+      </div>
+
+      {/* Backdrop, mobile only, closes the nav on tap-outside. */}
+      {navOpen ? (
+        <div
+          className="fixed inset-0 z-30 md:hidden"
+          style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setNavOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+
       <aside
-        className="w-56 shrink-0 p-4"
+        id="admin-nav"
+        className={`fixed inset-y-0 left-0 z-40 w-64 -translate-x-full overflow-y-auto p-4 transition-transform duration-200 md:relative md:w-56 md:shrink-0 md:translate-x-0 ${
+          navOpen ? "translate-x-0" : ""
+        }`}
         style={{
           background: `linear-gradient(165deg, var(--brand) 0%, var(--brand-deep) 100%)`,
           color: "var(--on-brand)",
@@ -84,8 +154,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {/* Same explicit-colour reason as the nav links below: a tenant
             with no logo falls back to its name as text inside this <a>,
             which would otherwise inherit --brand-ink on the brand
-            gradient and disappear (the `acme` demo tenant has no logo). */}
-        <Link href="/admin" className="mb-8 block" style={{ color: "var(--on-brand)" }}>
+            gradient and disappear (the `acme` demo tenant has no logo).
+            Hidden at narrow widths — the mobile top bar above already
+            shows it, and this sidebar is off-canvas there anyway. */}
+        <Link href="/admin" className="mb-8 hidden md:block" style={{ color: "var(--on-brand)" }}>
           {theme?.logo_url ? (
             <Image
               src={theme.logo_url}
@@ -100,7 +172,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </span>
           )}
         </Link>
-        <nav className="space-y-1">
+        <nav className="mt-16 space-y-1 md:mt-0">
           {WORKING_SECTIONS.map((section) => (
             <Link
               key={section.href}
@@ -156,7 +228,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           Sign out
         </button>
       </aside>
-      <main className="flex-1 p-8">
+      {/* pt-20 clears the fixed mobile top bar (its own height plus
+          margin); md:pt-8 restores the even padding once the sidebar is
+          no longer fixed/overlaying. */}
+      <main className="min-w-0 flex-1 p-6 pt-20 md:p-8">
         <AdminContext.Provider value={{ me, theme }}>{children}</AdminContext.Provider>
       </main>
     </div>

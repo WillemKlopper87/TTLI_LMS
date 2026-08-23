@@ -1,0 +1,30 @@
+title = "TTLI gitleaks config"
+
+# Extends gitleaks' maintained default ruleset rather than hand-rolling
+# detection patterns — the same "don't reinvent what's already
+# maintained" reasoning behind using pip-audit/npm audit/Trivy as-is
+# elsewhere in this repo (see .github/workflows/ci.yml).
+[extend]
+useDefault = true
+
+# Every entry below is a real gitleaks finding (`gitleaks detect --source
+# . -v`, 2026-08-23), individually verified against its file and
+# confirmed to be exactly what its own surrounding comment already says
+# it is: a fixed local-dev credential with no network reachability
+# beyond this machine's Compose stack, or a fabricated test fixture. None
+# is reachable outside a developer's own machine or an ephemeral CI
+# service container. This allowlist exists so the gate can fail loudly
+# on the day a *real* key lands instead of stayng red from day one —
+# BACKLOG.md O4's whole point. Matched by the literal secret value, not
+# by file path, so a new and different secret added to any of these
+# files still fails the gate.
+[allowlist]
+description = "Documented dev-only fixtures, not reachable outside a local machine or an ephemeral CI service container"
+regexes = [
+  '''GKb9c32ff7b3db35e902fd29f7''',                                   # infra/docker-compose.yml, .env.example — Garage's fixed single-node dev access key
+  '''43e555c82c4dd74d5d783f61510d2badd718f9937d9e4c326c25628527d5280c''', # ditto — Garage's fixed single-node dev secret key
+  '''e2e8dbad82e414252abf49aaf4dc6d6176787e638e021012c79fb3b9087d679c''', # infra/garage/garage.toml — Garage's inter-node rpc_secret; there is no second node to authenticate to
+  '''ac4324c09d4d0d3eec4b82db4520581a6bb66c2ba047c539''',              # infra/garage/garage.toml — Garage's local admin API token
+  '''K9mP2xQ7vN4wZ8bR''',                                              # apps/api/tests/test_config.py — fabricated value asserting check_production_safety() rejects a real-looking password
+  '''test-secret-key-at-least-32-characters-long''',                  # apps/api/tests — fixture JWT signing key, several test files
+]
