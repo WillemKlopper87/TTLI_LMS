@@ -116,6 +116,36 @@ async def get_enrolment_credentials(
     )
 
 
+@router.get(
+    "/path-enrolments/{path_enrolment_id}/credentials", response_model=EnrolmentCredentialsResponse
+)
+async def get_path_enrolment_credentials(
+    path_enrolment_id: str, principal: PrincipalDep, session: SessionDep
+) -> EnrolmentCredentialsResponse:
+    """The path equivalent of `get_enrolment_credentials` — `badge` is
+    always `None` here, since a path never issues one."""
+    certificate = await credentials_service.get_for_path_enrolment(
+        session,
+        tenant_id=principal.tenant_id,
+        path_enrolment_id=_parse_uuid(path_enrolment_id),
+        user_id=principal.user_id,
+    )
+    return EnrolmentCredentialsResponse(
+        certificate=CertificateResponse(
+            id=str(certificate.id),
+            certificate_number=certificate.certificate_number,
+            status=certificate.status,
+            visibility=certificate.visibility,
+            issued_at=certificate.issued_at,
+            revoked_reason=certificate.revoked_reason,
+            pdf_available=certificate.pdf_object_key is not None,
+        )
+        if certificate is not None
+        else None,
+        badge=None,
+    )
+
+
 @router.get("/certificates/{certificate_id}/pdf", response_model=CertificatePdfResponse)
 async def get_certificate_pdf(
     certificate_id: str, principal: PrincipalDep, session: SessionDep, storage: StorageDep

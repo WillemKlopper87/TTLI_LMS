@@ -1536,6 +1536,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/path-enrolments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own learning-path enrolments */
+        get: operations["list_own_path_enrolments_api_v1_path_enrolments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/path-enrolments/{path_enrolment_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-course progress rollup for one of the caller's path enrolments */
+        get: operations["get_path_enrolment_progress_api_v1_path_enrolments__path_enrolment_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/facilitators": {
         parameters: {
             query?: never;
@@ -2556,6 +2590,27 @@ export interface paths {
         };
         /** Get Enrolment Credentials */
         get: operations["get_enrolment_credentials_api_v1_enrolments__enrolment_id__credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/path-enrolments/{path_enrolment_id}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Path Enrolment Credentials
+         * @description The path equivalent of `get_enrolment_credentials` — `badge` is
+         *     always `None` here, since a path never issues one.
+         */
+        get: operations["get_path_enrolment_credentials_api_v1_path_enrolments__path_enrolment_id__credentials_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5661,6 +5716,29 @@ export interface components {
             /** Completed At */
             completed_at: string | null;
         };
+        /**
+         * OwnPathEnrolmentResponse
+         * @description `GET /path-enrolments` — lightweight, no progress percentage, same
+         *     split `OwnEnrolmentResponse`/`GET /enrolments` already draws against
+         *     the heavier per-item progress endpoint.
+         */
+        OwnPathEnrolmentResponse: {
+            /** Path Enrolment Id */
+            path_enrolment_id: string;
+            /** Learning Path Id */
+            learning_path_id: string;
+            /** Learning Path Title */
+            learning_path_title: string;
+            /** Course Count */
+            course_count: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Completed At */
+            completed_at: string | null;
+        };
         /** PackageRow */
         PackageRow: {
             /** Package Label */
@@ -5700,6 +5778,19 @@ export interface components {
              */
             email: string;
         };
+        /** PathCourseProgressRow */
+        PathCourseProgressRow: {
+            /** Course Id */
+            course_id: string;
+            /** Course Title */
+            course_title: string;
+            /** Enrolment Id */
+            enrolment_id: string;
+            /** Progress Percent */
+            progress_percent: number;
+            /** Completed At */
+            completed_at: string | null;
+        };
         /**
          * PathCourseRow
          * @description A member course as it appears inside a path — enough to render
@@ -5723,6 +5814,19 @@ export interface components {
         PathCoursesResponse: {
             /** Items */
             items: components["schemas"]["PathCourseRow"][];
+        };
+        /** PathProgressResponse */
+        PathProgressResponse: {
+            /** Path Enrolment Id */
+            path_enrolment_id: string;
+            /** Learning Path Id */
+            learning_path_id: string;
+            /** Progress Percent */
+            progress_percent: number;
+            /** Completed At */
+            completed_at: string | null;
+            /** Courses */
+            courses: components["schemas"]["PathCourseProgressRow"][];
         };
         /** PathReadinessCheckRow */
         PathReadinessCheckRow: {
@@ -10674,6 +10778,57 @@ export interface operations {
             };
         };
     };
+    list_own_path_enrolments_api_v1_path_enrolments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnPathEnrolmentResponse"][];
+                };
+            };
+        };
+    };
+    get_path_enrolment_progress_api_v1_path_enrolments__path_enrolment_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path_enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PathProgressResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_facilitators_api_v1_facilitators_get: {
         parameters: {
             query?: never;
@@ -12733,6 +12888,37 @@ export interface operations {
             header?: never;
             path: {
                 enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrolmentCredentialsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_path_enrolment_credentials_api_v1_path_enrolments__path_enrolment_id__credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path_enrolment_id: string;
             };
             cookie?: never;
         };

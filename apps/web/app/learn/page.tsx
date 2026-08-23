@@ -67,6 +67,20 @@ interface Dashboard {
   upcoming: UpcomingItem[];
 }
 
+/** `GET /path-enrolments` — fetched as its own call rather than folded
+ * into `GET /learn/dashboard`'s composed payload: that endpoint's N+1
+ * avoidance is already load-bearing for the existing enrolment/upcoming
+ * blocks, and a path enrolment is rare enough (most learners have none)
+ * that a second small request is cheaper than reworking that query. */
+interface OwnPathEnrolment {
+  path_enrolment_id: string;
+  learning_path_id: string;
+  learning_path_title: string;
+  course_count: number;
+  started_at: string;
+  completed_at: string | null;
+}
+
 /** Only `#rrggbb`/`#rgb` reaches a style attribute — the colour is author
  * input, and anything else is dropped rather than interpolated. */
 function safeColour(value: string | null): string | undefined {
@@ -84,6 +98,7 @@ export default function LearnDashboardPage() {
   const { ready } = useRequireAuth();
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paths, setPaths] = useState<OwnPathEnrolment[]>([]);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -97,6 +112,10 @@ export default function LearnDashboardPage() {
         setData(await resp.json());
       })
       .catch(() => setError("Your learning could not be loaded. Try again shortly."));
+    fetch("/api/bff/path-enrolments", { headers: { Authorization: `Bearer ${token}` } })
+      .then((resp) => (resp.ok ? resp.json() : []))
+      .then((rows) => setPaths(rows ?? []))
+      .catch(() => undefined);
   }, [ready]);
 
   if (error) {
@@ -250,6 +269,28 @@ export default function LearnDashboardPage() {
             </div>
           )}
         </section>
+
+        {paths.length > 0 ? (
+          <section>
+            <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".7rem" }}>
+              Learning paths
+            </h2>
+            <div className="rowlist">
+              {paths.map((p) => (
+                <div className="rowitem" key={p.path_enrolment_id}>
+                  <span className={`tag ${p.completed_at ? "tag--done" : "tag--live"}`}>
+                    {p.completed_at ? "Certified" : "In progress"}
+                  </span>
+                  <span className="t">{p.learning_path_title}</span>
+                  <span className="m">{p.course_count} courses</span>
+                  <Link className="btn btn--ghost" href={`/learn/paths/${p.path_enrolment_id}`}>
+                    {p.completed_at ? "View certificate" : "View progress"}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {notStarted.length > 0 ? (
           <section>

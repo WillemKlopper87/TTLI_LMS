@@ -434,6 +434,55 @@ async def public_prices_for_paths(
 
 
 @dataclass(frozen=True, slots=True)
+class OwnPathEnrolmentRow:
+    path_enrolment_id: uuid.UUID
+    learning_path_id: uuid.UUID
+    learning_path_title: str
+    course_count: int
+    started_at: datetime
+    completed_at: datetime | None
+
+
+async def list_own_path_enrolments(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID
+) -> list[OwnPathEnrolmentRow]:
+    """Lightweight metadata only, no progress percentage — same split
+    `enrolment_service.list_own_enrolments`/`GET /enrolments` already
+    draws against `GET /enrolments/{id}/progress`: a list is a fast
+    overview, per-item percent is its own, heavier call."""
+    stmt = (
+        select(PathEnrolment, LearningPath)
+        .join(LearningPath, LearningPath.id == PathEnrolment.learning_path_id)
+        .where(PathEnrolment.tenant_id == tenant_id, PathEnrolment.user_id == user_id)
+        .order_by(PathEnrolment.started_at.desc())
+    )
+    rows = (await session.execute(stmt)).tuples().all()
+    if not rows:
+        return []
+    counts_stmt = (
+        select(LearningPathCourse.learning_path_id, func.count())
+        .where(
+            LearningPathCourse.learning_path_id.in_(
+                [path_enrolment.learning_path_id for path_enrolment, _ in rows]
+            )
+        )
+        .group_by(LearningPathCourse.learning_path_id)
+    )
+    counts = dict((await session.execute(counts_stmt)).tuples().all())
+    return [
+        OwnPathEnrolmentRow(
+            path_enrolment_id=path_enrolment.id,
+            learning_path_id=path.id,
+            learning_path_title=path.title,
+            course_count=counts.get(path.id, 0),
+            started_at=path_enrolment.started_at,
+            completed_at=path_enrolment.completed_at,
+        )
+        for path_enrolment, path in rows
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class PathCourseProgress:
     course_id: uuid.UUID
     course_title: str
@@ -562,6 +611,7 @@ async def all_member_courses_completed(
 __all__ = [
     "MINIMUM_COURSES_TO_PUBLISH",
     "LearningPathError",
+    "OwnPathEnrolmentRow",
     "PathCourseProgress",
     "PathProgress",
     "PathReadiness",
@@ -576,6 +626,7 @@ __all__ = [
     "get_path_readiness",
     "get_public_path",
     "list_learning_paths",
+    "list_own_path_enrolments",
     "list_path_courses",
     "list_public_paths",
     "list_tenant_path_assignments",

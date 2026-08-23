@@ -11,7 +11,7 @@ import uuid
 
 from fastapi import APIRouter, status
 
-from src.core.deps import PrincipalDep, SessionDep, TenantDep
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
 from src.models.audit import AuditAction
 from src.models.course import Course
@@ -23,8 +23,11 @@ from src.schemas.learning_paths import (
     LearningPathResponse,
     LearningPathsPageResponse,
     LearningPathUpdateRequest,
+    OwnPathEnrolmentResponse,
+    PathCourseProgressRow,
     PathCourseRow,
     PathCoursesResponse,
+    PathProgressResponse,
     PathReadinessCheckRow,
     PathReadinessResponse,
     PathTenantAssignmentResponse,
@@ -350,6 +353,63 @@ async def get_public_path(
             for member, course in members
         ],
         price=_public_price(prices.get(path.id)),
+    )
+
+
+@router.get(
+    "/path-enrolments",
+    response_model=list[OwnPathEnrolmentResponse],
+    summary="The caller's own learning-path enrolments",
+)
+async def list_own_path_enrolments(
+    principal: PrincipalDep, session: SessionDep
+) -> list[OwnPathEnrolmentResponse]:
+    rows = await paths_service.list_own_path_enrolments(
+        session, tenant_id=principal.tenant_id, user_id=principal.user_id
+    )
+    return [
+        OwnPathEnrolmentResponse(
+            path_enrolment_id=str(row.path_enrolment_id),
+            learning_path_id=str(row.learning_path_id),
+            learning_path_title=row.learning_path_title,
+            course_count=row.course_count,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+        )
+        for row in rows
+    ]
+
+
+@router.get(
+    "/path-enrolments/{path_enrolment_id}/progress",
+    response_model=PathProgressResponse,
+    summary="Per-course progress rollup for one of the caller's path enrolments",
+)
+async def get_path_enrolment_progress(
+    path_enrolment_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> PathProgressResponse:
+    progress = await paths_service.get_path_progress(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        path_enrolment_id=_parse_uuid(path_enrolment_id),
+    )
+    return PathProgressResponse(
+        path_enrolment_id=str(progress.path_enrolment_id),
+        learning_path_id=str(progress.learning_path_id),
+        progress_percent=progress.progress_percent,
+        completed_at=progress.completed_at,
+        courses=[
+            PathCourseProgressRow(
+                course_id=str(c.course_id),
+                course_title=c.course_title,
+                enrolment_id=str(c.enrolment_id),
+                progress_percent=c.progress_percent,
+                completed_at=c.completed_at,
+            )
+            for c in progress.courses
+        ],
     )
 
 

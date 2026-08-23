@@ -45,7 +45,17 @@ const VISIBILITY_LABEL: Record<string, string> = {
  * normal state for any course still in progress or with no template
  * attached.
  */
-export function CredentialsPanel({ enrolmentId }: { enrolmentId: string }) {
+interface CredentialsPanelProps {
+  enrolmentId?: string;
+  pathEnrolmentId?: string;
+}
+
+/** Exactly one of `enrolmentId`/`pathEnrolmentId` is set by the caller —
+ * a course enrolment's credentials come from `GET /enrolments/{id}/
+ * credentials`, a path enrolment's from the P5 sibling endpoint; both
+ * shapes are identical (`EnrolmentCredentials`), so one panel serves
+ * both rather than a near-duplicate path-only component. */
+export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPanelProps) {
   const [data, setData] = useState<EnrolmentCredentials | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,12 +64,15 @@ export function CredentialsPanel({ enrolmentId }: { enrolmentId: string }) {
 
   const load = useCallback(async () => {
     const token = getAccessToken();
-    const resp = await fetch(`/api/bff/enrolments/${enrolmentId}/credentials`, {
+    const path = pathEnrolmentId
+      ? `/api/bff/path-enrolments/${pathEnrolmentId}/credentials`
+      : `/api/bff/enrolments/${enrolmentId}/credentials`;
+    const resp = await fetch(path, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!resp.ok) return;
     setData(await resp.json());
-  }, [enrolmentId]);
+  }, [enrolmentId, pathEnrolmentId]);
 
   useEffect(() => {
     load();

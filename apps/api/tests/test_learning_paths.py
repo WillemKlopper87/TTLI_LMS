@@ -645,6 +645,16 @@ async def test_completing_every_member_course_issues_one_path_certificate(  # ty
     )
     assert approved.status_code == 200, approved.text
 
+    # The path_enrolment already exists at purchase time (Phase 2), so
+    # the learner's own list shows it before any lesson is touched.
+    own_paths = await client.get("/api/v1/path-enrolments", headers=buyer_auth)
+    assert own_paths.status_code == 200, own_paths.text
+    own_row = next(r for r in own_paths.json() if r["learning_path_id"] == path_id)
+    assert own_row["learning_path_title"] == "Completable Path"
+    assert own_row["course_count"] == 2
+    assert own_row["completed_at"] is None
+    path_enrolment_id = own_row["path_enrolment_id"]
+
     for course_id in (course_a, course_b):
         for lesson_id in await _lessons_for_course(tenant_session_factory, tenant_id, course_id):
             start = await client.post(f"/api/v1/lessons/{lesson_id}/start", headers=buyer_auth)
@@ -653,6 +663,35 @@ async def test_completing_every_member_course_issues_one_path_certificate(  # ty
                 f"/api/v1/lessons/{lesson_id}/complete", headers=buyer_auth
             )
             assert complete.status_code == 200, complete.text
+        # One course down, one to go: the rollup is an average, so it
+        # should read as neither 0 nor 100 yet.
+        mid_progress = await client.get(
+            f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth
+        )
+        assert mid_progress.status_code == 200, mid_progress.text
+        if course_id == course_a:
+            assert 0 < mid_progress.json()["progress_percent"] < 100
+
+    final_progress = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth
+    )
+    assert final_progress.status_code == 200, final_progress.text
+    final_body = final_progress.json()
+    assert final_body["progress_percent"] == 100
+    assert final_body["completed_at"] is not None
+    assert len(final_body["courses"]) == 2
+    assert all(c["progress_percent"] == 100 for c in final_body["courses"])
+
+    # The learner UI's route to the certificate: the path-credentials
+    # endpoint added alongside the /learn/paths/[id] page.
+    own_credentials = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/credentials", headers=buyer_auth
+    )
+    assert own_credentials.status_code == 200, own_credentials.text
+    own_credentials_body = own_credentials.json()
+    assert own_credentials_body["certificate"] is not None
+    assert own_credentials_body["certificate"]["pdf_available"] is True
+    assert own_credentials_body["badge"] is None
 
     async with tenant_session_factory(tenant_id) as s:
         path_enrolment = (

@@ -150,6 +150,40 @@ export interface PublicProduct {
   bundled_courses: string[] | null;
 }
 
+/** `GET /public/learning-paths` — the path equivalent of `PublicCourse`,
+ * deliberately thinner: a path has no modules/lessons to summarise, only
+ * an ordered course count. */
+export interface PublicPathCard {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  course_count: number;
+  has_certificate: boolean;
+  price: PublicPrice | null;
+}
+
+export interface PublicPathCourseRow {
+  course_id: string;
+  title: string;
+  summary: string | null;
+  level: string | null;
+  topic: string | null;
+  position: number;
+}
+
+/** `GET /public/learning-paths/{id}` — keyed by `id`, not `slug`, same
+ * convention `PublicCurriculum` already uses for a course. */
+export interface PublicPathDetail {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  has_certificate: boolean;
+  courses: PublicPathCourseRow[];
+  price: PublicPrice | null;
+}
+
 export interface PublicEpisode {
   id: string;
   kind: string;
@@ -217,6 +251,15 @@ export async function getPublicCurriculum(courseId: string): Promise<PublicCurri
 export async function getPublicProducts(): Promise<PublicProduct[]> {
   const body = await publicGet<{ items: PublicProduct[] }>("/products");
   return body?.items ?? [];
+}
+
+export async function getPublicPaths(): Promise<PublicPathCard[]> {
+  const body = await publicGet<{ items: PublicPathCard[] }>("/public/learning-paths");
+  return body?.items ?? [];
+}
+
+export async function getPublicPathDetail(pathId: string): Promise<PublicPathDetail | null> {
+  return publicGet<PublicPathDetail>(`/public/learning-paths/${encodeURIComponent(pathId)}`);
 }
 
 export async function getPublicEpisodes(): Promise<PublicEpisode[]> {

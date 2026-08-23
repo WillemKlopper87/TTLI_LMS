@@ -1,6 +1,52 @@
 # STATUS
 
-**Updated:** 2026-08-23 (eighth pass, same day) — **P5 Phase 3: progress
+**Updated:** 2026-08-23 (ninth pass, same day) — **P5 Phase 4: the
+learner-facing surface, and P5 is now DONE.** `GET /path-enrolments`
+(list) + `GET /path-enrolments/{id}/progress` (detail) mirror the
+existing `GET /enrolments`/`GET /enrolments/{id}/progress` list-vs-
+detail split exactly; a new `GET /path-enrolments/{id}/credentials` is
+the path twin of `GET /enrolments/{id}/credentials` — same
+`EnrolmentCredentialsResponse` shape, `badge` always `null` since
+`issue_for_completed_path` (Phase 3) never issues one. A matching
+`credentials_service.get_for_path_enrolment` mirrors `get_for_enrolment`
+or the ownership check would have needed a third copy of the FK-branch
+fix Phase 3 already made twice.
+Frontend: `/paths` (public browse — a plain grid, deliberately not
+`/catalogue`'s facet browser, since a tenant's paths are few and
+`LearningPath` carries none of the columns a facet would filter on) and
+`/paths/[pathId]` (detail + buy, reusing the generic checkout flow
+unmodified — `price_id` is all it needs). `LEARNER_NAV` gained a
+"Learning paths" row; `PUBLIC_NAV` was deliberately left alone — that
+array is documented elsewhere in the codebase as TTLI's real marketing
+copy extracted from the live site, not a general-purpose nav to extend
+freely. `/learn` gained a "Learning paths" section fetched as its own
+small `GET /path-enrolments` call rather than folded into `GET /learn/
+dashboard`'s composed payload — that endpoint's anti-N+1 query is
+already load-bearing for the existing enrolment/upcoming blocks, and a
+path enrolment is rare enough that a second small request is cheaper
+than reworking it. `/learn/paths/[pathEnrolmentId]` shows each member
+course's own progress plus a certificate download once complete,
+reusing `CredentialsPanel` — generalised to accept either an
+`enrolmentId` or a `pathEnrolmentId` prop rather than forking a near-
+duplicate component, since the two payload shapes are identical.
+Verified: 1 new API test (extends Phase 3's own full-purchase-to-
+certificate test with `GET /path-enrolments/{id}/credentials`
+assertions — 8 API tests total for `test_learning_paths.py`), full
+suite green, `ruff`/`mypy` clean, web `typecheck`/`lint`/`build` clean,
+openapi.json + the generated TS client regenerated (confirmed by
+booting the app directly, not just trusting mypy). Live-smoked
+end to end through a real browser session and a from-scratch learner
+account created for this pass: browsed `/paths` anonymously, opened a
+path detail page, bought it via EFT as the learner, approved it as
+finance (via the API), watched the dashboard's new "Learning paths"
+row and the `/learn/paths/[id]` progress bar move from 50% (one of two
+member courses complete) to 100%, and confirmed the certificate panel
+and its "Download certificate (PDF)" button render identically to a
+course certificate's — down to the visibility selector and status tag.
+Also reconfirmed `/verify/{token}` for a real path certificate minted
+in this pass, labelled "Learning path" correctly (Phase 3 built this;
+Phase 4 just exercised it end to end with a fresh certificate).
+Prior, same day — **P5 Phase 3: progress
 rollup and the path certificate.** `services/learning_paths.py::
 get_path_progress` rolls up each member course's own `enrolment_
 service.get_progress` (equal-weight average — one level up from how a

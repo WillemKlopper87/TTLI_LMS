@@ -49,6 +49,7 @@ const PUBLIC_NAV: NavItem[] = [
 const LEARNER_NAV: NavItem[] = [
   { label: "My learning", href: "/learn" },
   { label: "Catalogue", href: "/catalogue" },
+  { label: "Learning paths", href: "/paths" },
   { label: "Workshops", href: "/learn#workshops" },
   { label: "Achievements", href: "/learn#completed" },
 ];

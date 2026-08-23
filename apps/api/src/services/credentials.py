@@ -417,6 +417,24 @@ async def get_for_enrolment(
     return certificate, badge
 
 
+async def get_for_path_enrolment(
+    session: AsyncSession, *, tenant_id: uuid.UUID, path_enrolment_id: uuid.UUID, user_id: uuid.UUID
+) -> Certificate | None:
+    """The path equivalent of `get_for_enrolment` — no badge leg, since a
+    path never issues one (`issue_for_completed_path`'s own docstring)."""
+    path_enrolment = await session.get(PathEnrolment, path_enrolment_id)
+    if path_enrolment is None or path_enrolment.tenant_id != tenant_id:
+        raise NotFound("No such path enrolment.")
+    if path_enrolment.user_id != user_id:
+        raise Forbidden("You do not have access to this path enrolment.")
+
+    return (
+        await session.execute(
+            select(Certificate).where(Certificate.path_enrolment_id == path_enrolment_id)
+        )
+    ).scalar_one_or_none()
+
+
 async def _owns_certificate(
     session: AsyncSession, *, certificate: Certificate, user_id: uuid.UUID
 ) -> bool:

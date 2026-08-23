@@ -5,6 +5,8 @@ way `schemas/course_wizard.py` is kept out of `schemas/courses.py`.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from src.schemas.courses import PublicPrice
@@ -123,14 +125,46 @@ class PublicPathDetailResponse(BaseModel):
     price: PublicPrice | None
 
 
+class OwnPathEnrolmentResponse(BaseModel):
+    """`GET /path-enrolments` — lightweight, no progress percentage, same
+    split `OwnEnrolmentResponse`/`GET /enrolments` already draws against
+    the heavier per-item progress endpoint."""
+
+    path_enrolment_id: str
+    learning_path_id: str
+    learning_path_title: str
+    course_count: int
+    started_at: datetime
+    completed_at: datetime | None
+
+
+class PathCourseProgressRow(BaseModel):
+    course_id: str
+    course_title: str
+    enrolment_id: str
+    progress_percent: int
+    completed_at: datetime | None
+
+
+class PathProgressResponse(BaseModel):
+    path_enrolment_id: str
+    learning_path_id: str
+    progress_percent: int
+    completed_at: datetime | None
+    courses: list[PathCourseProgressRow]
+
+
 __all__ = [
     "AddPathCourseRequest",
     "LearningPathCreateRequest",
     "LearningPathResponse",
     "LearningPathUpdateRequest",
     "LearningPathsPageResponse",
+    "OwnPathEnrolmentResponse",
+    "PathCourseProgressRow",
     "PathCourseRow",
     "PathCoursesResponse",
+    "PathProgressResponse",
     "PathReadinessCheckRow",
     "PathReadinessResponse",
     "PathTenantAssignmentResponse",
