@@ -17,6 +17,8 @@ A multi-tenant platform for selling and delivering executive and leadership trai
 | [docs/05_COMMERCIAL.md](docs/05_COMMERCIAL.md) | Six-tier packaging, the full feature matrix mapped to delivery phases, add-ons, commercial terms |
 | [docs/06_OPERATIONS.md](docs/06_OPERATIONS.md) | Local Compose topology, storage, the media pipeline, Azure blueprint, monitoring and alerts, backup and DR, the administrator runbook |
 | [docs/STATUS.md](docs/STATUS.md) | Live build state, phase percentages, quality gates, open questions |
+| [docs/BACKLOG.md](docs/BACKLOG.md) | Every outstanding item, numbered, sized and ordered |
+| [CHANGELOG.md](CHANGELOG.md) | What shipped, by tagged version |
 | [docs/source/](docs/source/) | The original AI-generated planning material, extracted and preserved |
 
 > **`chat-export-1786178220416.json` and everything under `docs/source/` are reference material, not the plan.** That material was generated without knowledge of the existing internal systems and contradicts itself on several expensive decisions. [docs/01_PRD.md §5](docs/01_PRD.md#5-technical-decisions) is the authority; [docs/source/README.md](docs/source/README.md) maps each contradiction to the section that settles it.

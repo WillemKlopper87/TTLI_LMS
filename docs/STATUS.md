@@ -1,6 +1,17 @@
 # STATUS
 
-**Updated:** 2026-08-23 (second pass, same day) — **Two backlog quick
+**Updated:** 2026-08-23 (third pass, same day) — **O5: release
+management, partly.** `CHANGELOG.md` (Keep a Changelog format, linked
+from README's documentation table) plus a `v0.1.0` tag on this commit —
+the project's first version marker; nothing before it is backfilled,
+since reconstructing precise per-commit boundaries across 150+ untagged
+commits after the fact would be false precision, not history. Still
+open, by choice: PRs (direct-to-main is this project's own established
+convention, a workflow call for the user, not mine to change) and the
+29 existing `autosave:` commits on `main` (left as-is — rewriting
+published history is a decision, not a chore, per `NEXT_AGENT_BRIEF.md`
+§4's own note on exactly this).
+Prior, same day — **Two backlog quick
 wins: secret scanning (O4) and the mobile admin shell (P14).**
 **O4**: a `secrets` CI job runs gitleaks (checksum-verified release
 download — same reasoning as the `quality` job's Trivy step, not
