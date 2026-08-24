@@ -1,6 +1,59 @@
 # STATUS
 
-**Updated:** 2026-08-24 — **P5 post-ship code review, and every finding
+**Updated:** 2026-08-24 — **P7 Phase 1: session-lifecycle foundation
+(cancel, multi-facilitator).** First of a five-phase pass
+(`docs/BACKLOG.md` P7; research this session — an Explore agent read
+every workshop model/service/router/test/frontend file — found the
+exact gaps, and a plan approved by the user before any code was
+written). Two real, previously-unimplemented gaps closed, not just the
+backlog's named bullets: there was **no code path anywhere** that
+cancelled a whole session (only one booking at a time), and
+`WorkshopSession.facilitator_id`'s single-FK design meant a
+co-facilitator's own double-booking was never checked because there
+was no way to add a co-facilitator at all.
+Migration `0036`: `session_facilitators` (tenant-scoped, RLS, additive
+alongside `facilitator_id` — not a replacement, mirrors P5's own
+"new precedent, don't retrofit" discipline), backfilled from every
+existing session's sole facilitator so the table is always a superset;
+`workshops.requires_credit`/`meeting_provider` (both opt-in, default
+false/'manual' — every existing workshop's behaviour is untouched
+byte-for-byte); `products.workshop_id` and `bookings.
+consumed_entitlement_id` (Phase 4's bridge columns, added now so
+`0036` carries all this pass's schema the way `0035` did for P5).
+New `services/workshops.py::cancel_session` (cancels every active
+booking via a newly-extracted shared `_cancel_booking_row` helper —
+reused, not duplicated, `cancel_booking` refactored to call it too —
+refunds a credit per booking once Phase 4 wires that in, cancels the
+provider meeting, notifies every registrant, audits). New
+`add_session_facilitator`/`remove_session_facilitator`/
+`list_session_facilitators`. **A real gap found and fixed during
+implementation, not just planned around**: `_facilitator_has_conflict`
+checked `WorkshopSession.facilitator_id` directly, which only catches
+a conflict where the facilitator is *primary* elsewhere — rewritten to
+join through `session_facilitators`, so a co-facilitator's own
+double-booking is caught too, the actual behavioural point of this
+phase.
+Router: `POST /sessions/{id}/cancel`, `GET/POST /sessions/{id}/
+facilitators`, `DELETE /sessions/{id}/facilitators/{facilitator_id}`
+(refuses removing the last facilitator or the primary directly).
+Admin UI (`/admin/workshops`): a facilitator panel per session
+(add/remove co-facilitators, primary tagged and not removable from
+this view) and a "Cancel session" button with a reason prompt.
+Verified: 2 new API tests (cancel-session cancels every booking +
+notifies + audits + refuses a stranger + refuses a re-cancel; the
+co-facilitator conflict scenario end to end, including the refusal
+cases for removing a primary/the last facilitator), full suite green,
+`ruff`/`mypy`/`alembic check` clean (round-tripped), web `typecheck`/
+`lint`/`build` clean, axe-clean on the new facilitator panel. Live-
+smoked end to end through a real browser session against freshly
+seeded facilitator/session data created through the real API: added a
+co-facilitator, watched the primary tag render correctly, cancelled the
+session, confirmed the booking count and status updated live and the
+"Book"/"Cancel session" controls disabled themselves correctly. One
+small UX gap found during that smoke pass and fixed: the primary
+facilitator's "Remove" button rendered even though the server always
+refuses it — hidden for the primary now.
+Prior, same day — **P5 post-ship code review, and every finding
 fixed.** A cold read of all four shipped phases (`docs/research/p5-
 review-findings.md`) turned up two HIGH-severity money-adjacent gaps
 and four smaller ones — none caught by the phase-by-phase verification,

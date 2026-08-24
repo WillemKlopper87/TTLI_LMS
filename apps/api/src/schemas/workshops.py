@@ -83,6 +83,14 @@ class SessionsPage(BaseModel):
     items: list[SessionResponse]
 
 
+class CancelSessionRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class AddSessionFacilitatorRequest(BaseModel):
+    facilitator_id: str
+
+
 class PublicSessionRow(BaseModel):
     """A bookable session as an anonymous visitor may see it: when it
     runs, who leads it and whether seats remain. Deliberately no
@@ -134,9 +142,11 @@ class RosterResponse(BaseModel):
 
 __all__ = [
     "AddAvailabilityRequest",
+    "AddSessionFacilitatorRequest",
     "AvailabilityPage",
     "AvailabilityWindowResponse",
     "BookingResponse",
+    "CancelSessionRequest",
     "CreateFacilitatorRequest",
     "CreateSessionRequest",
     "CreateWorkshopRequest",

@@ -427,3 +427,192 @@ async def test_public_workshops_lists_upcoming_sessions_without_auth(
     after = await client.get("/api/v1/public/workshops")
     row = next(r for r in after.json()["items"] if r["session_id"] == session_id)
     assert row["seats_left"] == 1
+
+
+async def test_cancel_session_cancels_every_booking_notifies_and_audits(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7, REQ-WS-03: cancelling a whole session — a gap this codebase
+    had zero code path for before this pass — cancels every active
+    booking (not just one), not merely the session row itself."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, facilitator_token, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 2,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    session_id = session_resp.json()["id"]
+
+    learner_a_token, _, learner_a_email = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    learner_b_token, _, learner_b_email = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    for token in (learner_a_token, learner_b_token):
+        booked = await client.post(
+            f"/api/v1/sessions/{session_id}/book", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert booked.status_code == 200, booked.text
+
+    # A stranger cannot cancel this session.
+    stranger_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    forbidden = await client.post(
+        f"/api/v1/sessions/{session_id}/cancel",
+        json={"reason": "Facilitator is unwell."},
+        headers={"Authorization": f"Bearer {stranger_token}"},
+    )
+    assert forbidden.status_code == 403
+
+    cancelled = await client.post(
+        f"/api/v1/sessions/{session_id}/cancel",
+        json={"reason": "Facilitator is unwell."},
+        headers={"Authorization": f"Bearer {facilitator_token}"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+
+    roster = await client.get(
+        f"/api/v1/sessions/{session_id}/roster",
+        headers={"Authorization": f"Bearer {facilitator_token}"},
+    )
+    rows = {r["email"]: r for r in roster.json()["items"]}
+    assert rows[learner_a_email]["booking_status"] == "cancelled"
+    assert rows[learner_b_email]["booking_status"] == "cancelled"
+
+    # Cancelling an already-cancelled session is refused, not a silent no-op.
+    again = await client.post(
+        f"/api/v1/sessions/{session_id}/cancel",
+        json={"reason": "Trying again."},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert again.status_code == 400
+
+    async with tenant_session_factory(tenant_id) as s:
+        audited = (
+            await s.execute(
+                sa.text(
+                    "SELECT action FROM audit_events WHERE entity_id = :sid "
+                    "AND action = 'workshop.session.cancelled'"
+                ),
+                {"sid": session_id},
+            )
+        ).first()
+    assert audited is not None
+
+
+async def test_multi_facilitator_conflict_check_blocks_co_facilitator_double_booking(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7, REQ-WS-02/03: the gap multi-facilitator support needs closed
+    — a co-facilitator's *own* conflicts must be checked, not just the
+    session's primary facilitator's. Before this pass there was no way
+    to add a co-facilitator at all, so this conflict could never even
+    be exercised."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_a_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    facilitator_b_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_one = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_a_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_one.status_code == 201, session_one.text
+    session_one_id = session_one.json()["id"]
+
+    # B joins session one as a co-facilitator, not the primary.
+    added = await client.post(
+        f"/api/v1/sessions/{session_one_id}/facilitators",
+        json={"facilitator_id": facilitator_b_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert added.status_code == 201, added.text
+    assert len(added.json()["items"]) == 2
+
+    # A second, overlapping session with B as *primary* must be refused
+    # — B is already committed to session one, even though only as a
+    # co-facilitator there, not its facilitator_id.
+    overlapping = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_b_id,
+            "starts_at": (starts + timedelta(minutes=30)).isoformat(),
+            "ends_at": (starts + timedelta(hours=1, minutes=30)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert overlapping.status_code == 400, overlapping.text
+    assert "already has a session" in overlapping.json()["error"]["message"].lower()
+
+    # Adding B to a *third*, separately-overlapping session is refused
+    # the same way, via add_session_facilitator's own conflict check.
+    session_three = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_a_id,
+            "starts_at": (starts + timedelta(minutes=15)).isoformat(),
+            "ends_at": (starts + timedelta(hours=1, minutes=15)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_three.status_code == 400, session_three.text
+
+    # Remove the last-remaining facilitator (the primary) is refused —
+    # a session must always keep at least one, and the primary can't be
+    # removed directly.
+    remove_primary = await client.request(
+        "DELETE",
+        f"/api/v1/sessions/{session_one_id}/facilitators/{facilitator_a_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert remove_primary.status_code == 400
+
+    # Removing the co-facilitator (not the primary) succeeds.
+    remove_co = await client.request(
+        "DELETE",
+        f"/api/v1/sessions/{session_one_id}/facilitators/{facilitator_b_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert remove_co.status_code == 200, remove_co.text
+    assert len(remove_co.json()["items"]) == 1
+
+    # Removing the sole remaining facilitator is refused either way.
+    remove_last = await client.request(
+        "DELETE",
+        f"/api/v1/sessions/{session_one_id}/facilitators/{facilitator_a_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert remove_last.status_code == 400

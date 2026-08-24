@@ -101,6 +101,15 @@ class Product(Base, TimestampMixin):
         ForeignKey("learning_paths.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    # Set only for kind="workshop_credit" products — same nullable-bridge
+    # treatment as the three above (P7, docs/BACKLOG.md). A workshop
+    # credit isn't a workshop itself, just a purchasable balance of
+    # bookings against one.
+    workshop_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workshops.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
 
 class Price(Base, TimestampMixin):

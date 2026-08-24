@@ -112,6 +112,12 @@ export default function WorkshopsScreen() {
   const [rosterSessionId, setRosterSessionId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
 
+  const [cancelBusy, setCancelBusy] = useState<string | null>(null);
+  const [facilitatorsSessionId, setFacilitatorsSessionId] = useState<string | null>(null);
+  const [sessionFacilitators, setSessionFacilitators] = useState<Facilitator[] | null>(null);
+  const [addCoFacilitatorId, setAddCoFacilitatorId] = useState("");
+  const [coFacilitatorBusy, setCoFacilitatorBusy] = useState(false);
+
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();
     return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
@@ -267,6 +273,70 @@ export default function WorkshopsScreen() {
       body: JSON.stringify({ user_id: userId, status }),
     });
     if (resp.ok) await viewRoster(sessionId).then(() => viewRoster(sessionId));
+  }
+
+  async function cancelSession(sessionId: string) {
+    const reason = window.prompt("Why is this session being cancelled?");
+    if (reason === null) return;
+    setCancelBusy(sessionId);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/sessions/${sessionId}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() || "No reason given." }),
+    });
+    setCancelBusy(null);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not cancel that session.");
+      return;
+    }
+    if (selectedWorkshopId) await selectWorkshop(selectedWorkshopId);
+  }
+
+  async function viewSessionFacilitators(sessionId: string) {
+    if (facilitatorsSessionId === sessionId) {
+      setFacilitatorsSessionId(null);
+      setSessionFacilitators(null);
+      return;
+    }
+    setFacilitatorsSessionId(sessionId);
+    setSessionFacilitators(null);
+    const resp = await authedFetch(`/api/bff/sessions/${sessionId}/facilitators`);
+    if (resp.ok) setSessionFacilitators((await resp.json()).items);
+  }
+
+  async function addCoFacilitator(sessionId: string) {
+    if (!addCoFacilitatorId) return;
+    setCoFacilitatorBusy(true);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/sessions/${sessionId}/facilitators`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ facilitator_id: addCoFacilitatorId }),
+    });
+    setCoFacilitatorBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not add that facilitator.");
+      return;
+    }
+    setAddCoFacilitatorId("");
+    setSessionFacilitators((await resp.json()).items);
+  }
+
+  async function removeCoFacilitator(sessionId: string, facilitatorId: string) {
+    setError(null);
+    const resp = await authedFetch(
+      `/api/bff/sessions/${sessionId}/facilitators/${facilitatorId}`,
+      { method: "DELETE" },
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not remove that facilitator.");
+      return;
+    }
+    setSessionFacilitators((await resp.json()).items);
   }
 
   if (facilitators === null || workshops === null) {
@@ -535,6 +605,8 @@ export default function WorkshopsScreen() {
                     <th scope="col">Status</th>
                     <th scope="col"></th>
                     <th scope="col"></th>
+                    <th scope="col"></th>
+                    {canManage ? <th scope="col"></th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -568,11 +640,99 @@ export default function WorkshopsScreen() {
                           {rosterSessionId === s.id ? "Hide roster" : "Roster"}
                         </button>
                       </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          onClick={() => viewSessionFacilitators(s.id)}
+                        >
+                          {facilitatorsSessionId === s.id ? "Hide facilitators" : "Facilitators"}
+                        </button>
+                      </td>
+                      {canManage ? (
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={cancelBusy === s.id || s.status === "cancelled"}
+                            onClick={() => cancelSession(s.id)}
+                          >
+                            Cancel session
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {facilitatorsSessionId ? (
+              <div className="card mt-3 p-4">
+                <b style={{ fontSize: "0.8125rem" }}>Facilitators on this session</b>
+                {sessionFacilitators === null ? (
+                  <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+                    Loading…
+                  </p>
+                ) : (
+                  <div className="mt-2 flex flex-col gap-2">
+                    {sessionFacilitators.map((f) => {
+                      const isPrimary =
+                        (sessions ?? []).find((s) => s.id === facilitatorsSessionId)
+                          ?.facilitator_id === f.id;
+                      return (
+                        <div
+                          key={f.id}
+                          className="flex flex-wrap items-center justify-between gap-2"
+                        >
+                          <span className="mono" style={{ fontSize: "0.8125rem" }}>
+                            {f.email} {isPrimary ? <span className="tag tag--mute">primary</span> : null}
+                          </span>
+                          {canManage && !isPrimary ? (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              onClick={() => removeCoFacilitator(facilitatorsSessionId, f.id)}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {canManage ? (
+                  <div className="mt-3 flex flex-wrap items-end gap-2">
+                    <label className="field">
+                      <b>Add a co-facilitator</b>
+                      <select
+                        className="input"
+                        value={addCoFacilitatorId}
+                        onChange={(e) => setAddCoFacilitatorId(e.target.value)}
+                      >
+                        <option value="">Choose…</option>
+                        {facilitators
+                          .filter((f) => !(sessionFacilitators ?? []).some((sf) => sf.id === f.id))
+                          .map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.email}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn--primary"
+                      disabled={coFacilitatorBusy || !addCoFacilitatorId}
+                      onClick={() => addCoFacilitator(facilitatorsSessionId)}
+                    >
+                      Add
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {rosterSessionId ? (
               <div className="card mt-3 p-4">

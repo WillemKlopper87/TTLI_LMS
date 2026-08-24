@@ -16,6 +16,7 @@ from src.core.config import Settings
 from src.core.crypto import CryptoBox
 from src.core.errors import AppError, Forbidden, NotFound
 from src.core.ids import uuid7
+from src.models.audit import AuditAction
 from src.models.user import User
 from src.models.workshop import (
     ATTENDANCE_STATUS_VALUES,
@@ -24,9 +25,11 @@ from src.models.workshop import (
     Facilitator,
     FacilitatorAvailability,
     MeetingLink,
+    SessionFacilitator,
     Workshop,
     WorkshopSession,
 )
+from src.services import audit, push
 from src.services import meeting as meeting_service
 
 
@@ -170,11 +173,23 @@ async def _facilitator_available_at(
 async def _facilitator_has_conflict(
     session: AsyncSession, *, facilitator_id: uuid.UUID, starts_at: datetime, ends_at: datetime
 ) -> bool:
-    stmt = select(WorkshopSession).where(
-        WorkshopSession.facilitator_id == facilitator_id,
-        WorkshopSession.status == "scheduled",
-        WorkshopSession.starts_at < ends_at,
-        WorkshopSession.ends_at > starts_at,
+    """Checked via `session_facilitators`, not `WorkshopSession.
+    facilitator_id` directly (P7) — every session's primary facilitator
+    is always also a `session_facilitators` row (`create_session`/
+    `0036`'s backfill both guarantee it), so this one join catches a
+    conflict whether the facilitator is primary on the other session or
+    only a co-facilitator on it. Checking `facilitator_id` alone would
+    silently miss the co-facilitator case — exactly the gap multi-
+    facilitator support needs closed."""
+    stmt = (
+        select(WorkshopSession)
+        .join(SessionFacilitator, SessionFacilitator.session_id == WorkshopSession.id)
+        .where(
+            SessionFacilitator.facilitator_id == facilitator_id,
+            WorkshopSession.status == "scheduled",
+            WorkshopSession.starts_at < ends_at,
+            WorkshopSession.ends_at > starts_at,
+        )
     )
     return (await session.execute(stmt)).scalars().first() is not None
 
@@ -218,6 +233,198 @@ async def create_session(
         capacity=capacity,
     )
     session.add(workshop_session)
+    await session.flush()
+    # The primary facilitator is always a session_facilitators row too
+    # (P7) — every existing session got this via 0036's backfill; a
+    # session created after that migration needs the same invariant
+    # held here, or "every facilitator on this session" would silently
+    # miss the primary the moment it's queried through this table alone.
+    session.add(
+        SessionFacilitator(
+            id=uuid7(),
+            tenant_id=tenant_id,
+            session_id=workshop_session.id,
+            facilitator_id=facilitator_id,
+        )
+    )
+    await session.flush()
+    return workshop_session
+
+
+async def add_session_facilitator(
+    session: AsyncSession, *, tenant_id: uuid.UUID, session_id: uuid.UUID, facilitator_id: uuid.UUID
+) -> SessionFacilitator:
+    """A co-facilitator, checked against their *own* availability and
+    conflicts (P7, REQ-WS-02/03) — the exact gap the single-`facilitator_
+    id` design left open: nothing ever checked a co-facilitator's own
+    schedule, because there was no way to add one at all."""
+    workshop_session = await session.get(WorkshopSession, session_id)
+    if workshop_session is None or workshop_session.tenant_id != tenant_id:
+        raise NotFound("No such session.")
+    facilitator = await session.get(Facilitator, facilitator_id)
+    if facilitator is None or facilitator.tenant_id != tenant_id:
+        raise NotFound("No such facilitator.")
+
+    existing = (
+        await session.execute(
+            select(SessionFacilitator.id).where(
+                SessionFacilitator.session_id == session_id,
+                SessionFacilitator.facilitator_id == facilitator_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise WorkshopError("This facilitator is already on this session.")
+
+    if not await _facilitator_available_at(
+        session,
+        facilitator_id=facilitator_id,
+        starts_at=workshop_session.starts_at,
+        ends_at=workshop_session.ends_at,
+    ):
+        raise WorkshopError("This falls outside the facilitator's stated availability.")
+    if await _facilitator_has_conflict(
+        session,
+        facilitator_id=facilitator_id,
+        starts_at=workshop_session.starts_at,
+        ends_at=workshop_session.ends_at,
+    ):
+        raise WorkshopError("The facilitator already has a session in this window.")
+
+    link = SessionFacilitator(
+        id=uuid7(), tenant_id=tenant_id, session_id=session_id, facilitator_id=facilitator_id
+    )
+    session.add(link)
+    await session.flush()
+    return link
+
+
+async def remove_session_facilitator(
+    session: AsyncSession, *, tenant_id: uuid.UUID, session_id: uuid.UUID, facilitator_id: uuid.UUID
+) -> None:
+    workshop_session = await session.get(WorkshopSession, session_id)
+    if workshop_session is None or workshop_session.tenant_id != tenant_id:
+        raise NotFound("No such session.")
+
+    link = (
+        await session.execute(
+            select(SessionFacilitator).where(
+                SessionFacilitator.session_id == session_id,
+                SessionFacilitator.facilitator_id == facilitator_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if link is None:
+        raise NotFound("That facilitator is not on this session.")
+
+    remaining = (
+        (
+            await session.execute(
+                select(SessionFacilitator.id).where(SessionFacilitator.session_id == session_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(remaining) <= 1:
+        raise WorkshopError("A session must keep at least one facilitator.")
+
+    if workshop_session.facilitator_id == facilitator_id:
+        raise WorkshopError(
+            "Can't remove the primary facilitator — add a replacement, then reassign it first."
+        )
+
+    await session.delete(link)
+    await session.flush()
+
+
+async def list_session_facilitators(
+    session: AsyncSession, crypto: CryptoBox, *, session_id: uuid.UUID
+) -> list[FacilitatorRow]:
+    stmt = (
+        select(Facilitator, User)
+        .join(SessionFacilitator, SessionFacilitator.facilitator_id == Facilitator.id)
+        .join(User, User.id == Facilitator.user_id)
+        .where(SessionFacilitator.session_id == session_id)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        FacilitatorRow(
+            id=f.id,
+            user_id=f.user_id,
+            email=crypto.decrypt(u.email_encrypted),
+            bio=f.bio,
+            timezone=f.timezone,
+        )
+        for f, u in rows
+    ]
+
+
+async def cancel_session(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    tenant_id: uuid.UUID,
+    session_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    reason: str,
+) -> WorkshopSession:
+    """Cancels the whole session, not one booking (P7, REQ-WS-03) — the
+    gap this codebase had zero code path for until now. Cancels every
+    active booking, refunds a consumed credit for each (Phase 4 wires
+    that half in; harmless no-op until then since consumed_entitlement_id
+    is always null before it), cancels the provider meeting, and tells
+    every affected registrant.
+
+    `actor_user_id` is trusted, not re-checked here — the router calls
+    `_require_session_facilitator_or_manage` first, the same
+    this-session's-own-facilitator-or-workshop:manage gate
+    `mark_attendance`/`list_roster` already use."""
+    workshop_session = await session.get(WorkshopSession, session_id)
+    if workshop_session is None or workshop_session.tenant_id != tenant_id:
+        raise NotFound("No such session.")
+    if workshop_session.status == "cancelled":
+        raise WorkshopError("This session is already cancelled.")
+
+    workshop_session.status = "cancelled"
+
+    bookings = (
+        (
+            await session.execute(
+                select(Booking).where(
+                    Booking.session_id == session_id, Booking.status != "cancelled"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for booking in bookings:
+        await _cancel_booking_row(session, booking=booking, resulting_status="cancelled")
+        await push.notify_user(
+            session,
+            tenant_id=tenant_id,
+            user_id=booking.user_id,
+            title="A session you booked was cancelled",
+            body=reason or "The facilitator or an admin cancelled this session.",
+        )
+
+    link = (
+        await session.execute(select(MeetingLink).where(MeetingLink.session_id == session_id))
+    ).scalar_one_or_none()
+    if link is not None:
+        provider = meeting_service.get_provider(link.provider, settings=settings)
+        await provider.cancel_meeting(provider_meeting_id=link.provider_meeting_id)
+
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.WORKSHOP_SESSION_CANCELLED,
+        actor_user_id=actor_user_id,
+        entity_type="workshop_session",
+        entity_id=workshop_session.id,
+        after={"status": "cancelled", "reason": reason},
+    )
     await session.flush()
     return workshop_session
 
@@ -346,23 +553,16 @@ async def book_session(
     return booking
 
 
-async def cancel_booking(
-    session: AsyncSession, *, tenant_id: uuid.UUID, booking_id: uuid.UUID, actor_user_id: uuid.UUID
+async def _cancel_booking_row(
+    session: AsyncSession, *, booking: Booking, resulting_status: str = "cancelled"
 ) -> None:
-    booking = await session.get(Booking, booking_id)
-    if booking is None or booking.tenant_id != tenant_id:
-        raise NotFound("No such booking.")
-    if booking.status == "cancelled":
-        raise WorkshopError("This booking is already cancelled.")
-
-    workshop_session = await session.get(WorkshopSession, booking.session_id)
-    if workshop_session is None:  # pragma: no cover - FK guarantees this
-        raise NotFound("No such session.")
-    facilitator = await session.get(Facilitator, workshop_session.facilitator_id)
-    is_facilitator = facilitator is not None and facilitator.user_id == actor_user_id
-    if booking.user_id != actor_user_id and not is_facilitator:
-        raise Forbidden("You do not have access to this booking.")
-
+    """The actual state transition, shared by `cancel_booking` (one
+    booking, permission-checked) and `cancel_session` (every booking on
+    a session, already permission-checked once by its caller) — same
+    waitlist-promotion and attendance-record bookkeeping either way.
+    `resulting_status` is `"cancelled"` normally, `"rescheduled"` when
+    called from `reschedule_booking` (Phase 2) — the `attendance_status`
+    enum has carried that value, unused, since `0018`."""
     was_registered = booking.status == "registered"
     booking.status = "cancelled"
 
@@ -372,7 +572,7 @@ async def cancel_booking(
         )
     ).scalar_one_or_none()
     if record is not None:
-        record.status = "cancelled"
+        record.status = resulting_status
 
     if was_registered:
         # REQ-WS-03's waitlist: the earliest still-waitlisted booking
@@ -399,6 +599,26 @@ async def cancel_booking(
                 promoted_record.status = "registered"
 
     await session.flush()
+
+
+async def cancel_booking(
+    session: AsyncSession, *, tenant_id: uuid.UUID, booking_id: uuid.UUID, actor_user_id: uuid.UUID
+) -> None:
+    booking = await session.get(Booking, booking_id)
+    if booking is None or booking.tenant_id != tenant_id:
+        raise NotFound("No such booking.")
+    if booking.status == "cancelled":
+        raise WorkshopError("This booking is already cancelled.")
+
+    workshop_session = await session.get(WorkshopSession, booking.session_id)
+    if workshop_session is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such session.")
+    facilitator = await session.get(Facilitator, workshop_session.facilitator_id)
+    is_facilitator = facilitator is not None and facilitator.user_id == actor_user_id
+    if booking.user_id != actor_user_id and not is_facilitator:
+        raise Forbidden("You do not have access to this booking.")
+
+    await _cancel_booking_row(session, booking=booking, resulting_status="cancelled")
 
 
 async def mark_attendance(
@@ -473,8 +693,10 @@ __all__ = [
     "RosterRow",
     "WorkshopError",
     "add_availability",
+    "add_session_facilitator",
     "book_session",
     "cancel_booking",
+    "cancel_session",
     "create_facilitator",
     "create_session",
     "create_workshop",
@@ -482,8 +704,10 @@ __all__ = [
     "list_facilitators",
     "list_public_sessions",
     "list_roster",
+    "list_session_facilitators",
     "list_sessions",
     "list_workshops",
     "mark_attendance",
+    "remove_session_facilitator",
     "seat_counts",
 ]

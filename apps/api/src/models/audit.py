@@ -93,6 +93,10 @@ class AuditAction:
     # (actor_user_id null), so a compliance reviewer can see a backlog
     # forming even on a tenant where nobody is push-subscribed.
     PAYMENT_AGEING_ALERTED = "payment.ageing_alerted"
+    # P7 (docs/BACKLOG.md) — a facilitator/admin cancelling a whole
+    # session (every booking on it, not just one), the gap REQ-WS-03's
+    # "cancellation... rules" left unimplemented until now.
+    WORKSHOP_SESSION_CANCELLED = "workshop.session.cancelled"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

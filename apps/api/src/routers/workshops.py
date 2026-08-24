@@ -22,9 +22,11 @@ from src.models.user import User
 from src.models.workshop import Booking, Facilitator, MeetingLink, WorkshopSession
 from src.schemas.workshops import (
     AddAvailabilityRequest,
+    AddSessionFacilitatorRequest,
     AvailabilityPage,
     AvailabilityWindowResponse,
     BookingResponse,
+    CancelSessionRequest,
     CreateFacilitatorRequest,
     CreateSessionRequest,
     CreateWorkshopRequest,
@@ -233,6 +235,105 @@ async def list_sessions(
         session, tenant_id=principal.tenant_id, workshop_id=_parse_uuid(workshop_id)
     )
     return SessionsPage(items=[await _session_response(session, s) for s in sessions])
+
+
+@router.post("/sessions/{session_id}/cancel", response_model=SessionResponse)
+async def cancel_session(
+    session_id: str,
+    body: CancelSessionRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> SessionResponse:
+    sid = _parse_uuid(session_id)
+    await _require_session_facilitator_or_manage(session, principal, sid)
+    workshop_session = await workshops_service.cancel_session(
+        session,
+        settings,
+        tenant_id=principal.tenant_id,
+        session_id=sid,
+        actor_user_id=principal.user_id,
+        reason=body.reason,
+    )
+    return await _session_response(session, workshop_session)
+
+
+@router.get("/sessions/{session_id}/facilitators", response_model=FacilitatorsPage)
+async def list_session_facilitators(
+    session_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> FacilitatorsPage:
+    rows = await workshops_service.list_session_facilitators(
+        session, crypto, session_id=_parse_uuid(session_id)
+    )
+    return FacilitatorsPage(
+        items=[
+            FacilitatorResponse(
+                id=str(r.id), user_id=str(r.user_id), email=r.email, bio=r.bio, timezone=r.timezone
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/facilitators",
+    response_model=FacilitatorsPage,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_session_facilitator(
+    session_id: str,
+    body: AddSessionFacilitatorRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+) -> FacilitatorsPage:
+    principal.require("workshop:manage")
+    sid = _parse_uuid(session_id)
+    await workshops_service.add_session_facilitator(
+        session,
+        tenant_id=principal.tenant_id,
+        session_id=sid,
+        facilitator_id=_parse_uuid(body.facilitator_id),
+    )
+    rows = await workshops_service.list_session_facilitators(session, crypto, session_id=sid)
+    return FacilitatorsPage(
+        items=[
+            FacilitatorResponse(
+                id=str(r.id), user_id=str(r.user_id), email=r.email, bio=r.bio, timezone=r.timezone
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.delete(
+    "/sessions/{session_id}/facilitators/{facilitator_id}",
+    response_model=FacilitatorsPage,
+)
+async def remove_session_facilitator(
+    session_id: str,
+    facilitator_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+) -> FacilitatorsPage:
+    principal.require("workshop:manage")
+    sid = _parse_uuid(session_id)
+    await workshops_service.remove_session_facilitator(
+        session,
+        tenant_id=principal.tenant_id,
+        session_id=sid,
+        facilitator_id=_parse_uuid(facilitator_id),
+    )
+    rows = await workshops_service.list_session_facilitators(session, crypto, session_id=sid)
+    return FacilitatorsPage(
+        items=[
+            FacilitatorResponse(
+                id=str(r.id), user_id=str(r.user_id), email=r.email, bio=r.bio, timezone=r.timezone
+            )
+            for r in rows
+        ]
+    )
 
 
 @router.post("/sessions/{session_id}/book", response_model=BookingResponse)

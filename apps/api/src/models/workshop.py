@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, time
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -114,6 +115,19 @@ class Workshop(Base, TimestampMixin):
     default_duration_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="60"
     )
+    # P7 (docs/BACKLOG.md): opt-in per workshop, default false — every
+    # existing workshop keeps today's open/free booking behaviour
+    # untouched. True means book_session requires (and consumes) a
+    # workshop_credit entitlement targeting this workshop.
+    requires_credit: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    # Which MeetingProvider book_session should use for this workshop's
+    # sessions — previously hardcoded to "manual" in the service layer;
+    # this column is what makes that a real per-workshop choice (P7).
+    meeting_provider: Mapped[str] = mapped_column(
+        MeetingProvider, nullable=False, server_default="manual"
+    )
 
 
 class WorkshopSession(Base, TimestampMixin):
@@ -150,6 +164,43 @@ class WorkshopSession(Base, TimestampMixin):
     )
 
 
+class SessionFacilitator(Base):
+    """Co-facilitators on a session (P7, docs/BACKLOG.md; REQ-WS-02/03)
+    — additive alongside `WorkshopSession.facilitator_id`, not a
+    replacement for it. `facilitator_id` stays the organiser/primary
+    pointer (Graph meeting organiser, `MeetingLink` provenance); this
+    table is what makes "every facilitator on this session" a query
+    instead of always being exactly one row. The primary facilitator is
+    backfilled into this table too (`0036`), so listing a session's
+    facilitators is always this table alone, never `facilitator_id`
+    unioned with it."""
+
+    __tablename__ = "session_facilitators"
+    __table_args__ = (
+        Index("uq_session_facilitators", "session_id", "facilitator_id", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workshop_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    facilitator_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("facilitators.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()"), nullable=False
+    )
+
+
 class Booking(Base, TimestampMixin):
     __tablename__ = "bookings"
     __table_args__ = (Index("uq_bookings_session_user", "session_id", "user_id", unique=True),)
@@ -176,6 +227,15 @@ class Booking(Base, TimestampMixin):
     # not "no reminder is due."
     reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # P7: which workshop_credit Entitlement this booking drew from, if
+    # the workshop required one — null for every open/free booking
+    # (the vast majority). Provenance only, same reasoning
+    # PathEnrolment.entitlement_id (0035) already established: lets
+    # cancel refund the exact entitlement a booking consumed, not just
+    # "some" entitlement for this workshop.
+    consumed_entitlement_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("entitlements.id", ondelete="RESTRICT"), nullable=True
     )
 
 
@@ -251,6 +311,7 @@ __all__ = [
     "FacilitatorAvailability",
     "MeetingLink",
     "MeetingProvider",
+    "SessionFacilitator",
     "Workshop",
     "WorkshopSession",
     "WorkshopSessionStatus",
