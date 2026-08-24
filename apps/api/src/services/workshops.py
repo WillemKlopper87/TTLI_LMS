@@ -9,13 +9,14 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings
 from src.core.crypto import CryptoBox
 from src.core.errors import AppError, Forbidden, NotFound
 from src.core.ids import uuid7
+from src.core.logging import get_logger
 from src.models.audit import AuditAction
 from src.models.commerce import Entitlement
 from src.models.user import User
@@ -32,6 +33,9 @@ from src.models.workshop import (
 )
 from src.services import audit, push
 from src.services import meeting as meeting_service
+from src.services.meeting.base import MeetingProviderUnavailable
+
+log = get_logger(__name__)
 
 
 class WorkshopError(AppError):
@@ -438,7 +442,20 @@ async def cancel_session(
     ).scalar_one_or_none()
     if link is not None:
         provider = meeting_service.get_provider(link.provider, settings=settings)
-        await provider.cancel_meeting(provider_meeting_id=link.provider_meeting_id)
+        try:
+            await provider.cancel_meeting(provider_meeting_id=link.provider_meeting_id)
+        except MeetingProviderUnavailable:
+            # overall-review F3: fail-soft here, not fail-closed like
+            # create_meeting — a Graph outage must not block an admin
+            # from cancelling a session (every booking on it is being
+            # cancelled in this same transaction regardless). The
+            # session's calendar event is left stale rather than the
+            # cancellation itself being blocked.
+            log.warning(
+                "workshop_meeting_cancel_failed",
+                session_id=str(session_id),
+                provider=link.provider,
+            )
 
     await audit.record(
         session,
@@ -528,6 +545,14 @@ async def _consume_workshop_credit(
             Entitlement.quantity > 0,
         )
         .order_by(Entitlement.granted_at)
+        # FOR UPDATE (overall-review F1): without it, two concurrent
+        # bookings of *different* sessions of the same workshop both
+        # read quantity == 1, both decrement, and one paid credit buys
+        # two seats. The lock makes the second transaction wait, re-read
+        # the committed quantity of 0, find no row passing the filter,
+        # and refuse — the same idiom services/invoicing.py already uses
+        # for its money-adjacent counter.
+        .with_for_update()
     )
     entitlement = (await session.execute(stmt)).scalars().first()
     if entitlement is None:
@@ -540,12 +565,17 @@ async def _consume_workshop_credit(
 async def _refund_workshop_credit(session: AsyncSession, *, entitlement_id: uuid.UUID) -> None:
     """The `_cancel_booking_row` half of the pair above — always
     refunds, no cancellation-deadline logic invented since none is
-    specified anywhere in the requirements this phase closes."""
-    entitlement = await session.get(Entitlement, entitlement_id)
-    if entitlement is None:  # pragma: no cover - FK guarantees this
-        return
-    entitlement.quantity = (entitlement.quantity or 0) + 1
-    await session.flush()
+    specified anywhere in the requirements this phase closes.
+
+    An in-database increment, not read-modify-write (overall-review F1's
+    sibling): `SET quantity = quantity + 1` is atomic under concurrent
+    writers, so it needs no lock of its own and cannot lose an update to
+    a simultaneous consume/refund on the same entitlement."""
+    await session.execute(
+        update(Entitlement)
+        .where(Entitlement.id == entitlement_id)
+        .values(quantity=func.coalesce(Entitlement.quantity, 0) + 1)
+    )
 
 
 async def book_session(
@@ -557,7 +587,24 @@ async def book_session(
     session_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> Booking:
-    workshop_session = await session.get(WorkshopSession, session_id)
+    # FOR UPDATE on the session row (overall-review F6): seat_counts()
+    # below is a check-then-insert, so two learners racing for the last
+    # seat could otherwise both count `registered < capacity` and both
+    # register. Locking the parent row serialises bookings per session
+    # (contention is per-session, not global). An explicit locked SELECT
+    # rather than session.get(..., with_for_update=True) because the
+    # reschedule path has already loaded this row into the identity map,
+    # and session.get would then return it without emitting SQL — no
+    # lock at all; populate_existing refreshes any such stale copy from
+    # the locked read.
+    workshop_session = (
+        await session.execute(
+            select(WorkshopSession)
+            .where(WorkshopSession.id == session_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if workshop_session is None or workshop_session.tenant_id != tenant_id:
         raise NotFound("No such session.")
     if workshop_session.status != "scheduled":
@@ -650,10 +697,26 @@ async def book_session(
         # at a time, so a real invite (REQ-WS-05) reaches them too.
         learner = await session.get(User, user_id)
         if learner is not None:
-            await provider.add_attendee(
-                provider_meeting_id=link.provider_meeting_id,
-                email=crypto.decrypt(learner.email_encrypted),
-            )
+            try:
+                await provider.add_attendee(
+                    provider_meeting_id=link.provider_meeting_id,
+                    email=crypto.decrypt(learner.email_encrypted),
+                )
+            except MeetingProviderUnavailable:
+                # overall-review F3: fail-soft, not fail-closed. The
+                # booking itself (a real seat, a real credit spend) is
+                # already committed above via a real Graph outage
+                # blocking a paying learner from completing a booking
+                # would be worse than the alternative here — a stale
+                # invite the facilitator can send by hand meanwhile,
+                # the same manual-fallback posture the `manual`
+                # provider already establishes for REQ-WS-06.
+                log.warning(
+                    "workshop_add_attendee_failed",
+                    session_id=str(session_id),
+                    booking_id=str(booking.id),
+                    provider=provider.name,
+                )
 
     await session.flush()
     return booking
@@ -777,10 +840,22 @@ async def _cancel_booking_row(
         if provider is not None and link is not None and meeting_crypto is not None:
             cancelled_learner = await session.get(User, booking.user_id)
             if cancelled_learner is not None:
-                await provider.remove_attendee(
-                    provider_meeting_id=link.provider_meeting_id,
-                    email=meeting_crypto.decrypt(cancelled_learner.email_encrypted),
-                )
+                try:
+                    await provider.remove_attendee(
+                        provider_meeting_id=link.provider_meeting_id,
+                        email=meeting_crypto.decrypt(cancelled_learner.email_encrypted),
+                    )
+                except MeetingProviderUnavailable:
+                    # overall-review F3: fail-soft — a Graph outage
+                    # must not block the cancellation itself (which
+                    # already freed the seat/refunded the credit
+                    # above). A stale invite for the cancelled learner
+                    # is the acceptable side effect.
+                    log.warning(
+                        "workshop_remove_attendee_failed",
+                        booking_id=str(booking.id),
+                        provider=provider.name,
+                    )
 
         # REQ-WS-03's waitlist: the earliest still-waitlisted booking
         # takes the seat that just freed up.
@@ -808,10 +883,20 @@ async def _cancel_booking_row(
             if provider is not None and link is not None and meeting_crypto is not None:
                 promoted_learner = await session.get(User, next_in_line.user_id)
                 if promoted_learner is not None:
-                    await provider.add_attendee(
-                        provider_meeting_id=link.provider_meeting_id,
-                        email=meeting_crypto.decrypt(promoted_learner.email_encrypted),
-                    )
+                    try:
+                        await provider.add_attendee(
+                            provider_meeting_id=link.provider_meeting_id,
+                            email=meeting_crypto.decrypt(promoted_learner.email_encrypted),
+                        )
+                    except MeetingProviderUnavailable:
+                        # overall-review F3: fail-soft — the promotion
+                        # itself (a real seat, already committed above)
+                        # must not be blocked by a Graph outage.
+                        log.warning(
+                            "workshop_promote_add_attendee_failed",
+                            booking_id=str(next_in_line.id),
+                            provider=provider.name,
+                        )
 
     await session.flush()
 

@@ -7,6 +7,7 @@ manual meeting-provider fallback.
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -1120,3 +1121,243 @@ async def test_manual_provider_attendee_management_is_a_noop_not_an_error(
     assert roster.status_code == 200, roster.text
     statuses = {r["booking_id"]: r["booking_status"] for r in roster.json()["items"]}
     assert statuses[booking_b.json()["id"]] == "registered"
+
+
+async def test_concurrent_bookings_cannot_double_spend_one_credit(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F1: `_consume_workshop_credit` used to be a plain
+    SELECT-then-decrement, so two truly concurrent bookings of two
+    *different* sessions of the same workshop (the unique booking index
+    only blocks the same session) both read `quantity == 1` and one
+    paid credit bought two seats. The FOR UPDATE lock makes the second
+    transaction wait, re-read 0, and refuse. This test runs the two
+    requests genuinely in parallel — sequential coverage already exists
+    in the phase-4 test above and would pass even without the lock."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    gated = await client.patch(
+        f"/api/v1/workshops/{workshop_id}",
+        json={"requires_credit": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert gated.status_code == 200, gated.text
+
+    learner_token, learner_id, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    # One credit, granted directly — the full EFT purchase loop is
+    # already covered by the phase-4 test; this test is about the race.
+    async with tenant_session_factory(tenant_id) as s:
+        s.add(
+            Entitlement(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                user_id=learner_id,
+                kind="workshop_credit",
+                target_id=uuid.UUID(workshop_id),
+                quantity=1,
+            )
+        )
+
+    starts = _next_weekday_at(1, 9)
+    session_ids: list[str] = []
+    for offset_minutes in (0, 90):
+        s_at = starts + timedelta(minutes=offset_minutes)
+        resp = await client.post(
+            f"/api/v1/workshops/{workshop_id}/sessions",
+            json={
+                "facilitator_id": facilitator_id,
+                "starts_at": s_at.isoformat(),
+                "ends_at": (s_at + timedelta(hours=1)).isoformat(),
+                "capacity": 5,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        session_ids.append(resp.json()["id"])
+
+    learner_auth = {"Authorization": f"Bearer {learner_token}"}
+    first, second = await asyncio.gather(
+        client.post(f"/api/v1/sessions/{session_ids[0]}/book", headers=learner_auth),
+        client.post(f"/api/v1/sessions/{session_ids[1]}/book", headers=learner_auth),
+    )
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [200, 400], (first.text, second.text)
+    refused = first if first.status_code == 400 else second
+    assert "credit" in refused.json()["error"]["message"].lower()
+
+    async with tenant_session_factory(tenant_id) as s:
+        quantity = (
+            await s.execute(
+                sa.select(Entitlement.quantity).where(
+                    Entitlement.tenant_id == tenant_id,
+                    Entitlement.user_id == learner_id,
+                    Entitlement.kind == "workshop_credit",
+                    Entitlement.target_id == uuid.UUID(workshop_id),
+                )
+            )
+        ).scalar_one()
+    assert quantity == 0, "one credit spent exactly once, never negative"
+
+
+async def test_concurrent_bookings_cannot_oversell_the_last_seat(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F6 (pre-existing since 0018): seat_counts() then
+    insert was check-then-act with no lock, so two learners racing for
+    the last seat could both register. The session-row FOR UPDATE in
+    book_session serialises them: exactly one registers, the other is
+    waitlisted."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_resp.status_code == 201, session_resp.text
+    session_id = session_resp.json()["id"]
+
+    token_a, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    token_b, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    resp_a, resp_b = await asyncio.gather(
+        client.post(
+            f"/api/v1/sessions/{session_id}/book", headers={"Authorization": f"Bearer {token_a}"}
+        ),
+        client.post(
+            f"/api/v1/sessions/{session_id}/book", headers={"Authorization": f"Bearer {token_b}"}
+        ),
+    )
+    assert resp_a.status_code == 200, resp_a.text
+    assert resp_b.status_code == 200, resp_b.text
+    outcomes = sorted([resp_a.json()["status"], resp_b.json()["status"]])
+    assert outcomes == ["registered", "waitlisted"], outcomes
+
+
+async def test_cancel_survives_a_meeting_provider_outage(
+    client, tenant_session_factory, crypto, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F3: MeetingProviderUnavailable used to propagate
+    straight out of cancel_booking/cancel_session/waitlist-promotion —
+    fine for create_meeting (never fabricate a join link) but wrong for
+    every cancel-side call, where a Graph outage would otherwise lock a
+    learner into a booking they're trying to leave. The DB-side effects
+    (status change, credit refund, waitlist promotion) must still land
+    even when the provider call fails."""
+    from src.services import meeting as meeting_service
+    from src.services.meeting.base import MeetingDetails, MeetingProviderUnavailable
+
+    class _FlakyProvider:
+        """`create_meeting` still succeeds (fail-closed there is correct
+        and untouched by this fix) — only the calls this fix made
+        fail-soft raise, so both booking_b's own add_attendee (a new
+        registrant joining an existing meeting) and every cancel-side
+        call are exercised."""
+
+        name = "manual"
+
+        async def create_meeting(self, **kwargs):  # type: ignore[no-untyped-def]
+            return MeetingDetails(provider="manual", provider_meeting_id="evt-1", join_url=None)
+
+        async def cancel_meeting(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise MeetingProviderUnavailable("simulated Graph outage")
+
+        async def add_attendee(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise MeetingProviderUnavailable("simulated Graph outage")
+
+        async def remove_attendee(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise MeetingProviderUnavailable("simulated Graph outage")
+
+    monkeypatch.setattr(meeting_service, "get_provider", lambda *a, **k: _FlakyProvider())
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_resp.status_code == 201, session_resp.text
+    session_id = session_resp.json()["id"]
+
+    learner_a_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    learner_b_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booking_a = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_a_token}"},
+    )
+    assert booking_a.status_code == 200, booking_a.text
+    booking_b = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_b_token}"},
+    )
+    assert booking_b.status_code == 200, booking_b.text
+    assert booking_b.json()["status"] == "waitlisted"
+
+    # A's cancel must succeed despite cancel_meeting raising, and must
+    # still promote B off the waitlist despite that promotion's own
+    # add_attendee call also raising.
+    cancelled = await client.post(
+        f"/api/v1/bookings/{booking_a.json()['id']}/cancel",
+        headers={"Authorization": f"Bearer {learner_a_token}"},
+    )
+    assert cancelled.status_code == 204, cancelled.text
+
+    roster = await client.get(
+        f"/api/v1/sessions/{session_id}/roster",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert roster.status_code == 200, roster.text
+    statuses = {r["booking_id"]: r["booking_status"] for r in roster.json()["items"]}
+    assert statuses[booking_b.json()["id"]] == "registered", "promotion must land despite Graph"
+
+    # A session-wide cancel must also succeed despite cancel_meeting
+    # raising for the session's own meeting.
+    reason_resp = await client.post(
+        f"/api/v1/sessions/{session_id}/cancel",
+        json={"reason": "Facilitator unavailable"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert reason_resp.status_code == 200, reason_resp.text
+    assert reason_resp.json()["status"] == "cancelled"
