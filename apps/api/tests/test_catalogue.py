@@ -381,3 +381,43 @@ async def test_authored_course_can_be_sold_and_bought_end_to_end(  # type: ignor
     enrolments = await client.get("/api/v1/enrolments", headers=buyer_auth)
     assert enrolments.status_code == 200, enrolments.text
     assert any(e["course_id"] == course_id for e in enrolments.json())
+
+
+async def test_attaching_a_bridge_to_a_draft_product_reinfers_kind(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Overall-review F2: create_product allows a bridgeless draft
+    (`kind="course"`, no course — the §6.1 wrapper), and update_product's
+    mutual-exclusion guards only stop *cross*-attachment. Attaching a
+    workshop to that wrapper used to leave `kind="course"` with
+    `course_id=None` — which _fulfil_order turns into an OrderError
+    *after the buyer has paid*. kind must follow the bridge."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    auth = {"Authorization": f"Bearer {token}"}
+
+    workshop = await client.post(
+        "/api/v1/workshops",
+        json={"title": "Kind Reinference Workshop", "session_type": "one_on_one"},
+        headers=auth,
+    )
+    assert workshop.status_code == 201, workshop.text
+
+    draft = await client.post(
+        "/api/v1/catalogue/products",
+        json={"slug": _unique_slug(), "name": "Draft wrapper"},
+        headers=auth,
+    )
+    assert draft.status_code == 201, draft.text
+    assert draft.json()["kind"] == "course", "the bridgeless default"
+
+    attached = await client.patch(
+        f"/api/v1/catalogue/products/{draft.json()['id']}",
+        json={"workshop_id": workshop.json()["id"]},
+        headers=auth,
+    )
+    assert attached.status_code == 200, attached.text
+    assert attached.json()["kind"] == "workshop_credit"
+    assert attached.json()["workshop_id"] == workshop.json()["id"]

@@ -337,6 +337,16 @@ async def update_product(
             )
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
         product.course_id = course_id
+        # Re-infer kind on every bridge attach (overall-review F2):
+        # create_product allows a bridgeless draft (`kind="course"`,
+        # no course — the §6.1 wrapper), and the guards above only stop
+        # *cross*-attachment — so attaching a path or workshop to that
+        # wrapper used to leave `kind="course"` with `course_id=None`,
+        # which _fulfil_order turns into an OrderError *after the buyer
+        # has paid*, wedging finance approval. kind now always follows
+        # the bridge actually attached, same inference create_product
+        # makes.
+        product.kind = "course"
     if learning_path_id is not None:
         if product.course_id is not None:
             raise CatalogueError(
@@ -348,6 +358,7 @@ async def update_product(
             )
         await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
         product.learning_path_id = learning_path_id
+        product.kind = "path"
     if workshop_id is not None:
         if product.course_id is not None:
             raise CatalogueError(
@@ -359,6 +370,7 @@ async def update_product(
             )
         await _assert_workshop_sellable(session, tenant_id=tenant_id, workshop_id=workshop_id)
         product.workshop_id = workshop_id
+        product.kind = "workshop_credit"
 
     if is_active is True:
         # Refuse to publish a product nobody can actually buy. The
