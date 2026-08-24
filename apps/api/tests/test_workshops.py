@@ -616,3 +616,139 @@ async def test_multi_facilitator_conflict_check_blocks_co_facilitator_double_boo
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert remove_last.status_code == 400
+
+
+async def test_reschedule_moves_booking_and_marks_old_attendance_rescheduled(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7 phase 2, REQ-WS-03: reschedule stays cancel-then-rebook (0018's
+    own reasoned deferral), but the convenience wrapper marks the old
+    booking's attendance "rescheduled" — the enum value that's existed
+    unused since 0018 — instead of "cancelled", and GET /bookings (the
+    new "my sessions" listing) reflects both sides correctly."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    other_workshop_id = await _make_workshop(client, admin_token)
+
+    starts_one = _next_weekday_at(1, 9)
+    session_one = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts_one.isoformat(),
+            "ends_at": (starts_one + timedelta(hours=1)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_one.status_code == 201, session_one.text
+    session_one_id = session_one.json()["id"]
+
+    starts_two = _next_weekday_at(1, 10)
+    session_two = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts_two.isoformat(),
+            "ends_at": (starts_two + timedelta(hours=1)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert session_two.status_code == 201, session_two.text
+    session_two_id = session_two.json()["id"]
+
+    # A session on an unrelated workshop, same facilitator's window,
+    # non-overlapping with either session above.
+    starts_three = _next_weekday_at(1, 11)
+    other_session = await client.post(
+        f"/api/v1/workshops/{other_workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts_three.isoformat(),
+            "ends_at": (starts_three + timedelta(hours=1)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert other_session.status_code == 201, other_session.text
+    other_session_id = other_session.json()["id"]
+
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booking = await client.post(
+        f"/api/v1/sessions/{session_one_id}/book",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert booking.status_code == 200, booking.text
+    booking_id = booking.json()["id"]
+
+    # A stranger cannot reschedule someone else's booking.
+    stranger_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    forbidden = await client.post(
+        f"/api/v1/bookings/{booking_id}/reschedule",
+        json={"target_session_id": session_two_id},
+        headers={"Authorization": f"Bearer {stranger_token}"},
+    )
+    assert forbidden.status_code == 403
+
+    # Rescheduling to a session of a *different* workshop is refused.
+    cross_workshop = await client.post(
+        f"/api/v1/bookings/{booking_id}/reschedule",
+        json={"target_session_id": other_session_id},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert cross_workshop.status_code == 400, cross_workshop.text
+
+    rescheduled = await client.post(
+        f"/api/v1/bookings/{booking_id}/reschedule",
+        json={"target_session_id": session_two_id},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert rescheduled.status_code == 200, rescheduled.text
+    new_booking_id = rescheduled.json()["id"]
+    assert new_booking_id != booking_id
+    assert rescheduled.json()["session_id"] == session_two_id
+    assert rescheduled.json()["status"] == "registered"
+
+    async with tenant_session_factory(tenant_id) as s:
+        old_attendance = (
+            await s.execute(
+                sa.text(
+                    "SELECT a.status FROM attendance_records a "
+                    "JOIN bookings b ON b.id = a.booking_id WHERE b.id = :bid"
+                ),
+                {"bid": booking_id},
+            )
+        ).scalar_one()
+    assert old_attendance == "rescheduled"
+
+    own_bookings = await client.get(
+        "/api/v1/bookings", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert own_bookings.status_code == 200, own_bookings.text
+    rows = {r["booking_id"]: r for r in own_bookings.json()["items"]}
+    assert rows[booking_id]["status"] == "cancelled"
+    assert rows[booking_id]["can_manage"] is False
+    assert rows[new_booking_id]["status"] == "registered"
+    assert rows[new_booking_id]["session_id"] == session_two_id
+    assert rows[new_booking_id]["can_manage"] is True
+    assert rows[new_booking_id]["workshop_title"]
+    assert len(rows[new_booking_id]["facilitator_names"]) == 1
+
+    # Rescheduling an already-cancelled booking is refused.
+    already_gone = await client.post(
+        f"/api/v1/bookings/{booking_id}/reschedule",
+        json={"target_session_id": session_one_id},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert already_gone.status_code == 400

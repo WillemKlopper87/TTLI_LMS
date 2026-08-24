@@ -84,6 +84,11 @@ class UpcomingItem:
     subtitle: str
     starts_at: datetime | None = None
     join_url: str | None = None
+    # P7: which MeetingProvider actually issued join_url — the "Join on
+    # Teams" label used to be hardcoded regardless of provider (a real
+    # bug found reviewing this pass), which read as a working Teams
+    # link on a manually-run session.
+    provider: str | None = None
     enrolment_id: uuid.UUID | None = None
     lesson_id: uuid.UUID | None = None
     quiz_id: uuid.UUID | None = None
@@ -182,6 +187,7 @@ async def _upcoming_workshops(
                 or workshop.session_type.replace("_", " ").capitalize(),
                 starts_at=workshop_session.starts_at,
                 join_url=meeting_link.join_url if meeting_link is not None else None,
+                provider=meeting_link.provider if meeting_link is not None else None,
             )
         )
     return items

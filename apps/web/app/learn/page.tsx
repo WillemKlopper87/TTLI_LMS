@@ -48,11 +48,19 @@ interface UpcomingItem {
   subtitle: string | null;
   starts_at: string | null;
   join_url: string | null;
+  provider: string | null;
   enrolment_id: string | null;
   lesson_id: string | null;
   quiz_id: string | null;
   attempts_remaining: number | null;
 }
+
+const PROVIDER_LABEL: Record<string, string> = {
+  teams: "Join on Teams",
+  zoom: "Join on Zoom",
+  meet: "Join on Meet",
+  manual: "Join session",
+};
 
 interface Dashboard {
   first_name: string | null;
@@ -255,7 +263,7 @@ export default function LearnDashboardPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Join on Teams
+                      {PROVIDER_LABEL[item.provider ?? ""] ?? "Join session"}
                     </a>
                   ) : item.enrolment_id ? (
                     <Link

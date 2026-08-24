@@ -553,6 +553,59 @@ async def book_session(
     return booking
 
 
+async def reschedule_booking(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    settings: Settings,
+    *,
+    tenant_id: uuid.UUID,
+    booking_id: uuid.UUID,
+    target_session_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> Booking:
+    """P7, REQ-WS-03: cancel-then-rebook in one call, against a
+    different session of the *same* workshop — reschedule stays
+    modelled as cancel-then-rebook (0018's own explicit, reasoned
+    deferral, not relitigated here), the missing piece was only the
+    convenience wrapper and marking the old booking `"rescheduled"`
+    instead of `"cancelled"`, the `attendance_status` value that's
+    existed unused since `0018`. Learner-initiated only — a facilitator
+    reschedules by cancelling and letting the learner rebook, the same
+    ownership split `cancel_booking` draws for who may act."""
+    booking = await session.get(Booking, booking_id)
+    if booking is None or booking.tenant_id != tenant_id:
+        raise NotFound("No such booking.")
+    if booking.status == "cancelled":
+        raise WorkshopError("This booking is already cancelled.")
+    if booking.user_id != actor_user_id:
+        raise Forbidden("You do not have access to this booking.")
+    if booking.session_id == target_session_id:
+        raise WorkshopError("Choose a different session to reschedule to.")
+
+    old_session = await session.get(WorkshopSession, booking.session_id)
+    target_session = await session.get(WorkshopSession, target_session_id)
+    if (
+        old_session is None  # pragma: no cover - FK guarantees this
+        or target_session is None
+        or target_session.tenant_id != tenant_id
+    ):
+        raise NotFound("No such session.")
+    if target_session.workshop_id != old_session.workshop_id:
+        raise WorkshopError("Reschedule only moves you to another session of the same workshop.")
+
+    await _cancel_booking_row(session, booking=booking, resulting_status="rescheduled")
+    # Phase 4 will make this a credit transfer (refund old, consume
+    # new) rather than a plain re-book, once workshop_credit exists.
+    return await book_session(
+        session,
+        crypto,
+        settings,
+        tenant_id=tenant_id,
+        session_id=target_session_id,
+        user_id=actor_user_id,
+    )
+
+
 async def _cancel_booking_row(
     session: AsyncSession, *, booking: Booking, resulting_status: str = "cancelled"
 ) -> None:
@@ -688,8 +741,80 @@ async def list_roster(
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class OwnBookingRow:
+    booking_id: uuid.UUID
+    session_id: uuid.UUID
+    workshop_id: uuid.UUID
+    workshop_title: str
+    facilitator_names: list[str]
+    starts_at: datetime
+    ends_at: datetime
+    status: str
+    session_status: str
+    join_url: str | None
+    provider: str | None
+    # Whether cancel/reschedule are still meaningful actions — a
+    # cancelled booking, or one on a session that's already cancelled
+    # or in the past, has neither (P7: the "my sessions" page uses this
+    # instead of re-deriving the same rule client-side).
+    can_manage: bool
+
+
+async def list_own_bookings(
+    session: AsyncSession, crypto: CryptoBox, *, tenant_id: uuid.UUID, user_id: uuid.UUID
+) -> list[OwnBookingRow]:
+    """Mirrors `enrolment_service.list_own_enrolments`/P5's `list_own_
+    path_enrolments` — the learner's own "my sessions" page (P7), a real
+    gap before this pass: a booking's own workflow (cancel/reschedule)
+    had no listing endpoint scoped to "mine," only `/learn/dashboard`'s
+    read-only "Coming up" rowlist and the admin/facilitator-oriented
+    `GET /workshops/{id}/sessions`."""
+    stmt = (
+        select(Booking, WorkshopSession, Workshop)
+        .join(WorkshopSession, WorkshopSession.id == Booking.session_id)
+        .join(Workshop, Workshop.id == WorkshopSession.workshop_id)
+        .where(Booking.tenant_id == tenant_id, Booking.user_id == user_id)
+        .order_by(WorkshopSession.starts_at.desc())
+    )
+    rows = (await session.execute(stmt)).all()
+    now = datetime.now(UTC)
+    out: list[OwnBookingRow] = []
+    for booking, workshop_session, workshop in rows:
+        facilitators = await list_session_facilitators(
+            session, crypto, session_id=workshop_session.id
+        )
+        link = (
+            await session.execute(
+                select(MeetingLink).where(MeetingLink.session_id == workshop_session.id)
+            )
+        ).scalar_one_or_none()
+        out.append(
+            OwnBookingRow(
+                booking_id=booking.id,
+                session_id=workshop_session.id,
+                workshop_id=workshop.id,
+                workshop_title=workshop.title,
+                facilitator_names=[f.email for f in facilitators],
+                starts_at=workshop_session.starts_at,
+                ends_at=workshop_session.ends_at,
+                status=booking.status,
+                session_status=workshop_session.status,
+                join_url=link.join_url if link else None,
+                provider=link.provider if link else None,
+                can_manage=(
+                    booking.status != "cancelled"
+                    and workshop_session.status == "scheduled"
+                    and workshop_session.starts_at > now
+                ),
+            )
+        )
+    return out
+
+
 __all__ = [
     "FacilitatorRow",
+    "OwnBookingRow",
     "RosterRow",
     "WorkshopError",
     "add_availability",
@@ -702,6 +827,7 @@ __all__ = [
     "create_workshop",
     "list_availability",
     "list_facilitators",
+    "list_own_bookings",
     "list_public_sessions",
     "list_roster",
     "list_session_facilitators",
@@ -709,5 +835,6 @@ __all__ = [
     "list_workshops",
     "mark_attendance",
     "remove_session_facilitator",
+    "reschedule_booking",
     "seat_counts",
 ]

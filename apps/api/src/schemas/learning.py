@@ -153,6 +153,7 @@ class DashboardUpcoming(BaseModel):
     subtitle: str
     starts_at: datetime | None = None
     join_url: str | None = None
+    provider: str | None = None
     enrolment_id: str | None = None
     lesson_id: str | None = None
     quiz_id: str | None = None

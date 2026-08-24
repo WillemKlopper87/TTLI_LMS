@@ -1769,6 +1769,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bookings/{booking_id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reschedule Booking */
+        post: operations["reschedule_booking_api_v1_bookings__booking_id__reschedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Own Bookings */
+        get: operations["list_own_bookings_api_v1_bookings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{session_id}/attendance": {
         parameters: {
             query?: never;
@@ -4910,6 +4944,8 @@ export interface components {
             starts_at?: string | null;
             /** Join Url */
             join_url?: string | null;
+            /** Provider */
+            provider?: string | null;
             /** Enrolment Id */
             enrolment_id?: string | null;
             /** Lesson Id */
@@ -5805,6 +5841,49 @@ export interface components {
             failed_transcodes: components["schemas"]["AttentionTranscodeRow"][];
             /** At Risk */
             at_risk: components["schemas"]["AtRiskLearnerRow"][];
+        };
+        /**
+         * OwnBookingResponse
+         * @description `GET /bookings` — the learner's own "my sessions" page (P7):
+         *     what a booking's own workflow (cancel/reschedule) needs, unlike the
+         *     admin/facilitator-oriented `GET /workshops/{id}/sessions`.
+         */
+        OwnBookingResponse: {
+            /** Booking Id */
+            booking_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Workshop Id */
+            workshop_id: string;
+            /** Workshop Title */
+            workshop_title: string;
+            /** Facilitator Names */
+            facilitator_names: string[];
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Status */
+            status: string;
+            /** Session Status */
+            session_status: string;
+            /** Join Url */
+            join_url: string | null;
+            /** Provider */
+            provider: string | null;
+            /** Can Manage */
+            can_manage: boolean;
+        };
+        /** OwnBookingsPage */
+        OwnBookingsPage: {
+            /** Items */
+            items: components["schemas"]["OwnBookingResponse"][];
         };
         /** OwnEnrolmentResponse */
         OwnEnrolmentResponse: {
@@ -7045,6 +7124,11 @@ export interface components {
         ReorderRequest: {
             /** Ordered Ids */
             ordered_ids: string[];
+        };
+        /** RescheduleBookingRequest */
+        RescheduleBookingRequest: {
+            /** Target Session Id */
+            target_session_id: string;
         };
         /**
          * RevenuePoint
@@ -11434,6 +11518,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reschedule_booking_api_v1_bookings__booking_id__reschedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                booking_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescheduleBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_own_bookings_api_v1_bookings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnBookingsPage"];
                 };
             };
         };

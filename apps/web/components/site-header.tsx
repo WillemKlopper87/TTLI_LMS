@@ -44,13 +44,15 @@ const PUBLIC_NAV: NavItem[] = [
 ];
 
 // The signed-in learner journey (prototype screens 7, 10). There is no
-// standalone workshops or achievements page yet — those anchor into the
-// learner dashboard until one exists.
+// standalone achievements page yet — that still anchors into the
+// learner dashboard. Workshops got its own page in P7 phase 2
+// (/learn/sessions) once cancel/reschedule needed somewhere to live —
+// the dashboard's own "Coming up" rowlist stayed read-only on purpose.
 const LEARNER_NAV: NavItem[] = [
   { label: "My learning", href: "/learn" },
   { label: "Catalogue", href: "/catalogue" },
   { label: "Learning paths", href: "/paths" },
-  { label: "Workshops", href: "/learn#workshops" },
+  { label: "Workshops", href: "/learn/sessions" },
   { label: "Achievements", href: "/learn#completed" },
 ];
 

@@ -1,6 +1,45 @@
 # STATUS
 
-**Updated:** 2026-08-24 — **P7 Phase 1: session-lifecycle foundation
+**Updated:** 2026-08-24 (second pass, same day) — **P7 Phase 2:
+reschedule + the learner "my sessions" page.** Second of five
+(`docs/BACKLOG.md` P7). `cancel_booking`'s state-transition body was
+extracted into a shared `_cancel_booking_row` (already done in Phase 1
+for `cancel_session`'s benefit) so `reschedule_booking` reuses it with
+`resulting_status="rescheduled"` instead of duplicating the waitlist-
+promotion logic a third time. Reschedule stays cancel-then-rebook —
+`0018`'s own explicit, reasoned deferral, not relitigated — the new
+piece is the convenience wrapper (`POST /bookings/{id}/reschedule`,
+one transaction) and refusing a target session outside the same
+workshop (rescheduling across workshops would really just be "cancel
+and book something unrelated," already possible as two separate
+calls).
+New `GET /bookings` (`list_own_bookings`, mirrors P5's `list_own_
+enrolments`/`list_own_path_enrolments`) is the read side of the new
+learner page — a real gap before this pass, since a booking's own
+workflow had no listing scoped to "mine," only `/learn/dashboard`'s
+read-only "Coming up" rowlist and the admin-oriented `GET /workshops/
+{id}/sessions`.
+New `apps/web/app/learn/sessions/page.tsx` — cancel, reschedule (a
+picker of the same workshop's other scheduled sessions), and a real
+"Join on Teams/Zoom/Meet" label instead of a hardcoded one.
+**A real, small bug found and fixed while building this page**:
+`/learn`'s "Coming up" rowlist hardcoded "Join on Teams" regardless of
+which `MeetingProvider` actually issued the link — `UpcomingItem`
+(`services/dashboard.py`) gained a `provider` field so both this new
+page and the existing rowlist can label the button correctly.
+`LEARNER_NAV`'s "Workshops" entry now points at `/learn/sessions`
+instead of the `#workshops` anchor its own comment said was temporary.
+Verified: 1 new API test (reschedule moves the booking, marks the old
+`AttendanceRecord` `"rescheduled"`, refuses a stranger, refuses
+crossing workshops, refuses rescheduling an already-cancelled booking;
+`GET /bookings`' shape checked in the same test), full suite green,
+`ruff`/`mypy` clean, web `typecheck`/`lint`/`build` clean, axe-clean on
+`/learn/sessions` both closed and with the reschedule panel open.
+Live-smoked end to end through a real browser session: booked a
+session, opened `/learn/sessions`, rescheduled to a different time for
+the same workshop, watched the upcoming row update to the new time and
+the old booking drop into "Past & cancelled" correctly labelled.
+Prior, same day — **P7 Phase 1: session-lifecycle foundation
 (cancel, multi-facilitator).** First of a five-phase pass
 (`docs/BACKLOG.md` P7; research this session — an Explore agent read
 every workshop model/service/router/test/frontend file — found the

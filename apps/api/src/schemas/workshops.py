@@ -123,6 +123,33 @@ class BookingResponse(BaseModel):
     join_url: str | None
 
 
+class RescheduleBookingRequest(BaseModel):
+    target_session_id: str
+
+
+class OwnBookingResponse(BaseModel):
+    """`GET /bookings` — the learner's own "my sessions" page (P7):
+    what a booking's own workflow (cancel/reschedule) needs, unlike the
+    admin/facilitator-oriented `GET /workshops/{id}/sessions`."""
+
+    booking_id: str
+    session_id: str
+    workshop_id: str
+    workshop_title: str
+    facilitator_names: list[str]
+    starts_at: datetime
+    ends_at: datetime
+    status: str
+    session_status: str
+    join_url: str | None
+    provider: str | None
+    can_manage: bool
+
+
+class OwnBookingsPage(BaseModel):
+    items: list[OwnBookingResponse]
+
+
 class MarkAttendanceRequest(BaseModel):
     user_id: str
     status: str = Field(pattern="^(" + "|".join(ATTENDANCE_STATUS_VALUES) + ")$")
@@ -153,8 +180,11 @@ __all__ = [
     "FacilitatorResponse",
     "FacilitatorsPage",
     "MarkAttendanceRequest",
+    "OwnBookingResponse",
+    "OwnBookingsPage",
     "PublicSessionRow",
     "PublicWorkshopsResponse",
+    "RescheduleBookingRequest",
     "RosterResponse",
     "RosterRowResponse",
     "SessionResponse",

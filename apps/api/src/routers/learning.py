@@ -190,6 +190,7 @@ async def get_dashboard(
                 subtitle=item.subtitle,
                 starts_at=item.starts_at,
                 join_url=item.join_url,
+                provider=item.provider,
                 enrolment_id=str(item.enrolment_id) if item.enrolment_id else None,
                 lesson_id=str(item.lesson_id) if item.lesson_id else None,
                 quiz_id=str(item.quiz_id) if item.quiz_id else None,

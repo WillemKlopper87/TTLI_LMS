@@ -33,8 +33,11 @@ from src.schemas.workshops import (
     FacilitatorResponse,
     FacilitatorsPage,
     MarkAttendanceRequest,
+    OwnBookingResponse,
+    OwnBookingsPage,
     PublicSessionRow,
     PublicWorkshopsResponse,
+    RescheduleBookingRequest,
     RosterResponse,
     RosterRowResponse,
     SessionResponse,
@@ -375,6 +378,66 @@ async def cancel_booking(booking_id: str, principal: PrincipalDep, session: Sess
         tenant_id=principal.tenant_id,
         booking_id=_parse_uuid(booking_id),
         actor_user_id=principal.user_id,
+    )
+
+
+@router.post("/bookings/{booking_id}/reschedule", response_model=BookingResponse)
+async def reschedule_booking(
+    booking_id: str,
+    body: RescheduleBookingRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    settings: SettingsDep,
+) -> BookingResponse:
+    booking = await workshops_service.reschedule_booking(
+        session,
+        crypto,
+        settings,
+        tenant_id=principal.tenant_id,
+        booking_id=_parse_uuid(booking_id),
+        target_session_id=_parse_uuid(body.target_session_id),
+        actor_user_id=principal.user_id,
+    )
+    link = (
+        await session.execute(
+            select(MeetingLink).where(MeetingLink.session_id == booking.session_id)
+        )
+    ).scalar_one_or_none()
+    return BookingResponse(
+        id=str(booking.id),
+        session_id=str(booking.session_id),
+        user_id=str(booking.user_id),
+        status=booking.status,
+        join_url=link.join_url if link else None,
+    )
+
+
+@router.get("/bookings", response_model=OwnBookingsPage)
+async def list_own_bookings(
+    principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> OwnBookingsPage:
+    rows = await workshops_service.list_own_bookings(
+        session, crypto, tenant_id=principal.tenant_id, user_id=principal.user_id
+    )
+    return OwnBookingsPage(
+        items=[
+            OwnBookingResponse(
+                booking_id=str(r.booking_id),
+                session_id=str(r.session_id),
+                workshop_id=str(r.workshop_id),
+                workshop_title=r.workshop_title,
+                facilitator_names=r.facilitator_names,
+                starts_at=r.starts_at,
+                ends_at=r.ends_at,
+                status=r.status,
+                session_status=r.session_status,
+                join_url=r.join_url,
+                provider=r.provider,
+                can_manage=r.can_manage,
+            )
+            for r in rows
+        ]
     )
 
 
