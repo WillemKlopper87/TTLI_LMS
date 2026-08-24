@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings
 from src.core.errors import AppError, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
-from src.core.object_keys import safe_filename
+from src.core.object_keys import build_object_key
 from src.models.podcast import PodcastEpisode
 from src.services import antivirus, spotify
 from src.services.media import ffmpeg as ffmpeg_service
@@ -292,7 +292,7 @@ async def upload_audio(
         source_path.write_bytes(data)
         probe = await ffmpeg_service.probe_source(source_path, ffprobe_path=ffprobe_path)
 
-    key = f"podcast-episodes/{episode.id}/{safe_filename(filename, fallback='audio')}"
+    key = build_object_key("podcast-episodes", episode.id, filename=filename, fallback="audio")
     await storage.ensure_container(Container.PUBLIC_MARKETING)
     await storage.upload_object(Container.PUBLIC_MARKETING, key, data, content_type=content_type)
 

@@ -47,7 +47,7 @@ from src.core.deps import (
     TenantDep,
 )
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
-from src.core.object_keys import safe_filename
+from src.core.object_keys import build_object_key
 from src.models.commerce import Order, OrderItem, Payment
 from src.schemas.commerce import (
     CardCheckoutResponse,
@@ -269,8 +269,9 @@ async def checkout_po(
             {"signature": result.signature},
         )
 
-    name = safe_filename(file.filename, fallback="po")
-    key = f"{principal.tenant_id}/{order.id}/{uuid.uuid4().hex}-{name}"
+    key = build_object_key(
+        principal.tenant_id, order.id, uuid.uuid4().hex, filename=file.filename, fallback="po"
+    )
     await storage.ensure_container(Container.USER_UPLOADS)
     await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)
 
@@ -334,8 +335,9 @@ async def upload_payment_proof(
             {"signature": result.signature},
         )
 
-    name = safe_filename(file.filename, fallback="proof")
-    key = f"{principal.tenant_id}/{order.id}/{uuid.uuid4().hex}-{name}"
+    key = build_object_key(
+        principal.tenant_id, order.id, uuid.uuid4().hex, filename=file.filename, fallback="proof"
+    )
     await storage.ensure_container(Container.USER_UPLOADS)
     await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)
     await orders_service.submit_proof(session, order=order, payment=payment, proof_object_key=key)

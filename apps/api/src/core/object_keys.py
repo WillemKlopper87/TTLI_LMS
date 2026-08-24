@@ -76,4 +76,23 @@ def assert_safe_key(key: str) -> None:
         raise ValueError(f"unsafe object key {key!r}")
 
 
-__all__ = ["MAX_FILENAME", "assert_safe_key", "safe_filename"]
+def build_object_key(*prefix: object, filename: str | None, fallback: str) -> str:
+    """Join server-controlled prefix segments (a tenant id, an order id,
+    a literal container-style label — never client input) with a
+    sanitised, client-supplied filename.
+
+    The one way a caller should combine a filename into a storage key.
+    `safe_filename` existed for a while before this did (2026-08-21's
+    fix) but every call site still hand-rolled its own f-string around
+    it — six of them, independently, the same shape each time (docs/
+    BACKLOG.md O13). A uniqueness prefix like `uuid4().hex` belongs
+    *inside* `filename` (`f"{token}-{name}"`), not as a separate
+    `prefix` segment — it is sanitised along with the name, which is
+    harmless since it is already in `safe_filename`'s allowed charset.
+    """
+    segments = [str(p) for p in prefix]
+    segments.append(safe_filename(filename, fallback=fallback))
+    return "/".join(segments)
+
+
+__all__ = ["MAX_FILENAME", "assert_safe_key", "build_object_key", "safe_filename"]
