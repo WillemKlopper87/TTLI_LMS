@@ -38,6 +38,35 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 PODCAST_KIND_VALUES = ("authored", "curated")
 
 
+class PodcastEventName:
+    """The listen-stats set docs/research/podcast-platform-integration.md
+    §6 specifies. Lives here, not in `services/events.py`'s general
+    `EventName` catalogue, since these are specific to this module's own
+    event shape (`PodcastEventRequest`) — but in the *service* layer,
+    not `routers/podcasts.py` where they first landed, once `services/
+    analytics.py::podcast_engagement` (R2) needed the same constants to
+    read the rows `routers/podcasts.py::log_podcast_event` writes; a
+    service reading another router's constants would invert the usual
+    dependency direction."""
+
+    EPISODE_VIEWED = "podcast.episode.viewed"
+    PLAY_STARTED = "podcast.play.started"
+    PLAY_PROGRESS = "podcast.play.progress"
+    PLAY_COMPLETED = "podcast.play.completed"
+    EMBED_CLICK_THROUGH = "podcast.embed.click_through"
+    CTA_COURSE_CLICKED = "podcast.cta.course_clicked"
+
+
+ALLOWED_PODCAST_EVENT_NAMES = {
+    PodcastEventName.EPISODE_VIEWED,
+    PodcastEventName.PLAY_STARTED,
+    PodcastEventName.PLAY_PROGRESS,
+    PodcastEventName.PLAY_COMPLETED,
+    PodcastEventName.EMBED_CLICK_THROUGH,
+    PodcastEventName.CTA_COURSE_CLICKED,
+}
+
+
 class PodcastError(AppError):
     """A refusal in podcast authoring — an invalid kind/field combination,
     an unpublishable episode, or an upload rejected by a check this
@@ -315,7 +344,9 @@ async def resolve_cover_image_url(storage: StorageService, episode: PodcastEpiso
 
 
 __all__ = [
+    "ALLOWED_PODCAST_EVENT_NAMES",
     "PodcastError",
+    "PodcastEventName",
     "create_episode",
     "get_episode",
     "get_published_episode",

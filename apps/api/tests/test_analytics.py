@@ -4,11 +4,17 @@ payment-analytics-dashboard.md §4.3) — the four endpoints
 summary`, `/registrations`, and both CSV twins. `test_operations.py`
 already covers `/revenue-series` and the operations overview.
 
+Also `/analytics/podcast-engagement` (R2) — the "Podcast engagement"
+panel docs/research/podcast-platform-integration.md §6 asked to be
+surfaced once the payment dashboard landed, reading the same
+`podcast.*` events `routers/podcasts.py::log_podcast_event` writes.
+
 Same "assert the contract, not an absolute count" discipline
 `test_operations.py`'s own docstring states — these are aggregates over
 a shared demo tenant other suites also write to, so the invariants
 below (totals that must reconcile, arithmetic that must hold) are
-pinned instead of specific numbers.
+pinned instead of specific numbers; the podcast tests use a before/
+after delta for the same reason.
 """
 
 from __future__ import annotations
@@ -327,3 +333,95 @@ async def test_custom_from_to_range_is_honoured_over_a_preset(  # type: ignore[n
     # `< period.end`), so a day-inclusive "to=2020-01-31" resolves to
     # the *next* day's midnight, not the 31st itself.
     assert period["to"].startswith("2020-02-01")
+
+
+async def _make_and_publish_episode(client, token: str) -> str:
+    """Returns the published episode's slug — public event-logging
+    addresses episodes by slug, not id."""
+    created = await client.post(
+        "/api/v1/podcasts",
+        json={
+            "kind": "curated",
+            "title": f"analytics-{uuid.uuid4().hex[:12]}",
+            "external_url": "https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk",
+            "curator_name": "A Guest Host",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert created.status_code == 201, created.text
+    episode_id = created.json()["id"]
+    published = await client.post(
+        f"/api/v1/podcasts/{episode_id}/publish", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert published.status_code == 200, published.text
+    return str(published.json()["slug"])
+
+
+async def _podcast_engagement(client, token: str) -> dict:
+    resp = await client.get(
+        "/api/v1/analytics/podcast-engagement?preset=last_1y",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_podcast_engagement_counts_and_ranks_by_delta(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """A shared demo tenant means absolute counts drift between test
+    runs — so a fresh episode is created here and the *delta* this
+    test's own events cause is what gets asserted, the same discipline
+    `test_operations.py`'s docstring states for its own aggregates."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    slug = await _make_and_publish_episode(client, admin)
+
+    before = await _podcast_engagement(client, admin)
+
+    async def _log(event_name: str) -> None:
+        resp = await client.post(
+            f"/api/v1/public/podcasts/{slug}/events",
+            json={"event_name": event_name},
+            headers={"X-Tenant-Host": TENANT_HOST},
+        )
+        assert resp.status_code == 204, resp.text
+
+    await _log("podcast.episode.viewed")
+    await _log("podcast.episode.viewed")
+    await _log("podcast.play.started")
+    await _log("podcast.play.completed")
+    await _log("podcast.embed.click_through")
+    # A large, distinctive click count — the leaderboard is capped at
+    # the top 5 (TOP_CTA_EPISODE_LIMIT), and this demo tenant's data
+    # accumulates across repeated local test runs, each contributing a
+    # *different* freshly-created episode. A small count risks getting
+    # crowded out by that historical noise; 20 clicks on one episode
+    # this run created is not going to be beaten by five other
+    # episodes each independently reaching 20+.
+    for _ in range(20):
+        await _log("podcast.cta.course_clicked")
+
+    after = await _podcast_engagement(client, admin)
+
+    assert after["episode_views"] - before["episode_views"] == 2
+    assert after["plays_started"] - before["plays_started"] == 1
+    assert after["plays_completed"] - before["plays_completed"] == 1
+    assert after["embed_click_throughs"] - before["embed_click_throughs"] == 1
+    assert after["cta_clicks"] - before["cta_clicks"] == 20
+
+    top_titles = {row["episode_id"]: row["course_clicks"] for row in after["top_cta_episodes"]}
+    assert 20 in top_titles.values(), "this run's episode should rank in the top 5"
+
+
+async def test_podcast_engagement_requires_analytics_view(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
+    resp = await client.get(
+        "/api/v1/analytics/podcast-engagement", headers={"Authorization": f"Bearer {learner}"}
+    )
+    assert resp.status_code == 403

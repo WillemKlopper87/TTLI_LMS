@@ -36,7 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError
 from src.models.commerce import Entitlement, LedgerEntry, Order, Payment, Price
+from src.models.event import Event
 from src.models.organisation import Organisation, OrganisationMember
+from src.models.podcast import PodcastEpisode
 from src.models.subscription import Subscription, SubscriptionPlan
 from src.models.user import User
 from src.schemas.analytics import (
@@ -47,8 +49,10 @@ from src.schemas.analytics import (
     PaidVsWaitingResponse,
     PredictedRevenueResponse,
     ProviderBreakdownRow,
+    TopCtaEpisode,
 )
 from src.services.ledger import EntryType
+from src.services.podcasts import PodcastEventName
 
 PAID_STATUSES = ("fulfilled", "paid")
 AWAITING_STATUSES = (
@@ -73,6 +77,11 @@ PIPELINE_STATUSES = (
 # a chart with hundreds of one-user bars says nothing (dataviz: fold the
 # tail rather than draw more marks); the CSV export carries the same rows.
 ORGANISATION_ROW_CAP = 20
+
+# A leaderboard, not a full report — same "fold the tail" reasoning as
+# ORGANISATION_ROW_CAP, just with no "Other" row since the ask (docs/
+# BACKLOG.md R2) is specifically the *top* CTA-converting episodes.
+TOP_CTA_EPISODE_LIMIT = 5
 
 PACKAGE_ONE_TIME = "One-time purchase"
 PACKAGE_GUEST = "Guest access"
@@ -424,6 +433,100 @@ async def registrations_by_organisation(
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class PodcastEventCounts:
+    episode_views: int
+    plays_started: int
+    plays_completed: int
+    embed_click_throughs: int
+    cta_clicks: int
+
+
+_PODCAST_EVENT_NAMES = (
+    PodcastEventName.EPISODE_VIEWED,
+    PodcastEventName.PLAY_STARTED,
+    PodcastEventName.PLAY_COMPLETED,
+    PodcastEventName.EMBED_CLICK_THROUGH,
+    PodcastEventName.CTA_COURSE_CLICKED,
+)
+
+
+async def podcast_event_counts(
+    session: AsyncSession, *, tenant_id: uuid.UUID, period: Period
+) -> PodcastEventCounts:
+    """R2 (docs/BACKLOG.md; docs/research/podcast-platform-integration.md
+    §6's explicit hand-off note) — one `GROUP BY event_name` over the
+    same `podcast.*` rows `routers/podcasts.py::log_podcast_event`
+    writes into the shared, monthly-partitioned `events` table
+    (`podcast.play.progress` is written but has no counter here — it's
+    checkpoint telemetry for a future retention curve, not a headline
+    figure). Raw counts only; rates are `value/total` on the frontend,
+    the same as every other share on this dashboard."""
+    stmt = (
+        select(Event.event_name, func.count())
+        .where(
+            Event.tenant_id == tenant_id,
+            Event.event_name.in_(_PODCAST_EVENT_NAMES),
+            Event.created_at >= period.start,
+            Event.created_at < period.end,
+        )
+        .group_by(Event.event_name)
+    )
+    counts = {name: int(count) for name, count in (await session.execute(stmt)).all()}
+    return PodcastEventCounts(
+        episode_views=counts.get(PodcastEventName.EPISODE_VIEWED, 0),
+        plays_started=counts.get(PodcastEventName.PLAY_STARTED, 0),
+        plays_completed=counts.get(PodcastEventName.PLAY_COMPLETED, 0),
+        embed_click_throughs=counts.get(PodcastEventName.EMBED_CLICK_THROUGH, 0),
+        cta_clicks=counts.get(PodcastEventName.CTA_COURSE_CLICKED, 0),
+    )
+
+
+async def top_cta_episodes(
+    session: AsyncSession, *, tenant_id: uuid.UUID, period: Period
+) -> list[TopCtaEpisode]:
+    """The episodes actually converting listeners toward a course
+    purchase — `event_properties->>'episode_id'` grouped and ranked,
+    the real signal REQ-STORE-04 exists to capture. An episode deleted
+    since the click still shows (attributed to "(deleted episode)"),
+    rather than silently dropping real conversions from the count."""
+    # Built once and reused by reference (not re-written per clause): two
+    # separately-constructed `event_properties["episode_id"].astext`
+    # expressions bind their literal key as two different parameters,
+    # so Postgres no longer sees SELECT/GROUP BY as the same expression
+    # and refuses with a GroupingError.
+    episode_id_col = Event.event_properties["episode_id"].astext.label("episode_id")
+    stmt = (
+        select(episode_id_col, func.count())
+        .where(
+            Event.tenant_id == tenant_id,
+            Event.event_name == PodcastEventName.CTA_COURSE_CLICKED,
+            Event.created_at >= period.start,
+            Event.created_at < period.end,
+        )
+        .group_by(episode_id_col)
+        .order_by(func.count().desc())
+        .limit(TOP_CTA_EPISODE_LIMIT)
+    )
+    rows = [(eid, int(count)) for eid, count in (await session.execute(stmt)).all() if eid]
+    if not rows:
+        return []
+
+    episode_ids = [uuid.UUID(eid) for eid, _ in rows]
+    title_stmt = select(PodcastEpisode.id, PodcastEpisode.title).where(
+        PodcastEpisode.id.in_(episode_ids)
+    )
+    titles = {row[0]: row[1] for row in (await session.execute(title_stmt)).all()}
+    return [
+        TopCtaEpisode(
+            episode_id=eid,
+            title=titles.get(uuid.UUID(eid), "(deleted episode)"),
+            course_clicks=count,
+        )
+        for eid, count in rows
+    ]
+
+
 __all__ = [
     "AWAITING_STATUSES",
     "DEFAULT_PRESET",
@@ -435,14 +538,18 @@ __all__ = [
     "PACKAGE_ONE_TIME",
     "PAID_STATUSES",
     "PIPELINE_STATUSES",
+    "TOP_CTA_EPISODE_LIMIT",
     "Period",
+    "PodcastEventCounts",
     "actual_revenue",
     "paid_vs_waiting",
     "payment_method_breakdown",
+    "podcast_event_counts",
     "predicted_revenue",
     "registrations_by_organisation",
     "registrations_by_package",
     "resolve_period",
+    "top_cta_episodes",
     "total_registered",
 ]
 

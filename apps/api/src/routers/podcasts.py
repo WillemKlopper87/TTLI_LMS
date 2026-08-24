@@ -35,31 +35,6 @@ from src.services.storage.base import StorageService
 router = APIRouter(tags=["podcasts"])
 
 
-class PodcastEventName:
-    """Extends `services/events.py`'s `EventName` catalogue with the
-    listen-stats set the podcast-integration research doc §6 specifies —
-    kept here rather than in `events.py` itself since these are specific
-    to this router's own request shape (`PodcastEventRequest`), not a
-    general write path other modules call into."""
-
-    EPISODE_VIEWED = "podcast.episode.viewed"
-    PLAY_STARTED = "podcast.play.started"
-    PLAY_PROGRESS = "podcast.play.progress"
-    PLAY_COMPLETED = "podcast.play.completed"
-    EMBED_CLICK_THROUGH = "podcast.embed.click_through"
-    CTA_COURSE_CLICKED = "podcast.cta.course_clicked"
-
-
-_ALLOWED_EVENT_NAMES = {
-    PodcastEventName.EPISODE_VIEWED,
-    PodcastEventName.PLAY_STARTED,
-    PodcastEventName.PLAY_PROGRESS,
-    PodcastEventName.PLAY_COMPLETED,
-    PodcastEventName.EMBED_CLICK_THROUGH,
-    PodcastEventName.CTA_COURSE_CLICKED,
-}
-
-
 def _parse_uuid(value: str) -> uuid.UUID:
     try:
         return uuid.UUID(value)
@@ -281,7 +256,7 @@ async def get_public_podcast_episode(
 async def log_podcast_event(
     slug: str, body: PodcastEventRequest, session: SessionDep, tenant: TenantDep
 ) -> None:
-    if body.event_name not in _ALLOWED_EVENT_NAMES:
+    if body.event_name not in podcasts_service.ALLOWED_PODCAST_EVENT_NAMES:
         raise NotFound("Unknown event name.")
     episode = await podcasts_service.get_published_episode(session, tenant_id=tenant.id, slug=slug)
     await events.record(

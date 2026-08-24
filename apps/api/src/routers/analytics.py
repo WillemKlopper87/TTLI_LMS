@@ -33,6 +33,7 @@ from src.schemas.analytics import (
     PRESETS,
     MoneyByCurrency,
     PeriodResponse,
+    PodcastEngagementResponse,
     RegistrationsResponse,
     RevenuePoint,
     RevenueSeriesResponse,
@@ -151,6 +152,31 @@ async def registrations(
 ) -> RegistrationsResponse:
     principal.require(PERMISSION)
     return await _registrations(session, principal, period)
+
+
+@router.get(
+    "/podcast-engagement",
+    response_model=PodcastEngagementResponse,
+    summary="Plays, completion rate, click-through rate and top CTA-converting episodes",
+)
+async def podcast_engagement(
+    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+) -> PodcastEngagementResponse:
+    principal.require(PERMISSION)
+    tenant_id = principal.tenant_id
+    counts = await analytics_service.podcast_event_counts(
+        session, tenant_id=tenant_id, period=period
+    )
+    top = await analytics_service.top_cta_episodes(session, tenant_id=tenant_id, period=period)
+    return PodcastEngagementResponse(
+        period=_period_response(period),
+        episode_views=counts.episode_views,
+        plays_started=counts.plays_started,
+        plays_completed=counts.plays_completed,
+        embed_click_throughs=counts.embed_click_throughs,
+        cta_clicks=counts.cta_clicks,
+        top_cta_episodes=top,
+    )
 
 
 # ---- CSV export --------------------------------------------------------------

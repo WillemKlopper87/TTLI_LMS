@@ -69,6 +69,22 @@ interface RevenueSeries {
   points: RevenuePoint[];
 }
 
+interface TopCtaEpisode {
+  episode_id: string;
+  title: string;
+  course_clicks: number;
+}
+
+interface PodcastEngagement {
+  period: Period;
+  episode_views: number;
+  plays_started: number;
+  plays_completed: number;
+  embed_click_throughs: number;
+  cta_clicks: number;
+  top_cta_episodes: TopCtaEpisode[];
+}
+
 const PRESETS: { value: string; label: string }[] = [
   { value: "last_24h", label: "Last 24 hours" },
   { value: "last_7d", label: "Last 7 days" },
@@ -143,6 +159,7 @@ export default function AnalyticsScreen() {
   const [revenue, setRevenue] = useState<RevenueSummary | null>(null);
   const [registrations, setRegistrations] = useState<Registrations | null>(null);
   const [series, setSeries] = useState<RevenueSeries | null>(null);
+  const [podcasts, setPodcasts] = useState<PodcastEngagement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -156,12 +173,13 @@ export default function AnalyticsScreen() {
     const token = getAccessToken();
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [r1, r2, r3] = await Promise.all([
+      const [r1, r2, r3, r4] = await Promise.all([
         fetch(`/api/bff/analytics/revenue-summary?preset=${preset}`, { headers }),
         fetch(`/api/bff/analytics/registrations?preset=${preset}`, { headers }),
         fetch(`/api/bff/analytics/revenue-series?preset=${preset}`, { headers }),
+        fetch(`/api/bff/analytics/podcast-engagement?preset=${preset}`, { headers }),
       ]);
-      if (!r1.ok || !r2.ok || !r3.ok) {
+      if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) {
         setError("Could not load the report. Try again shortly.");
         setLoading(false);
         return;
@@ -169,6 +187,7 @@ export default function AnalyticsScreen() {
       setRevenue(await r1.json());
       setRegistrations(await r2.json());
       setSeries(await r3.json());
+      setPodcasts(await r4.json());
     } catch {
       setError("Could not load the report. Try again shortly.");
     }
@@ -448,6 +467,69 @@ export default function AnalyticsScreen() {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {podcasts ? (
+        <div>
+          <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".7rem" }}>
+            Podcast engagement
+          </h2>
+          <dl className="stats">
+            <div className="stat">
+              <dt>Episode views</dt>
+              <dd>{podcasts.episode_views.toLocaleString("en-ZA")}</dd>
+            </div>
+            <div className="stat">
+              <dt>Plays started</dt>
+              <dd>{podcasts.plays_started.toLocaleString("en-ZA")}</dd>
+            </div>
+            <div className="stat">
+              <dt>Plays completed</dt>
+              <dd>{podcasts.plays_completed.toLocaleString("en-ZA")}</dd>
+            </div>
+            <div className="stat">
+              <dt>CTA clicks</dt>
+              <dd>{podcasts.cta_clicks.toLocaleString("en-ZA")}</dd>
+            </div>
+          </dl>
+
+          <div className="rowlist" style={{ marginTop: ".7rem" }}>
+            <ShareRow
+              label="Completion rate"
+              value={podcasts.plays_completed}
+              total={podcasts.plays_started}
+              tone="done"
+            />
+            <ShareRow
+              label="Click-through rate (to external platform)"
+              value={podcasts.embed_click_throughs}
+              total={podcasts.episode_views}
+            />
+          </div>
+
+          {podcasts.top_cta_episodes.length > 0 ? (
+            <div style={{ marginTop: "1.25rem" }}>
+              <h3 className="serif" style={{ fontSize: "1rem", marginBottom: ".5rem" }}>
+                Top CTA-converting episodes
+              </h3>
+              <div className="rowlist">
+                {podcasts.top_cta_episodes.map((row) => (
+                  <div className="rowitem" key={row.episode_id}>
+                    <span className="t">{row.title}</span>
+                    <span className="m mono">
+                      {row.course_clicks.toLocaleString("en-ZA")} course click
+                      {row.course_clicks === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginTop: ".7rem" }}>
+              No course-purchase clicks from a podcast episode in this period yet.
+            </p>
+          )}
         </div>
       ) : null}
     </div>

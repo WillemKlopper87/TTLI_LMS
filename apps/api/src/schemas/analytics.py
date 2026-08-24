@@ -124,6 +124,30 @@ class RegistrationsResponse(BaseModel):
     by_organisation: list[OrganisationRow]
 
 
+class TopCtaEpisode(BaseModel):
+    episode_id: str
+    title: str
+    course_clicks: int
+
+
+class PodcastEngagementResponse(BaseModel):
+    """R2 (docs/BACKLOG.md; docs/research/podcast-platform-integration.md
+    §6's explicit hand-off note) — the six `podcast.*` event names
+    `routers/podcasts.py::log_podcast_event` already writes into the
+    shared `events` table, aggregated. Raw counts only, no server-side
+    rates: completion rate and click-through rate are `value/total`
+    the same way every other share on this dashboard is — computed by
+    the frontend's existing `ShareRow`, not duplicated here."""
+
+    period: PeriodResponse
+    episode_views: int
+    plays_started: int
+    plays_completed: int
+    embed_click_throughs: int
+    cta_clicks: int
+    top_cta_episodes: list[TopCtaEpisode]
+
+
 __all__ = [
     "PRESETS",
     "MoneyByCurrency",
@@ -131,8 +155,10 @@ __all__ = [
     "PackageRow",
     "PaidVsWaitingResponse",
     "PeriodResponse",
+    "PodcastEngagementResponse",
     "PredictedRevenueResponse",
     "ProviderBreakdownRow",
     "RegistrationsResponse",
     "RevenueSummaryResponse",
+    "TopCtaEpisode",
 ]
