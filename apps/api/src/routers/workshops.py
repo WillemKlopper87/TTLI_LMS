@@ -12,8 +12,9 @@ finance).
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, Principal, PrincipalDep, SessionDep, SettingsDep, TenantDep
@@ -47,6 +48,7 @@ from src.schemas.workshops import (
 )
 from src.services import identity
 from src.services import workshops as workshops_service
+from src.services.ics import IcsEvent, build_ics
 
 router = APIRouter(tags=["workshops"])
 
@@ -438,6 +440,43 @@ async def list_own_bookings(
             )
             for r in rows
         ]
+    )
+
+
+@router.get(
+    "/bookings/{booking_id}/calendar.ics",
+    summary="A downloadable calendar invite for one of the caller's own bookings",
+    response_class=Response,
+    responses={200: {"content": {"text/calendar": {}}}},
+)
+async def get_booking_calendar(
+    booking_id: str, principal: PrincipalDep, session: SessionDep, crypto: CryptoDep
+) -> Response:
+    ctx = await workshops_service.get_booking_ics_context(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        booking_id=_parse_uuid(booking_id),
+        actor_user_id=principal.user_id,
+    )
+    organizer = ctx.facilitator_names[0] if ctx.facilitator_names else "no-reply@ttli.local"
+    ics_bytes = build_ics(
+        IcsEvent(
+            uid=ctx.booking.id,
+            summary=ctx.workshop.title,
+            description=ctx.workshop.description,
+            location=None,
+            starts_at=ctx.workshop_session.starts_at,
+            ends_at=ctx.workshop_session.ends_at,
+            organizer_email=organizer,
+            status="CANCELLED" if ctx.booking.status == "cancelled" else "CONFIRMED",
+        ),
+        now=datetime.now(UTC),
+    )
+    return Response(
+        content=ics_bytes,
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="session.ics"'},
     )
 
 

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { authedDownload } from "@/lib/authed-download";
 import { getAccessToken } from "@/lib/session";
 import { useSession } from "@/lib/session-context";
 
@@ -28,7 +29,11 @@ export function BookButton({
   const router = useRouter();
   const { status } = useSession();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ status: string; joinUrl: string | null } | null>(null);
+  const [result, setResult] = useState<{
+    bookingId: string;
+    status: string;
+    joinUrl: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function book() {
@@ -50,8 +55,17 @@ export function BookButton({
       return;
     }
     const booking = await resp.json();
-    setResult({ status: booking.status, joinUrl: booking.join_url ?? null });
+    setResult({ bookingId: booking.id, status: booking.status, joinUrl: booking.join_url ?? null });
     router.refresh();
+  }
+
+  async function downloadCalendar() {
+    if (!result) return;
+    const ok = await authedDownload(
+      `/api/bff/bookings/${result.bookingId}/calendar.ics`,
+      "session.ics",
+    );
+    if (!ok) setError("The calendar invite could not be downloaded.");
   }
 
   if (result) {
@@ -79,6 +93,14 @@ export function BookButton({
             The joining details are in your dashboard.
           </span>
         )}
+        <button type="button" className="btn btn--ghost" onClick={downloadCalendar}>
+          Add to calendar
+        </button>
+        {error ? (
+          <span role="alert" style={{ fontSize: ".75rem", color: "var(--stop)" }}>
+            {error}
+          </span>
+        ) : null}
       </div>
     );
   }

@@ -812,7 +812,51 @@ async def list_own_bookings(
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class BookingIcsContext:
+    booking: Booking
+    workshop_session: WorkshopSession
+    workshop: Workshop
+    facilitator_names: list[str]
+
+
+async def get_booking_ics_context(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    tenant_id: uuid.UUID,
+    booking_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> BookingIcsContext:
+    """P7 phase 3, REQ-WS-05: everything `routers/workshops.py`'s
+    `GET /bookings/{id}/calendar.ics` needs to build an `IcsEvent` —
+    booking-owner-only, the same ownership rule `reschedule_booking`
+    draws (a facilitator downloads a session's own calendar entry
+    through their own booking, not someone else's)."""
+    booking = await session.get(Booking, booking_id)
+    if booking is None or booking.tenant_id != tenant_id:
+        raise NotFound("No such booking.")
+    if booking.user_id != actor_user_id:
+        raise Forbidden("You do not have access to this booking.")
+
+    workshop_session = await session.get(WorkshopSession, booking.session_id)
+    if workshop_session is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such session.")
+    workshop = await session.get(Workshop, workshop_session.workshop_id)
+    if workshop is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such workshop.")
+
+    facilitators = await list_session_facilitators(session, crypto, session_id=workshop_session.id)
+    return BookingIcsContext(
+        booking=booking,
+        workshop_session=workshop_session,
+        workshop=workshop,
+        facilitator_names=[f.email for f in facilitators],
+    )
+
+
 __all__ = [
+    "BookingIcsContext",
     "FacilitatorRow",
     "OwnBookingRow",
     "RosterRow",
@@ -825,6 +869,7 @@ __all__ = [
     "create_facilitator",
     "create_session",
     "create_workshop",
+    "get_booking_ics_context",
     "list_availability",
     "list_facilitators",
     "list_own_bookings",

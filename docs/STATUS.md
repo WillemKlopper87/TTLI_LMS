@@ -1,6 +1,42 @@
 # STATUS
 
-**Updated:** 2026-08-24 (second pass, same day) — **P7 Phase 2:
+**Updated:** 2026-08-24 (third pass, same day) — **P7 Phase 3: ICS /
+calendar invites.** Third of five (`docs/BACKLOG.md` P7; REQ-WS-05's
+"send calendar invite"). New `services/ics.py::build_ics` — hand-rolled
+`VCALENDAR`/`VEVENT` text, no new dependency (the same "one format,
+don't add a library for one function" reasoning `services/oidc.py`'s
+own docstring already established for OAuth2). Line folding (RFC 5545
+§3.1, 75-octet content lines) and value escaping (§3.3.11) are both
+implemented for real, not approximated — **a genuine bug was caught
+by this pass's own new unit tests before it ever reached the API**:
+the fold function's UTF-8-boundary scan indexed one past the end of
+the byte array whenever a chunk happened to consume every remaining
+byte exactly, raising `IndexError` on any content that folded onto a
+clean final line. Fixed and pinned by
+`test_multibyte_characters_never_split_mid_sequence` and
+`test_long_lines_are_folded_at_75_octets_with_a_leading_space`.
+New `GET /bookings/{id}/calendar.ics` (booking-owner-only, same rule
+`reschedule_booking` draws), `services/workshops.py::
+get_booking_ics_context` assembling the booking/session/workshop/
+facilitator data the endpoint needs. `STATUS:CANCELLED` reflects a
+cancelled booking correctly (verified live, not just unit-tested).
+Frontend: "Add to calendar" on `/learn/sessions` and `BookButton`'s
+post-booking confirmation — both reuse the existing `lib/authed-
+download.ts` helper (fetch-with-bearer → blob → synthetic anchor
+click) rather than a plain `<a href>`, which cannot carry the in-
+memory access token and would 401 (the same lesson the analytics CSV
+export and P6's invoice/ledger exports already learned).
+Verified: 8 new unit tests for `services/ics.py` (no DB/Redis needed,
+same class as `test_crypto.py`) plus 1 new integration test for the
+endpoint (ownership refusal, real VEVENT content, cancelled-status
+reflection), full suite green, `ruff`/`mypy` clean, web `typecheck`/
+`lint`/`build` clean, axe-clean on `/learn/sessions`. Live-smoked
+end to end through a real headless-browser download (not just an API
+call): booked a session, clicked "Add to calendar" on `/learn/
+sessions`, captured the real download event, and parsed the saved
+`.ics` file's bytes to confirm `BEGIN:VEVENT`/`DTSTART`/`SUMMARY`/
+`STATUS:CONFIRMED` are all present and correctly formed.
+Prior, same day — **P7 Phase 2:
 reschedule + the learner "my sessions" page.** Second of five
 (`docs/BACKLOG.md` P7). `cancel_booking`'s state-transition body was
 extracted into a shared `_cancel_booking_row` (already done in Phase 1

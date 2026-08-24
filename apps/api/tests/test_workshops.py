@@ -752,3 +752,74 @@ async def test_reschedule_moves_booking_and_marks_old_attendance_rescheduled(
         headers={"Authorization": f"Bearer {learner_token}"},
     )
     assert already_gone.status_code == 400
+
+
+async def test_booking_calendar_ics_is_owner_only_and_shaped_correctly(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7 phase 3, REQ-WS-05: GET /bookings/{id}/calendar.ics is
+    booking-owner-only (the same rule reschedule_booking draws) and
+    returns a real text/calendar VEVENT, not just a 200."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 3,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    session_id = session_resp.json()["id"]
+
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booking = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    booking_id = booking.json()["id"]
+
+    stranger_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    forbidden = await client.get(
+        f"/api/v1/bookings/{booking_id}/calendar.ics",
+        headers={"Authorization": f"Bearer {stranger_token}"},
+    )
+    assert forbidden.status_code == 403
+
+    ics = await client.get(
+        f"/api/v1/bookings/{booking_id}/calendar.ics",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert ics.status_code == 200, ics.text
+    assert ics.headers["content-type"].startswith("text/calendar")
+    text = ics.content.decode("utf-8")
+    assert "BEGIN:VEVENT" in text
+    assert "STATUS:CONFIRMED" in text
+    assert f"UID:{booking_id}@ttli" in text
+    assert "Executive Coaching Debrief" in text
+
+    # Cancel the booking, then confirm the ICS reflects the cancellation.
+    cancelled = await client.post(
+        f"/api/v1/bookings/{booking_id}/cancel",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert cancelled.status_code == 204, cancelled.text
+    ics_after_cancel = await client.get(
+        f"/api/v1/bookings/{booking_id}/calendar.ics",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert "STATUS:CANCELLED" in ics_after_cancel.content.decode("utf-8")

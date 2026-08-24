@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { authedDownload } from "@/lib/authed-download";
 import { formatDateTime } from "@/lib/format";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
@@ -91,6 +92,15 @@ export default function LearnSessionsPage() {
       return;
     }
     await load();
+  }
+
+  async function downloadCalendar(bookingId: string) {
+    setError(null);
+    const ok = await authedDownload(
+      `/api/bff/bookings/${bookingId}/calendar.ics`,
+      "session.ics",
+    );
+    if (!ok) setError("The calendar invite could not be downloaded.");
   }
 
   async function openReschedule(booking: OwnBooking) {
@@ -190,6 +200,15 @@ export default function LearnSessionsPage() {
                     >
                       {PROVIDER_LABEL[b.provider ?? ""] ?? "Join session"}
                     </a>
+                  ) : null}
+                  {b.status !== "cancelled" ? (
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      onClick={() => downloadCalendar(b.booking_id)}
+                    >
+                      Add to calendar
+                    </button>
                   ) : null}
                   {b.can_manage ? (
                     <>
