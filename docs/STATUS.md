@@ -1,6 +1,84 @@
 # STATUS
 
-**Updated:** 2026-08-24 (fourth pass, same day) — **P7 Phase 4: the
+**Updated:** 2026-08-24 (fifth pass, same day) — **P7 Phase 5: the
+real Microsoft Teams provider — P7 is now DONE.** Last of five
+(`docs/BACKLOG.md` P7; REQ-WS-05/06). `services/meeting/teams.py`
+rewritten from the stub that always raised: a real client-credentials
+token fetch (`POST https://login.microsoftonline.com/{tenant}/oauth2/
+v2.0/token`), mirroring `services/oidc.py::exchange`'s exact try/
+except-`httpx.HTTPError`/clean-4xx-refusal shape — same "this codebase
+has consistently declined a dependency it would use one function of"
+reasoning, no new package. **A calendar event, not the bare
+`onlineMeetings` resource** — the backlog's own shorthand undersold
+REQ-WS-05's actual text ("create meeting, generate join link, send
+calendar invite, update and cancel"); `onlineMeetings` has no cancel/
+update primitive and sends no invite, so `POST .../events` with
+`isOnlineMeeting: true` on one platform-wide service mailbox
+(`Settings.graph_organiser_upn`, new) does all four in one Graph
+resource — Graph itself emails the Outlook invite and the cancellation
+notice, nothing hand-rolled. A facilitator is listed as an *attendee*,
+never the technical organiser, so no per-facilitator M365 licence or
+delegated Graph permission is ever needed.
+The `MeetingProvider` Protocol gained two methods, `add_attendee`/
+`remove_attendee` (a no-op for `manual`, a GET-then-PATCH against the
+event for `teams`) — a session's meeting is created with only its
+facilitator(s) as attendees (nobody's booked yet), and every learner
+who then registers, cancels, or gets promoted off the waitlist is
+added/removed one at a time by `book_session`/`_cancel_booking_row`,
+which is how a real invite reaches every registrant, not just the
+facilitator. `book_session` no longer hardcodes `"manual"` — it reads
+`workshop.meeting_provider`. **Two pre-existing bugs fixed along the
+way, both silent until now because nothing ever made either path
+reachable before**: `MeetingLink.organiser_user_id` was set to the
+*booking learner's* user id, not the facilitator's — now resolved from
+the session's own `Facilitator` row; and the Protocol's own
+`create_meeting(organiser_user_id=...)` was passed a `Facilitator.id`
+where a `User.id` was documented, silently wrong-but-unused by every
+provider until this phase's Teams client existed to care.
+Admin UI: a "Meeting provider" selector (manual/Microsoft Teams) on
+`/admin/workshops`, showing "Microsoft Teams is not configured on this
+platform" the moment `teams` is selected and the platform's `GRAPH_*`
+settings are empty — `GET /workshops` now carries a `teams_configured`
+flag alongside the list so the warning doesn't need its own round
+trip. `PATCH /workshops/{id}` (Phase 4's new endpoint) gained
+`meeting_provider`, refactored alongside `requires_credit` into
+genuinely independent partial updates — a PATCH sending one no longer
+needs to resend the other.
+Verified: 8 new unit tests for `services/meeting/teams.py` (no DB/
+Redis, same `httpx.AsyncBaseTransport`-as-`monkeypatch` shape
+`test_sso.py`'s `fake_idp` fixture already established) — exact token-
+request body, token caching (a second call within the token's lifetime
+makes zero HTTP calls), the event-creation request's exact JSON shape,
+correct `id`/`joinUrl` parsing from a realistic mock response, the
+cancel `DELETE`, and add/remove-attendee's GET-then-PATCH round trip
+including a duplicate-add no-op. Plus 2 new integration tests: the
+provider selector accepts `teams`/refuses `zoom` (a real DB enum value
+with no implemented client yet — refused at the schema layer, not left
+to 400 later at booking time) with correct partial-update semantics;
+and a regression pin that the `manual` provider's booking/waitlist-
+promotion/cancel flow is byte-for-byte unaffected by every code path
+now also carrying attendee-management calls through it. Full suite
+green, `ruff`/`mypy`/`ruff format --check` clean, web `typecheck`/
+`lint`/`build` clean, axe-clean on the new selector (including with
+the warning showing) — the one pre-existing `empty-table-header` minor
+finding on the sessions-table action columns predates this phase.
+Live-smoked the admin UI end to end through a real browser: created a
+workshop (defaults to `manual`), switched it to `teams`, watched the
+"not configured" warning appear immediately, confirmed the choice
+persisted across a reload, switched back to `manual`, watched the
+warning disappear.
+**Verified only this far — explicitly bounded, matching this session's
+other externally-blocked items (Payfast live verification, R11's ASR
+block)**: this cannot be live-tested end-to-end against a real Teams
+meeting in this environment, because no Azure AD app registration
+exists here — `GRAPH_CLIENT_ID`/`GRAPH_CLIENT_SECRET`/`GRAPH_TENANT_ID`/
+`GRAPH_ORGANISER_UPN` are all empty by default and `is_configured()`
+refuses cleanly rather than pretending to work. **The code is real and
+unit-tested against mocked Graph responses; live behaviour against a
+real Azure AD app registration has not been verified and should be
+smoke-tested before this ships to any tenant that selects the Teams
+provider.**
+Prior, same day — **P7 Phase 4: the
 workshop-credit economy.** Fourth of five (`docs/BACKLOG.md` P7;
 REQ-WS-04, previously a hardcoded `0` on the dashboard with a comment
 saying there was no table to count). `Workshop.requires_credit`

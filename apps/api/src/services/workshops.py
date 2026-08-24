@@ -149,15 +149,25 @@ async def create_workshop(
 
 
 async def update_workshop(
-    session: AsyncSession, *, tenant_id: uuid.UUID, workshop_id: uuid.UUID, requires_credit: bool
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    workshop_id: uuid.UUID,
+    requires_credit: bool | None = None,
+    meeting_provider: str | None = None,
 ) -> Workshop:
-    """P7 phase 4: flips the credit gate. Existing sessions/bookings are
-    untouched either way — the flag is only read at the moment a new
+    """Flips the credit gate (Phase 4) and/or the meeting provider
+    (Phase 5) — either independently, since the router only ever sends
+    the one field its own control changed. Existing sessions/bookings
+    are untouched either way — both are only read at the moment a new
     `book_session` call is made."""
     workshop = await session.get(Workshop, workshop_id)
     if workshop is None or workshop.tenant_id != tenant_id:
         raise NotFound("No such workshop.")
-    workshop.requires_credit = requires_credit
+    if requires_credit is not None:
+        workshop.requires_credit = requires_credit
+    if meeting_provider is not None:
+        workshop.meeting_provider = meeting_provider
     await session.flush()
     return workshop
 
@@ -605,24 +615,44 @@ async def book_session(
     )
 
     if status == "registered":
+        provider = meeting_service.get_provider(workshop.meeting_provider, settings=settings)
         link = (
             await session.execute(select(MeetingLink).where(MeetingLink.session_id == session_id))
         ).scalar_one_or_none()
         if link is None:
-            provider = meeting_service.get_provider("manual", settings=settings)
-            details = await provider.create_meeting(
-                session=workshop_session, organiser_user_id=workshop_session.facilitator_id
+            primary_facilitator = await session.get(Facilitator, workshop_session.facilitator_id)
+            organiser_user_id = (
+                primary_facilitator.user_id if primary_facilitator is not None else user_id
             )
-            session.add(
-                MeetingLink(
-                    id=uuid7(),
-                    tenant_id=tenant_id,
-                    session_id=session_id,
-                    provider=details.provider,
-                    provider_meeting_id=details.provider_meeting_id,
-                    join_url=details.join_url,
-                    organiser_user_id=user_id,
-                )
+            facilitator_rows = await list_session_facilitators(
+                session, crypto, session_id=session_id
+            )
+            details = await provider.create_meeting(
+                session=workshop_session,
+                organiser_user_id=organiser_user_id,
+                attendee_emails=[f.email for f in facilitator_rows],
+            )
+            link = MeetingLink(
+                id=uuid7(),
+                tenant_id=tenant_id,
+                session_id=session_id,
+                provider=details.provider,
+                provider_meeting_id=details.provider_meeting_id,
+                join_url=details.join_url,
+                organiser_user_id=organiser_user_id,
+            )
+            session.add(link)
+            await session.flush()
+
+        # A session's meeting is created with only its facilitator(s) as
+        # attendees (nobody's booked yet) — every registrant, including
+        # the one who just triggered creation above, is added here, one
+        # at a time, so a real invite (REQ-WS-05) reaches them too.
+        learner = await session.get(User, user_id)
+        if learner is not None:
+            await provider.add_attendee(
+                provider_meeting_id=link.provider_meeting_id,
+                email=crypto.decrypt(learner.email_encrypted),
             )
 
     await session.flush()
@@ -673,7 +703,9 @@ async def reschedule_booking(
     # one: _cancel_booking_row refunds whatever the old booking consumed,
     # book_session below consumes fresh for the target — same workshop,
     # so a requires_credit workshop nets to zero credits spent overall.
-    await _cancel_booking_row(session, booking=booking, resulting_status="rescheduled")
+    await _cancel_booking_row(
+        session, booking=booking, resulting_status="rescheduled", settings=settings, crypto=crypto
+    )
     return await book_session(
         session,
         crypto,
@@ -685,19 +717,32 @@ async def reschedule_booking(
 
 
 async def _cancel_booking_row(
-    session: AsyncSession, *, booking: Booking, resulting_status: str = "cancelled"
+    session: AsyncSession,
+    *,
+    booking: Booking,
+    resulting_status: str = "cancelled",
+    settings: Settings | None = None,
+    crypto: CryptoBox | None = None,
 ) -> None:
     """The actual state transition, shared by `cancel_booking` (one
-    booking, permission-checked) and `cancel_session` (every booking on
-    a session, already permission-checked once by its caller) — same
-    waitlist-promotion and attendance-record bookkeeping either way.
-    `resulting_status` is `"cancelled"` normally, `"rescheduled"` when
-    called from `reschedule_booking` (Phase 2) — the `attendance_status`
-    enum has carried that value, unused, since `0018`.
+    booking, permission-checked), `cancel_session` (every booking on a
+    session, already permission-checked once by its caller) and
+    `reschedule_booking` — same waitlist-promotion and attendance-record
+    bookkeeping either way. `resulting_status` is `"cancelled"`
+    normally, `"rescheduled"` when called from `reschedule_booking`
+    (Phase 2) — the `attendance_status` enum has carried that value,
+    unused, since `0018`.
 
     Always refunds a consumed workshop credit (Phase 4) — no
     cancellation-deadline forfeiture is specified anywhere, so none is
-    invented here."""
+    invented here.
+
+    `settings`/`crypto` (Phase 5) drive removing the cancelled learner —
+    and adding a promoted one — as a real meeting attendee. Both
+    optional: `cancel_session` cancels the whole session's meeting right
+    after this returns, so per-booking attendee edits there would be
+    wasted Graph calls against a meeting about to be deleted; it
+    deliberately leaves both unset."""
     was_registered = booking.status == "registered"
     booking.status = "cancelled"
 
@@ -712,7 +757,31 @@ async def _cancel_booking_row(
     if record is not None:
         record.status = resulting_status
 
+    provider = None
+    link = None
+    meeting_crypto = crypto
+    if settings is not None and meeting_crypto is not None:
+        link = (
+            await session.execute(
+                select(MeetingLink).where(MeetingLink.session_id == booking.session_id)
+            )
+        ).scalar_one_or_none()
+        if link is not None:
+            provider = meeting_service.get_provider(link.provider, settings=settings)
+        else:
+            meeting_crypto = None
+    else:
+        meeting_crypto = None
+
     if was_registered:
+        if provider is not None and link is not None and meeting_crypto is not None:
+            cancelled_learner = await session.get(User, booking.user_id)
+            if cancelled_learner is not None:
+                await provider.remove_attendee(
+                    provider_meeting_id=link.provider_meeting_id,
+                    email=meeting_crypto.decrypt(cancelled_learner.email_encrypted),
+                )
+
         # REQ-WS-03's waitlist: the earliest still-waitlisted booking
         # takes the seat that just freed up.
         next_in_line = (
@@ -736,11 +805,25 @@ async def _cancel_booking_row(
             if promoted_record is not None:
                 promoted_record.status = "registered"
 
+            if provider is not None and link is not None and meeting_crypto is not None:
+                promoted_learner = await session.get(User, next_in_line.user_id)
+                if promoted_learner is not None:
+                    await provider.add_attendee(
+                        provider_meeting_id=link.provider_meeting_id,
+                        email=meeting_crypto.decrypt(promoted_learner.email_encrypted),
+                    )
+
     await session.flush()
 
 
 async def cancel_booking(
-    session: AsyncSession, *, tenant_id: uuid.UUID, booking_id: uuid.UUID, actor_user_id: uuid.UUID
+    session: AsyncSession,
+    crypto: CryptoBox,
+    settings: Settings,
+    *,
+    tenant_id: uuid.UUID,
+    booking_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
 ) -> None:
     booking = await session.get(Booking, booking_id)
     if booking is None or booking.tenant_id != tenant_id:
@@ -756,7 +839,9 @@ async def cancel_booking(
     if booking.user_id != actor_user_id and not is_facilitator:
         raise Forbidden("You do not have access to this booking.")
 
-    await _cancel_booking_row(session, booking=booking, resulting_status="cancelled")
+    await _cancel_booking_row(
+        session, booking=booking, resulting_status="cancelled", settings=settings, crypto=crypto
+    )
 
 
 async def mark_attendance(

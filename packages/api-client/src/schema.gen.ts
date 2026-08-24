@@ -7872,13 +7872,15 @@ export interface components {
         };
         /**
          * UpdateWorkshopRequest
-         * @description P7 phase 4: the only field an admin needs to flip after creation
-         *     so far is the credit gate — title/description edits weren't asked
-         *     for and aren't added speculatively.
+         * @description Both optional — a PATCH only ever sends the one field its own
+         *     control changed (the credit-gate checkbox, Phase 4; the provider
+         *     selector, Phase 5), never a full resend of workshop state.
          */
         UpdateWorkshopRequest: {
             /** Requires Credit */
-            requires_credit: boolean;
+            requires_credit?: boolean | null;
+            /** Meeting Provider */
+            meeting_provider?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -7989,11 +7991,15 @@ export interface components {
             default_duration_minutes: number;
             /** Requires Credit */
             requires_credit: boolean;
+            /** Meeting Provider */
+            meeting_provider: string;
         };
         /** WorkshopsPage */
         WorkshopsPage: {
             /** Items */
             items: components["schemas"]["WorkshopResponse"][];
+            /** Teams Configured */
+            teams_configured: boolean;
         };
     };
     responses: never;

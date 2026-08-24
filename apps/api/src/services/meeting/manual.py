@@ -16,11 +16,17 @@ class ManualMeetingProvider:
     name = "manual"
 
     async def create_meeting(
-        self, *, session: WorkshopSession, organiser_user_id: uuid.UUID
+        self, *, session: WorkshopSession, organiser_user_id: uuid.UUID, attendee_emails: list[str]
     ) -> MeetingDetails:
         return MeetingDetails(provider=self.name, provider_meeting_id=None, join_url=None)
 
     async def cancel_meeting(self, *, provider_meeting_id: str | None) -> None:
+        return None
+
+    async def add_attendee(self, *, provider_meeting_id: str | None, email: str) -> None:
+        return None
+
+    async def remove_attendee(self, *, provider_meeting_id: str | None, email: str) -> None:
         return None
 
 

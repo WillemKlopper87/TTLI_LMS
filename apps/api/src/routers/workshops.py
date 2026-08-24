@@ -20,7 +20,7 @@ from sqlalchemy import select
 from src.core.deps import CryptoDep, Principal, PrincipalDep, SessionDep, SettingsDep, TenantDep
 from src.core.errors import AppError, Forbidden, NotFound
 from src.models.user import User
-from src.models.workshop import Booking, Facilitator, MeetingLink, WorkshopSession
+from src.models.workshop import Booking, Facilitator, MeetingLink, Workshop, WorkshopSession
 from src.schemas.workshops import (
     AddAvailabilityRequest,
     AddSessionFacilitatorRequest,
@@ -50,6 +50,7 @@ from src.schemas.workshops import (
 from src.services import identity
 from src.services import workshops as workshops_service
 from src.services.ics import IcsEvent, build_ics
+from src.services.meeting.teams import TeamsMeetingProvider
 
 router = APIRouter(tags=["workshops"])
 
@@ -154,6 +155,18 @@ async def list_availability(
     )
 
 
+def _workshop_response(workshop: Workshop) -> WorkshopResponse:
+    return WorkshopResponse(
+        id=str(workshop.id),
+        title=workshop.title,
+        description=workshop.description,
+        session_type=workshop.session_type,
+        default_duration_minutes=workshop.default_duration_minutes,
+        requires_credit=workshop.requires_credit,
+        meeting_provider=workshop.meeting_provider,
+    )
+
+
 @router.post("/workshops", response_model=WorkshopResponse, status_code=status.HTTP_201_CREATED)
 async def create_workshop(
     body: CreateWorkshopRequest, principal: PrincipalDep, session: SessionDep
@@ -167,31 +180,17 @@ async def create_workshop(
         session_type=body.session_type,
         default_duration_minutes=body.default_duration_minutes,
     )
-    return WorkshopResponse(
-        id=str(workshop.id),
-        title=workshop.title,
-        description=workshop.description,
-        session_type=workshop.session_type,
-        default_duration_minutes=workshop.default_duration_minutes,
-        requires_credit=workshop.requires_credit,
-    )
+    return _workshop_response(workshop)
 
 
 @router.get("/workshops", response_model=WorkshopsPage)
-async def list_workshops(principal: PrincipalDep, session: SessionDep) -> WorkshopsPage:
+async def list_workshops(
+    principal: PrincipalDep, session: SessionDep, settings: SettingsDep
+) -> WorkshopsPage:
     workshops = await workshops_service.list_workshops(session, tenant_id=principal.tenant_id)
     return WorkshopsPage(
-        items=[
-            WorkshopResponse(
-                id=str(w.id),
-                title=w.title,
-                description=w.description,
-                session_type=w.session_type,
-                default_duration_minutes=w.default_duration_minutes,
-                requires_credit=w.requires_credit,
-            )
-            for w in workshops
-        ]
+        items=[_workshop_response(w) for w in workshops],
+        teams_configured=TeamsMeetingProvider(settings).is_configured(),
     )
 
 
@@ -205,15 +204,9 @@ async def update_workshop(
         tenant_id=principal.tenant_id,
         workshop_id=_parse_uuid(workshop_id),
         requires_credit=body.requires_credit,
+        meeting_provider=body.meeting_provider,
     )
-    return WorkshopResponse(
-        id=str(workshop.id),
-        title=workshop.title,
-        description=workshop.description,
-        session_type=workshop.session_type,
-        default_duration_minutes=workshop.default_duration_minutes,
-        requires_credit=workshop.requires_credit,
-    )
+    return _workshop_response(workshop)
 
 
 async def _session_response(
@@ -398,9 +391,17 @@ async def book_session(
 @router.post(
     "/bookings/{booking_id}/cancel", status_code=status.HTTP_204_NO_CONTENT, response_model=None
 )
-async def cancel_booking(booking_id: str, principal: PrincipalDep, session: SessionDep) -> None:
+async def cancel_booking(
+    booking_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    settings: SettingsDep,
+) -> None:
     await workshops_service.cancel_booking(
         session,
+        crypto,
+        settings,
         tenant_id=principal.tenant_id,
         booking_id=_parse_uuid(booking_id),
         actor_user_id=principal.user_id,

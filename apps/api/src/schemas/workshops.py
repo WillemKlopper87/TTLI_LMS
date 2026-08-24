@@ -55,18 +55,29 @@ class WorkshopResponse(BaseModel):
     session_type: str
     default_duration_minutes: int
     requires_credit: bool
+    meeting_provider: str
 
 
 class WorkshopsPage(BaseModel):
     items: list[WorkshopResponse]
+    # P7 phase 5: whether the platform-wide Teams credentials
+    # (`Settings.graph_*`) are set — carried on the list response so the
+    # admin UI's provider selector can warn before an admin picks
+    # "teams" on a workshop and only discovers it 400s at booking time.
+    teams_configured: bool
 
 
 class UpdateWorkshopRequest(BaseModel):
-    """P7 phase 4: the only field an admin needs to flip after creation
-    so far is the credit gate — title/description edits weren't asked
-    for and aren't added speculatively."""
+    """Both optional — a PATCH only ever sends the one field its own
+    control changed (the credit-gate checkbox, Phase 4; the provider
+    selector, Phase 5), never a full resend of workshop state."""
 
-    requires_credit: bool
+    requires_credit: bool | None = None
+    # Only "manual"/"teams" are real providers (`services/meeting/
+    # __init__.py::get_provider`) — "zoom"/"meet" exist in the DB enum
+    # for a future phase (docs/BACKLOG.md P13) but would 400 at booking
+    # time if selected now, so the write side refuses them here instead.
+    meeting_provider: str | None = Field(default=None, pattern="^(manual|teams)$")
 
 
 class CreateSessionRequest(BaseModel):

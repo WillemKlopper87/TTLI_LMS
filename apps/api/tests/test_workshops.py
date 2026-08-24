@@ -1010,3 +1010,113 @@ async def test_booking_without_requires_credit_needs_no_purchase(
     )
     assert booking.status_code == 200, booking.text
     assert booking.json()["status"] == "registered"
+
+
+async def test_meeting_provider_selector_accepts_teams_refuses_unimplemented_providers(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7 phase 5: a workshop defaults to `manual` and can be switched to
+    `teams` (the two providers `services/meeting/__init__.py::get_provider`
+    actually implements). `zoom`/`meet` exist only in the DB enum for a
+    future phase (docs/BACKLOG.md P13) and are refused at the schema
+    layer rather than accepted and 400ing later at booking time."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    created = await client.get(
+        "/api/v1/workshops", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert created.status_code == 200, created.text
+    assert "teams_configured" in created.json()
+    row = next(w for w in created.json()["items"] if w["id"] == workshop_id)
+    assert row["meeting_provider"] == "manual"
+
+    switched = await client.patch(
+        f"/api/v1/workshops/{workshop_id}",
+        json={"meeting_provider": "teams"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["meeting_provider"] == "teams"
+    # requires_credit wasn't in this body — confirms the partial-update
+    # semantics (Phase 5) didn't reset the field PATCH didn't mention.
+    assert switched.json()["requires_credit"] is False
+
+    refused = await client.patch(
+        f"/api/v1/workshops/{workshop_id}",
+        json={"meeting_provider": "zoom"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert refused.status_code == 422, refused.text
+
+
+async def test_manual_provider_attendee_management_is_a_noop_not_an_error(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7 phase 5's add_attendee/remove_attendee calls on the booking/
+    cancel path (needed for a real provider to actually invite/uninvite
+    a learner) must not disturb the `manual` provider's existing,
+    already-shipped behaviour — booking, waitlist promotion and cancel
+    all still work exactly as before this phase touched the code paths
+    they now share with attendee management."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    session_id = session_resp.json()["id"]
+
+    learner_a_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    learner_b_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    booking_a = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_a_token}"},
+    )
+    assert booking_a.status_code == 200, booking_a.text
+    assert booking_a.json()["status"] == "registered"
+
+    booking_b = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_b_token}"},
+    )
+    assert booking_b.status_code == 200, booking_b.text
+    assert booking_b.json()["status"] == "waitlisted"
+
+    # A's cancel frees the seat, promoting B — the promotion path now
+    # also calls provider.add_attendee, which must not raise for manual.
+    cancelled = await client.post(
+        f"/api/v1/bookings/{booking_a.json()['id']}/cancel",
+        headers={"Authorization": f"Bearer {learner_a_token}"},
+    )
+    assert cancelled.status_code == 204, cancelled.text
+
+    roster = await client.get(
+        f"/api/v1/sessions/{session_id}/roster",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert roster.status_code == 200, roster.text
+    statuses = {r["booking_id"]: r["booking_status"] for r in roster.json()["items"]}
+    assert statuses[booking_b.json()["id"]] == "registered"

@@ -28,6 +28,7 @@ interface WorkshopItem {
   session_type: string;
   default_duration_minutes: number;
   requires_credit: boolean;
+  meeting_provider: string;
 }
 
 interface PriceRow {
@@ -141,6 +142,9 @@ export default function WorkshopsScreen() {
   const [creditPriceAmount, setCreditPriceAmount] = useState("");
   const [creditPriceCurrency, setCreditPriceCurrency] = useState("ZAR");
 
+  const [teamsConfigured, setTeamsConfigured] = useState(false);
+  const [providerBusy, setProviderBusy] = useState(false);
+
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();
     return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
@@ -153,7 +157,11 @@ export default function WorkshopsScreen() {
 
   async function loadWorkshops() {
     const resp = await authedFetch("/api/bff/workshops");
-    if (resp.ok) setWorkshops((await resp.json()).items);
+    if (resp.ok) {
+      const body = await resp.json();
+      setWorkshops(body.items);
+      setTeamsConfigured(Boolean(body.teams_configured));
+    }
   }
 
   useEffect(() => {
@@ -256,6 +264,23 @@ export default function WorkshopsScreen() {
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
       setError(body?.error?.message ?? "Could not update this workshop.");
+      return;
+    }
+    await loadWorkshops();
+  }
+
+  async function changeMeetingProvider(workshopId: string, provider: string) {
+    setProviderBusy(true);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/workshops/${workshopId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meeting_provider: provider }),
+    });
+    setProviderBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not update this workshop's meeting provider.");
       return;
     }
     await loadWorkshops();
@@ -669,6 +694,36 @@ export default function WorkshopsScreen() {
                       />
                       Requires a credit to book
                     </label>
+                  ) : null}
+
+                  {canManage ? (
+                    <div className="mt-3">
+                      <label className="field" style={{ maxWidth: "12rem" }}>
+                        <span style={{ fontSize: "0.8125rem" }}>Meeting provider</span>
+                        <select
+                          className="input"
+                          value={selectedWorkshop.meeting_provider}
+                          disabled={providerBusy}
+                          onChange={(e) =>
+                            void changeMeetingProvider(selectedWorkshop.id, e.target.value)
+                          }
+                        >
+                          <option value="manual">Manual (facilitator supplies a link)</option>
+                          <option value="teams">Microsoft Teams</option>
+                        </select>
+                      </label>
+                      {selectedWorkshop.meeting_provider === "teams" && !teamsConfigured ? (
+                        <p
+                          role="alert"
+                          className="mt-1"
+                          style={{ fontSize: "0.75rem", color: "var(--stop)" }}
+                        >
+                          Microsoft Teams is not configured on this platform — bookings on this
+                          workshop will fail until an admin sets the GRAPH_* settings. Use Manual
+                          until then.
+                        </p>
+                      ) : null}
+                    </div>
                   ) : null}
 
                   {canManageProducts && selectedWorkshop.requires_credit ? (

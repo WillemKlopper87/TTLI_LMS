@@ -176,6 +176,13 @@ class Settings(BaseSettings):
     graph_client_id: str = ""
     graph_client_secret: str = ""
     graph_tenant_id: str = ""
+    # P7 phase 5: the single service mailbox every Teams meeting is
+    # created on (as a calendar event, not the bare onlineMeetings
+    # resource — that has no update/cancel primitive and sends no
+    # invite). Facilitators and registrants are event *attendees*, not
+    # the technical organiser, so no per-facilitator M365 licence or
+    # delegated Graph permission is needed.
+    graph_organiser_upn: str = ""
 
     # --- Observability ---
     sentry_dsn: str = ""
