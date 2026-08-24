@@ -72,7 +72,9 @@ class FakeGraph(httpx.AsyncBaseTransport):
                 201,
                 json={
                     "id": event_id,
-                    "onlineMeeting": {"joinUrl": f"https://teams.microsoft.com/l/meetup-join/{event_id}"},
+                    "onlineMeeting": {
+                        "joinUrl": f"https://teams.microsoft.com/l/meetup-join/{event_id}"
+                    },
                 },
             )
         if request.method == "GET" and "/events/" in url:
@@ -209,9 +211,7 @@ async def test_add_then_remove_attendee_round_trips_through_the_event(
     assert event_id is not None
 
     await provider.add_attendee(provider_meeting_id=event_id, email="learner@example.com")
-    addresses = {
-        a["emailAddress"]["address"] for a in fake_graph.events[event_id]["attendees"]
-    }
+    addresses = {a["emailAddress"]["address"] for a in fake_graph.events[event_id]["attendees"]}
     assert addresses == {"facilitator@example.com", "learner@example.com"}
 
     # Adding the same learner again is a no-op, not a duplicate attendee.
@@ -219,7 +219,5 @@ async def test_add_then_remove_attendee_round_trips_through_the_event(
     assert len(fake_graph.events[event_id]["attendees"]) == 2
 
     await provider.remove_attendee(provider_meeting_id=event_id, email="learner@example.com")
-    addresses = {
-        a["emailAddress"]["address"] for a in fake_graph.events[event_id]["attendees"]
-    }
+    addresses = {a["emailAddress"]["address"] for a in fake_graph.events[event_id]["attendees"]}
     assert addresses == {"facilitator@example.com"}
