@@ -122,13 +122,12 @@ class TeamsMeetingProvider:
         _cached_token_expiry = now + max(ttl - TOKEN_EXPIRY_SKEW_SECONDS, 0.0)
         return token
 
-    async def _request(
-        self, method: str, path: str, *, json: dict[str, object] | None = None
+    async def _send(
+        self, method: str, path: str, *, token: str, json: dict[str, object] | None = None
     ) -> httpx.Response:
-        token = await self._get_token()
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.request(
+                return await client.request(
                     method,
                     f"{GRAPH_BASE}{path}",
                     json=json,
@@ -136,6 +135,23 @@ class TeamsMeetingProvider:
                 )
         except httpx.HTTPError as exc:
             raise MeetingProviderUnavailable("Microsoft Graph could not be reached.") from exc
+
+    async def _request(
+        self, method: str, path: str, *, json: dict[str, object] | None = None
+    ) -> httpx.Response:
+        global _cached_token, _cached_token_expiry
+        token = await self._get_token()
+        response = await self._send(method, path, token=token, json=json)
+        if response.status_code == 401:
+            # overall-review F9: the cache expires only by clock, so a
+            # secret rotated in Azure mid-lifetime would otherwise fail
+            # every call for up to ~55 minutes with no recovery short of
+            # waiting it out. Drop the cache and retry once with a fresh
+            # token before giving up.
+            _cached_token = None
+            _cached_token_expiry = 0.0
+            token = await self._get_token()
+            response = await self._send(method, path, token=token, json=json)
         if response.status_code >= 400:
             raise MeetingProviderUnavailable(
                 f"Microsoft Graph rejected this request ({response.status_code})."
@@ -182,6 +198,20 @@ class TeamsMeetingProvider:
     async def _patch_attendees(
         self, *, provider_meeting_id: str, attendees: list[dict[str, object]]
     ) -> None:
+        # overall-review F8: add_attendee/remove_attendee below are
+        # GET-mutate-PATCH, not atomic — two truly concurrent calls
+        # against the *same* event can interleave (both GET, both
+        # PATCH, last write wins) and silently drop one learner's
+        # invite. Graph supports If-Match/etag concurrency control,
+        # which would close this properly and isn't implemented here.
+        # Partially, not fully, mitigated: two concurrent *bookings* of
+        # the same session are serialised by book_session's session-row
+        # FOR UPDATE lock (overall-review F6), so that specific race
+        # can't happen. A booking racing a cancellation (or two
+        # cancellations) on the same session is not locked against this
+        # method and can still interleave — a real, narrow gap, left
+        # open rather than adding a second lock for a low-severity race
+        # against a provider that isn't live-configured anywhere yet.
         await self._request(
             "PATCH",
             f"/users/{self._settings.graph_organiser_upn}/events/{provider_meeting_id}",

@@ -3468,6 +3468,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/podcast-engagement/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * CSV of the podcast engagement report, same rows as the JSON report
+         * @description Overall-review I1: the module docstring above promises "a CSV
+         *     twin of each" report — this one didn't have one yet.
+         */
+        get: operations["podcast_engagement_csv_api_v1_analytics_podcast_engagement_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/overview": {
         parameters: {
             query?: never;
@@ -15034,6 +15055,42 @@ export interface operations {
         };
     };
     registrations_csv_api_v1_analytics_registrations_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    podcast_engagement_csv_api_v1_analytics_podcast_engagement_export_csv_get: {
         parameters: {
             query?: {
                 /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */

@@ -259,3 +259,39 @@ async def test_article_view_event_accepts_viewed_rejects_unknown_and_unpublished
         headers={"X-Tenant-Host": TENANT_HOST},
     )
     assert rejected.status_code == 404
+
+
+async def test_article_event_logging_is_rate_limited_per_ip(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F5, the article twin of test_podcasts.py's own
+    rate-limit test — this endpoint had no rate limit at all before
+    this pass."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    article_id = await _make_article(client, admin_token)
+    slug = (
+        await client.get(
+            f"/api/v1/articles/{article_id}", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+    ).json()["slug"]
+    await client.post(
+        f"/api/v1/articles/{article_id}/publish", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    for _ in range(60):
+        resp = await client.post(
+            f"/api/v1/public/articles/{slug}/events",
+            json={"event_name": "article.viewed"},
+            headers={"X-Tenant-Host": TENANT_HOST},
+        )
+        assert resp.status_code == 204, resp.text
+
+    over_limit = await client.post(
+        f"/api/v1/public/articles/{slug}/events",
+        json={"event_name": "article.viewed"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert over_limit.status_code == 429, over_limit.text

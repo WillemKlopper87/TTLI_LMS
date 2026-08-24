@@ -1,5 +1,81 @@
 # STATUS
 
+**Updated:** 2026-08-24 (seventh pass, same day) — **Overall code
+review, then all three of its fix PRs.** `docs/research/overall-
+review-2026-08-24.md`: a systemic pass over the whole session's shipped
+work (P7 phases 1–5, the loose-ends batch) plus money paths,
+unauthenticated surfaces, external calls and concurrency generally. 9
+verified findings (file:line evidence, not inferred), 5 improvement
+notes. Packaged as three PRs, all implemented and full-suite verified
+(`ruff`/`mypy`/`pytest` clean at every stage, web `typecheck`/`build`
+clean):
+
+**PR1 — money correctness.** **F1**: `_consume_workshop_credit` had no
+row lock — two concurrent bookings of *different* sessions of the same
+workshop could both read `quantity == 1` and both decrement, so one
+paid credit bought two seats. Fixed with `.with_for_update()` on the
+entitlement read and an atomic in-database `quantity = quantity + 1`
+refund (no lock needed, can't lose an update). **F6**: the same class
+of bug in `book_session` itself — `seat_counts()` then insert was
+check-then-act with no lock, so two learners could both claim the last
+seat. Fixed with a `FOR UPDATE` lock on the session row. **F2**:
+`update_product` never re-inferred `kind` when a bridge was attached to
+a bridgeless draft product (the §6.1 "sellable wrapper" `create_product`
+allows) — attaching a workshop left `kind="course"` with `course_id=
+None`, which `_fulfil_order` turns into an `OrderError` *after the
+buyer has paid*, wedging finance approval. Fixed by re-inferring `kind`
+on every bridge attach, same as `create_product` already does. Two new
+genuinely-concurrent regression tests (`asyncio.gather`, not sequential
+coverage that would pass even without the fix) plus one PATCH-then-
+fulfil test.
+
+**PR2 — resilience.** **F3**: `MeetingProviderUnavailable` propagated
+uncaught from every cancel-side call (`cancel_session`'s
+`cancel_meeting`, `_cancel_booking_row`'s `remove_attendee` and the
+waitlist-promotion `add_attendee`, and `book_session`'s own
+`add_attendee` for a registrant joining an *existing* meeting) — latent
+today (nothing live-configures Teams), armed the day it is: a Graph
+outage would then block a learner from cancelling, an admin from
+cancelling a session, or a waitlist promotion from landing. Fixed with
+fail-soft `try/except` at each of those four call sites (logged, not
+swallowed silently) — `create_meeting` itself stays fail-closed, since
+never fabricating a join link is still correct. **F9**: the Graph token
+cache expired only by clock, so a client secret rotated in Azure
+mid-lifetime would fail every call for ~55 minutes with no recovery.
+Fixed with a retry-once-with-a-fresh-token on a 401. **F7**: a
+malformed `episode_id` in `event_properties` JSONB would 500 the whole
+podcast-engagement dashboard; now skipped per-row. **F8**: documented
+(not fixed — LOW, no live provider yet) that `add_attendee`/
+`remove_attendee`'s GET-mutate-PATCH isn't atomic; a booking racing a
+cancellation on the same session's meeting can still interleave, though
+two concurrent *bookings* are already serialised by F6's lock. New
+tests: a monkeypatched always-fails provider proving cancellation,
+session-cancel and waitlist promotion all survive a provider outage;
+two Graph-token-retry tests (recovers once, still raises on a second
+consecutive 401); a malformed-episode-id regression pin.
+
+**PR3 — abuse + data.** **F5**: the two public event-logging endpoints
+(`/public/podcasts/{slug}/events`, `/public/articles/{slug}/events`)
+had no rate limit — an anonymous loop could bloat the `events` table
+and directly inflate the new R2 dashboard's counts. Fixed by reusing
+03 §1.8's general anonymous ceiling (60/min per IP, no specific row
+exists for this) — same pattern `routers/leads.py` already established
+— plus `Field(max_length=64)` on `event_name`/`source` as a cheap belt.
+**F4**: `podcast.cta.guest_access_clicked` — a seventh event name the
+frontend has been firing on every "Try a free lesson" click from a
+podcast page since the podcast subsystem shipped, silently 404ing
+(fire-and-forget `.catch(() => undefined)`) because it was never in the
+allowed set. Added. **I1**: `/analytics/podcast-engagement` had no CSV
+export despite the router's own module docstring promising one for
+every report — added. **I3**: `ArticleViewTracker`'s effect now guards
+against React StrictMode's dev-only double-invoke with a `useRef`
+once-guard (no production behaviour change). **I5**: `log_podcast_event`
+no longer writes `None`-valued JSONB keys on every row. New tests: two
+rate-limit tests (60 successes then a 429, mirroring
+`test_auth_flows.py`'s own pattern), one guest-access-event acceptance
+assertion, one CSV-parity test.
+
+
 **Updated:** 2026-08-24 (sixth pass, same day) — **Backlog loose ends:
 R14, O13, R8, R2, R3, R5.** User asked to clear the small/S-M-sized
 backlog rows before the next big build. Six items, five commits (docs

@@ -285,12 +285,62 @@ async def test_podcast_event_logging_accepts_known_names_and_rejects_unknown(
     )
     assert ok.status_code == 204, ok.text
 
+    # Overall-review F4: the seventh event name — dropped silently since
+    # the podcast subsystem shipped because the frontend's own "Try a
+    # free lesson" click fires it but it was never in the allowed set.
+    guest_access = await client.post(
+        f"/api/v1/public/podcasts/{slug}/events",
+        json={"event_name": "podcast.cta.guest_access_clicked"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert guest_access.status_code == 204, guest_access.text
+
     rejected = await client.post(
         f"/api/v1/public/podcasts/{slug}/events",
         json={"event_name": "not.a.real.event"},
         headers={"X-Tenant-Host": TENANT_HOST},
     )
     assert rejected.status_code == 404
+
+
+async def test_podcast_event_logging_is_rate_limited_per_ip(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F5: the endpoint had no rate limit at all before
+    this — an anonymous loop could both bloat the events table and
+    directly inflate the R2 dashboard's counts. 03 §1.8's general
+    anonymous ceiling (60/min per IP) is reused here, same as
+    test_auth_flows.py's own rate-limit tests: N successes, then the
+    (N+1)th refused."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    episode_id = await _make_curated_episode(client, admin_token)
+    published = await client.post(
+        f"/api/v1/podcasts/{episode_id}/publish", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert published.status_code == 200
+    slug = (
+        await client.get(
+            f"/api/v1/podcasts/{episode_id}", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+    ).json()["slug"]
+
+    for _ in range(60):
+        resp = await client.post(
+            f"/api/v1/public/podcasts/{slug}/events",
+            json={"event_name": "podcast.episode.viewed"},
+            headers={"X-Tenant-Host": TENANT_HOST},
+        )
+        assert resp.status_code == 204, resp.text
+
+    over_limit = await client.post(
+        f"/api/v1/public/podcasts/{slug}/events",
+        json={"event_name": "podcast.episode.viewed"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert over_limit.status_code == 429, over_limit.text
 
 
 async def test_spotify_lookup_reports_not_configured_with_no_credentials(

@@ -508,7 +508,20 @@ async def top_cta_episodes(
         .order_by(func.count().desc())
         .limit(TOP_CTA_EPISODE_LIMIT)
     )
-    rows = [(eid, int(count)) for eid, count in (await session.execute(stmt)).all() if eid]
+    # A malformed episode_id (overall-review F7) is skipped, not a 500:
+    # today only log_podcast_event writes this property and always a
+    # real UUID, but the panel reading a hand-inserted or future-writer
+    # row's junk value should degrade the leaderboard by one row, not
+    # take the whole dashboard down.
+    rows: list[tuple[str, int]] = []
+    for eid, count in (await session.execute(stmt)).all():
+        if not eid:
+            continue
+        try:
+            uuid.UUID(eid)
+        except ValueError:
+            continue
+        rows.append((eid, int(count)))
     if not rows:
         return []
 

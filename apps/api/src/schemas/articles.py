@@ -52,7 +52,10 @@ class ArticleEventRequest(BaseModel):
     `PodcastEventRequest`'s `event_name` field so a later pass can add
     more without a breaking change."""
 
-    event_name: str
+    # max_length is a cheap belt (overall-review F5), same as
+    # PodcastEventRequest's — event_name is already semantically
+    # bounded by the allowed-set check in log_article_event.
+    event_name: str = Field(max_length=64)
 
 
 __all__ = [

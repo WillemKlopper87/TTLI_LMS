@@ -154,15 +154,9 @@ async def registrations(
     return await _registrations(session, principal, period)
 
 
-@router.get(
-    "/podcast-engagement",
-    response_model=PodcastEngagementResponse,
-    summary="Plays, completion rate, click-through rate and top CTA-converting episodes",
-)
-async def podcast_engagement(
-    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+async def _podcast_engagement(
+    session: AsyncSession, principal: PrincipalDep, period: Period
 ) -> PodcastEngagementResponse:
-    principal.require(PERMISSION)
     tenant_id = principal.tenant_id
     counts = await analytics_service.podcast_event_counts(
         session, tenant_id=tenant_id, period=period
@@ -177,6 +171,18 @@ async def podcast_engagement(
         cta_clicks=counts.cta_clicks,
         top_cta_episodes=top,
     )
+
+
+@router.get(
+    "/podcast-engagement",
+    response_model=PodcastEngagementResponse,
+    summary="Plays, completion rate, click-through rate and top CTA-converting episodes",
+)
+async def podcast_engagement(
+    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+) -> PodcastEngagementResponse:
+    principal.require(PERMISSION)
+    return await _podcast_engagement(session, principal, period)
 
 
 # ---- CSV export --------------------------------------------------------------
@@ -274,6 +280,34 @@ async def registrations_csv(
         for row in data.by_organisation
     ]
     return _csv_response(rows, "registrations.csv")
+
+
+@router.get(
+    "/podcast-engagement/export.csv",
+    summary="CSV of the podcast engagement report, same rows as the JSON report",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+async def podcast_engagement_csv(
+    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+) -> Response:
+    """Overall-review I1: the module docstring above promises "a CSV
+    twin of each" report — this one didn't have one yet."""
+    principal.require(PERMISSION)
+    data = await _podcast_engagement(session, principal, period)
+    rows: list[tuple[object, ...]] = _period_rows(data.period)
+    rows += [
+        ("engagement", "episode_views", "", data.episode_views, ""),
+        ("engagement", "plays_started", "", data.plays_started, ""),
+        ("engagement", "plays_completed", "", data.plays_completed, ""),
+        ("engagement", "embed_click_throughs", "", data.embed_click_throughs, ""),
+        ("engagement", "cta_clicks", "", data.cta_clicks, ""),
+    ]
+    rows += [
+        ("top_cta_episodes", row.title, row.episode_id, row.course_clicks, "")
+        for row in data.top_cta_episodes
+    ]
+    return _csv_response(rows, "podcast-engagement.csv")
 
 
 __all__ = ["router"]

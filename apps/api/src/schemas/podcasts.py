@@ -79,10 +79,13 @@ class SpotifyLookupResponse(BaseModel):
 
 
 class PodcastEventRequest(BaseModel):
-    event_name: str
+    # max_length is a cheap belt (overall-review F5) — event_name is
+    # already semantically bounded by the allowed-set check in
+    # log_podcast_event, and source has no allowed-set at all.
+    event_name: str = Field(max_length=64)
     percent_complete: int | None = Field(default=None, ge=0, le=100)
     position_seconds: int | None = Field(default=None, ge=0)
-    source: str | None = None
+    source: str | None = Field(default=None, max_length=64)
 
 
 __all__ = [

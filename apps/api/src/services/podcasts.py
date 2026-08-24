@@ -55,6 +55,15 @@ class PodcastEventName:
     PLAY_COMPLETED = "podcast.play.completed"
     EMBED_CLICK_THROUGH = "podcast.embed.click_through"
     CTA_COURSE_CLICKED = "podcast.cta.course_clicked"
+    # A seventh, beyond the research doc's original six (overall-review
+    # F4): app/podcasts/[slug]/page.tsx has been firing this on every
+    # "Try a free lesson" click since the podcast subsystem shipped, and
+    # it was never in the allowed set — every one of those clicks 404'd
+    # silently (fire-and-forget, .catch(() => undefined) on the
+    # frontend) and was dropped. A guest-access click from a podcast
+    # listener is a real conversion signal, arguably a stronger one than
+    # embed_click_through.
+    CTA_GUEST_ACCESS_CLICKED = "podcast.cta.guest_access_clicked"
 
 
 ALLOWED_PODCAST_EVENT_NAMES = {
@@ -64,6 +73,7 @@ ALLOWED_PODCAST_EVENT_NAMES = {
     PodcastEventName.PLAY_COMPLETED,
     PodcastEventName.EMBED_CLICK_THROUGH,
     PodcastEventName.CTA_COURSE_CLICKED,
+    PodcastEventName.CTA_GUEST_ACCESS_CLICKED,
 }
 
 

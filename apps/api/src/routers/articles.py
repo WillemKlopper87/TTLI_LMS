@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
+from redis.asyncio import Redis
 
-from src.core.deps import PrincipalDep, SessionDep, StorageDep, TenantDep
-from src.core.errors import NotFound
+from src.core.config import get_settings
+from src.core.deps import PrincipalDep, RedisDep, SessionDep, StorageDep, TenantDep
+from src.core.errors import NotFound, TooManyAttempts
+from src.core.net import client_ip
 from src.models.article import Article
 from src.schemas.articles import (
     ArticleCreateRequest,
@@ -24,10 +27,32 @@ from src.schemas.articles import (
     ArticleUpdateRequest,
 )
 from src.services import articles as articles_service
-from src.services import events
+from src.services import events, rate_limit
 from src.services.storage.base import StorageService
 
 router = APIRouter(tags=["articles"])
+
+# Same reasoning and same reused-not-invented number as
+# routers/podcasts.py's EVENT_RATE_LIMIT_* (overall-review F5).
+EVENT_RATE_LIMIT_PER_IP = 60
+EVENT_RATE_LIMIT_WINDOW_SECONDS = 60
+
+
+def _client_ip(request: Request) -> str | None:
+    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
+
+
+async def _enforce_event_rate_limit(redis: Redis, *, ip: str | None) -> None:
+    if ip is None:
+        return
+    ok = await rate_limit.hit(
+        redis,
+        key=f"ratelimit:article-events:ip:{ip}",
+        limit=EVENT_RATE_LIMIT_PER_IP,
+        window_seconds=EVENT_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if not ok:
+        raise TooManyAttempts("Too many attempts. Try again later.")
 
 
 def _parse_uuid(value: str) -> uuid.UUID:
@@ -171,8 +196,14 @@ async def get_public_article(
     summary="Log an article engagement event (viewed), no auth required",
 )
 async def log_article_event(
-    slug: str, body: ArticleEventRequest, session: SessionDep, tenant: TenantDep
+    request: Request,
+    slug: str,
+    body: ArticleEventRequest,
+    session: SessionDep,
+    tenant: TenantDep,
+    redis: RedisDep,
 ) -> None:
+    await _enforce_event_rate_limit(redis, ip=_client_ip(request))
     if body.event_name not in articles_service.ALLOWED_ARTICLE_EVENT_NAMES:
         raise NotFound("Unknown event name.")
     article = await articles_service.get_published_article(session, tenant_id=tenant.id, slug=slug)

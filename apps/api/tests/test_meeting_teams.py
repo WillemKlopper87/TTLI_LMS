@@ -49,6 +49,12 @@ class FakeGraph(httpx.AsyncBaseTransport):
         self.created_bodies: list[dict[str, Any]] = []
         self.deleted_ids: list[str] = []
         self.token_status = 200
+        # F9: force the next N non-token calls to 401, regardless of
+        # which token was presented — simulates a secret rotated in
+        # Azure mid-lifetime, which invalidates a cached-but-still-
+        # unexpired token.
+        self.force_401_count = 0
+        self.auth_headers_seen: list[str] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -61,8 +67,18 @@ class FakeGraph(httpx.AsyncBaseTransport):
             if self.token_status >= 400:
                 return httpx.Response(self.token_status, json={"error": "invalid_client"})
             return httpx.Response(
-                200, json={"access_token": "fake-graph-token", "expires_in": 3600}
+                200,
+                json={
+                    "access_token": f"fake-graph-token-{self.token_calls}",
+                    "expires_in": 3600,
+                },
             )
+
+        self.auth_headers_seen.append(request.headers.get("authorization", ""))
+        if self.force_401_count > 0:
+            self.force_401_count -= 1
+            return httpx.Response(401, json={"error": "InvalidAuthenticationToken"})
+
         if request.method == "POST" and url.endswith("/events"):
             body = json.loads(request.content)
             self.created_bodies.append(body)
@@ -144,7 +160,7 @@ async def test_token_is_cached_across_calls(fake_graph: FakeGraph) -> None:
     provider = TeamsMeetingProvider(_settings())
     first = await provider._get_token()
     second = await provider._get_token()
-    assert first == second == "fake-graph-token"
+    assert first == second == "fake-graph-token-1"
     assert fake_graph.token_calls == 1
 
 
@@ -221,3 +237,51 @@ async def test_add_then_remove_attendee_round_trips_through_the_event(
     await provider.remove_attendee(provider_meeting_id=event_id, email="learner@example.com")
     addresses = {a["emailAddress"]["address"] for a in fake_graph.events[event_id]["attendees"]}
     assert addresses == {"facilitator@example.com"}
+
+
+async def test_a_stale_cached_token_is_retried_once_with_a_fresh_one(
+    fake_graph: FakeGraph,
+) -> None:
+    """Overall-review F9: the token cache expires only by clock, so a
+    client secret rotated in Azure mid-lifetime would otherwise fail
+    every call for up to ~55 minutes. On a 401, _request must drop the
+    cache, fetch a genuinely fresh token, and retry exactly once."""
+    provider = TeamsMeetingProvider(_settings())
+    # Warm the cache with a token Graph is about to start rejecting.
+    await provider._get_token()
+    assert fake_graph.token_calls == 1
+
+    fake_graph.force_401_count = 1
+    details = await provider.create_meeting(
+        session=_FakeWorkshopSession(),  # type: ignore[arg-type]
+        organiser_user_id=uuid.uuid4(),
+        attendee_emails=["facilitator@example.com"],
+    )
+    assert details.provider_meeting_id is not None
+    # A second token was fetched (the retry), and the two auth headers
+    # sent to Graph for the real request differ — the stale one that
+    # got 401'd, then the fresh one that succeeded.
+    assert fake_graph.token_calls == 2
+    assert fake_graph.auth_headers_seen == [
+        "Bearer fake-graph-token-1",
+        "Bearer fake-graph-token-2",
+    ]
+    # The provider's own cache now holds the fresh token, not the one
+    # that was just invalidated — the next call makes zero token calls.
+    await provider.cancel_meeting(provider_meeting_id=details.provider_meeting_id)
+    assert fake_graph.token_calls == 2
+
+
+async def test_two_consecutive_401s_still_raise_cleanly(fake_graph: FakeGraph) -> None:
+    """The retry is a single attempt, not a loop — a Graph outage that
+    401s persistently must still surface as a clean refusal, not hang
+    or retry indefinitely."""
+    provider = TeamsMeetingProvider(_settings())
+    fake_graph.force_401_count = 2
+    with pytest.raises(MeetingProviderUnavailable):
+        await provider.create_meeting(
+            session=_FakeWorkshopSession(),  # type: ignore[arg-type]
+            organiser_user_id=uuid.uuid4(),
+            attendee_emails=[],
+        )
+    assert fake_graph.token_calls == 2

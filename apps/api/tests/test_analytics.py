@@ -29,9 +29,11 @@ import pytest
 import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from src.core.db import dispose_engine, init_engine
+from src.core.ids import uuid7
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
+from src.models.event import Event
 from src.models.rbac import RoleAssignment
 from src.services import identity
 
@@ -423,5 +425,90 @@ async def test_podcast_engagement_requires_analytics_view(  # type: ignore[no-un
     learner = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
     resp = await client.get(
         "/api/v1/analytics/podcast-engagement", headers={"Authorization": f"Bearer {learner}"}
+    )
+    assert resp.status_code == 403
+
+
+async def test_podcast_engagement_skips_a_malformed_episode_id_instead_of_500ing(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Overall-review F7: only log_podcast_event writes cta.course_clicked
+    rows today, and it always writes a real UUID — but the aggregation
+    reads event_properties back out of JSONB with no schema behind it.
+    A hand-inserted (or future-writer) row with junk in episode_id must
+    degrade the leaderboard by one row, not 500 the whole dashboard."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+
+    async with tenant_session_factory(tenant_id) as s:
+        s.add(
+            Event(
+                id=uuid7(),
+                tenant_id=tenant_id,
+                anonymous_id=uuid7(),
+                event_name="podcast.cta.course_clicked",
+                event_properties={"episode_id": "not-a-real-uuid"},
+                consent_marketing=False,
+                consent_analytics=True,
+            )
+        )
+
+    resp = await client.get(
+        "/api/v1/analytics/podcast-engagement?preset=last_1y",
+        headers={"Authorization": f"Bearer {admin}"},
+    )
+    assert resp.status_code == 200, resp.text
+    # The malformed row is skipped in the leaderboard specifically, not
+    # silently dropped from every count — it still counts toward
+    # cta_clicks (a plain GROUP BY event_name, no JSONB parsing).
+    assert "not-a-real-uuid" not in {
+        row["episode_id"] for row in resp.json()["top_cta_episodes"]
+    }
+
+
+async def test_podcast_engagement_csv_matches_the_json_report(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Overall-review I1: /analytics/podcast-engagement had no CSV
+    export, despite the router's own module docstring promising "a CSV
+    twin of each" report."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {admin}"}
+
+    json_resp = await client.get(
+        "/api/v1/analytics/podcast-engagement?preset=last_1y", headers=headers
+    )
+    assert json_resp.status_code == 200, json_resp.text
+    body = json_resp.json()
+
+    csv_resp = await client.get(
+        "/api/v1/analytics/podcast-engagement/export.csv?preset=last_1y", headers=headers
+    )
+    assert csv_resp.status_code == 200, csv_resp.text
+    assert 'filename="podcast-engagement.csv"' in csv_resp.headers["content-disposition"]
+
+    rows = _parse_csv(csv_resp.text)
+    engagement = {r["label"]: r["count"] for r in rows if r["section"] == "engagement"}
+    assert int(engagement["episode_views"]) == body["episode_views"]
+    assert int(engagement["cta_clicks"]) == body["cta_clicks"]
+
+    csv_titles = {r["label"] for r in rows if r["section"] == "top_cta_episodes"}
+    json_titles = {row["title"] for row in body["top_cta_episodes"]}
+    assert csv_titles == json_titles
+
+
+async def test_podcast_engagement_csv_requires_analytics_view(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None)
+    resp = await client.get(
+        "/api/v1/analytics/podcast-engagement/export.csv",
+        headers={"Authorization": f"Bearer {learner}"},
     )
     assert resp.status_code == 403
