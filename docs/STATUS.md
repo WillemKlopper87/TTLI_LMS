@@ -1,6 +1,76 @@
 # STATUS
 
-**Updated:** 2026-08-24 (third pass, same day) — **P7 Phase 3: ICS /
+**Updated:** 2026-08-24 (fourth pass, same day) — **P7 Phase 4: the
+workshop-credit economy.** Fourth of five (`docs/BACKLOG.md` P7;
+REQ-WS-04, previously a hardcoded `0` on the dashboard with a comment
+saying there was no table to count). `Workshop.requires_credit`
+(migration `0036`, Phase 1 — opt-in per workshop, default `false`,
+every existing free/open workshop's booking flow is untouched
+byte-for-byte). `services/workshops.py` gained
+`_consume_workshop_credit`/`_refund_workshop_credit`: `book_session`
+draws the caller's oldest valid `workshop_credit` entitlement (the
+same `revoked_at IS NULL` / unexpired filter `entitlements.py::
+has_valid_course_entitlement` already established) when the workshop
+requires one, refusing cleanly once none have `quantity > 0`, and
+records `Booking.consumed_entitlement_id` for provenance — the same
+role `PathEnrolment.entitlement_id` plays for P5. **A credit is spent
+on *either* a `"registered"` or a `"waitlisted"` booking, not
+registered-only** — a later waitlist promotion happens inside
+`_cancel_booking_row`'s existing logic on someone else's cancellation,
+never through a fresh `book_session` call, so registered-only would
+let a promoted seat go uncharged. `_cancel_booking_row` (the shared
+state-transition helper Phase 1 extracted for `cancel_booking` and
+`cancel_session`) now always refunds a consumed credit, which composes
+for free with `reschedule_booking`'s existing cancel-then-rebook shape
+into a same-workshop credit *transfer* rather than a double-charge —
+no new logic needed there beyond one clarifying comment.
+`services/catalogue.py::create_product`/`update_product` gained a
+`workshop_id` bridge column, mutually exclusive with `course_id`/
+`learning_path_id`, inferring `kind="workshop_credit"` — mirrors P5's
+`learning_path_id` bridge exactly, including `list_all_products`'s
+join growing to four columns, called out with an explicit docstring
+warning against the exact tuple-unpack drift bug P5's own review pass
+(`docs/research/p5-review-findings.md`) previously caught in that same
+function. `services/orders.py::_fulfil_order` gained a `workshop_credit`
+branch: the entitlement grant itself, with no enrolment fan-out, is
+the entire fulfilment — a credit is a balance, not a membership.
+New `PATCH /workshops/{id}` — there was previously no way to edit a
+workshop at all after creation, needed so the admin UI's new toggle
+has somewhere to write. Admin UI: a "Requires a credit to book"
+checkbox and a "Sell credits" panel (create product → add price →
+put on sale) on `/admin/workshops`, mirroring P5's "Sell this path"
+section in the paths editor almost exactly.
+Verified: 2 new API tests — a full purchase → book (decrements) →
+refuse (exhausted) → cancel (refunds) → book again (decrements again)
+→ refuse again loop, asserted against the `Entitlement.quantity` row
+itself (via `tenant_session_factory`) rather than only HTTP status
+codes, so a refusal that happened to be right for the wrong reason
+(e.g. a capacity limit) couldn't pass by accident; plus a regression
+pin that a `requires_credit=false` workshop's booking is unaffected.
+Full suite green, `ruff`/`mypy`/`ruff format --check` clean, `alembic
+check` clean (no drift — Phase 1's migration already covers every
+column this phase reads), web `typecheck`/`lint`/`build` clean,
+axe-clean on the new admin panels (the one pre-existing `empty-table-
+header` minor finding on the unrelated sessions-table action columns
+predates this phase and wasn't introduced by it). Live-smoked end to
+end through a real browser and a from-scratch buyer/finance pair of
+accounts: toggled the credit gate on for a fresh workshop, created and
+priced a credit product, confirmed a booking attempt was refused with
+zero credits held, bought one credit via a real EFT purchase approved
+by a finance user, booked successfully, and confirmed the resulting
+booking renders correctly on `/learn/sessions`.
+**Environment note, this pass**: Docker Desktop's engine had stopped
+between sessions (containers were healthy 18 hours prior, unreachable
+at the start of this pass) — restarted via `docker compose up -d`,
+confirmed healthy, no data loss (named volumes, not recreated). A
+Playwright `waitForURL` default (`waitUntil: "load"`) hung the full
+45s timeout against this app's client-side post-login redirect (a
+`router.push()`, which never fires a document `load` event) even
+though the redirect itself completes in ~6s in this dev-mode
+environment — worked around by polling `page.url()` directly instead
+of trusting the lifecycle wait; not an application bug, a smoke-script
+one.
+Prior, same day — **P7 Phase 3: ICS /
 calendar invites.** Third of five (`docs/BACKLOG.md` P7; REQ-WS-05's
 "send calendar invite"). New `services/ics.py::build_ics` — hand-rolled
 `VCALENDAR`/`VEVENT` text, no new dependency (the same "one format,

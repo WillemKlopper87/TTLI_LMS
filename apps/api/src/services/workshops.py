@@ -17,6 +17,7 @@ from src.core.crypto import CryptoBox
 from src.core.errors import AppError, Forbidden, NotFound
 from src.core.ids import uuid7
 from src.models.audit import AuditAction
+from src.models.commerce import Entitlement
 from src.models.user import User
 from src.models.workshop import (
     ATTENDANCE_STATUS_VALUES,
@@ -143,6 +144,20 @@ async def create_workshop(
         default_duration_minutes=default_duration_minutes,
     )
     session.add(workshop)
+    await session.flush()
+    return workshop
+
+
+async def update_workshop(
+    session: AsyncSession, *, tenant_id: uuid.UUID, workshop_id: uuid.UUID, requires_credit: bool
+) -> Workshop:
+    """P7 phase 4: flips the credit gate. Existing sessions/bookings are
+    untouched either way — the flag is only read at the moment a new
+    `book_session` call is made."""
+    workshop = await session.get(Workshop, workshop_id)
+    if workshop is None or workshop.tenant_id != tenant_id:
+        raise NotFound("No such workshop.")
+    workshop.requires_credit = requires_credit
     await session.flush()
     return workshop
 
@@ -371,9 +386,8 @@ async def cancel_session(
 ) -> WorkshopSession:
     """Cancels the whole session, not one booking (P7, REQ-WS-03) — the
     gap this codebase had zero code path for until now. Cancels every
-    active booking, refunds a consumed credit for each (Phase 4 wires
-    that half in; harmless no-op until then since consumed_entitlement_id
-    is always null before it), cancels the provider meeting, and tells
+    active booking (refunding any credit each one consumed, via
+    `_cancel_booking_row`), cancels the provider meeting, and tells
     every affected registrant.
 
     `actor_user_id` is trusted, not re-checked here — the router calls
@@ -482,6 +496,48 @@ async def list_public_sessions(
     return out
 
 
+async def _consume_workshop_credit(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, workshop_id: uuid.UUID
+) -> uuid.UUID:
+    """P7 phase 4: draws one credit from the learner's oldest valid
+    `workshop_credit` entitlement for this workshop — same revoked/
+    expired filter `entitlements.py::has_valid_course_entitlement`
+    already established, so a lapsed/refunded credit pack can't be
+    drawn from just because a row still exists. `book_session` is the
+    only caller, and only when `Workshop.requires_credit` is set."""
+    now = datetime.now(UTC)
+    stmt = (
+        select(Entitlement)
+        .where(
+            Entitlement.tenant_id == tenant_id,
+            Entitlement.user_id == user_id,
+            Entitlement.kind == "workshop_credit",
+            Entitlement.target_id == workshop_id,
+            Entitlement.revoked_at.is_(None),
+            (Entitlement.expires_at.is_(None)) | (Entitlement.expires_at > now),
+            Entitlement.quantity > 0,
+        )
+        .order_by(Entitlement.granted_at)
+    )
+    entitlement = (await session.execute(stmt)).scalars().first()
+    if entitlement is None:
+        raise WorkshopError("No workshop credits remaining — purchase a session pack.")
+    entitlement.quantity = (entitlement.quantity or 0) - 1
+    await session.flush()
+    return entitlement.id
+
+
+async def _refund_workshop_credit(session: AsyncSession, *, entitlement_id: uuid.UUID) -> None:
+    """The `_cancel_booking_row` half of the pair above — always
+    refunds, no cancellation-deadline logic invented since none is
+    specified anywhere in the requirements this phase closes."""
+    entitlement = await session.get(Entitlement, entitlement_id)
+    if entitlement is None:  # pragma: no cover - FK guarantees this
+        return
+    entitlement.quantity = (entitlement.quantity or 0) + 1
+    await session.flush()
+
+
 async def book_session(
     session: AsyncSession,
     crypto: CryptoBox,
@@ -496,6 +552,9 @@ async def book_session(
         raise NotFound("No such session.")
     if workshop_session.status != "scheduled":
         raise WorkshopError("This session is no longer taking bookings.")
+    workshop = await session.get(Workshop, workshop_session.workshop_id)
+    if workshop is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such workshop.")
 
     existing = (
         await session.execute(
@@ -508,12 +567,29 @@ async def book_session(
     registered, _ = await seat_counts(session, session_id=session_id)
     status = "registered" if registered < workshop_session.capacity else "waitlisted"
 
+    # P7 phase 4: a credit is spent to claim a spot, waitlisted or not
+    # — refunded on any cancellation below, same as a registered spot's
+    # credit would be. Consuming only on confirmed registration would
+    # leave a later waitlist promotion (_cancel_booking_row's own logic)
+    # with no credit ever drawn for a seat that did fill.
+    consumed_entitlement_id: uuid.UUID | None = None
+    if workshop.requires_credit:
+        consumed_entitlement_id = await _consume_workshop_credit(
+            session, tenant_id=tenant_id, user_id=user_id, workshop_id=workshop.id
+        )
+
     if existing is not None:
         existing.status = status
+        existing.consumed_entitlement_id = consumed_entitlement_id
         booking = existing
     else:
         booking = Booking(
-            id=uuid7(), tenant_id=tenant_id, session_id=session_id, user_id=user_id, status=status
+            id=uuid7(),
+            tenant_id=tenant_id,
+            session_id=session_id,
+            user_id=user_id,
+            status=status,
+            consumed_entitlement_id=consumed_entitlement_id,
         )
         session.add(booking)
     await session.flush()
@@ -593,9 +669,11 @@ async def reschedule_booking(
     if target_session.workshop_id != old_session.workshop_id:
         raise WorkshopError("Reschedule only moves you to another session of the same workshop.")
 
+    # A credit transfer, not a double-charge, when the workshop requires
+    # one: _cancel_booking_row refunds whatever the old booking consumed,
+    # book_session below consumes fresh for the target — same workshop,
+    # so a requires_credit workshop nets to zero credits spent overall.
     await _cancel_booking_row(session, booking=booking, resulting_status="rescheduled")
-    # Phase 4 will make this a credit transfer (refund old, consume
-    # new) rather than a plain re-book, once workshop_credit exists.
     return await book_session(
         session,
         crypto,
@@ -615,9 +693,16 @@ async def _cancel_booking_row(
     waitlist-promotion and attendance-record bookkeeping either way.
     `resulting_status` is `"cancelled"` normally, `"rescheduled"` when
     called from `reschedule_booking` (Phase 2) — the `attendance_status`
-    enum has carried that value, unused, since `0018`."""
+    enum has carried that value, unused, since `0018`.
+
+    Always refunds a consumed workshop credit (Phase 4) — no
+    cancellation-deadline forfeiture is specified anywhere, so none is
+    invented here."""
     was_registered = booking.status == "registered"
     booking.status = "cancelled"
+
+    if booking.consumed_entitlement_id is not None:
+        await _refund_workshop_credit(session, entitlement_id=booking.consumed_entitlement_id)
 
     record = (
         await session.execute(
@@ -882,4 +967,5 @@ __all__ = [
     "remove_session_facilitator",
     "reschedule_booking",
     "seat_counts",
+    "update_workshop",
 ]

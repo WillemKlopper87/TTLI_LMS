@@ -43,6 +43,7 @@ from src.schemas.workshops import (
     RosterRowResponse,
     SessionResponse,
     SessionsPage,
+    UpdateWorkshopRequest,
     WorkshopResponse,
     WorkshopsPage,
 )
@@ -172,6 +173,7 @@ async def create_workshop(
         description=workshop.description,
         session_type=workshop.session_type,
         default_duration_minutes=workshop.default_duration_minutes,
+        requires_credit=workshop.requires_credit,
     )
 
 
@@ -186,9 +188,31 @@ async def list_workshops(principal: PrincipalDep, session: SessionDep) -> Worksh
                 description=w.description,
                 session_type=w.session_type,
                 default_duration_minutes=w.default_duration_minutes,
+                requires_credit=w.requires_credit,
             )
             for w in workshops
         ]
+    )
+
+
+@router.patch("/workshops/{workshop_id}", response_model=WorkshopResponse)
+async def update_workshop(
+    workshop_id: str, body: UpdateWorkshopRequest, principal: PrincipalDep, session: SessionDep
+) -> WorkshopResponse:
+    principal.require("workshop:manage")
+    workshop = await workshops_service.update_workshop(
+        session,
+        tenant_id=principal.tenant_id,
+        workshop_id=_parse_uuid(workshop_id),
+        requires_credit=body.requires_credit,
+    )
+    return WorkshopResponse(
+        id=str(workshop.id),
+        title=workshop.title,
+        description=workshop.description,
+        session_type=workshop.session_type,
+        default_duration_minutes=workshop.default_duration_minutes,
+        requires_credit=workshop.requires_credit,
     )
 
 

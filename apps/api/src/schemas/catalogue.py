@@ -21,8 +21,12 @@ class ProductCreateRequest(BaseModel):
     # because 02 §6.1 allows a sellable wrapper with no course behind it.
     course_id: str | None = None
     # Mutually exclusive with course_id — services/catalogue.py::
-    # create_product refuses both set (P5).
+    # create_product refuses more than one set (P5).
     learning_path_id: str | None = None
+    # Mutually exclusive with the two above — a workshop-credit product
+    # (P7 phase 4). Sells a *balance*, not the workshop itself; booking
+    # stays free/open unless the workshop's own `requires_credit` is set.
+    workshop_id: str | None = None
 
 
 class ProductUpdateRequest(BaseModel):
@@ -30,6 +34,7 @@ class ProductUpdateRequest(BaseModel):
     description: str | None = None
     course_id: str | None = None
     learning_path_id: str | None = None
+    workshop_id: str | None = None
     is_active: bool | None = None
 
 
@@ -57,6 +62,8 @@ class AdminProductResponse(BaseModel):
     course_title: str | None
     learning_path_id: str | None
     learning_path_title: str | None
+    workshop_id: str | None
+    workshop_title: str | None
     # Non-null means this product is owned by a subscription plan and must
     # be edited through the plan, not here.
     subscription_plan_id: str | None

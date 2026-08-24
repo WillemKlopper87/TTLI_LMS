@@ -30,6 +30,7 @@ from src.models.commerce import OrderItem, Price, Product
 from src.models.course import Course, CourseTenantAssignment
 from src.models.learning_path import LearningPath, LearningPathTenantAssignment
 from src.models.subscription import SubscriptionPlanCourse
+from src.models.workshop import Workshop
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,8 @@ class AdminProductRow:
     course_title: str | None
     learning_path_id: uuid.UUID | None
     learning_path_title: str | None
+    workshop_id: uuid.UUID | None
+    workshop_title: str | None
     subscription_plan_id: uuid.UUID | None
     prices: list[PriceRow]
 
@@ -201,6 +204,25 @@ async def _assert_path_sellable(
     return path
 
 
+async def _assert_workshop_sellable(
+    session: AsyncSession, *, tenant_id: uuid.UUID, workshop_id: uuid.UUID
+) -> Workshop:
+    """The workshop equivalent of `_assert_course_sellable`/`_assert_
+    path_sellable` (P7 phase 4) — but simpler: unlike a course or path
+    (global content, made sellable via a tenant-assignment join table),
+    a `Workshop` row is already tenant-scoped at the column level
+    (`0018`) — no separate assignment table exists or is needed, this
+    just confirms the workshop being sold is this tenant's own."""
+    workshop = (
+        await session.execute(select(Workshop).where(Workshop.id == workshop_id))
+    ).scalar_one_or_none()
+    if workshop is None:
+        raise NotFound("Workshop not found.")
+    if workshop.tenant_id != tenant_id:
+        raise CatalogueError("That workshop belongs to a different tenant.")
+    return workshop
+
+
 async def create_product(
     session: AsyncSession,
     *,
@@ -210,20 +232,29 @@ async def create_product(
     description: str | None,
     course_id: uuid.UUID | None,
     learning_path_id: uuid.UUID | None = None,
+    workshop_id: uuid.UUID | None = None,
 ) -> Product:
-    """Create a one-time-purchase product, optionally bound to a course
-    or a learning path (never both — a product sells one sellable thing).
+    """Create a one-time-purchase product, optionally bound to a course,
+    a learning path, or a workshop (never more than one — a product
+    sells one sellable thing).
 
-    `kind` is "path" when `learning_path_id` is given, "course"
-    otherwise — the same inference `Product.course_id`'s own docstring
-    already made unavoidable once a second bridge column existed.
-    Subscription products are created by `subscriptions.create_plan`
-    instead, which owns the plan/product/price triple as one unit —
-    creating one through this path would leave a subscription product
-    with no plan behind it.
+    `kind` is "workshop_credit" when `workshop_id` is given, "path"
+    when `learning_path_id` is given, "course" otherwise — the same
+    inference `Product.course_id`'s own docstring already made
+    unavoidable once a second bridge column existed, now a third
+    (P7 phase 4). A workshop-credit product doesn't make a workshop
+    itself purchasable — booking stays free/open unless `Workshop.
+    requires_credit` is set — it sells a *balance* a learner draws down
+    one booking at a time. Subscription products are created by
+    `subscriptions.create_plan` instead, which owns the plan/product/
+    price triple as one unit — creating one through this path would
+    leave a subscription product with no plan behind it.
     """
-    if course_id is not None and learning_path_id is not None:
-        raise CatalogueError("A product sells a course or a learning path, never both.")
+    bridges_set = sum(x is not None for x in (course_id, learning_path_id, workshop_id))
+    if bridges_set > 1:
+        raise CatalogueError(
+            "A product sells a course, a learning path, or workshop credits — never more than one."
+        )
 
     clash = (
         await session.execute(
@@ -237,6 +268,15 @@ async def create_product(
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
     if learning_path_id is not None:
         await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
+    if workshop_id is not None:
+        await _assert_workshop_sellable(session, tenant_id=tenant_id, workshop_id=workshop_id)
+
+    if workshop_id is not None:
+        kind = "workshop_credit"
+    elif learning_path_id is not None:
+        kind = "path"
+    else:
+        kind = "course"
 
     product = Product(
         id=uuid7(),
@@ -244,9 +284,10 @@ async def create_product(
         slug=slug,
         name=name,
         description=description,
-        kind="path" if learning_path_id is not None else "course",
+        kind=kind,
         course_id=course_id,
         learning_path_id=learning_path_id,
+        workshop_id=workshop_id,
         # Inactive on creation, deliberately: a product with no price yet
         # would otherwise appear in the public catalogue with nothing to
         # buy. Publishing is a second, explicit step once a price exists.
@@ -267,6 +308,7 @@ async def update_product(
     course_id: uuid.UUID | None,
     is_active: bool | None,
     learning_path_id: uuid.UUID | None = None,
+    workshop_id: uuid.UUID | None = None,
 ) -> Product:
     product = await _get_own_product(session, tenant_id=tenant_id, product_id=product_id)
 
@@ -277,16 +319,21 @@ async def update_product(
         product.name = name
     if description is not None:
         product.description = description
-    # Same "never both" rule create_product enforces (F3, docs/research/
-    # p5-review-findings.md) — checked against the product's *existing*
-    # opposite field, not just the two incoming params, since a PATCH
-    # only ever sends one of them at a time. Without this, a course
-    # product could gain a learning_path_id (or vice versa) with `kind`
+    # Same "never more than one" rule create_product enforces (F3,
+    # docs/research/p5-review-findings.md, extended to three bridges in
+    # P7 phase 4) — checked against the product's *existing* other two
+    # fields, not just the incoming param, since a PATCH only ever
+    # sends one bridge at a time. Without this a course product could
+    # gain a learning_path_id/workshop_id (or vice versa) with `kind`
     # left stale, and fulfilment would grant the wrong thing silently.
     if course_id is not None:
         if product.learning_path_id is not None:
             raise CatalogueError(
                 "This product already sells a learning path — it can't also sell a course."
+            )
+        if product.workshop_id is not None:
+            raise CatalogueError(
+                "This product already sells workshop credits — it can't also sell a course."
             )
         await _assert_course_sellable(session, tenant_id=tenant_id, course_id=course_id)
         product.course_id = course_id
@@ -295,8 +342,23 @@ async def update_product(
             raise CatalogueError(
                 "This product already sells a course — it can't also sell a learning path."
             )
+        if product.workshop_id is not None:
+            raise CatalogueError(
+                "This product already sells workshop credits — it can't also sell a learning path."
+            )
         await _assert_path_sellable(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
         product.learning_path_id = learning_path_id
+    if workshop_id is not None:
+        if product.course_id is not None:
+            raise CatalogueError(
+                "This product already sells a course — it can't also sell workshop credits."
+            )
+        if product.learning_path_id is not None:
+            raise CatalogueError(
+                "This product already sells a learning path — it can't also sell workshop credits."
+            )
+        await _assert_workshop_sellable(session, tenant_id=tenant_id, workshop_id=workshop_id)
+        product.workshop_id = workshop_id
 
     if is_active is True:
         # Refuse to publish a product nobody can actually buy. The
@@ -386,14 +448,23 @@ async def _get_own_product(
 async def list_all_products(
     session: AsyncSession, *, tenant_id: uuid.UUID
 ) -> list[AdminProductRow]:
-    """Every product this tenant owns, active or not, with its course or
-    learning path (a product has at most one of the two — services.
-    catalogue::create_product refuses both set)."""
+    """Every product this tenant owns, active or not, with its course,
+    learning path, or workshop (a product has at most one of the three
+    — services.catalogue::create_product refuses more than one set).
+
+    Every row-unpacking site below was updated together when `Workshop.
+    title` was added as a fourth joined column (P7 phase 4) — the exact
+    class of bug the P5 review found here once already (a joined column
+    added but a downstream tuple-unpack left assuming the old arity,
+    500ing this endpoint the moment a real row existed): `product_ids`
+    below and the final list comprehension both destructure all four
+    columns now, not just the two that changed this time."""
     rows = (
         await session.execute(
-            select(Product, Course.title, LearningPath.title)
+            select(Product, Course.title, LearningPath.title, Workshop.title)
             .outerjoin(Course, Course.id == Product.course_id)
             .outerjoin(LearningPath, LearningPath.id == Product.learning_path_id)
+            .outerjoin(Workshop, Workshop.id == Product.workshop_id)
             .where(Product.tenant_id == tenant_id)
             .order_by(Product.name)
         )
@@ -401,7 +472,7 @@ async def list_all_products(
     if not rows:
         return []
 
-    product_ids = [p.id for p, _, _ in rows]
+    product_ids = [p.id for p, _, _, _ in rows]
     prices = (
         (await session.execute(select(Price).where(Price.product_id.in_(product_ids))))
         .scalars()
@@ -430,10 +501,12 @@ async def list_all_products(
             course_title=course_title,
             learning_path_id=p.learning_path_id,
             learning_path_title=path_title,
+            workshop_id=p.workshop_id,
+            workshop_title=workshop_title,
             subscription_plan_id=p.subscription_plan_id,
             prices=prices_by_product.get(p.id, []),
         )
-        for p, course_title, path_title in rows
+        for p, course_title, path_title, workshop_title in rows
     ]
 
 

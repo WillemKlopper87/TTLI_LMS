@@ -54,10 +54,19 @@ class WorkshopResponse(BaseModel):
     description: str | None
     session_type: str
     default_duration_minutes: int
+    requires_credit: bool
 
 
 class WorkshopsPage(BaseModel):
     items: list[WorkshopResponse]
+
+
+class UpdateWorkshopRequest(BaseModel):
+    """P7 phase 4: the only field an admin needs to flip after creation
+    so far is the credit gate — title/description edits weren't asked
+    for and aren't added speculatively."""
+
+    requires_credit: bool
 
 
 class CreateSessionRequest(BaseModel):
@@ -189,6 +198,7 @@ __all__ = [
     "RosterRowResponse",
     "SessionResponse",
     "SessionsPage",
+    "UpdateWorkshopRequest",
     "WorkshopResponse",
     "WorkshopsPage",
 ]

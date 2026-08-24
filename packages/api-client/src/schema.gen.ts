@@ -1665,6 +1665,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workshops/{workshop_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Workshop */
+        patch: operations["update_workshop_api_v1_workshops__workshop_id__patch"];
+        trace?: never;
+    };
     "/api/v1/workshops/{workshop_id}/sessions": {
         parameters: {
             query?: never;
@@ -3940,6 +3957,10 @@ export interface components {
             learning_path_id: string | null;
             /** Learning Path Title */
             learning_path_title: string | null;
+            /** Workshop Id */
+            workshop_id: string | null;
+            /** Workshop Title */
+            workshop_title: string | null;
             /** Subscription Plan Id */
             subscription_plan_id: string | null;
             /** Prices */
@@ -6371,6 +6392,8 @@ export interface components {
             course_id?: string | null;
             /** Learning Path Id */
             learning_path_id?: string | null;
+            /** Workshop Id */
+            workshop_id?: string | null;
         };
         /** ProductSummary */
         ProductSummary: {
@@ -6401,6 +6424,8 @@ export interface components {
             course_id?: string | null;
             /** Learning Path Id */
             learning_path_id?: string | null;
+            /** Workshop Id */
+            workshop_id?: string | null;
             /** Is Active */
             is_active?: boolean | null;
         };
@@ -7845,6 +7870,16 @@ export interface components {
             /** Manager Visibility */
             manager_visibility: string;
         };
+        /**
+         * UpdateWorkshopRequest
+         * @description P7 phase 4: the only field an admin needs to flip after creation
+         *     so far is the credit gate — title/description edits weren't asked
+         *     for and aren't added speculatively.
+         */
+        UpdateWorkshopRequest: {
+            /** Requires Credit */
+            requires_credit: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -7952,6 +7987,8 @@ export interface components {
             session_type: string;
             /** Default Duration Minutes */
             default_duration_minutes: number;
+            /** Requires Credit */
+            requires_credit: boolean;
         };
         /** WorkshopsPage */
         WorkshopsPage: {
@@ -11262,6 +11299,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkshopResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workshop_api_v1_workshops__workshop_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkshopRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -27,6 +27,22 @@ interface WorkshopItem {
   description: string | null;
   session_type: string;
   default_duration_minutes: number;
+  requires_credit: boolean;
+}
+
+interface PriceRow {
+  id: string;
+  currency: string;
+  unit_amount: string;
+  tax_behaviour: string;
+}
+
+interface CreditProduct {
+  id: string;
+  name: string;
+  is_active: boolean;
+  workshop_id: string | null;
+  prices: PriceRow[];
 }
 
 interface SessionItem {
@@ -80,6 +96,7 @@ const BOOKING_TAG: Record<string, string> = {
 export default function WorkshopsScreen() {
   const { me } = useAdmin();
   const canManage = me.permissions.includes("workshop:manage");
+  const canManageProducts = me.permissions.includes("product:manage");
 
   const [facilitators, setFacilitators] = useState<Facilitator[] | null>(null);
   const [workshops, setWorkshops] = useState<WorkshopItem[] | null>(null);
@@ -117,6 +134,12 @@ export default function WorkshopsScreen() {
   const [sessionFacilitators, setSessionFacilitators] = useState<Facilitator[] | null>(null);
   const [addCoFacilitatorId, setAddCoFacilitatorId] = useState("");
   const [coFacilitatorBusy, setCoFacilitatorBusy] = useState(false);
+
+  const [requiresCreditBusy, setRequiresCreditBusy] = useState(false);
+  const [creditProduct, setCreditProduct] = useState<CreditProduct | null>(null);
+  const [creditProductBusy, setCreditProductBusy] = useState(false);
+  const [creditPriceAmount, setCreditPriceAmount] = useState("");
+  const [creditPriceCurrency, setCreditPriceCurrency] = useState("ZAR");
 
   async function authedFetch(path: string, init: RequestInit = {}) {
     const token = getAccessToken();
@@ -208,8 +231,92 @@ export default function WorkshopsScreen() {
     setSelectedWorkshopId(workshopId);
     setSessions(null);
     setRosterSessionId(null);
+    setCreditProduct(null);
     const resp = await authedFetch(`/api/bff/workshops/${workshopId}/sessions`);
     if (resp.ok) setSessions((await resp.json()).items);
+    if (canManageProducts) await loadCreditProduct(workshopId);
+  }
+
+  async function loadCreditProduct(workshopId: string) {
+    const resp = await authedFetch("/api/bff/catalogue/products");
+    if (!resp.ok) return;
+    const items: CreditProduct[] = (await resp.json()).items;
+    setCreditProduct(items.find((p) => p.workshop_id === workshopId) ?? null);
+  }
+
+  async function toggleRequiresCredit(workshop: WorkshopItem) {
+    setRequiresCreditBusy(true);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/workshops/${workshop.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requires_credit: !workshop.requires_credit }),
+    });
+    setRequiresCreditBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not update this workshop.");
+      return;
+    }
+    await loadWorkshops();
+  }
+
+  async function createCreditProduct(workshop: WorkshopItem) {
+    setCreditProductBusy(true);
+    setError(null);
+    const resp = await authedFetch("/api/bff/catalogue/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slug: `${workshop.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-credit`,
+        name: `${workshop.title} — session credit`,
+        workshop_id: workshop.id,
+      }),
+    });
+    setCreditProductBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not create the credit product.");
+      return;
+    }
+    await loadCreditProduct(workshop.id);
+  }
+
+  async function addCreditPrice() {
+    if (!creditProduct || !creditPriceAmount) return;
+    setCreditProductBusy(true);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/catalogue/products/${creditProduct.id}/prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currency: creditPriceCurrency, unit_amount: creditPriceAmount }),
+    });
+    setCreditProductBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not add that price.");
+      return;
+    }
+    setCreditPriceAmount("");
+    if (selectedWorkshopId) await loadCreditProduct(selectedWorkshopId);
+  }
+
+  async function setCreditProductActive(isActive: boolean) {
+    if (!creditProduct) return;
+    setCreditProductBusy(true);
+    setError(null);
+    const resp = await authedFetch(`/api/bff/catalogue/products/${creditProduct.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: isActive }),
+    });
+    setCreditProductBusy(false);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not update the credit product.");
+      return;
+    }
+    if (selectedWorkshopId) await loadCreditProduct(selectedWorkshopId);
   }
 
   async function createSession() {
@@ -543,8 +650,121 @@ export default function WorkshopsScreen() {
 
         {selectedWorkshopId ? (
           <div className="mt-4">
+            {(() => {
+              const selectedWorkshop = workshops.find((w) => w.id === selectedWorkshopId);
+              if (!selectedWorkshop || (!canManage && !canManageProducts)) return null;
+              return (
+                <div className="card p-4">
+                  <b style={{ fontSize: "0.8125rem" }}>Booking</b>
+                  {canManage ? (
+                    <label
+                      className="mt-2 flex items-center gap-2"
+                      style={{ fontSize: "0.8125rem" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedWorkshop.requires_credit}
+                        disabled={requiresCreditBusy}
+                        onChange={() => void toggleRequiresCredit(selectedWorkshop)}
+                      />
+                      Requires a credit to book
+                    </label>
+                  ) : null}
+
+                  {canManageProducts && selectedWorkshop.requires_credit ? (
+                    <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--rule)" }}>
+                      <b style={{ fontSize: "0.8125rem" }}>Sell credits</b>
+                      {creditProduct === null ? (
+                        <>
+                          <p
+                            className="mt-1"
+                            style={{ fontSize: "0.8125rem", color: "var(--muted)" }}
+                          >
+                            No credit product yet — learners cannot buy a seat until one exists.
+                          </p>
+                          <button
+                            type="button"
+                            className="btn btn--primary mt-2"
+                            disabled={creditProductBusy}
+                            onClick={() => void createCreditProduct(selectedWorkshop)}
+                          >
+                            Create credit product
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p
+                            className="mt-1 flex items-center gap-2"
+                            style={{ fontSize: "0.8125rem" }}
+                          >
+                            <span>{creditProduct.name}</span>
+                            <span
+                              className={`tag ${creditProduct.is_active ? "tag--done" : "tag--mute"}`}
+                            >
+                              {creditProduct.is_active ? "on sale" : "inactive"}
+                            </span>
+                          </p>
+                          <ul className="mt-2 flex flex-col gap-1">
+                            {creditProduct.prices.map((p) => (
+                              <li key={p.id} style={{ fontSize: "0.8125rem" }}>
+                                {p.currency} {p.unit_amount}
+                              </li>
+                            ))}
+                            {creditProduct.prices.length === 0 ? (
+                              <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+                                No price yet.
+                              </p>
+                            ) : null}
+                          </ul>
+                          <div className="mt-2 flex items-end gap-2">
+                            <label className="field">
+                              <span>Currency</span>
+                              <input
+                                className="input"
+                                style={{ width: "5rem" }}
+                                value={creditPriceCurrency}
+                                onChange={(e) =>
+                                  setCreditPriceCurrency(e.target.value.toUpperCase())
+                                }
+                                maxLength={3}
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Amount</span>
+                              <input
+                                className="input"
+                                value={creditPriceAmount}
+                                onChange={(e) => setCreditPriceAmount(e.target.value)}
+                                placeholder="e.g. 500.00"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={creditProductBusy || !creditPriceAmount}
+                              onClick={() => void addCreditPrice()}
+                            >
+                              Add price
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn--ghost mt-2"
+                            disabled={creditProductBusy || creditProduct.prices.length === 0}
+                            onClick={() => void setCreditProductActive(!creditProduct.is_active)}
+                          >
+                            {creditProduct.is_active ? "Take off sale" : "Put on sale"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
+
             {canManage ? (
-              <div className="card p-4">
+              <div className="card p-4 mt-4">
                 <b style={{ fontSize: "0.8125rem" }}>Schedule a session</b>
                 <div className="mt-2 flex flex-wrap items-end gap-2">
                   <label className="field">

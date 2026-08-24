@@ -419,10 +419,11 @@ async def _fulfil_order(
             )
             continue
 
-        # Product.kind is "course"/"path" for everything sold so far —
-        # target_id resolves to the real course/path (Phase 4/P5), not the
-        # product's own id used as a stand-in before courses existed (see
-        # git history on services/entitlements.py's docstring).
+        # Product.kind is "course"/"path"/"workshop_credit" for
+        # everything sold so far — target_id resolves to the real
+        # course/path/workshop (Phase 4/P5, P7 phase 4), not the
+        # product's own id used as a stand-in before courses existed
+        # (see git history on services/entitlements.py's docstring).
         if product.kind == "course":
             if product.course_id is None:
                 raise OrderError(
@@ -437,6 +438,13 @@ async def _fulfil_order(
                     "path; cannot grant entitlement."
                 )
             target_id = product.learning_path_id
+        elif product.kind == "workshop_credit":
+            if product.workshop_id is None:
+                raise OrderError(
+                    f"Product {product.slug!r} is a workshop-credit product with no linked "
+                    "workshop; cannot grant entitlement."
+                )
+            target_id = product.workshop_id
         else:
             target_id = product.id
 
@@ -490,6 +498,11 @@ async def _fulfil_order(
                 learning_path_id=target_id,
                 path_entitlement_id=entitlement.id,
             )
+        # workshop_credit deliberately has no branch here (P7 phase 4):
+        # the entitlement just granted, with quantity=item.quantity, is
+        # the entire fulfilment — a credit is a balance, not an
+        # enrolment. services/workshops.py::book_session finds and
+        # decrements it later, at the moment a learner actually books.
 
     order.status = "fulfilled"
     await session.flush()

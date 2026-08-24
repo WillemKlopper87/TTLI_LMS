@@ -19,6 +19,7 @@ from src.core.db import dispose_engine, init_engine
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
+from src.models.commerce import Entitlement
 from src.models.rbac import RoleAssignment
 from src.services import identity
 
@@ -823,3 +824,189 @@ async def test_booking_calendar_ics_is_owner_only_and_shaped_correctly(
         headers={"Authorization": f"Bearer {learner_token}"},
     )
     assert "STATUS:CANCELLED" in ics_after_cancel.content.decode("utf-8")
+
+
+async def test_workshop_credit_purchase_book_cancel_refund_and_exhaustion(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P7 phase 4: a `requires_credit` workshop only lets a learner book
+    while they hold an unspent `workshop_credit` entitlement. Exercises
+    the full loop — real EFT purchase, decrement on book, refund on
+    cancel, decrement again, then a clean refusal once exhausted —
+    against both the HTTP surface and the entitlement row itself, so a
+    refusal that happened to be right for the wrong reason (e.g. a
+    capacity limit) wouldn't pass this test by accident."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    gated = await client.patch(
+        f"/api/v1/workshops/{workshop_id}",
+        json={"requires_credit": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert gated.status_code == 200, gated.text
+    assert gated.json()["requires_credit"] is True
+
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"workshop-credit-{uuid.uuid4().hex[:8]}",
+                "name": "Coaching Session Credit",
+                "workshop_id": workshop_id,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "500.00"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}",
+        json={"is_active": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    finance_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    learner_token, learner_id, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    learner_auth = {"Authorization": f"Bearer {learner_token}"}
+
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**learner_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 201, order.text
+    checkout = await client.post(
+        f"/api/v1/orders/{order.json()['id']}/checkout/eft", headers=learner_auth
+    )
+    assert checkout.status_code == 200, checkout.text
+    await client.post(
+        f"/api/v1/orders/{order.json()['id']}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=learner_auth,
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{checkout.json()['payment_id']}/approve",
+        headers={
+            "Authorization": f"Bearer {finance_token}",
+            "Idempotency-Key": uuid.uuid4().hex,
+        },
+    )
+    assert approved.status_code == 200, approved.text
+
+    async def _entitlement_quantity() -> int:
+        async with tenant_session_factory(tenant_id) as s:
+            row = (
+                await s.execute(
+                    sa.select(Entitlement).where(
+                        Entitlement.tenant_id == tenant_id,
+                        Entitlement.user_id == learner_id,
+                        Entitlement.kind == "workshop_credit",
+                        Entitlement.target_id == uuid.UUID(workshop_id),
+                    )
+                )
+            ).scalar_one()
+        return row.quantity or 0
+
+    assert await _entitlement_quantity() == 1
+
+    starts = _next_weekday_at(1, 9)
+
+    async def _create_session(offset_hours: int) -> str:
+        s = starts + timedelta(hours=offset_hours)
+        resp = await client.post(
+            f"/api/v1/workshops/{workshop_id}/sessions",
+            json={
+                "facilitator_id": facilitator_id,
+                "starts_at": s.isoformat(),
+                "ends_at": (s + timedelta(hours=1)).isoformat(),
+                "capacity": 5,
+            },
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201, resp.text
+        return str(resp.json()["id"])
+
+    session_1 = await _create_session(0)
+    session_2 = await _create_session(1)
+    session_3 = await _create_session(2)
+
+    booking_1 = await client.post(f"/api/v1/sessions/{session_1}/book", headers=learner_auth)
+    assert booking_1.status_code == 200, booking_1.text
+    assert await _entitlement_quantity() == 0
+
+    refused = await client.post(f"/api/v1/sessions/{session_2}/book", headers=learner_auth)
+    assert refused.status_code == 400, refused.text
+    assert "credit" in refused.json()["error"]["message"].lower()
+
+    cancelled = await client.post(
+        f"/api/v1/bookings/{booking_1.json()['id']}/cancel", headers=learner_auth
+    )
+    assert cancelled.status_code == 204, cancelled.text
+    assert await _entitlement_quantity() == 1
+
+    booking_2 = await client.post(f"/api/v1/sessions/{session_2}/book", headers=learner_auth)
+    assert booking_2.status_code == 200, booking_2.text
+    assert await _entitlement_quantity() == 0
+
+    refused_again = await client.post(f"/api/v1/sessions/{session_3}/book", headers=learner_auth)
+    assert refused_again.status_code == 400, refused_again.text
+    assert "credit" in refused_again.json()["error"]["message"].lower()
+
+
+async def test_booking_without_requires_credit_needs_no_purchase(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Regression pin (P7 phase 4): a workshop that never opts into
+    `requires_credit` books exactly as it always did — no product, no
+    price, no purchase, straight through to a registered booking."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    starts = _next_weekday_at(1, 9)
+    session_resp = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": starts.isoformat(),
+            "ends_at": (starts + timedelta(hours=1)).isoformat(),
+            "capacity": 5,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    session_id = session_resp.json()["id"]
+
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booking = await client.post(
+        f"/api/v1/sessions/{session_id}/book",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert booking.status_code == 200, booking.text
+    assert booking.json()["status"] == "registered"
