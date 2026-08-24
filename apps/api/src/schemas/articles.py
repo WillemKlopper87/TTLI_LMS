@@ -45,8 +45,19 @@ class ArticlesPageResponse(BaseModel):
     items: list[ArticleResponse]
 
 
+class ArticleEventRequest(BaseModel):
+    """R3 (docs/BACKLOG.md; docs/research/resources-hub-design.md §4
+    decision 3) — "at least a viewed event for symmetry" with podcasts'
+    listen-stat set. One event today, not six: the shape still mirrors
+    `PodcastEventRequest`'s `event_name` field so a later pass can add
+    more without a breaking change."""
+
+    event_name: str
+
+
 __all__ = [
     "ArticleCreateRequest",
+    "ArticleEventRequest",
     "ArticleResponse",
     "ArticleUpdateRequest",
     "ArticlesPageResponse",

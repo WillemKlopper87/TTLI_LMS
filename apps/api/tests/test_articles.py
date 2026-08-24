@@ -214,3 +214,48 @@ async def test_unpublishing_an_article_removes_it_from_the_public_listing(
 
     after = await client.get("/api/v1/public/articles", headers={"X-Tenant-Host": TENANT_HOST})
     assert not any(a["id"] == article_id for a in after.json()["items"])
+
+
+async def test_article_view_event_accepts_viewed_rejects_unknown_and_unpublished(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """R3: "at least a viewed event for symmetry" with podcasts' six —
+    the exact contract the frontend's `ArticleViewTracker` client leaf
+    relies on, mirroring `test_podcasts.py`'s own event-logging test."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    article_id = await _make_article(client, admin_token)
+    slug = (
+        await client.get(
+            f"/api/v1/articles/{article_id}", headers={"Authorization": f"Bearer {admin_token}"}
+        )
+    ).json()["slug"]
+
+    # Not yet published — the event endpoint reuses get_published_article,
+    # so it 404s the same way the public detail route already does.
+    unpublished = await client.post(
+        f"/api/v1/public/articles/{slug}/events",
+        json={"event_name": "article.viewed"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert unpublished.status_code == 404
+
+    await client.post(
+        f"/api/v1/articles/{article_id}/publish", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    ok = await client.post(
+        f"/api/v1/public/articles/{slug}/events",
+        json={"event_name": "article.viewed"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert ok.status_code == 204, ok.text
+
+    rejected = await client.post(
+        f"/api/v1/public/articles/{slug}/events",
+        json={"event_name": "not.a.real.event"},
+        headers={"X-Tenant-Host": TENANT_HOST},
+    )
+    assert rejected.status_code == 404

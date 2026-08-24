@@ -3211,6 +3211,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/articles/{slug}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log an article engagement event (viewed), no auth required */
+        post: operations["log_article_event_api_v1_public_articles__slug__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/recommendations": {
         parameters: {
             query?: never;
@@ -3392,6 +3409,23 @@ export interface paths {
         };
         /** Registrations in a period, by package and by organisation */
         get: operations["registrations_api_v1_analytics_registrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/podcast-engagement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Plays, completion rate, click-through rate and top CTA-converting episodes */
+        get: operations["podcast_engagement_api_v1_analytics_podcast_engagement_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3985,6 +4019,18 @@ export interface components {
             author_name?: string | null;
             /** Related Course Id */
             related_course_id?: string | null;
+        };
+        /**
+         * ArticleEventRequest
+         * @description R3 (docs/BACKLOG.md; docs/research/resources-hub-design.md §4
+         *     decision 3) — "at least a viewed event for symmetry" with podcasts'
+         *     listen-stat set. One event today, not six: the shape still mirrors
+         *     `PodcastEventRequest`'s `event_name` field so a later pass can add
+         *     more without a breaking change.
+         */
+        ArticleEventRequest: {
+            /** Event Name */
+            event_name: string;
         };
         /** ArticleResponse */
         ArticleResponse: {
@@ -6228,6 +6274,31 @@ export interface components {
             /** Currency */
             currency: string;
         };
+        /**
+         * PodcastEngagementResponse
+         * @description R2 (docs/BACKLOG.md; docs/research/podcast-platform-integration.md
+         *     §6's explicit hand-off note) — the six `podcast.*` event names
+         *     `routers/podcasts.py::log_podcast_event` already writes into the
+         *     shared `events` table, aggregated. Raw counts only, no server-side
+         *     rates: completion rate and click-through rate are `value/total`
+         *     the same way every other share on this dashboard is — computed by
+         *     the frontend's existing `ShareRow`, not duplicated here.
+         */
+        PodcastEngagementResponse: {
+            period: components["schemas"]["PeriodResponse"];
+            /** Episode Views */
+            episode_views: number;
+            /** Plays Started */
+            plays_started: number;
+            /** Plays Completed */
+            plays_completed: number;
+            /** Embed Click Throughs */
+            embed_click_throughs: number;
+            /** Cta Clicks */
+            cta_clicks: number;
+            /** Top Cta Episodes */
+            top_cta_episodes: components["schemas"]["TopCtaEpisode"][];
+        };
         /** PodcastEpisodeCreateRequest */
         PodcastEpisodeCreateRequest: {
             /** Kind */
@@ -7794,6 +7865,15 @@ export interface components {
             token_type: string;
             /** Expires In */
             expires_in: number;
+        };
+        /** TopCtaEpisode */
+        TopCtaEpisode: {
+            /** Episode Id */
+            episode_id: string;
+            /** Title */
+            title: string;
+            /** Course Clicks */
+            course_clicks: number;
         };
         /** TranscriptLessonResponse */
         TranscriptLessonResponse: {
@@ -14457,6 +14537,39 @@ export interface operations {
             };
         };
     };
+    log_article_event_api_v1_public_articles__slug__events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArticleEventRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_recommendations_api_v1_recommendations_get: {
         parameters: {
             query?: never;
@@ -14835,6 +14948,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegistrationsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    podcast_engagement_api_v1_analytics_podcast_engagement_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodcastEngagementResponse"];
                 };
             };
             /** @description Validation Error */

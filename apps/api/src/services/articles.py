@@ -29,6 +29,19 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _WORDS_PER_MINUTE = 200
 
 
+class ArticleEventName:
+    """R3 (docs/BACKLOG.md; resources-hub-design.md §4 decision 3) — the
+    one event articles get "for symmetry" with podcasts' six, mirroring
+    `services/podcasts.py::PodcastEventName`'s own placement (service
+    layer, not the router, so a future reader — an analytics panel —
+    can share the constant without depending on router internals)."""
+
+    VIEWED = "article.viewed"
+
+
+ALLOWED_ARTICLE_EVENT_NAMES = {ArticleEventName.VIEWED}
+
+
 class ArticleError(AppError):
     """A refusal in article authoring — an unpublishable article (no
     body) or any other invalid state transition this module enforces."""
@@ -190,7 +203,9 @@ async def resolve_cover_image_url(storage: StorageService, article: Article) -> 
 
 
 __all__ = [
+    "ALLOWED_ARTICLE_EVENT_NAMES",
     "ArticleError",
+    "ArticleEventName",
     "create_article",
     "get_article",
     "get_published_article",

@@ -5,11 +5,14 @@ import ReactMarkdown from "react-markdown";
 import { formatDate, joinMeta } from "@/lib/format";
 import { getPublicArticle, getPublicCurriculum } from "@/lib/server-api";
 
+import ArticleViewTracker from "./view-tracker";
+
 /**
  * A published article (resources-hub design doc §2.3). Server-rendered,
- * unlike the podcast detail page — an article has no player state and
- * (per the design doc §4 decision 3) no view-event tracking yet, so
- * there is nothing here that needs the browser.
+ * unlike the podcast detail page — an article has no player state, so
+ * the only thing that needs the browser is `ArticleViewTracker`
+ * (R3: a "viewed" event now exists, for symmetry with podcasts' six),
+ * kept as its own small client leaf so the page around it stays SSR.
  *
  * `body` is rendered through `react-markdown` rather than
  * `dangerouslySetInnerHTML` — it never touches raw HTML, so even though
@@ -42,6 +45,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
 
   return (
     <main className="pad-lg">
+      <ArticleViewTracker slug={slug} />
       <div className="article">
         <div>
           <p className="eyebrow">{eyebrow}</p>

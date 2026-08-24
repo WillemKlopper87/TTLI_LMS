@@ -18,11 +18,13 @@ from src.core.errors import NotFound
 from src.models.article import Article
 from src.schemas.articles import (
     ArticleCreateRequest,
+    ArticleEventRequest,
     ArticleResponse,
     ArticlesPageResponse,
     ArticleUpdateRequest,
 )
 from src.services import articles as articles_service
+from src.services import events
 from src.services.storage.base import StorageService
 
 router = APIRouter(tags=["articles"])
@@ -160,6 +162,26 @@ async def get_public_article(
 ) -> ArticleResponse:
     article = await articles_service.get_published_article(session, tenant_id=tenant.id, slug=slug)
     return await _response(storage, article)
+
+
+@router.post(
+    "/public/articles/{slug}/events",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Log an article engagement event (viewed), no auth required",
+)
+async def log_article_event(
+    slug: str, body: ArticleEventRequest, session: SessionDep, tenant: TenantDep
+) -> None:
+    if body.event_name not in articles_service.ALLOWED_ARTICLE_EVENT_NAMES:
+        raise NotFound("Unknown event name.")
+    article = await articles_service.get_published_article(session, tenant_id=tenant.id, slug=slug)
+    await events.record(
+        session,
+        tenant_id=tenant.id,
+        event_name=body.event_name,
+        properties={"article_id": str(article.id)},
+    )
 
 
 __all__ = ["router"]

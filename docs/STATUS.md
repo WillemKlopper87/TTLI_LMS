@@ -1,6 +1,93 @@
 # STATUS
 
-**Updated:** 2026-08-24 (fifth pass, same day) — **P7 Phase 5: the
+**Updated:** 2026-08-24 (sixth pass, same day) — **Backlog loose ends:
+R14, O13, R8, R2, R3, R5.** User asked to clear the small/S-M-sized
+backlog rows before the next big build. Six items, five commits (docs
+folded into the code commits, R5 needed none):
+
+**R14** — `tests/test_analytics.py` (new): 10 tests covering `/revenue-
+summary`, `/registrations` and both CSV twins, the four endpoints
+`test_operations.py` never touched. Pins the arithmetic each service
+function's own docstring promises rather than incidental values.
+
+**O13** — `core/object_keys.py::build_object_key()`: joins server-
+controlled prefix segments with a sanitised filename in one call, so a
+future upload site can't skip sanitising by forgetting the join (the
+2026-08-21 fix's `safe_filename` existed, but all six call sites still
+hand-rolled their own f-string around it). Migrated all six (`orders.py`
+PO/proof, `media.py` source/playback, `assessment.py` submissions,
+`podcasts.py` audio). **Caught a real edge case mid-refactor**: two
+sites fused a `uuid4().hex` uniqueness prefix into the filename with a
+hyphen before sanitising — running that combined string through
+`safe_filename` would silently drop the prefix for a client filename
+containing a `/`, since `safe_filename` keeps only the last segment.
+Fixed by making the uuid its own path segment instead of string-fusing
+it. 6 new unit tests.
+
+**R8** — `app/robots.ts` (new): no `robots.txt` existed at all.
+`User-agent: *` disallows purely functional, no-SEO-value surfaces
+(admin, account, checkout, auth, the API); `GPTBot`/`CCBot`/
+`ClaudeBot`/`Google-Extended` additionally disallow the paid/
+substantive content pages (courses, the free-preview player, the
+learner course player, paths, podcasts, articles, workshops) — real
+search engines and human-driven AI fetch (Googlebot, ChatGPT-User) stay
+free to index them, the 2026 pattern the research doc cites. Verified
+live against the dev server's actual generated output, not just read
+back from the source.
+
+**R2** — "Podcast engagement" panel on `/admin/analytics`. New
+`GET /analytics/podcast-engagement`: episode views, plays started/
+completed, embed click-throughs, CTA clicks, and the top 5 CTA-
+converting episodes — reading the same `podcast.*` events
+`routers/podcasts.py::log_podcast_event` already writes, this
+codebase's first-ever read path over the `events` table. `PodcastEventName`
+moved from the router into `services/podcasts.py` so the new analytics
+read path could share the constants without a service importing from a
+router. **A real bug caught by this pass's own new test before it ever
+shipped**: the top-CTA-episodes query built the same
+`event_properties["episode_id"].astext` expression twice (once for
+SELECT, once for GROUP BY) — two separate SQLAlchemy expression objects
+bind the same literal key as two different parameters, so Postgres saw
+them as different expressions and raised `GroupingError`. Fixed by
+building the expression once and reusing the same object. Rates
+(completion rate, click-through rate) are raw counts run through the
+dashboard's existing `ShareRow` component client-side, not precomputed
+server-side — consistent with every other percentage on this page. 12
+new API tests (delta-based, not absolute counts, against the shared
+demo tenant), full suite green, axe-clean. Live-smoked: the panel
+renders real data from a real browser session.
+
+**R3** — `article.viewed` event, "for symmetry" with podcasts' six.
+New `POST /public/articles/{slug}/events` (one allowed event name
+today, same request shape as `PodcastEventRequest` so a later pass can
+add more without a breaking change) and `ArticleViewTracker`, a small
+`"use client"` leaf mounted inside the article page — which stays a
+server component, deliberately crawlable, per its own docstring. Fires
+once per real browser render, the same "client-fired, not inferred
+from the SSR fetch" discipline `app/podcasts/[slug]/page.tsx`'s
+`logEvent` already established, avoiding search-engine/AI-crawler
+traffic (now real, thanks to R8's `robots.txt`) inflating the count. 6
+new API tests. Live-smoked: a fresh published article, confirmed the
+POST actually fires from a real page load.
+
+**R5** — **found already fully built, the backlog row was stale**
+(same class as R1/R6 earlier this project): `services/course_wizard.py::
+_estimate_lesson_minutes` already computes exactly what R5 asked for
+(video via `duration_seconds`, documents via word count, quizzes via
+question count, plus surveys/assignments beyond the original ask);
+`routers/courses.py`'s `list_public_courses`/`get_public_curriculum`
+already sum it into `estimated_minutes` on both `GET /public/courses`
+and the curriculum endpoint; `app/catalogue/course-card.tsx` already
+renders it via `formatDuration()`. Confirmed live against the demo
+tenant's real courses — non-zero, correctly computed minutes. No code
+changed; `docs/BACKLOG.md` corrected.
+
+Verified across all five real changes: full backend suite green,
+`ruff`/`mypy`/`ruff format --check` clean, web `typecheck`/`lint`/
+`build` clean, axe-clean (one pre-existing `heading-order` finding on
+the article page predates this pass and wasn't introduced by it).
+
+Prior, same day — **P7 Phase 5: the
 real Microsoft Teams provider — P7 is now DONE.** Last of five
 (`docs/BACKLOG.md` P7; REQ-WS-05/06). `services/meeting/teams.py`
 rewritten from the stub that always raised: a real client-credentials
