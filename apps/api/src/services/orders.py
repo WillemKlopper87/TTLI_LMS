@@ -400,6 +400,18 @@ async def _fulfil_order(
         session, tenant_id=tenant_id, order=order, supplier_vat_number=supplier_vat_number
     )
 
+    # REQ-LEAD-07: a guest who pays keeps the same email and the same
+    # account — this just lifts the guest flag rather than creating a
+    # second user, so nothing needs "carrying forward" (a guest's own
+    # preview access is view-only and never touches an Enrolment; see
+    # services/guest_access.py). Without this, guest_expires_at keeps
+    # ticking after a real purchase and eventually locks the now-paying
+    # customer out of the very account they bought with.
+    buyer = await session.get(User, order.user_id)
+    if buyer is not None and buyer.is_guest:
+        buyer.is_guest = False
+        buyer.guest_expires_at = None
+
     items = (
         await session.execute(select(OrderItem).where(OrderItem.order_id == order.id))
     ).scalars()

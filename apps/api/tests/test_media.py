@@ -354,6 +354,64 @@ async def test_playback_requires_a_real_enrolment(
     assert resp.status_code == 403
 
 
+async def test_guest_playback_of_a_public_lesson_is_watermarked_as_sample(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """P13/REQ-LEAD-05: a guest's stream must read as sample content, not
+    just be traced by identity like a paying learner's. A brand new lesson
+    is used (not the shared seeded position=1 one every other test in this
+    file attaches to) so this can't affect those tests' access checks."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+    async with tenant_session_factory(tenant_id) as s:
+        module_id = str(
+            (
+                await s.execute(
+                    sa.text(
+                        "SELECT m.id FROM modules m JOIN courses c ON c.id = m.course_id "
+                        "WHERE c.slug = 'executive-leadership-certificate' LIMIT 1"
+                    )
+                )
+            ).scalar_one()
+        )
+    lesson = await client.post(
+        f"/api/v1/modules/{module_id}/lessons",
+        json={"title": "Guest Sample Lesson", "access_level": "public"},
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert lesson.status_code == 201, lesson.text
+    lesson_id = lesson.json()["id"]
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+
+    guest_email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=guest_email, is_guest=True, guest_days=7
+        )
+        raw = await identity.create_magic_link(
+            s, crypto, tenant_id=tenant_id, email=guest_email, minutes=15
+        )
+    consumed = await client.post("/api/v1/auth/magic-link/consume", json={"token": raw})
+    assert consumed.status_code == 200, consumed.text
+    guest_token = consumed.json()["access_token"]
+
+    resp = await client.get(
+        f"/api/v1/media/{video_asset_id}/playback",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["watermark"]["text"].startswith("SAMPLE · GUEST ACCESS · ")
+
+
 async def test_enrolled_learner_can_play_and_the_manifest_carries_the_token(
     client, tenant_session_factory, crypto, sample_video
 ) -> None:  # type: ignore[no-untyped-def]

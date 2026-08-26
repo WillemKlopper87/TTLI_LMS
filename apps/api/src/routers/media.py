@@ -244,6 +244,15 @@ async def get_playback(
 
     user = await session.get(User, principal.user_id)
     email = crypto.decrypt(user.email_encrypted) if user is not None else "unknown"
+    # REQ-LEAD-05: guest playback is watermarked as sample content, not
+    # just traced by identity like a paying learner's — the only content
+    # a guest can ever reach here is already access_level="public" (the
+    # entitlement check above), so this never fires for real coursework.
+    watermark_text = (
+        f"SAMPLE · GUEST ACCESS · {email}"
+        if user is not None and user.is_guest
+        else f"{email} · {_client_ip(request)}"
+    )
 
     return PlaybackResponse(
         # Relative to this API's own root (no /api/v1 prefix) — the BFF is
@@ -256,7 +265,7 @@ async def get_playback(
         if asset.caption_object_key is not None
         else None,
         expires_at=datetime.now(UTC) + timedelta(seconds=settings.playback_url_expiry_seconds),
-        watermark=WatermarkPayload(text=f"{email} · {_client_ip(request)}", opacity=0.18),
+        watermark=WatermarkPayload(text=watermark_text, opacity=0.18),
     )
 
 

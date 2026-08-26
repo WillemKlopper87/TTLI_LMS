@@ -383,6 +383,104 @@ async def test_authored_course_can_be_sold_and_bought_end_to_end(  # type: ignor
     assert any(e["course_id"] == course_id for e in enrolments.json())
 
 
+async def test_guest_who_buys_a_course_is_converted_to_a_full_account(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """P13/REQ-LEAD-07: a guest's own trial window must not outlive a real
+    purchase. Without services/orders.py::_fulfil_order clearing is_guest,
+    a guest who buys a course keeps ticking down to guest_expires_at and
+    eventually gets locked out of the very account they paid with."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    admin_auth = {"Authorization": f"Bearer {admin}"}
+
+    course_id = await _author_course(client, admin)
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": _unique_slug(),
+                "name": "Guest Conversion Test Programme",
+                "description": "Sold to a guest, who should stop being one.",
+                "course_id": course_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "500.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+
+    guest_email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=guest_email, is_guest=True, guest_days=7
+        )
+        raw = await identity.create_magic_link(
+            s, crypto, tenant_id=tenant_id, email=guest_email, minutes=15
+        )
+    consumed = await client.post("/api/v1/auth/magic-link/consume", json={"token": raw})
+    assert consumed.status_code == 200, consumed.text
+    guest_auth = {"Authorization": f"Bearer {consumed.json()['access_token']}"}
+
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**guest_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 201, order.text
+    order_id = order.json()["id"]
+
+    checkout = await client.post(f"/api/v1/orders/{order_id}/checkout/eft", headers=guest_auth)
+    assert checkout.status_code == 200, checkout.text
+    payment_id = checkout.json()["payment_id"]
+
+    proof = await client.post(
+        f"/api/v1/orders/{order_id}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=guest_auth,
+    )
+    assert proof.status_code == 204, proof.text
+
+    finance = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{payment_id}/approve",
+        headers={"Authorization": f"Bearer {finance}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approved.status_code == 200, approved.text
+
+    async with tenant_session_factory(tenant_id) as s:
+        row = (
+            await s.execute(
+                sa.text(
+                    "SELECT is_guest, guest_expires_at FROM users WHERE email_blind_index = :idx"
+                ),
+                {"idx": crypto.blind_index(guest_email)},
+            )
+        ).first()
+    assert row is not None
+    assert row[0] is False
+    assert row[1] is None
+
+    # Same email, same account — genuinely enrolled, not a second user.
+    enrolments = await client.get("/api/v1/enrolments", headers=guest_auth)
+    assert enrolments.status_code == 200, enrolments.text
+    assert any(e["course_id"] == course_id for e in enrolments.json())
+
+
 async def test_attaching_a_bridge_to_a_draft_product_reinfers_kind(  # type: ignore[no-untyped-def]
     client, tenant_session_factory, crypto
 ) -> None:

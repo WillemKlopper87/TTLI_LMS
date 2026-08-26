@@ -1301,11 +1301,14 @@ Marketing pages, resource hub, podcasts, gated content, consent management, lead
 - [x] The podcast platform (REQ-STORE-04, `0026`, `docs/research/podcast-platform-integration.md`) — see the dedicated subsection below for the full detail. Supersedes the original "fabricate placeholder copy" plan for this same requirement with a real, richer build: TTLI's own self-hosted episodes, admin-curated third-party recommendations with attribution, a click-to-load Spotify embed, and listen-stat events
 - [x] A real resources hub at `/resources` (podcast section, a merged "what our facilitators recommend" list, articles, the book, newsletter signup) replacing the old bare redirect to `/podcasts` — `docs/research/resources-hub-design.md`'s full staged target is now built, all three stages. Stage 2: articles (`0030`, tenant-scoped like `podcast_episodes`, reuses `podcast:manage`) — `GET/POST/PATCH /articles*` (admin) and `GET /public/articles*` (no auth), `reading_minutes` computed at publish time from a ~200wpm heuristic, `/resources/articles/[slug]` rendering the markdown body through `react-markdown` (not `dangerouslySetInnerHTML`). Stage 3: `recommendations` (`0031`, one size down from articles — no body/reading-time/slug/detail route), merged with curated podcast episodes into one visual list rather than two headings (design doc §3.2) — no admin authoring UI for either yet, content managed via the API directly or `scripts/seed_demo_content.py`
 
+### Done — P13 guest access closes REQ-LEAD-05/07
+
+- [x] REQ-LEAD-07's guest→paid conversion — `services/orders.py::_fulfil_order` now clears `is_guest`/`guest_expires_at` on the buyer once a direct order is fulfilled, so a guest's original trial window can no longer lock them out of an account they've since paid for. REQ-LEAD-05's "sample-only, watermarked" turned out to already hold structurally (a guest never gets an Enrolment — preview access is view-only) except the watermark itself, which didn't read as sample content: `routers/media.py::get_playback` now marks a guest's stream `"SAMPLE · GUEST ACCESS · {email}"` instead of the regular identity-tracing text
+
 ### Outstanding — blocked on Phase 0 or genuinely not started
 
 - [ ] "Cultivate with Intent" as a dedicated route — the real site names it in its nav, but no page content was ever extracted, so building it now would mean fabricating copy. Same content-inventory gap as Phase 0, not a missed task
 - [ ] Real TTLI podcast episode content (audio, transcripts, Spotify links) — the platform itself is now real and working (above), but genuinely empty: the same content-inventory extraction gap, not an engineering gap
-- [ ] REQ-LEAD-05's sample-only entitlement/watermarking and REQ-LEAD-07's guest→paid conversion — both need course/enrolment tables that don't exist yet (Phase 4)
 - [ ] The full CRM (`deals`, `tasks`, `notes`, `activities`, `campaigns`, `segments`, email tables) — deliberately out of scope here; that's Phase 5 (02 §10), and is in fact complete there
 
 ### Done — the podcast platform in detail

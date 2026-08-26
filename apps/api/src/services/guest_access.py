@@ -6,13 +6,22 @@ creates — or reuses — a time-limited user tied to that contact's email.
 `guest_days` is caller-supplied so the expiry window stays configurable
 rather than hardcoded: 01 §1.4 decision #6 (7 vs 14 days) is still unsigned.
 
-Sample-only entitlements and watermarking (REQ-LEAD-05) and guest-to-paid
-conversion carrying progress forward (REQ-LEAD-07) both need course/
-enrolment tables that don't exist yet (Phase 4) — out of scope here. So is
-the hourly expiry-downgrade sweep (02 §12.4's "Guest expiry sweep"): expiry
-is enforced at the two points that actually gate access — magic-link
-consumption and refresh rotation (services/identity.py, services/tokens.py)
-— rather than by a background job that doesn't exist yet.
+REQ-LEAD-05's "sample-only, watermarked" is satisfied structurally, not by
+anything in this module: a guest never gets an Enrolment (preview access
+is view-only — see services/enrolment.py's has_access_to_video/
+can_view_preview, gated on Lesson.access_level == "public" regardless of
+who's asking), and routers/media.py::get_playback marks a guest's stream
+with a distinct "SAMPLE · GUEST ACCESS" watermark instead of the regular
+identity-tracing one. REQ-LEAD-07's conversion (same email, no separate
+account) lives in services/orders.py::_fulfil_order, which clears
+is_guest/guest_expires_at the moment a guest's order is fulfilled — there
+is no "progress" to carry forward because preview never wrote any.
+
+The hourly expiry-downgrade sweep (02 §12.4's "Guest expiry sweep") is
+still out of scope: expiry is enforced at the two points that actually
+gate access — magic-link consumption and refresh rotation
+(services/identity.py, services/tokens.py) — rather than by a background
+job that doesn't exist yet.
 """
 
 from __future__ import annotations
