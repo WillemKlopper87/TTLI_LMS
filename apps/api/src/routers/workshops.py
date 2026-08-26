@@ -50,6 +50,7 @@ from src.schemas.workshops import (
 from src.services import identity
 from src.services import workshops as workshops_service
 from src.services.ics import IcsEvent, build_ics
+from src.services.meeting.meet import MeetMeetingProvider
 from src.services.meeting.teams import TeamsMeetingProvider
 from src.services.meeting.zoom import ZoomMeetingProvider
 
@@ -193,6 +194,7 @@ async def list_workshops(
         items=[_workshop_response(w) for w in workshops],
         teams_configured=TeamsMeetingProvider(settings).is_configured(),
         zoom_configured=ZoomMeetingProvider(settings).is_configured(),
+        meet_configured=MeetMeetingProvider(settings).is_configured(),
     )
 
 

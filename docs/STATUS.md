@@ -1,5 +1,50 @@
 # STATUS
 
+**Updated:** 2026-08-26 (second pass, same day) — **P13 phase 5: the
+real Google Meet provider.** `docs/BACKLOG.md` P13. `services/meeting/
+meet.py`, new — mirrors the Teams and Zoom providers' exact rigor:
+Google Calendar API v3 `events.insert` with `conferenceData.
+createRequest{conferenceSolutionKey.type: "hangoutsMeet"}`, on one
+platform-wide impersonated Workspace user (`Settings.
+google_organiser_email`, same one-service-identity design as
+`graph_organiser_upn`/`zoom_organiser_email`) reached via a service
+account's domain-wide delegation — a JWT-bearer assertion signed
+RS256 (`PyJWT` + `cryptography`, both already dependencies used
+elsewhere in this codebase for this service's own tokens and OIDC
+verification — no new library, the same one used one algorithm
+differently) exchanged at `https://oauth2.googleapis.com/token`.
+`events.insert`/`.patch`/`.delete` with `sendUpdates=all` cover all
+four REQ-WS-05 verbs in one resource, same as Teams' calendar-event
+design — Calendar itself emails the invite and cancellation notice.
+Facilitators and registrants are both event *attendees* (Google has no
+separate registrants/alternative-hosts split the way Zoom does), added/
+removed one at a time via the same GET-mutate-PATCH shape Teams'
+`_patch_attendees` uses.
+
+`get_provider("meet", ...)` wired in — every value in the `meeting_
+provider` DB enum (`manual`/`teams`/`zoom`/`meet`) now has a real
+client. `UpdateWorkshopRequest.meeting_provider`'s pattern widened to
+`^(manual|teams|zoom|meet)$` (nothing outside the enum is still
+refused). Admin provider selector gained a Google Meet option with the
+same "not configured" warning the other two have (`GET /workshops` now
+also carries `meet_configured`).
+
+**Verified only this far — explicitly bounded, same disclosure as
+Teams and Zoom**: no Google Workspace service account with domain-wide
+delegation has been provisioned in this environment, so this cannot be
+live-tested against a real Meet call. `GOOGLE_SERVICE_ACCOUNT_EMAIL`/
+`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`/`GOOGLE_ORGANISER_EMAIL` are all
+empty by default and `is_configured()` refuses cleanly. **The code is
+real and unit-tested against mocked Google responses** — 12 new tests
+in `test_meeting_meet.py`, including one that signs a real (test-only)
+RSA key pair and verifies the JWT-bearer assertion's signature and
+claims rather than just asserting a string was sent — live behaviour
+should be smoke-tested before any tenant selects Meet as its provider.
+
+`ruff`/`mypy`/`pytest -q` (full suite) clean; web `typecheck`/`build`
+clean.
+
+
 **Updated:** 2026-08-26 — **P13, phases 1–4: LinkedIn share, CPD
 fields, guest→paid conversion, sample watermark, real Zoom provider.**
 `docs/BACKLOG.md` P13 — small demo-visible items, picked up after the

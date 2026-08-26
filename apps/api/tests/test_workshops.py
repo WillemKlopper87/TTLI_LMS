@@ -1013,15 +1013,14 @@ async def test_booking_without_requires_credit_needs_no_purchase(
     assert booking.json()["status"] == "registered"
 
 
-async def test_meeting_provider_selector_accepts_teams_and_zoom_refuses_meet(
+async def test_meeting_provider_selector_accepts_every_real_provider_refuses_garbage(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
-    """A workshop defaults to `manual` and can be switched to `teams` or
-    `zoom` (P7 phase 5 and P13 phase 4 — the three providers
-    `services/meeting/__init__.py::get_provider` actually implements).
-    `meet` still exists only in the DB enum for a future phase
-    (docs/BACKLOG.md P13) and is refused at the schema layer rather than
-    accepted and 400ing later at booking time."""
+    """A workshop defaults to `manual` and can be switched to any of
+    `teams`/`zoom`/`meet` — the four providers `services/meeting/
+    __init__.py::get_provider` actually implements (P7 phase 5, P13
+    phases 4/5). Anything outside the DB enum is refused at the schema
+    layer rather than accepted and failing later at booking time."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token, _, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
@@ -1034,31 +1033,26 @@ async def test_meeting_provider_selector_accepts_teams_and_zoom_refuses_meet(
     assert created.status_code == 200, created.text
     assert "teams_configured" in created.json()
     assert "zoom_configured" in created.json()
+    assert "meet_configured" in created.json()
     row = next(w for w in created.json()["items"] if w["id"] == workshop_id)
     assert row["meeting_provider"] == "manual"
 
-    switched = await client.patch(
-        f"/api/v1/workshops/{workshop_id}",
-        json={"meeting_provider": "teams"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
-    assert switched.status_code == 200, switched.text
-    assert switched.json()["meeting_provider"] == "teams"
-    # requires_credit wasn't in this body — confirms the partial-update
-    # semantics (Phase 5) didn't reset the field PATCH didn't mention.
-    assert switched.json()["requires_credit"] is False
-
-    switched_to_zoom = await client.patch(
-        f"/api/v1/workshops/{workshop_id}",
-        json={"meeting_provider": "zoom"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
-    assert switched_to_zoom.status_code == 200, switched_to_zoom.text
-    assert switched_to_zoom.json()["meeting_provider"] == "zoom"
+    for provider in ("teams", "zoom", "meet", "manual"):
+        switched = await client.patch(
+            f"/api/v1/workshops/{workshop_id}",
+            json={"meeting_provider": provider},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert switched.status_code == 200, switched.text
+        assert switched.json()["meeting_provider"] == provider
+        # requires_credit wasn't in this body — confirms the partial-
+        # update semantics (Phase 5) didn't reset the field PATCH
+        # didn't mention.
+        assert switched.json()["requires_credit"] is False
 
     refused = await client.patch(
         f"/api/v1/workshops/{workshop_id}",
-        json={"meeting_provider": "meet"},
+        json={"meeting_provider": "webex"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert refused.status_code == 422, refused.text

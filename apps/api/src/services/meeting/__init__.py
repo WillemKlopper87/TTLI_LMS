@@ -4,6 +4,7 @@ from src.core.config import Settings
 from src.core.errors import AppError
 from src.services.meeting.base import MeetingDetails, MeetingProvider, MeetingProviderUnavailable
 from src.services.meeting.manual import ManualMeetingProvider
+from src.services.meeting.meet import MeetMeetingProvider
 from src.services.meeting.teams import TeamsMeetingProvider
 from src.services.meeting.zoom import ZoomMeetingProvider
 
@@ -15,6 +16,8 @@ def get_provider(name: str, *, settings: Settings) -> MeetingProvider:
         return TeamsMeetingProvider(settings)
     if name == "zoom":
         return ZoomMeetingProvider(settings)
+    if name == "meet":
+        return MeetMeetingProvider(settings)
     raise AppError(f"Unknown meeting provider: {name}")
 
 

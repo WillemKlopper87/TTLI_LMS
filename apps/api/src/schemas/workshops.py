@@ -67,6 +67,8 @@ class WorkshopsPage(BaseModel):
     teams_configured: bool
     # P13 phase 4: same warning, for `Settings.zoom_*`.
     zoom_configured: bool
+    # P13 phase 5: same warning, for `Settings.google_*`.
+    meet_configured: bool
 
 
 class UpdateWorkshopRequest(BaseModel):
@@ -75,11 +77,10 @@ class UpdateWorkshopRequest(BaseModel):
     selector, Phase 5), never a full resend of workshop state."""
 
     requires_credit: bool | None = None
-    # Only "manual"/"teams"/"zoom" are real providers (`services/meeting/
-    # __init__.py::get_provider`) — "meet" exists in the DB enum for a
-    # future phase (docs/BACKLOG.md P13) but would 400 at booking time
-    # if selected now, so the write side refuses it here instead.
-    meeting_provider: str | None = Field(default=None, pattern="^(manual|teams|zoom)$")
+    # "manual"/"teams"/"zoom"/"meet" are the four real providers
+    # (`services/meeting/__init__.py::get_provider`) — every value in
+    # the DB enum now has an implemented client.
+    meeting_provider: str | None = Field(default=None, pattern="^(manual|teams|zoom|meet)$")
 
 
 class CreateSessionRequest(BaseModel):

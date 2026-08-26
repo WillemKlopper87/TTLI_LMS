@@ -197,6 +197,21 @@ class Settings(BaseSettings):
     # registrants — Zoom has no single "attendees" list like Graph.
     zoom_organiser_email: str = ""
 
+    # P13 phase 5: Google Meet via a Workspace service account with
+    # domain-wide delegation — same blocked-on-external-credentials gap.
+    # `services/meeting/meet.py` checks these and refuses cleanly.
+    # `google_service_account_private_key` is the PEM string from the
+    # service account's JSON key file's `private_key` field, used to
+    # sign a JWT-bearer assertion (PyJWT + cryptography, already a
+    # dependency — no new library for this).
+    google_service_account_email: str = ""
+    google_service_account_private_key: str = ""
+    # The Workspace user impersonated (the JWT's `sub` claim) — same
+    # one-service-identity design as graph_organiser_upn/
+    # zoom_organiser_email, for the same reason: no per-facilitator
+    # Workspace account or delegated Calendar scope is needed.
+    google_organiser_email: str = ""
+
     # --- Observability ---
     sentry_dsn: str = ""
     log_level: str = "INFO"
