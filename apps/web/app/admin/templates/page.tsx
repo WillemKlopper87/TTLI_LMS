@@ -13,6 +13,9 @@ interface CertificateTemplateItem {
   signatory_name: string;
   signatory_title: string;
   cpd_points: number | null;
+  cpd_body: string | null;
+  cpd_reference: string | null;
+  cpd_validity_months: number | null;
 }
 
 interface BadgeTemplateItem {
@@ -46,6 +49,9 @@ export default function TemplatesScreen() {
   const [certSignatoryName, setCertSignatoryName] = useState("");
   const [certSignatoryTitle, setCertSignatoryTitle] = useState("");
   const [certCpdPoints, setCertCpdPoints] = useState("");
+  const [certCpdBody, setCertCpdBody] = useState("");
+  const [certCpdReference, setCertCpdReference] = useState("");
+  const [certCpdValidityMonths, setCertCpdValidityMonths] = useState("");
   const [certBusy, setCertBusy] = useState(false);
 
   const [badgeTitle, setBadgeTitle] = useState("");
@@ -89,6 +95,9 @@ export default function TemplatesScreen() {
         signatory_name: certSignatoryName.trim(),
         signatory_title: certSignatoryTitle.trim(),
         cpd_points: certCpdPoints.trim() ? Number(certCpdPoints) : null,
+        cpd_body: certCpdBody.trim() || null,
+        cpd_reference: certCpdReference.trim() || null,
+        cpd_validity_months: certCpdValidityMonths.trim() ? Number(certCpdValidityMonths) : null,
       }),
     });
     setCertBusy(false);
@@ -102,6 +111,9 @@ export default function TemplatesScreen() {
     setCertSignatoryName("");
     setCertSignatoryTitle("");
     setCertCpdPoints("");
+    setCertCpdBody("");
+    setCertCpdReference("");
+    setCertCpdValidityMonths("");
     await loadCertificateTemplates();
   }
 
@@ -199,6 +211,35 @@ export default function TemplatesScreen() {
                   onChange={(e) => setCertCpdPoints(e.target.value)}
                 />
               </label>
+              <label className="field mt-3">
+                <b>What the accreditation covers (optional)</b>
+                <input
+                  className="input"
+                  value={certCpdBody}
+                  onChange={(e) => setCertCpdBody(e.target.value)}
+                  placeholder="Continuing professional development in executive leadership"
+                />
+              </label>
+              <label className="field mt-3">
+                <b>Accreditation reference (optional)</b>
+                <input
+                  className="input"
+                  value={certCpdReference}
+                  onChange={(e) => setCertCpdReference(e.target.value)}
+                  placeholder="The accrediting body's own reference number"
+                />
+              </label>
+              <label className="field mt-3">
+                <b>Valid for, in months (optional)</b>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  value={certCpdValidityMonths}
+                  onChange={(e) => setCertCpdValidityMonths(e.target.value)}
+                  placeholder="Leave blank for a certificate that never expires"
+                />
+              </label>
               <button
                 type="button"
                 className="btn btn--primary mt-3"
@@ -228,7 +269,20 @@ export default function TemplatesScreen() {
                   <p className="mt-1" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
                     {t.issuer_name} · {t.signatory_name}, {t.signatory_title}
                     {t.cpd_points !== null ? ` · ${t.cpd_points} CPD points` : ""}
+                    {t.cpd_validity_months !== null
+                      ? ` · valid ${t.cpd_validity_months} month${t.cpd_validity_months === 1 ? "" : "s"}`
+                      : ""}
                   </p>
+                  {t.cpd_body ? (
+                    <p className="mt-1" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      {t.cpd_body}
+                    </p>
+                  ) : null}
+                  {t.cpd_reference ? (
+                    <p className="mt-1" style={{ fontSize: "0.75rem", color: "var(--faint)" }}>
+                      Reference: {t.cpd_reference}
+                    </p>
+                  ) : null}
                 </div>
               ))
             )}

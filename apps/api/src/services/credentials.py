@@ -12,6 +12,7 @@ second, unaudited path to the same effect.
 
 from __future__ import annotations
 
+import calendar
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -48,6 +49,24 @@ VISIBILITY_VALUES = ("private", "public", "link_only")
 
 class InvalidVisibility(AppError):
     pass
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Pure-stdlib month arithmetic (P13, 0037) — no dependency added for
+    one function; `calendar.monthrange`'s day-count clamps a day that
+    doesn't exist in the target month (31 Jan + 1 month -> 28/29 Feb,
+    not a `ValueError` from `.replace()`)."""
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _certificate_expiry(template: CertificateTemplate, *, issued_at: datetime) -> datetime | None:
+    if template.cpd_validity_months is None:
+        return None
+    return _add_months(issued_at, template.cpd_validity_months)
 
 
 def _certificate_number() -> str:
@@ -96,6 +115,7 @@ async def issue_for_completed_enrolment(
         if template is None:  # pragma: no cover - FK guarantees this
             raise NotFound("No such certificate template.")
         raw_token = new_token()
+        issued_at = datetime.now(UTC)
         certificate = Certificate(
             id=uuid7(),
             tenant_id=tenant_id,
@@ -104,6 +124,7 @@ async def issue_for_completed_enrolment(
             certificate_number=_certificate_number(),
             verification_token_encrypted=crypto.encrypt(raw_token),
             verification_token_blind_index=crypto.blind_index(raw_token),
+            expires_at=_certificate_expiry(template, issued_at=issued_at),
             snapshot={
                 "learner_name": learner_name,
                 "course_title": course_title,
@@ -111,7 +132,9 @@ async def issue_for_completed_enrolment(
                 "signatory_name": template.signatory_name,
                 "signatory_title": template.signatory_title,
                 "cpd_points": template.cpd_points,
-                "issued_at": datetime.now(UTC).isoformat(),
+                "cpd_body": template.cpd_body,
+                "cpd_reference": template.cpd_reference,
+                "issued_at": issued_at.isoformat(),
             },
         )
         session.add(certificate)
@@ -186,6 +209,7 @@ async def issue_for_completed_path(
     if template is None:  # pragma: no cover - FK guarantees this
         raise NotFound("No such certificate template.")
     raw_token = new_token()
+    issued_at = datetime.now(UTC)
     certificate = Certificate(
         id=uuid7(),
         tenant_id=tenant_id,
@@ -194,6 +218,7 @@ async def issue_for_completed_path(
         certificate_number=_certificate_number(),
         verification_token_encrypted=crypto.encrypt(raw_token),
         verification_token_blind_index=crypto.blind_index(raw_token),
+        expires_at=_certificate_expiry(template, issued_at=issued_at),
         snapshot={
             "learner_name": learner_name,
             "course_title": path_title,
@@ -201,7 +226,9 @@ async def issue_for_completed_path(
             "signatory_name": template.signatory_name,
             "signatory_title": template.signatory_title,
             "cpd_points": template.cpd_points,
-            "issued_at": datetime.now(UTC).isoformat(),
+            "cpd_body": template.cpd_body,
+            "cpd_reference": template.cpd_reference,
+            "issued_at": issued_at.isoformat(),
         },
     )
     session.add(certificate)
@@ -259,7 +286,14 @@ def render_certificate_pdf(
 
     if snapshot.get("cpd_points"):
         pdf.setFont("Helvetica", 11)
-        pdf.drawCentredString(width / 2, height - 108 * mm, f"{snapshot['cpd_points']} CPD points")
+        cpd_line = f"{snapshot['cpd_points']} CPD points"
+        if snapshot.get("cpd_body"):
+            cpd_line += f" — {snapshot['cpd_body']}"
+        pdf.drawCentredString(width / 2, height - 108 * mm, cpd_line)
+        if snapshot.get("cpd_reference"):
+            pdf.setFont("Helvetica", 8)
+            reference_line = f"Accreditation reference: {snapshot['cpd_reference']}"
+            pdf.drawCentredString(width / 2, height - 113 * mm, reference_line)
 
     issued_at = str(snapshot.get("issued_at", ""))[:10]
     pdf.setFont("Helvetica", 10)
@@ -299,6 +333,8 @@ class VerificationResult:
     credential_id: str | None = None
     issuer_name: str | None = None
     cpd_points: int | None = None
+    cpd_body: str | None = None
+    cpd_reference: str | None = None
     visibility: str | None = None
     # True when this certificate was issued for a learning path rather
     # than a single course (P5) — the only thing the verify page needs
@@ -357,6 +393,8 @@ async def verify(
         credential_id=certificate.certificate_number,
         issuer_name=snapshot.get("issuer_name"),
         cpd_points=int(cpd_points) if cpd_points is not None else None,
+        cpd_body=snapshot.get("cpd_body"),
+        cpd_reference=snapshot.get("cpd_reference"),
         visibility=certificate.visibility,
         is_learning_path=certificate.path_enrolment_id is not None,
     )

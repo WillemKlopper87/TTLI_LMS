@@ -29,6 +29,8 @@ class VerificationResponse(BaseModel):
     credential_id: str | None = None
     issuer_name: str | None = None
     cpd_points: int | None = None
+    cpd_body: str | None = None
+    cpd_reference: str | None = None
     visibility: str | None = None
     is_learning_path: bool = False
 
@@ -84,6 +86,11 @@ class CertificateTemplateCreateRequest(BaseModel):
     signatory_name: str = Field(min_length=1)
     signatory_title: str = Field(min_length=1)
     cpd_points: int | None = None
+    # P13: beyond the bare point count (0037). All optional — a template
+    # with none of these behaves exactly as before this pass.
+    cpd_body: str | None = None
+    cpd_reference: str | None = None
+    cpd_validity_months: int | None = Field(default=None, gt=0)
 
 
 class CertificateTemplateUpdateRequest(BaseModel):
@@ -92,6 +99,9 @@ class CertificateTemplateUpdateRequest(BaseModel):
     signatory_name: str | None = None
     signatory_title: str | None = None
     cpd_points: int | None = None
+    cpd_body: str | None = None
+    cpd_reference: str | None = None
+    cpd_validity_months: int | None = Field(default=None, gt=0)
 
 
 class CertificateTemplateResponse(BaseModel):
@@ -101,6 +111,9 @@ class CertificateTemplateResponse(BaseModel):
     signatory_name: str
     signatory_title: str
     cpd_points: int | None = None
+    cpd_body: str | None = None
+    cpd_reference: str | None = None
+    cpd_validity_months: int | None = None
 
 
 class CertificateTemplatesPageResponse(BaseModel):

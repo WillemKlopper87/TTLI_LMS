@@ -132,16 +132,25 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
   }
 
   async function shareOnLinkedIn() {
-    if (!data?.badge) return;
+    // A badge shares itself (it carries its own evidence_url alongside
+    // the certificate); a certificate-only course — no badge template
+    // attached — shares the certificate directly instead (P13, audit
+    // #17). Same response shape either way.
+    const path = data?.badge
+      ? `/api/bff/badges/${data.badge.id}/share/linkedin`
+      : data?.certificate
+        ? `/api/bff/certificates/${data.certificate.id}/share/linkedin`
+        : null;
+    if (!path) return;
     setBusy(true);
     setError(null);
     const token = getAccessToken();
-    const resp = await fetch(`/api/bff/badges/${data.badge.id}/share/linkedin`, {
+    const resp = await fetch(path, {
       headers: { Authorization: `Bearer ${token}` },
     });
     setBusy(false);
     if (!resp.ok) {
-      setError("Sharing is only available once this badge has a linked certificate.");
+      setError("Sharing is only available once this certificate has been issued.");
       return;
     }
     const fields = await resp.json();
@@ -206,6 +215,24 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
           >
             {data.certificate.pdf_available ? "Download certificate (PDF)" : "Certificate PDF pending…"}
           </button>
+
+          {!data.badge ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={shareOnLinkedIn}
+                className="btn btn--ghost mt-1"
+              >
+                Share on LinkedIn
+              </button>
+              {shareUrl ? (
+                <button type="button" onClick={copyLink} className="btn btn--ghost">
+                  {copied ? "Link copied" : "Copy verification link"}
+                </button>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
 

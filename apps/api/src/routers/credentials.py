@@ -164,6 +164,36 @@ async def get_certificate_pdf(
     return CertificatePdfResponse(pdf_url=url)
 
 
+@router.get("/certificates/{certificate_id}/share/linkedin", response_model=LinkedInShareResponse)
+async def get_certificate_linkedin_share(
+    certificate_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    crypto: CryptoDep,
+) -> LinkedInShareResponse:
+    """The certificate-only twin of `get_linkedin_share` below (P13,
+    audit #17) — a course with no badge template attached issues a
+    certificate but no badge, and `linkedin_share_fields` already
+    accepts `badge=None` and never reads it; only the badge-keyed route
+    existed to reach that function, so a certificate-only course had no
+    share endpoint at all despite the service layer already supporting
+    it."""
+    certificate = await session.get(Certificate, _parse_uuid(certificate_id))
+    if certificate is None or certificate.tenant_id != principal.tenant_id:
+        raise NotFound("No such certificate.")
+    if not await _owns_certificate(session, certificate, principal.user_id):
+        raise Forbidden("You do not have access to this certificate.")
+
+    url = credentials_service.verification_url(
+        certificate, crypto, public_web_url=settings.public_web_url
+    )
+    fields = credentials_service.linkedin_share_fields(
+        certificate=certificate, badge=None, verification_url=url
+    )
+    return LinkedInShareResponse(**fields)
+
+
 @router.get("/verify/{token}", response_model=VerificationResponse)
 async def verify_credential(
     token: str,
@@ -203,6 +233,8 @@ async def verify_credential(
         credential_id=result.credential_id,
         issuer_name=result.issuer_name,
         cpd_points=result.cpd_points,
+        cpd_body=result.cpd_body,
+        cpd_reference=result.cpd_reference,
         visibility=result.visibility,
         is_learning_path=result.is_learning_path,
     )
@@ -327,6 +359,9 @@ def _certificate_template_response(template: CertificateTemplate) -> Certificate
         signatory_name=template.signatory_name,
         signatory_title=template.signatory_title,
         cpd_points=template.cpd_points,
+        cpd_body=template.cpd_body,
+        cpd_reference=template.cpd_reference,
+        cpd_validity_months=template.cpd_validity_months,
     )
 
 
@@ -356,6 +391,9 @@ async def create_certificate_template(
         signatory_name=body.signatory_name,
         signatory_title=body.signatory_title,
         cpd_points=body.cpd_points,
+        cpd_body=body.cpd_body,
+        cpd_reference=body.cpd_reference,
+        cpd_validity_months=body.cpd_validity_months,
     )
     session.add(template)
     await session.flush()
@@ -395,6 +433,12 @@ async def update_certificate_template(
         template.signatory_title = body.signatory_title
     if body.cpd_points is not None:
         template.cpd_points = body.cpd_points
+    if body.cpd_body is not None:
+        template.cpd_body = body.cpd_body
+    if body.cpd_reference is not None:
+        template.cpd_reference = body.cpd_reference
+    if body.cpd_validity_months is not None:
+        template.cpd_validity_months = body.cpd_validity_months
     await session.flush()
     return _certificate_template_response(template)
 

@@ -35,6 +35,12 @@ CredentialStatus = Enum(*CREDENTIAL_STATUS_VALUES, name="credential_status", cre
 
 class CertificateTemplate(Base, TimestampMixin):
     __tablename__ = "certificate_templates"
+    __table_args__ = (
+        CheckConstraint(
+            "cpd_validity_months IS NULL OR cpd_validity_months > 0",
+            name="ck_certificate_templates_cpd_validity_positive",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,6 +51,13 @@ class CertificateTemplate(Base, TimestampMixin):
     signatory_name: Mapped[str] = mapped_column(Text, nullable=False)
     signatory_title: Mapped[str] = mapped_column(Text, nullable=False)
     cpd_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # P13 (0037): beyond the bare point count — what the accreditation
+    # actually covers, the accrediting body's own reference/registration
+    # number, and how long it stays valid. All optional; a template with
+    # none of these behaves exactly as before.
+    cpd_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cpd_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cpd_validity_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Certificate(Base):

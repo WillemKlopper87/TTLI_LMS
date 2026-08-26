@@ -19,6 +19,8 @@ interface VerificationResult {
   credential_id: string | null;
   issuer_name: string | null;
   cpd_points: number | null;
+  cpd_body: string | null;
+  cpd_reference: string | null;
   visibility: string | null;
   is_learning_path: boolean;
 }
@@ -169,6 +171,19 @@ export default function VerifyPage() {
               </div>
             </div>
           </div>
+
+          {result.cpd_body || result.cpd_reference ? (
+            <div className="verify">
+              {result.cpd_body ? (
+                <p style={{ fontSize: ".875rem" }}>{result.cpd_body}</p>
+              ) : null}
+              {result.cpd_reference ? (
+                <p style={{ fontSize: ".75rem", color: "var(--muted)" }}>
+                  Accreditation reference: {result.cpd_reference}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <p style={{ fontSize: ".75rem", color: "var(--muted)" }}>
             Anyone can check this page without an account. Revoking the credential changes what
