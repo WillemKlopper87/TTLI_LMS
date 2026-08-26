@@ -143,6 +143,7 @@ export default function WorkshopsScreen() {
   const [creditPriceCurrency, setCreditPriceCurrency] = useState("ZAR");
 
   const [teamsConfigured, setTeamsConfigured] = useState(false);
+  const [zoomConfigured, setZoomConfigured] = useState(false);
   const [providerBusy, setProviderBusy] = useState(false);
 
   async function authedFetch(path: string, init: RequestInit = {}) {
@@ -161,6 +162,7 @@ export default function WorkshopsScreen() {
       const body = await resp.json();
       setWorkshops(body.items);
       setTeamsConfigured(Boolean(body.teams_configured));
+      setZoomConfigured(Boolean(body.zoom_configured));
     }
   }
 
@@ -710,6 +712,7 @@ export default function WorkshopsScreen() {
                         >
                           <option value="manual">Manual (facilitator supplies a link)</option>
                           <option value="teams">Microsoft Teams</option>
+                          <option value="zoom">Zoom</option>
                         </select>
                       </label>
                       {selectedWorkshop.meeting_provider === "teams" && !teamsConfigured ? (
@@ -721,6 +724,17 @@ export default function WorkshopsScreen() {
                           Microsoft Teams is not configured on this platform — bookings on this
                           workshop will fail until an admin sets the GRAPH_* settings. Use Manual
                           until then.
+                        </p>
+                      ) : null}
+                      {selectedWorkshop.meeting_provider === "zoom" && !zoomConfigured ? (
+                        <p
+                          role="alert"
+                          className="mt-1"
+                          style={{ fontSize: "0.75rem", color: "var(--stop)" }}
+                        >
+                          Zoom is not configured on this platform — bookings on this workshop
+                          will fail until an admin sets the ZOOM_* settings. Use Manual until
+                          then.
                         </p>
                       ) : null}
                     </div>

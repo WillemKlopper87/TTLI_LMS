@@ -1013,14 +1013,15 @@ async def test_booking_without_requires_credit_needs_no_purchase(
     assert booking.json()["status"] == "registered"
 
 
-async def test_meeting_provider_selector_accepts_teams_refuses_unimplemented_providers(
+async def test_meeting_provider_selector_accepts_teams_and_zoom_refuses_meet(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
-    """P7 phase 5: a workshop defaults to `manual` and can be switched to
-    `teams` (the two providers `services/meeting/__init__.py::get_provider`
-    actually implements). `zoom`/`meet` exist only in the DB enum for a
-    future phase (docs/BACKLOG.md P13) and are refused at the schema
-    layer rather than accepted and 400ing later at booking time."""
+    """A workshop defaults to `manual` and can be switched to `teams` or
+    `zoom` (P7 phase 5 and P13 phase 4 — the three providers
+    `services/meeting/__init__.py::get_provider` actually implements).
+    `meet` still exists only in the DB enum for a future phase
+    (docs/BACKLOG.md P13) and is refused at the schema layer rather than
+    accepted and 400ing later at booking time."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token, _, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
@@ -1032,6 +1033,7 @@ async def test_meeting_provider_selector_accepts_teams_refuses_unimplemented_pro
     )
     assert created.status_code == 200, created.text
     assert "teams_configured" in created.json()
+    assert "zoom_configured" in created.json()
     row = next(w for w in created.json()["items"] if w["id"] == workshop_id)
     assert row["meeting_provider"] == "manual"
 
@@ -1046,9 +1048,17 @@ async def test_meeting_provider_selector_accepts_teams_refuses_unimplemented_pro
     # semantics (Phase 5) didn't reset the field PATCH didn't mention.
     assert switched.json()["requires_credit"] is False
 
-    refused = await client.patch(
+    switched_to_zoom = await client.patch(
         f"/api/v1/workshops/{workshop_id}",
         json={"meeting_provider": "zoom"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert switched_to_zoom.status_code == 200, switched_to_zoom.text
+    assert switched_to_zoom.json()["meeting_provider"] == "zoom"
+
+    refused = await client.patch(
+        f"/api/v1/workshops/{workshop_id}",
+        json={"meeting_provider": "meet"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert refused.status_code == 422, refused.text

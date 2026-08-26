@@ -65,6 +65,8 @@ class WorkshopsPage(BaseModel):
     # admin UI's provider selector can warn before an admin picks
     # "teams" on a workshop and only discovers it 400s at booking time.
     teams_configured: bool
+    # P13 phase 4: same warning, for `Settings.zoom_*`.
+    zoom_configured: bool
 
 
 class UpdateWorkshopRequest(BaseModel):
@@ -73,11 +75,11 @@ class UpdateWorkshopRequest(BaseModel):
     selector, Phase 5), never a full resend of workshop state."""
 
     requires_credit: bool | None = None
-    # Only "manual"/"teams" are real providers (`services/meeting/
-    # __init__.py::get_provider`) — "zoom"/"meet" exist in the DB enum
-    # for a future phase (docs/BACKLOG.md P13) but would 400 at booking
-    # time if selected now, so the write side refuses them here instead.
-    meeting_provider: str | None = Field(default=None, pattern="^(manual|teams)$")
+    # Only "manual"/"teams"/"zoom" are real providers (`services/meeting/
+    # __init__.py::get_provider`) — "meet" exists in the DB enum for a
+    # future phase (docs/BACKLOG.md P13) but would 400 at booking time
+    # if selected now, so the write side refuses it here instead.
+    meeting_provider: str | None = Field(default=None, pattern="^(manual|teams|zoom)$")
 
 
 class CreateSessionRequest(BaseModel):

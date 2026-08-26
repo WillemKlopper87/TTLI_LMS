@@ -1,5 +1,72 @@
 # STATUS
 
+**Updated:** 2026-08-26 — **P13, phases 1–4: LinkedIn share, CPD
+fields, guest→paid conversion, sample watermark, real Zoom provider.**
+`docs/BACKLOG.md` P13 — small demo-visible items, picked up after the
+overall code review's three PRs shipped. Four commits, each full-suite
+verified:
+
+**Phase 1** — `GET /certificates/{id}/share/linkedin`: closes the gap
+where `credentials_service.linkedin_share_fields()` already accepted
+`badge=None` but no route ever called it without a badge, so a
+certificate-only course (no badge) had no LinkedIn share button.
+`credentials-panel.tsx` now branches on `data?.badge` vs
+`data?.certificate` for which endpoint to call.
+
+**Phase 2** — CPD fields beyond one integer: `cpd_body`,
+`cpd_reference`, `cpd_validity_months` on `CertificateTemplate` (`0037`),
+plus `Certificate.expires_at` — never set before this — now computed
+from `issued_at + cpd_validity_months` via a `calendar.monthrange`-
+based day-clamping month-add helper (no new dependency). Threaded
+through template authoring, certificate issuance, PDF rendering and the
+public verify page.
+
+**Phase 3** (REQ-LEAD-05/07) — guest→paid conversion and sample
+watermarking. `services/orders.py::_fulfil_order` now clears
+`is_guest`/`guest_expires_at` on the buyer once a direct order is
+fulfilled — without this, a guest who pays keeps ticking down to their
+original trial expiry and eventually gets locked out of the account
+they bought with. "Carries progress forward" turned out to be vacuous
+by construction: guest preview access is view-only and never writes an
+Enrolment, so there is no progress to carry. Guest playback now gets a
+`"SAMPLE · GUEST ACCESS"` watermark instead of the regular identity-
+tracing one.
+
+**Phase 4** — the real Zoom meeting provider, mirroring P7 phase 5's
+Teams client exactly: Server-to-Server OAuth (`POST https://zoom.us/
+oauth/token`, HTTP Basic auth, `grant_type=account_credentials`) on one
+platform-wide service Zoom user (`Settings.zoom_organiser_email`, same
+one-identity design as `graph_organiser_upn`). Zoom has no single
+"attendees" list like a Graph calendar event, so this maps to two
+mechanisms instead of one: facilitators go on `settings.
+alternative_hosts` at creation (host-level controls, set once),
+learners are meeting registrants added/removed one at a time via
+Zoom's Registrants API as they book/cancel (mirrors Teams'
+`add_attendee`/`remove_attendee` GET-then-mutate shape against a
+different resource). `get_provider("zoom", ...)` wired in; the admin
+provider selector gained a Zoom option with the same "not configured"
+warning Teams already has (`GET /workshops` now also carries
+`zoom_configured`); `UpdateWorkshopRequest.meeting_provider`'s pattern
+widened from `^(manual|teams)$` to `^(manual|teams|zoom)$` — `meet`
+still refused at the schema layer, same reasoning as before.
+
+**Verified only this far — explicitly bounded, same disclosure as
+Teams**: no Zoom Server-to-Server OAuth app has been provisioned in
+this environment, so this cannot be live-tested against a real Zoom
+meeting. `ZOOM_ACCOUNT_ID`/`ZOOM_CLIENT_ID`/`ZOOM_CLIENT_SECRET`/
+`ZOOM_ORGANISER_EMAIL` are all empty by default and `is_configured()`
+refuses cleanly. **The code is real and unit-tested against mocked
+Zoom responses** (18 new tests in `test_meeting_zoom.py`: token-request
+shape, token caching, bad-credentials refusal, create/cancel, the
+add/remove-registrant round trip including a duplicate-add no-op and a
+remove-of-a-non-registrant no-op, the 401-retry-once recovery and a
+two-401s-still-raises pin) — live behaviour should be smoke-tested
+before any tenant selects Zoom as its provider.
+
+`ruff`/`mypy`/`pytest -q` (full suite) clean at every phase; web
+`typecheck`/`build` clean.
+
+
 **Updated:** 2026-08-24 (seventh pass, same day) — **Overall code
 review, then all three of its fix PRs.** `docs/research/overall-
 review-2026-08-24.md`: a systemic pass over the whole session's shipped

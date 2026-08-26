@@ -184,6 +184,19 @@ class Settings(BaseSettings):
     # delegated Graph permission is needed.
     graph_organiser_upn: str = ""
 
+    # P13 phase 4: Zoom Server-to-Server OAuth app credentials — same
+    # blocked-on-external-credentials gap as graph_*/Payfast/Netcash.
+    # `services/meeting/zoom.py` checks these and refuses cleanly.
+    zoom_account_id: str = ""
+    zoom_client_id: str = ""
+    zoom_client_secret: str = ""
+    # The single Zoom user every meeting is created under — same one-
+    # service-identity design as graph_organiser_upn, for the same
+    # reason: no per-facilitator Zoom Pro licence is needed this way.
+    # Facilitators are listed as alternative_hosts, learners as
+    # registrants — Zoom has no single "attendees" list like Graph.
+    zoom_organiser_email: str = ""
+
     # --- Observability ---
     sentry_dsn: str = ""
     log_level: str = "INFO"

@@ -51,6 +51,7 @@ from src.services import identity
 from src.services import workshops as workshops_service
 from src.services.ics import IcsEvent, build_ics
 from src.services.meeting.teams import TeamsMeetingProvider
+from src.services.meeting.zoom import ZoomMeetingProvider
 
 router = APIRouter(tags=["workshops"])
 
@@ -191,6 +192,7 @@ async def list_workshops(
     return WorkshopsPage(
         items=[_workshop_response(w) for w in workshops],
         teams_configured=TeamsMeetingProvider(settings).is_configured(),
+        zoom_configured=ZoomMeetingProvider(settings).is_configured(),
     )
 
 
