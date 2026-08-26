@@ -75,12 +75,23 @@ async def _demo_tenant_id(tenant_session_factory) -> uuid.UUID:  # type: ignore[
 
 
 async def _login(
-    client, tenant_session_factory, crypto, *, tenant_id, role: str | None
+    client,
+    tenant_session_factory,
+    crypto,
+    *,
+    tenant_id,
+    role: str | None,
+    full_name: str | None = None,
 ) -> tuple[str, uuid.UUID, str]:  # type: ignore[no-untyped-def]
     email = _unique_email()
     async with tenant_session_factory(tenant_id) as s:
         user = await identity.create_user(
-            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=email,
+            password=PASSWORD,
+            full_name=full_name,
         )
         user_id = user.id
         if role is not None:
@@ -107,7 +118,12 @@ async def _make_facilitator(
     facilitator-role user, registered as a facilitator, with a Tuesday
     09:00-12:00 UTC availability window."""
     facilitator_token, _, facilitator_email = await _login(
-        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="facilitator"
+        client,
+        tenant_session_factory,
+        crypto,
+        tenant_id=tenant_id,
+        role="facilitator",
+        full_name="Avery Coach",
     )
     created = await client.post(
         "/api/v1/facilitators",
@@ -429,6 +445,288 @@ async def test_public_workshops_lists_upcoming_sessions_without_auth(
     after = await client.get("/api/v1/public/workshops")
     row = next(r for r in after.json()["items"] if r["session_id"] == session_id)
     assert row["seats_left"] == 1
+
+
+async def test_public_workshops_lists_one_on_one_workshops_for_self_service_booking(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P13: a `one_on_one` workshop has no pre-created session for
+    `list_public_sessions` to find (that's the whole point of self-
+    service booking), so it needs its own listing — otherwise a visitor
+    could never discover it exists to book a slot."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+
+    public = await client.get("/api/v1/public/workshops")
+    assert public.status_code == 200, public.text
+    row = next((w for w in public.json()["one_on_one_workshops"] if w["id"] == workshop_id), None)
+    assert row is not None, "the one_on_one workshop should be publicly listed"
+    assert row["title"] == "Executive Coaching Debrief"
+    assert row["default_duration_minutes"] == 60
+    # It never shows up as a pre-created session — there isn't one.
+    assert not any(s["workshop_id"] == workshop_id for s in public.json()["items"])
+
+
+async def test_list_open_slots_expands_availability_minus_conflicts(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """P13/REQ-WS-01/02: a facilitator's Tuesday 09:00-12:00 UTC window,
+    with a 60-minute workshop duration, expands to three candidate
+    slots (09:00, 10:00, 11:00) — minus whichever of those the
+    facilitator is already scheduled for."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    tuesday = _next_weekday_at(1, 9)
+
+    # Admin pre-schedules the 10:00 slot the old way — list_open_slots
+    # must exclude it, same as it would for any other conflict.
+    conflict = await client.post(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": tuesday.replace(hour=10).isoformat(),
+            "ends_at": tuesday.replace(hour=11).isoformat(),
+            "capacity": 1,
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert conflict.status_code == 201, conflict.text
+
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    slots = await client.get(
+        f"/api/v1/workshops/{workshop_id}/open-slots",
+        params={
+            "facilitator_id": facilitator_id,
+            "from_date": tuesday.date().isoformat(),
+            "to_date": tuesday.date().isoformat(),
+        },
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert slots.status_code == 200, slots.text
+    starts = sorted(
+        datetime.fromisoformat(item["starts_at"].replace("Z", "+00:00"))
+        for item in slots.json()["items"]
+    )
+    assert starts == [tuesday.replace(hour=9), tuesday.replace(hour=11)]
+
+
+async def test_coaching_facilitators_expose_profile_not_account_identifiers(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, facilitator_email = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    response = await client.get(
+        f"/api/v1/workshops/{workshop_id}/coaches",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    coach = next(item for item in response.json()["items"] if item["id"] == facilitator_id)
+    assert coach == {
+        "id": facilitator_id,
+        "display_name": "Avery Coach",
+        "bio": "Leadership coach",
+        "timezone": "UTC",
+    }
+    assert facilitator_email not in response.text
+    assert "user_id" not in coach
+
+
+async def test_list_open_slots_refuses_for_non_one_on_one_workshops(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    group_workshop = await client.post(
+        "/api/v1/workshops",
+        json={"title": "Group Cohort", "session_type": "group_workshop"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert group_workshop.status_code == 201, group_workshop.text
+    workshop_id = group_workshop.json()["id"]
+    tuesday = _next_weekday_at(1, 9)
+
+    refused = await client.get(
+        f"/api/v1/workshops/{workshop_id}/open-slots",
+        params={
+            "facilitator_id": facilitator_id,
+            "from_date": tuesday.date().isoformat(),
+            "to_date": tuesday.date().isoformat(),
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert refused.status_code == 400, refused.text
+
+
+async def test_book_open_slot_creates_a_session_and_books_it_end_to_end(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The Calendly-style create-and-claim path: no `WorkshopSession`
+    exists before this call — book_open_slot creates one (capacity 1)
+    and books the caller into it in the same transaction."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    tuesday = _next_weekday_at(1, 9)
+    slot_start = tuesday.replace(hour=9)
+
+    learner_token, learner_id, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    booked = await client.post(
+        f"/api/v1/workshops/{workshop_id}/book-slot",
+        json={"facilitator_id": facilitator_id, "starts_at": slot_start.isoformat()},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert booked.status_code == 201, booked.text
+    body = booked.json()
+    assert body["status"] == "registered"
+    assert body["user_id"] == str(learner_id)
+
+    sessions = await client.get(
+        f"/api/v1/workshops/{workshop_id}/sessions",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    created_session = next(s for s in sessions.json()["items"] if s["id"] == body["session_id"])
+    assert created_session["facilitator_id"] == facilitator_id
+    assert created_session["capacity"] == 1
+    assert datetime.fromisoformat(created_session["starts_at"].replace("Z", "+00:00")) == (
+        slot_start
+    )
+    assert created_session["registered"] == 1
+
+    # The slot is no longer open once claimed.
+    remaining = await client.get(
+        f"/api/v1/workshops/{workshop_id}/open-slots",
+        params={
+            "facilitator_id": facilitator_id,
+            "from_date": tuesday.date().isoformat(),
+            "to_date": tuesday.date().isoformat(),
+        },
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    remaining_starts = {
+        datetime.fromisoformat(i["starts_at"].replace("Z", "+00:00"))
+        for i in remaining.json()["items"]
+    }
+    assert slot_start not in remaining_starts
+
+
+async def test_book_open_slot_refuses_a_slot_outside_availability(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    # Wednesday, not the facilitator's Tuesday 09:00-12:00 window.
+    outside = _next_weekday_at(2, 9)
+
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    refused = await client.post(
+        f"/api/v1/workshops/{workshop_id}/book-slot",
+        json={"facilitator_id": facilitator_id, "starts_at": outside.isoformat()},
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert refused.status_code == 400, refused.text
+
+
+async def test_book_open_slot_rejects_timezone_less_timestamp(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    learner_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    refused = await client.post(
+        f"/api/v1/workshops/{workshop_id}/book-slot",
+        json={
+            "facilitator_id": facilitator_id,
+            "starts_at": _next_weekday_at(1, 9).replace(tzinfo=None).isoformat(),
+        },
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+
+    assert refused.status_code == 422, refused.text
+
+
+async def test_book_open_slot_refuses_a_slot_already_taken(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Two learners racing for the same freshly-computed slot: the
+    second must get a clean refusal, not a second WorkshopSession
+    silently created for the same facilitator at the same time."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    facilitator_id, _, _ = await _make_facilitator(
+        client, admin_token, tenant_session_factory, crypto, tenant_id=tenant_id
+    )
+    workshop_id = await _make_workshop(client, admin_token)
+    slot_start = _next_weekday_at(1, 9).replace(hour=9)
+
+    first_learner, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    second_learner, _, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    async def claim(token: str):  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/workshops/{workshop_id}/book-slot",
+            json={"facilitator_id": facilitator_id, "starts_at": slot_start.isoformat()},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    first, second = await asyncio.gather(claim(first_learner), claim(second_learner))
+    assert sorted((first.status_code, second.status_code)) == [201, 400]
 
 
 async def test_cancel_session_cancels_every_booking_notifies_and_audits(

@@ -463,9 +463,7 @@ async def test_podcast_engagement_skips_a_malformed_episode_id_instead_of_500ing
     # The malformed row is skipped in the leaderboard specifically, not
     # silently dropped from every count — it still counts toward
     # cta_clicks (a plain GROUP BY event_name, no JSONB parsing).
-    assert "not-a-real-uuid" not in {
-        row["episode_id"] for row in resp.json()["top_cta_episodes"]
-    }
+    assert "not-a-real-uuid" not in {row["episode_id"] for row in resp.json()["top_cta_episodes"]}
 
 
 async def test_podcast_engagement_csv_matches_the_json_report(  # type: ignore[no-untyped-def]

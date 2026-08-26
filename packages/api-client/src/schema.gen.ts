@@ -1700,6 +1700,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workshops/{workshop_id}/open-slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Open Slots */
+        get: operations["list_open_slots_api_v1_workshops__workshop_id__open_slots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workshops/{workshop_id}/coaches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Coaching Facilitators */
+        get: operations["list_coaching_facilitators_api_v1_workshops__workshop_id__coaches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workshops/{workshop_id}/book-slot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Book Open Slot */
+        post: operations["book_open_slot_api_v1_workshops__workshop_id__book_slot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{session_id}/cancel": {
         parameters: {
             query?: never;
@@ -2789,6 +2840,32 @@ export interface paths {
         };
         /** Get Certificate Pdf */
         get: operations["get_certificate_pdf_api_v1_certificates__certificate_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/certificates/{certificate_id}/share/linkedin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Certificate Linkedin Share
+         * @description The certificate-only twin of `get_linkedin_share` below (P13,
+         *     audit #17) — a course with no badge template attached issues a
+         *     certificate but no badge, and `linkedin_share_fields` already
+         *     accepts `badge=None` and never reads it; only the badge-keyed route
+         *     existed to reach that function, so a certificate-only course had no
+         *     share endpoint at all despite the service layer already supporting
+         *     it.
+         */
+        get: operations["get_certificate_linkedin_share_api_v1_certificates__certificate_id__share_linkedin_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4472,6 +4549,16 @@ export interface components {
             /** File */
             file: string;
         };
+        /** BookOpenSlotRequest */
+        BookOpenSlotRequest: {
+            /** Facilitator Id */
+            facilitator_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+        };
         /** BookingResponse */
         BookingResponse: {
             /** Id */
@@ -4605,6 +4692,12 @@ export interface components {
             signatory_title: string;
             /** Cpd Points */
             cpd_points?: number | null;
+            /** Cpd Body */
+            cpd_body?: string | null;
+            /** Cpd Reference */
+            cpd_reference?: string | null;
+            /** Cpd Validity Months */
+            cpd_validity_months?: number | null;
         };
         /** CertificateTemplateResponse */
         CertificateTemplateResponse: {
@@ -4620,6 +4713,12 @@ export interface components {
             signatory_title: string;
             /** Cpd Points */
             cpd_points?: number | null;
+            /** Cpd Body */
+            cpd_body?: string | null;
+            /** Cpd Reference */
+            cpd_reference?: string | null;
+            /** Cpd Validity Months */
+            cpd_validity_months?: number | null;
         };
         /** CertificateTemplateUpdateRequest */
         CertificateTemplateUpdateRequest: {
@@ -4633,6 +4732,12 @@ export interface components {
             signatory_title?: string | null;
             /** Cpd Points */
             cpd_points?: number | null;
+            /** Cpd Body */
+            cpd_body?: string | null;
+            /** Cpd Reference */
+            cpd_reference?: string | null;
+            /** Cpd Validity Months */
+            cpd_validity_months?: number | null;
         };
         /** CertificateTemplatesPageResponse */
         CertificateTemplatesPageResponse: {
@@ -4660,6 +4765,28 @@ export interface components {
              * @default false
              */
             badge: boolean;
+        };
+        /**
+         * CoachingFacilitatorResponse
+         * @description The deliberately small facilitator profile learners may see.
+         *
+         *     Email and user_id stay on the administrative `FacilitatorResponse`;
+         *     neither is needed to choose a coach.
+         */
+        CoachingFacilitatorResponse: {
+            /** Id */
+            id: string;
+            /** Display Name */
+            display_name: string;
+            /** Bio */
+            bio: string | null;
+            /** Timezone */
+            timezone: string;
+        };
+        /** CoachingFacilitatorsPage */
+        CoachingFacilitatorsPage: {
+            /** Items */
+            items: components["schemas"]["CoachingFacilitatorResponse"][];
         };
         /** CourseAnalyticsResponse */
         CourseAnalyticsResponse: {
@@ -5846,6 +5973,24 @@ export interface components {
              */
             created_at: string;
         };
+        /** OpenSlotRow */
+        OpenSlotRow: {
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+        };
+        /** OpenSlotsPage */
+        OpenSlotsPage: {
+            /** Items */
+            items: components["schemas"]["OpenSlotRow"][];
+        };
         /** OrderItemResponse */
         OrderItemResponse: {
             /** Product Id */
@@ -6715,6 +6860,23 @@ export interface components {
              */
             lesson_count: number;
         };
+        /**
+         * PublicOneOnOneWorkshopRow
+         * @description A self-service coaching workshop as an anonymous visitor may see
+         *     it — unlike `PublicSessionRow`, there is no pre-created session to
+         *     describe; a visitor who wants to book picks a facilitator and a
+         *     slot on `/workshops/{id}/book`.
+         */
+        PublicOneOnOneWorkshopRow: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Default Duration Minutes */
+            default_duration_minutes: number;
+        };
         /** PublicPathCard */
         PublicPathCard: {
             /** Id */
@@ -6832,6 +6994,8 @@ export interface components {
         PublicWorkshopsResponse: {
             /** Items */
             items: components["schemas"]["PublicSessionRow"][];
+            /** One On One Workshops */
+            one_on_one_workshops?: components["schemas"]["PublicOneOnOneWorkshopRow"][];
         };
         /**
          * PushSubscribeRequest
@@ -8035,6 +8199,10 @@ export interface components {
             issuer_name?: string | null;
             /** Cpd Points */
             cpd_points?: number | null;
+            /** Cpd Body */
+            cpd_body?: string | null;
+            /** Cpd Reference */
+            cpd_reference?: string | null;
             /** Visibility */
             visibility?: string | null;
             /**
@@ -8101,6 +8269,10 @@ export interface components {
             items: components["schemas"]["WorkshopResponse"][];
             /** Teams Configured */
             teams_configured: boolean;
+            /** Zoom Configured */
+            zoom_configured: boolean;
+            /** Meet Configured */
+            meet_configured: boolean;
         };
     };
     responses: never;
@@ -11525,6 +11697,107 @@ export interface operations {
             };
         };
     };
+    list_open_slots_api_v1_workshops__workshop_id__open_slots_get: {
+        parameters: {
+            query: {
+                facilitator_id: string;
+                from_date: string;
+                to_date: string;
+            };
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenSlotsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_coaching_facilitators_api_v1_workshops__workshop_id__coaches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachingFacilitatorsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    book_open_slot_api_v1_workshops__workshop_id__book_slot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workshop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookOpenSlotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cancel_session_api_v1_sessions__session_id__cancel_post: {
         parameters: {
             query?: never;
@@ -13639,6 +13912,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CertificatePdfResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_certificate_linkedin_share_api_v1_certificates__certificate_id__share_linkedin_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certificate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkedInShareResponse"];
                 };
             };
             /** @description Validation Error */

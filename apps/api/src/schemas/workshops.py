@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.models.workshop import ATTENDANCE_STATUS_VALUES, SESSION_TYPE_VALUES
 
@@ -22,6 +22,23 @@ class FacilitatorResponse(BaseModel):
 
 class FacilitatorsPage(BaseModel):
     items: list[FacilitatorResponse]
+
+
+class CoachingFacilitatorResponse(BaseModel):
+    """The deliberately small facilitator profile learners may see.
+
+    Email and user_id stay on the administrative `FacilitatorResponse`;
+    neither is needed to choose a coach.
+    """
+
+    id: str
+    display_name: str
+    bio: str | None
+    timezone: str
+
+
+class CoachingFacilitatorsPage(BaseModel):
+    items: list[CoachingFacilitatorResponse]
 
 
 class AddAvailabilityRequest(BaseModel):
@@ -134,8 +151,42 @@ class PublicSessionRow(BaseModel):
     is_full: bool
 
 
+class PublicOneOnOneWorkshopRow(BaseModel):
+    """A self-service coaching workshop as an anonymous visitor may see
+    it — unlike `PublicSessionRow`, there is no pre-created session to
+    describe; a visitor who wants to book picks a facilitator and a
+    slot on `/workshops/{id}/book`."""
+
+    id: str
+    title: str
+    description: str | None
+    default_duration_minutes: int
+
+
 class PublicWorkshopsResponse(BaseModel):
     items: list[PublicSessionRow]
+    one_on_one_workshops: list[PublicOneOnOneWorkshopRow] = Field(default_factory=list)
+
+
+class OpenSlotRow(BaseModel):
+    starts_at: datetime
+    ends_at: datetime
+
+
+class OpenSlotsPage(BaseModel):
+    items: list[OpenSlotRow]
+
+
+class BookOpenSlotRequest(BaseModel):
+    facilitator_id: str
+    starts_at: datetime
+
+    @field_validator("starts_at")
+    @classmethod
+    def starts_at_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("starts_at must include a timezone offset")
+        return value
 
 
 class BookingResponse(BaseModel):
@@ -195,16 +246,22 @@ __all__ = [
     "AddSessionFacilitatorRequest",
     "AvailabilityPage",
     "AvailabilityWindowResponse",
+    "BookOpenSlotRequest",
     "BookingResponse",
     "CancelSessionRequest",
+    "CoachingFacilitatorResponse",
+    "CoachingFacilitatorsPage",
     "CreateFacilitatorRequest",
     "CreateSessionRequest",
     "CreateWorkshopRequest",
     "FacilitatorResponse",
     "FacilitatorsPage",
     "MarkAttendanceRequest",
+    "OpenSlotRow",
+    "OpenSlotsPage",
     "OwnBookingResponse",
     "OwnBookingsPage",
+    "PublicOneOnOneWorkshopRow",
     "PublicSessionRow",
     "PublicWorkshopsResponse",
     "RescheduleBookingRequest",

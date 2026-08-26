@@ -24,8 +24,8 @@ const SESSION_TYPE_LABEL: Record<string, string> = {
 };
 
 export default async function WorkshopsPage() {
-  const [sessions, courses] = await Promise.all([
-    getPublicWorkshops().catch(() => []),
+  const [{ sessions, oneOnOneWorkshops }, courses] = await Promise.all([
+    getPublicWorkshops().catch(() => ({ sessions: [], oneOnOneWorkshops: [] })),
     getPublicCourses().catch(() => []),
   ]);
   const withWorkshop = courses.filter((c) => c.includes_workshop);
@@ -193,6 +193,34 @@ export default async function WorkshopsPage() {
           </div>
         ) : null}
       </div>
+
+      {oneOnOneWorkshops.length > 0 ? (
+        <div className="pad-lg" id="coaching">
+          <h2 className="serif" style={{ fontSize: "1.5rem", marginBottom: "1.1rem" }}>
+            One-on-one coaching
+          </h2>
+          <div className="cols-3">
+            {oneOnOneWorkshops.map((w) => (
+              <div className="cell" key={w.id}>
+                <h3>{w.title}</h3>
+                <p>
+                  {w.description ?? "A private coaching session, booked at a time that suits you."}
+                </p>
+                <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginTop: ".5rem" }}>
+                  {formatDuration(w.default_duration_minutes)}
+                </p>
+                <Link
+                  className="btn btn--primary mt-3"
+                  href={`/workshops/${w.id}/book`}
+                  style={{ display: "inline-block" }}
+                >
+                  Pick a time
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

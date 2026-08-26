@@ -234,9 +234,25 @@ export interface PublicSession {
   is_full: boolean;
 }
 
-export async function getPublicWorkshops(): Promise<PublicSession[]> {
-  const body = await publicGet<{ items: PublicSession[] }>("/public/workshops");
-  return body?.items ?? [];
+export interface PublicOneOnOneWorkshop {
+  id: string;
+  title: string;
+  description: string | null;
+  default_duration_minutes: number;
+}
+
+export async function getPublicWorkshops(): Promise<{
+  sessions: PublicSession[];
+  oneOnOneWorkshops: PublicOneOnOneWorkshop[];
+}> {
+  const body = await publicGet<{
+    items: PublicSession[];
+    one_on_one_workshops: PublicOneOnOneWorkshop[];
+  }>("/public/workshops");
+  return {
+    sessions: body?.items ?? [],
+    oneOnOneWorkshops: body?.one_on_one_workshops ?? [],
+  };
 }
 
 export async function getPublicCourses(): Promise<PublicCourse[]> {

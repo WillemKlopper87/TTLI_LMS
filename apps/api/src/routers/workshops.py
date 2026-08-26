@@ -12,7 +12,7 @@ finance).
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Response, status
 from sqlalchemy import select
@@ -27,15 +27,21 @@ from src.schemas.workshops import (
     AvailabilityPage,
     AvailabilityWindowResponse,
     BookingResponse,
+    BookOpenSlotRequest,
     CancelSessionRequest,
+    CoachingFacilitatorResponse,
+    CoachingFacilitatorsPage,
     CreateFacilitatorRequest,
     CreateSessionRequest,
     CreateWorkshopRequest,
     FacilitatorResponse,
     FacilitatorsPage,
     MarkAttendanceRequest,
+    OpenSlotRow,
+    OpenSlotsPage,
     OwnBookingResponse,
     OwnBookingsPage,
+    PublicOneOnOneWorkshopRow,
     PublicSessionRow,
     PublicWorkshopsResponse,
     RescheduleBookingRequest,
@@ -261,6 +267,92 @@ async def list_sessions(
         session, tenant_id=principal.tenant_id, workshop_id=_parse_uuid(workshop_id)
     )
     return SessionsPage(items=[await _session_response(session, s) for s in sessions])
+
+
+@router.get("/workshops/{workshop_id}/open-slots", response_model=OpenSlotsPage)
+async def list_open_slots(
+    workshop_id: str,
+    facilitator_id: str,
+    from_date: date,
+    to_date: date,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> OpenSlotsPage:
+    slots = await workshops_service.list_open_slots(
+        session,
+        tenant_id=principal.tenant_id,
+        workshop_id=_parse_uuid(workshop_id),
+        facilitator_id=_parse_uuid(facilitator_id),
+        from_date=from_date,
+        to_date=to_date,
+    )
+    return OpenSlotsPage(items=[OpenSlotRow(starts_at=s, ends_at=e) for s, e in slots])
+
+
+@router.get(
+    "/workshops/{workshop_id}/coaches",
+    response_model=CoachingFacilitatorsPage,
+)
+async def list_coaching_facilitators(
+    workshop_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+) -> CoachingFacilitatorsPage:
+    rows = await workshops_service.list_coaching_facilitators(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        workshop_id=_parse_uuid(workshop_id),
+    )
+    return CoachingFacilitatorsPage(
+        items=[
+            CoachingFacilitatorResponse(
+                id=str(row.id),
+                display_name=row.display_name,
+                bio=row.bio,
+                timezone=row.timezone,
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.post(
+    "/workshops/{workshop_id}/book-slot",
+    response_model=BookingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def book_open_slot(
+    workshop_id: str,
+    body: BookOpenSlotRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+    crypto: CryptoDep,
+    settings: SettingsDep,
+) -> BookingResponse:
+    booking = await workshops_service.book_open_slot(
+        session,
+        crypto,
+        settings,
+        tenant_id=principal.tenant_id,
+        workshop_id=_parse_uuid(workshop_id),
+        facilitator_id=_parse_uuid(body.facilitator_id),
+        starts_at=body.starts_at,
+        user_id=principal.user_id,
+    )
+    link = (
+        await session.execute(
+            select(MeetingLink).where(MeetingLink.session_id == booking.session_id)
+        )
+    ).scalar_one_or_none()
+    return BookingResponse(
+        id=str(booking.id),
+        session_id=str(booking.session_id),
+        user_id=str(booking.user_id),
+        status=booking.status,
+        join_url=link.join_url if link else None,
+    )
 
 
 @router.post("/sessions/{session_id}/cancel", response_model=SessionResponse)
@@ -591,6 +683,9 @@ async def list_public_workshops(
     join link, no roster, no attendance.
     """
     rows = await workshops_service.list_public_sessions(session, tenant_id=tenant.id)
+    one_on_one = await workshops_service.list_public_one_on_one_workshops(
+        session, tenant_id=tenant.id
+    )
     items: list[PublicSessionRow] = []
     for workshop_session, workshop, user, registered in rows:
         # Facilitators are public-facing, but the name is encrypted at
@@ -619,7 +714,18 @@ async def list_public_workshops(
                 is_full=seats_left == 0,
             )
         )
-    return PublicWorkshopsResponse(items=items)
+    return PublicWorkshopsResponse(
+        items=items,
+        one_on_one_workshops=[
+            PublicOneOnOneWorkshopRow(
+                id=str(w.id),
+                title=w.title,
+                description=w.description,
+                default_duration_minutes=w.default_duration_minutes,
+            )
+            for w in one_on_one
+        ],
+    )
 
 
 __all__ = ["router"]
