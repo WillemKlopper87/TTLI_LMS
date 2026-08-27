@@ -71,6 +71,13 @@ ACCOUNTS: list[tuple[str, str, str, str, str]] = [
         "admin",
         "session-refresh.spec.ts",
     ),
+    (
+        "E2E_SURVEY_ADMIN_EMAIL",
+        "survey-admin@example.com",
+        "SmokeTest123!survey",
+        "content_author",
+        "survey-pairing.spec.ts",
+    ),
     # super_admin, not content_author: course:edit + course:publish authors
     # the fixture content, but product:manage (needed to price and activate
     # it — 0022 deliberately withholds that from content_author) does not

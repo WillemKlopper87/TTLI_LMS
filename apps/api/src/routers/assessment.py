@@ -59,6 +59,9 @@ from src.schemas.assessment import (
     QuizzesPageResponse,
     SubmissionDownloadResponse,
     SurveyCreateRequest,
+    SurveyDeltaOption,
+    SurveyDeltaQuestion,
+    SurveyDeltaResponse,
     SurveyListItem,
     SurveyQuestionCreateRequest,
     SurveyQuestionView,
@@ -372,6 +375,8 @@ async def list_surveys(principal: PrincipalDep, session: SessionDep) -> SurveysP
                 response_mode=s.response_mode,
                 minimum_group_size=s.minimum_group_size,
                 question_count=count,
+                evaluation_role=s.evaluation_role,
+                pair_id=str(s.pair_id) if s.pair_id else None,
             )
             for s, count in rows
         ]
@@ -383,16 +388,20 @@ async def create_survey(
     body: SurveyCreateRequest, principal: PrincipalDep, session: SessionDep
 ) -> SurveyResponse_:
     principal.require("course:edit")
-    survey = Survey(
-        id=uuid7(),
+    survey = await survey_service.create_survey(
+        session,
         title=body.title,
         response_mode=body.response_mode,
         minimum_group_size=body.minimum_group_size,
+        evaluation_role=body.evaluation_role,
+        paired_survey_id=_parse_uuid(body.paired_survey_id) if body.paired_survey_id else None,
     )
-    session.add(survey)
-    await session.flush()
     return SurveyResponse_(
-        id=str(survey.id), title=survey.title, response_mode=survey.response_mode
+        id=str(survey.id),
+        title=survey.title,
+        response_mode=survey.response_mode,
+        evaluation_role=survey.evaluation_role,
+        pair_id=str(survey.pair_id) if survey.pair_id else None,
     )
 
 
@@ -525,6 +534,8 @@ def _survey_results_response(aggregate: survey_service.SurveyAggregate) -> Surve
         minimum_group_size=aggregate.survey.minimum_group_size,
         response_count=aggregate.response_count,
         available=aggregate.available,
+        evaluation_role=aggregate.survey.evaluation_role,
+        pair_id=str(aggregate.survey.pair_id) if aggregate.survey.pair_id else None,
         questions=[
             SurveyResultQuestion(
                 question_id=str(q.question_id),
@@ -553,6 +564,48 @@ async def get_survey_results(
         session, tenant_id=principal.tenant_id, survey_id=_parse_uuid(survey_id)
     )
     return _survey_results_response(aggregate)
+
+
+@router.get("/surveys/{survey_id}/delta", response_model=SurveyDeltaResponse)
+async def get_survey_delta(
+    survey_id: str, principal: PrincipalDep, session: SessionDep
+) -> SurveyDeltaResponse:
+    principal.require("course:edit")
+    delta = await survey_service.aggregate_delta(
+        session, tenant_id=principal.tenant_id, survey_id=_parse_uuid(survey_id)
+    )
+    return SurveyDeltaResponse(
+        pair_id=str(delta.pair_id),
+        pre_survey_id=str(delta.pre.survey.id),
+        pre_title=delta.pre.survey.title,
+        post_survey_id=str(delta.post.survey.id),
+        post_title=delta.post.survey.title,
+        pre_response_count=delta.pre.response_count,
+        post_response_count=delta.post.response_count,
+        pre_minimum_group_size=delta.pre.survey.minimum_group_size,
+        post_minimum_group_size=delta.post.survey.minimum_group_size,
+        available=delta.available,
+        questions=[
+            SurveyDeltaQuestion(
+                position=q.position,
+                prompt=q.prompt,
+                pre_response_count=q.pre_response_count,
+                post_response_count=q.post_response_count,
+                options=[
+                    SurveyDeltaOption(
+                        text=o.text,
+                        pre_count=o.pre_count,
+                        post_count=o.post_count,
+                        pre_percent=round(o.pre_percent, 2),
+                        post_percent=round(o.post_percent, 2),
+                        delta_percentage_points=round(o.post_percent - o.pre_percent, 2),
+                    )
+                    for o in q.options
+                ],
+            )
+            for q in delta.questions
+        ],
+    )
 
 
 @router.get(

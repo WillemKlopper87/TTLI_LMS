@@ -2670,6 +2670,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/surveys/{survey_id}/delta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Survey Delta */
+        get: operations["get_survey_delta_api_v1_surveys__survey_id__delta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/surveys/{survey_id}/results/export.csv": {
         parameters: {
             query?: never;
@@ -7896,6 +7913,66 @@ export interface components {
              * @default 5
              */
             minimum_group_size: number;
+            /**
+             * Evaluation Role
+             * @default standalone
+             */
+            evaluation_role: string;
+            /** Paired Survey Id */
+            paired_survey_id?: string | null;
+        };
+        /** SurveyDeltaOption */
+        SurveyDeltaOption: {
+            /** Text */
+            text: string;
+            /** Pre Count */
+            pre_count: number;
+            /** Post Count */
+            post_count: number;
+            /** Pre Percent */
+            pre_percent: number;
+            /** Post Percent */
+            post_percent: number;
+            /** Delta Percentage Points */
+            delta_percentage_points: number;
+        };
+        /** SurveyDeltaQuestion */
+        SurveyDeltaQuestion: {
+            /** Position */
+            position: number;
+            /** Prompt */
+            prompt: string;
+            /** Pre Response Count */
+            pre_response_count: number;
+            /** Post Response Count */
+            post_response_count: number;
+            /** Options */
+            options: components["schemas"]["SurveyDeltaOption"][];
+        };
+        /** SurveyDeltaResponse */
+        SurveyDeltaResponse: {
+            /** Pair Id */
+            pair_id: string;
+            /** Pre Survey Id */
+            pre_survey_id: string;
+            /** Pre Title */
+            pre_title: string;
+            /** Post Survey Id */
+            post_survey_id: string;
+            /** Post Title */
+            post_title: string;
+            /** Pre Response Count */
+            pre_response_count: number;
+            /** Post Response Count */
+            post_response_count: number;
+            /** Pre Minimum Group Size */
+            pre_minimum_group_size: number;
+            /** Post Minimum Group Size */
+            post_minimum_group_size: number;
+            /** Available */
+            available: boolean;
+            /** Questions */
+            questions: components["schemas"]["SurveyDeltaQuestion"][];
         };
         /** SurveyListItem */
         SurveyListItem: {
@@ -7909,6 +7986,10 @@ export interface components {
             minimum_group_size: number;
             /** Question Count */
             question_count: number;
+            /** Evaluation Role */
+            evaluation_role: string;
+            /** Pair Id */
+            pair_id: string | null;
         };
         /** SurveyQuestionCreateRequest */
         SurveyQuestionCreateRequest: {
@@ -7954,6 +8035,10 @@ export interface components {
             title: string;
             /** Response Mode */
             response_mode: string;
+            /** Evaluation Role */
+            evaluation_role: string;
+            /** Pair Id */
+            pair_id: string | null;
         };
         /**
          * SurveyResultQuestion
@@ -8003,6 +8088,10 @@ export interface components {
             available: boolean;
             /** Questions */
             questions: components["schemas"]["SurveyResultQuestion"][];
+            /** Evaluation Role */
+            evaluation_role: string;
+            /** Pair Id */
+            pair_id: string | null;
         };
         /** SurveyView */
         SurveyView: {
@@ -13673,6 +13762,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SurveyResultsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_survey_delta_api_v1_surveys__survey_id__delta_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                survey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveyDeltaResponse"];
                 };
             };
             /** @description Validation Error */

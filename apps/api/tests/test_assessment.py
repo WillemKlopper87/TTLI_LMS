@@ -16,6 +16,7 @@ from src.core.db import dispose_engine, init_engine
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
+from src.models.assessment import SurveyQuestion, SurveyResponse
 from src.models.rbac import RoleAssignment
 from src.services import identity
 
@@ -841,6 +842,106 @@ async def test_survey_results_never_exposes_free_text_answers(
     )
     assert csv_resp.status_code == 200, csv_resp.text
     assert secret_text not in csv_resp.text
+
+
+async def test_pre_post_delta_requires_both_privacy_thresholds(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    headers = {"Authorization": f"Bearer {author_token}"}
+    pre = await client.post(
+        "/api/v1/surveys",
+        headers=headers,
+        json={
+            "title": "Confidence before",
+            "response_mode": "anonymous",
+            "minimum_group_size": 2,
+            "evaluation_role": "pre",
+        },
+    )
+    assert pre.status_code == 201, pre.text
+    pre_body = pre.json()
+    assert pre_body["pair_id"]
+    post = await client.post(
+        "/api/v1/surveys",
+        headers=headers,
+        json={
+            "title": "Confidence after",
+            "response_mode": "anonymous",
+            "minimum_group_size": 2,
+            "evaluation_role": "post",
+            "paired_survey_id": pre_body["id"],
+        },
+    )
+    assert post.status_code == 201, post.text
+    assert post.json()["pair_id"] == pre_body["pair_id"]
+
+    question_ids: dict[str, uuid.UUID] = {}
+    for stage, survey_id, option_prefix in (
+        ("pre", pre_body["id"], "before"),
+        ("post", post.json()["id"], "after"),
+    ):
+        question_id = uuid.uuid4()
+        question_ids[stage] = question_id
+        async with tenant_session_factory(tenant_id) as session:
+            session.add(
+                SurveyQuestion(
+                    id=question_id,
+                    survey_id=uuid.UUID(survey_id),
+                    question_type="single_choice",
+                    prompt="How confident are you?",
+                    options=[
+                        {"id": f"{option_prefix}-low", "text": "Low"},
+                        {"id": f"{option_prefix}-high", "text": "High"},
+                    ],
+                    position=0,
+                )
+            )
+            await session.commit()
+
+    async def add_response(stage: str, value: str) -> None:
+        survey_id = pre_body["id"] if stage == "pre" else post.json()["id"]
+        async with tenant_session_factory(tenant_id) as session:
+            session.add(
+                SurveyResponse(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    survey_id=uuid.UUID(survey_id),
+                    user_id=None,
+                    respondent_reference=uuid.uuid4().bytes,
+                    answers=[{"question_id": str(question_ids[stage]), "value": value}],
+                )
+            )
+            await session.commit()
+
+    await add_response("pre", "before-low")
+    await add_response("pre", "before-high")
+    await add_response("post", "after-high")
+    below = await client.get(f"/api/v1/surveys/{pre_body['id']}/delta", headers=headers)
+    assert below.status_code == 200, below.text
+    assert below.json()["available"] is False
+    assert below.json()["questions"] == []
+
+    await add_response("post", "after-high")
+    reached = await client.get(f"/api/v1/surveys/{pre_body['id']}/delta", headers=headers)
+    assert reached.status_code == 200, reached.text
+    body = reached.json()
+    assert body["available"] is True
+    low, high = body["questions"][0]["options"]
+    assert low["delta_percentage_points"] == -50.0
+    assert high["delta_percentage_points"] == 50.0
+
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    forbidden = await client.get(
+        f"/api/v1/surveys/{pre_body['id']}/delta",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert forbidden.status_code == 403
 
 
 # ============================================================ Assignments ===

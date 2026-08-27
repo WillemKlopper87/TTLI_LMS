@@ -13,6 +13,8 @@ interface SurveyListItem {
   response_mode: "identified" | "anonymous";
   minimum_group_size: number;
   question_count: number;
+  evaluation_role: "standalone" | "pre" | "post";
+  pair_id: string | null;
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -90,6 +92,7 @@ export default function SurveysScreen() {
                 <tr>
                   <th scope="col">Survey</th>
                   <th scope="col">Mode</th>
+                  <th scope="col">Stage</th>
                   <th scope="col">Questions</th>
                   <th scope="col">Minimum group size</th>
                   <th scope="col"></th>
@@ -101,6 +104,15 @@ export default function SurveysScreen() {
                     <td>{s.title}</td>
                     <td>
                       <span className="tag">{MODE_LABEL[s.response_mode] ?? s.response_mode}</span>
+                    </td>
+                    <td>
+                      <span className="tag">
+                        {s.evaluation_role === "standalone"
+                          ? "Standalone"
+                          : s.evaluation_role === "pre"
+                            ? "Pre-course"
+                            : "Post-course"}
+                      </span>
                     </td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.question_count}</td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.minimum_group_size}</td>

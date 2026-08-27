@@ -120,9 +120,60 @@ async def list_surveys(session: AsyncSession) -> list[tuple[Survey, int]]:
     return [(s, count) for s, count in (await session.execute(stmt)).all()]
 
 
+async def create_survey(
+    session: AsyncSession,
+    *,
+    title: str,
+    response_mode: str,
+    minimum_group_size: int,
+    evaluation_role: str,
+    paired_survey_id: uuid.UUID | None,
+) -> Survey:
+    """Create a standalone/pre survey or the post half of one pre/post pair."""
+    if evaluation_role == "standalone":
+        if paired_survey_id is not None:
+            raise AppError("A standalone survey cannot be paired.")
+        pair_id = None
+    elif evaluation_role == "pre":
+        if paired_survey_id is not None:
+            raise AppError("A pre survey starts a new pair; do not supply paired_survey_id.")
+        pair_id = uuid7()
+    else:
+        if paired_survey_id is None:
+            raise AppError("A post survey must name its pre survey.")
+        pre = await session.get(Survey, paired_survey_id)
+        if pre is None or pre.evaluation_role != "pre" or pre.pair_id is None:
+            raise AppError("The paired survey must be a pre evaluation.")
+        if pre.response_mode != response_mode:
+            raise AppError("Pre and post surveys must use the same response mode.")
+        existing_post = (
+            await session.execute(
+                select(Survey.id).where(
+                    Survey.pair_id == pre.pair_id, Survey.evaluation_role == "post"
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_post is not None:
+            raise AppError("That pre survey already has a post evaluation.")
+        pair_id = pre.pair_id
+
+    survey = Survey(
+        id=uuid7(),
+        title=title,
+        response_mode=response_mode,
+        minimum_group_size=minimum_group_size,
+        evaluation_role=evaluation_role,
+        pair_id=pair_id,
+    )
+    session.add(survey)
+    await session.flush()
+    return survey
+
+
 @dataclass(frozen=True, slots=True)
 class SurveyQuestionAggregate:
     question_id: uuid.UUID
+    position: int
     question_type: str
     prompt: str
     options: list[dict[str, Any]]
@@ -136,6 +187,33 @@ class SurveyAggregate:
     response_count: int
     available: bool
     questions: list[SurveyQuestionAggregate]
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyDeltaOption:
+    text: str
+    pre_count: int
+    post_count: int
+    pre_percent: float
+    post_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyDeltaQuestion:
+    position: int
+    prompt: str
+    pre_response_count: int
+    post_response_count: int
+    options: list[SurveyDeltaOption]
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyDelta:
+    pair_id: uuid.UUID
+    pre: SurveyAggregate
+    post: SurveyAggregate
+    available: bool
+    questions: list[SurveyDeltaQuestion]
 
 
 async def aggregate_results(
@@ -203,6 +281,7 @@ async def aggregate_results(
             questions.append(
                 SurveyQuestionAggregate(
                     question_id=q.id,
+                    position=q.position,
                     question_type=q.question_type,
                     prompt=q.prompt,
                     options=q.options,
@@ -219,10 +298,90 @@ async def aggregate_results(
     )
 
 
+async def aggregate_delta(
+    session: AsyncSession, *, tenant_id: uuid.UUID, survey_id: uuid.UUID
+) -> SurveyDelta:
+    survey = await session.get(Survey, survey_id)
+    if survey is None:
+        raise NotFound("No such survey.")
+    if survey.pair_id is None:
+        raise AppError("This survey is not part of a pre/post pair.")
+    pair = (
+        (
+            await session.execute(
+                select(Survey).where(
+                    Survey.pair_id == survey.pair_id,
+                    Survey.evaluation_role.in_(("pre", "post")),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_role = {item.evaluation_role: item for item in pair}
+    if "pre" not in by_role or "post" not in by_role:
+        raise AppError("This pre/post pair is not complete yet.")
+    pre = await aggregate_results(session, tenant_id=tenant_id, survey_id=by_role["pre"].id)
+    post = await aggregate_results(session, tenant_id=tenant_id, survey_id=by_role["post"].id)
+    available = pre.available and post.available
+    questions: list[SurveyDeltaQuestion] = []
+    if available:
+        post_by_position = {q.position: q for q in post.questions if q.counts is not None}
+        for pre_q in (q for q in pre.questions if q.counts is not None):
+            post_q = post_by_position.get(pre_q.position)
+            if post_q is None:
+                continue
+            pre_counts = pre_q.counts
+            post_counts = post_q.counts
+            if pre_counts is None or post_counts is None:  # narrowed above; keeps mypy honest
+                continue
+            post_counts_by_text = {
+                option["text"].strip().casefold(): post_counts.get(option["id"], 0)
+                for option in post_q.options
+            }
+            options: list[SurveyDeltaOption] = []
+            for option in pre_q.options:
+                text_value = option["text"]
+                pre_count = pre_counts.get(option["id"], 0)
+                post_count = post_counts_by_text.get(text_value.strip().casefold(), 0)
+                options.append(
+                    SurveyDeltaOption(
+                        text=text_value,
+                        pre_count=pre_count,
+                        post_count=post_count,
+                        pre_percent=(pre_count / pre_q.response_count * 100)
+                        if pre_q.response_count
+                        else 0,
+                        post_percent=(post_count / post_q.response_count * 100)
+                        if post_q.response_count
+                        else 0,
+                    )
+                )
+            questions.append(
+                SurveyDeltaQuestion(
+                    position=pre_q.position,
+                    prompt=pre_q.prompt,
+                    pre_response_count=pre_q.response_count,
+                    post_response_count=post_q.response_count,
+                    options=options,
+                )
+            )
+    return SurveyDelta(
+        pair_id=survey.pair_id,
+        pre=pre,
+        post=post,
+        available=available,
+        questions=questions,
+    )
+
+
 __all__ = [
     "SurveyAggregate",
+    "SurveyDelta",
     "SurveyQuestionAggregate",
+    "aggregate_delta",
     "aggregate_results",
+    "create_survey",
     "has_responded",
     "list_surveys",
     "submit_response",

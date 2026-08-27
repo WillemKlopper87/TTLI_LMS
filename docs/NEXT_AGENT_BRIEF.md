@@ -19,7 +19,7 @@ useful design rationale but may contain historical counts.
 | Web gates | Typecheck/build pass; ESLint has 0 errors and 53 tracked warnings. Public/axe tests remain fast and API-free; learner assessment, checkout, finance and organisation journeys now have a separate seeded integration job |
 | Immediate work | Follow `docs/BACKLOG.md` T1–T6. Do not resurrect the obsolete 2026-08-20 order later in this file |
 | Dev services | `docker compose -f infra/docker-compose.yml` (or `scripts/dev-up.sh`) — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145, clamav 3410. API :8010, web :3010. |
-| Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py`; it idempotently repairs the nine least-privilege accounts used by the Playwright specs. The script is the credential/role authority — do not copy its values into another seed path |
+| Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py`; it idempotently repairs the ten least-privilege accounts used by the Playwright specs. The script is the credential/role authority — do not copy its values into another seed path |
 
 ## 2. What is built
 

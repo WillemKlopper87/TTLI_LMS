@@ -26,6 +26,28 @@ interface SurveyResults {
   response_count: number;
   available: boolean;
   questions: ResultQuestion[];
+  evaluation_role: "standalone" | "pre" | "post";
+  pair_id: string | null;
+}
+
+interface SurveyDelta {
+  pre_title: string;
+  post_title: string;
+  pre_response_count: number;
+  post_response_count: number;
+  pre_minimum_group_size: number;
+  post_minimum_group_size: number;
+  available: boolean;
+  questions: {
+    position: number;
+    prompt: string;
+    options: {
+      text: string;
+      pre_percent: number;
+      post_percent: number;
+      delta_percentage_points: number;
+    }[];
+  }[];
 }
 
 /**
@@ -42,6 +64,7 @@ export default function SurveyResultsScreen() {
   const { surveyId } = useParams<{ surveyId: string }>();
 
   const [data, setData] = useState<SurveyResults | null>(null);
+  const [delta, setDelta] = useState<SurveyDelta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -53,7 +76,12 @@ export default function SurveyResultsScreen() {
           setError("These results could not be loaded.");
           return;
         }
-        setData(await resp.json());
+        const result: SurveyResults = await resp.json();
+        setData(result);
+        if (result.pair_id) {
+          const deltaResp = await authedFetch(`/api/bff/surveys/${surveyId}/delta`);
+          if (deltaResp.ok) setDelta(await deltaResp.json());
+        }
       })
       .catch(() => setError("These results could not be loaded."));
   }, [canView, surveyId]);
@@ -167,6 +195,38 @@ export default function SurveyResultsScreen() {
           ))}
         </div>
       )}
+
+      {delta ? (
+        <section className="mt-8">
+          <h2>Pre/post change</h2>
+          {!delta.available ? (
+            <div className="callout mt-3">
+              Both stages must reach their privacy threshold before change is shown. Pre: {delta.pre_response_count}/
+              {delta.pre_minimum_group_size}; post: {delta.post_response_count}/
+              {delta.post_minimum_group_size}.
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-col gap-4">
+              {delta.questions.map((question) => (
+                <div key={question.position} className="card p-4">
+                  <b>{question.prompt}</b>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {question.options.map((option) => (
+                      <div key={option.text} className="flex items-center justify-between gap-3">
+                        <span>{option.text}</span>
+                        <span className="mono" style={{ color: "var(--muted)" }}>
+                          {option.pre_percent.toFixed(1)}% → {option.post_percent.toFixed(1)}% ({option.delta_percentage_points >= 0 ? "+" : ""}
+                          {option.delta_percentage_points.toFixed(1)} pp)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

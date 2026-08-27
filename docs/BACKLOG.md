@@ -46,10 +46,13 @@ suggested-order history at the end of this file.
   claims about duplicated `authedFetch`, dead GitHub Actions billing, old HEAD,
   migration/test counts and missing browser specs. Keep `BACKLOG.md` as the
   status authority rather than adding another append-only status log.
-- [ ] **T5 — Continue P9 assessment depth (M).** Phase 2: add pre/post skills
-  pairing (`evaluation_role`, `pair_id`) and a privacy-gated delta report.
-  Phase 3: add reusable question banks. Each phase needs tenant/permission
-  tests, minimum-group-size regression coverage, UI and a browser journey.
+- [ ] **T5 — Continue P9 assessment depth (M).** **Phase 2 DONE 2026-08-27:**
+  pre/post pairing (`evaluation_role`, `pair_id`), one-pre/one-post database
+  invariants, a `course:edit`-gated delta endpoint that withholds every delta
+  until both stages meet their own privacy threshold, admin authoring/results
+  UI, API regression coverage and an authenticated browser journey. **Phase 3
+  remains:** add reusable question banks with tenant/permission tests, UI and a
+  browser journey.
 - [ ] **T6 — Reduce the frontend warning baseline (M).** Address the current
   53 ESLint warnings, starting with request-triggering
   `react-hooks/set-state-in-effect` sites and the quiz timeout submission path.

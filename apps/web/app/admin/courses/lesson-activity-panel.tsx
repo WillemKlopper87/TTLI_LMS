@@ -57,6 +57,8 @@ interface SurveyListItem {
   response_mode: string;
   minimum_group_size: number;
   question_count: number;
+  evaluation_role: "standalone" | "pre" | "post";
+  pair_id: string | null;
 }
 
 interface SurveyQuestionView {
@@ -156,6 +158,8 @@ export function LessonActivityPanel({
   const [surveyTitle, setSurveyTitle] = useState("");
   const [surveyResponseMode, setSurveyResponseMode] = useState("identified");
   const [surveyMinGroupSize, setSurveyMinGroupSize] = useState(5);
+  const [surveyEvaluationRole, setSurveyEvaluationRole] = useState("standalone");
+  const [pairedSurveyId, setPairedSurveyId] = useState("");
   const [createSurveyBusy, setCreateSurveyBusy] = useState(false);
 
   const [assignmentTitle, setAssignmentTitle] = useState("");
@@ -314,6 +318,8 @@ export function LessonActivityPanel({
         title: surveyTitle.trim(),
         response_mode: surveyResponseMode,
         minimum_group_size: surveyMinGroupSize,
+        evaluation_role: surveyEvaluationRole,
+        paired_survey_id: surveyEvaluationRole === "post" ? pairedSurveyId : null,
       }),
     });
     setCreateSurveyBusy(false);
@@ -662,6 +668,40 @@ export function LessonActivityPanel({
                   </select>
                 </label>
                 <label className="field">
+                  <b>Evaluation stage</b>
+                  <select
+                    className="input"
+                    value={surveyEvaluationRole}
+                    onChange={(e) => {
+                      setSurveyEvaluationRole(e.target.value);
+                      setPairedSurveyId("");
+                    }}
+                  >
+                    <option value="standalone">Standalone</option>
+                    <option value="pre">Pre-course</option>
+                    <option value="post">Post-course</option>
+                  </select>
+                </label>
+                {surveyEvaluationRole === "post" ? (
+                  <label className="field">
+                    <b>Pre-course survey</b>
+                    <select
+                      className="input"
+                      value={pairedSurveyId}
+                      onChange={(e) => setPairedSurveyId(e.target.value)}
+                    >
+                      <option value="">Choose…</option>
+                      {(surveys ?? [])
+                        .filter((survey) => survey.evaluation_role === "pre")
+                        .map((survey) => (
+                          <option key={survey.id} value={survey.id}>
+                            {survey.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="field">
                   <b>Minimum group size</b>
                   <input
                     className="input"
@@ -675,7 +715,11 @@ export function LessonActivityPanel({
                 <button
                   type="button"
                   className="btn btn--primary"
-                  disabled={createSurveyBusy || !surveyTitle.trim()}
+                  disabled={
+                    createSurveyBusy ||
+                    !surveyTitle.trim() ||
+                    (surveyEvaluationRole === "post" && !pairedSurveyId)
+                  }
                   onClick={createSurvey}
                 >
                   Create

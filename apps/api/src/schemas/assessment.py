@@ -161,12 +161,16 @@ class SurveyCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     response_mode: str = Field(pattern="^(identified|anonymous)$")
     minimum_group_size: int = Field(default=5, ge=1)
+    evaluation_role: str = Field(default="standalone", pattern="^(standalone|pre|post)$")
+    paired_survey_id: str | None = None
 
 
 class SurveyResponse_(BaseModel):
     id: str
     title: str
     response_mode: str
+    evaluation_role: str
+    pair_id: str | None
 
 
 class SurveyQuestionCreateRequest(BaseModel):
@@ -205,6 +209,39 @@ class SurveyListItem(BaseModel):
     response_mode: str
     minimum_group_size: int
     question_count: int
+    evaluation_role: str
+    pair_id: str | None
+
+
+class SurveyDeltaOption(BaseModel):
+    text: str
+    pre_count: int
+    post_count: int
+    pre_percent: float
+    post_percent: float
+    delta_percentage_points: float
+
+
+class SurveyDeltaQuestion(BaseModel):
+    position: int
+    prompt: str
+    pre_response_count: int
+    post_response_count: int
+    options: list[SurveyDeltaOption]
+
+
+class SurveyDeltaResponse(BaseModel):
+    pair_id: str
+    pre_survey_id: str
+    pre_title: str
+    post_survey_id: str
+    post_title: str
+    pre_response_count: int
+    post_response_count: int
+    pre_minimum_group_size: int
+    post_minimum_group_size: int
+    available: bool
+    questions: list[SurveyDeltaQuestion]
 
 
 class SurveysPageResponse(BaseModel):
@@ -239,6 +276,8 @@ class SurveyResultsResponse(BaseModel):
     response_count: int
     available: bool
     questions: list[SurveyResultQuestion]
+    evaluation_role: str
+    pair_id: str | None
 
 
 # --- Assignments ---
@@ -331,6 +370,9 @@ __all__ = [
     "SubmissionDownloadResponse",
     "SurveyAnswer",
     "SurveyCreateRequest",
+    "SurveyDeltaOption",
+    "SurveyDeltaQuestion",
+    "SurveyDeltaResponse",
     "SurveyListItem",
     "SurveyQuestionCreateRequest",
     "SurveyQuestionOption",

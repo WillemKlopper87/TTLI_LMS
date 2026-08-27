@@ -36,6 +36,10 @@ SURVEY_RESPONSE_MODE_VALUES = ("identified", "anonymous")
 SurveyResponseMode = Enum(
     *SURVEY_RESPONSE_MODE_VALUES, name="survey_response_mode", create_type=False
 )
+SURVEY_EVALUATION_ROLE_VALUES = ("standalone", "pre", "post")
+SurveyEvaluationRole = Enum(
+    *SURVEY_EVALUATION_ROLE_VALUES, name="survey_evaluation_role", create_type=False
+)
 
 
 class Quiz(Base, TimestampMixin):
@@ -131,6 +135,25 @@ class QuizAnswer(Base):
 
 class Survey(Base, TimestampMixin):
     __tablename__ = "surveys"
+    __table_args__ = (
+        CheckConstraint(
+            "(evaluation_role = 'standalone' AND pair_id IS NULL) OR "
+            "(evaluation_role IN ('pre', 'post') AND pair_id IS NOT NULL)",
+            name="ck_surveys_evaluation_pair",
+        ),
+        Index(
+            "uq_surveys_pair_pre",
+            "pair_id",
+            unique=True,
+            postgresql_where=text("evaluation_role = 'pre'"),
+        ),
+        Index(
+            "uq_surveys_pair_post",
+            "pair_id",
+            unique=True,
+            postgresql_where=text("evaluation_role = 'post'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -138,6 +161,10 @@ class Survey(Base, TimestampMixin):
     minimum_group_size: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("5")
     )
+    evaluation_role: Mapped[str] = mapped_column(
+        SurveyEvaluationRole, nullable=False, server_default=text("'standalone'")
+    )
+    pair_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 
 
 class SurveyQuestion(Base):
@@ -259,6 +286,7 @@ __all__ = [
     "QuizAttempt",
     "QuizQuestion",
     "Survey",
+    "SurveyEvaluationRole",
     "SurveyQuestion",
     "SurveyResponse",
     "SurveyResponseMode",
