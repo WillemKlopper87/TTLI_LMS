@@ -13,6 +13,18 @@ import type { APIRequestContext, APIResponse } from "@playwright/test";
  * runs once against a shared dev database, this needs a fresh course per
  * spec run so re-running the suite doesn't collide with a previous run's
  * completed/attempted state.
+ *
+ * Verify these specs one file at a time locally (`npx playwright test
+ * e2e/<file>.spec.ts`), the same as every other authenticated spec in
+ * this suite — not `npm run test:e2e` with them all included. Login is
+ * rate-limited both per-account (5/min) and per-IP (10/min,
+ * `docs/03_API_SPEC.md`); four-plus spec files starting in parallel from
+ * one machine, each logging in two or three times for its own fixture
+ * setup and mid-test approval, blows past the per-IP ceiling even though
+ * every individual account stays under its own. Not a concern in CI,
+ * which never runs a live API for these specs at all (`.github/
+ * workflows/ci.yml`'s own comment: "the authenticated spec skips itself,
+ * loudly").
  */
 
 async function check(resp: APIResponse, step: string): Promise<APIResponse> {
@@ -285,5 +297,152 @@ export async function authorAndSellAssessmentCourse(
     assignmentLessonId: assignmentLesson.id,
     correctOptionId,
     enrolmentId: enrolment.enrolment_id,
+  };
+}
+
+export interface SellableCourse {
+  courseId: string;
+  title: string;
+  priceId: string;
+}
+
+/** A published, priced, active course with nobody enrolled in it — for
+ * specs that drive the purchase itself through the browser (checkout.spec.ts)
+ * rather than needing it already bought (learner-assessment.spec.ts). */
+export async function authorSellableCourse(
+  request: APIRequestContext,
+  opts: { contentEmail: string; contentPassword: string },
+): Promise<SellableCourse> {
+  const adminToken = await login(request, opts.contentEmail, opts.contentPassword);
+  const adminAuth = bearer(adminToken);
+  const suffix = Math.random().toString(36).slice(2, 10);
+  const title = `E2E Checkout Course ${suffix}`;
+
+  const course = await (
+    await check(
+      await request.post("/api/bff/courses", { headers: adminAuth, data: { title } }),
+      "create course",
+    )
+  ).json();
+  const module_ = await (
+    await check(
+      await request.post(`/api/bff/courses/${course.id}/modules`, {
+        headers: adminAuth,
+        data: { title: "Module 1" },
+      }),
+      "create module",
+    )
+  ).json();
+  await check(
+    await request.post(`/api/bff/modules/${module_.id}/lessons`, {
+      headers: adminAuth,
+      data: { title: "Lesson 1" },
+    }),
+    "create lesson",
+  );
+  await check(
+    await request.post(`/api/bff/courses/${course.id}/publish`, { headers: adminAuth }),
+    "publish course",
+  );
+  await check(
+    await request.post(`/api/bff/courses/${course.id}/tenant-assignments`, {
+      headers: adminAuth,
+      data: { is_bespoke: false },
+    }),
+    "assign course to tenant",
+  );
+
+  const product = await (
+    await check(
+      await request.post("/api/bff/catalogue/products", {
+        headers: adminAuth,
+        data: {
+          slug: `e2e-checkout-${suffix}`,
+          name: title,
+          description: "Fixture product for checkout browser coverage.",
+          course_id: course.id,
+        },
+      }),
+      "create product",
+    )
+  ).json();
+  const price = await (
+    await check(
+      await request.post(`/api/bff/catalogue/products/${product.id}/prices`, {
+        headers: adminAuth,
+        data: { currency: "ZAR", unit_amount: "10.00" },
+      }),
+      "create price",
+    )
+  ).json();
+  await check(
+    await request.patch(`/api/bff/catalogue/products/${product.id}`, {
+      headers: adminAuth,
+      data: { is_active: true },
+    }),
+    "activate product",
+  );
+
+  return { courseId: course.id, title, priceId: price.id };
+}
+
+export interface PendingEftPayment {
+  courseTitle: string;
+  buyerEmail: string;
+  paymentId: string;
+  orderId: string;
+}
+
+/** A course, bought via EFT with proof already uploaded, sitting
+ * unapproved in the finance queue — admin-finance.spec.ts drives the
+ * *approval* itself through the browser, so the purchase that puts it
+ * there is fixture setup, done via the API like everything else here. */
+export async function authorAndSubmitPendingEftPayment(
+  request: APIRequestContext,
+  opts: {
+    contentEmail: string;
+    contentPassword: string;
+    buyerEmail: string;
+    buyerPassword: string;
+  },
+): Promise<PendingEftPayment> {
+  const course = await authorSellableCourse(request, opts);
+
+  const buyerToken = await login(request, opts.buyerEmail, opts.buyerPassword);
+  const buyerAuth = bearer(buyerToken);
+  const order = await (
+    await check(
+      await request.post("/api/bff/orders", {
+        headers: { ...buyerAuth, "Idempotency-Key": `e2e-finance-order-${course.courseId}` },
+        data: {
+          currency: "ZAR",
+          customer_type: "individual",
+          lines: [{ price_id: course.priceId, quantity: 1 }],
+        },
+      }),
+      "create order",
+    )
+  ).json();
+  const checkout = await (
+    await check(
+      await request.post(`/api/bff/orders/${order.id}/checkout/eft`, { headers: buyerAuth }),
+      "checkout via EFT",
+    )
+  ).json();
+  await check(
+    await request.post(`/api/bff/orders/${order.id}/payment-proof`, {
+      headers: buyerAuth,
+      multipart: {
+        file: { name: "proof.txt", mimeType: "text/plain", buffer: Buffer.from("proof") },
+      },
+    }),
+    "upload payment proof",
+  );
+
+  return {
+    courseTitle: course.title,
+    buyerEmail: opts.buyerEmail,
+    paymentId: checkout.payment_id,
+    orderId: order.id,
   };
 }

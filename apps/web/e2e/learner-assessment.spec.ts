@@ -41,6 +41,10 @@ test("a learner completes a document lesson, a quiz, a survey and an assignment"
   page,
   request,
 }) => {
+  // Fixture setup alone is a couple dozen sequential API round trips —
+  // the default 30s test timeout leaves little margin under load.
+  test.setTimeout(90_000);
+
   const fixture = await authorAndSellAssessmentCourse(request, {
     contentEmail: CONTENT_EMAIL,
     contentPassword: CONTENT_PASSWORD,

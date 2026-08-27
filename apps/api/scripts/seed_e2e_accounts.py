@@ -105,6 +105,18 @@ ACCOUNTS: list[tuple[str, str, str, str, str]] = [
         "finance",
         "admin-finance.spec.ts",
     ),
+    # A distinct buyer from checkout-buyer@ — admin-finance.spec.ts submits
+    # its own EFT payment for finance-e2e@ to approve, and both spec files
+    # can run in parallel (fullyParallel: true), so this can't share an
+    # account with checkout.spec.ts's buyer any more than either can share
+    # a login budget with ops-admin@.
+    (
+        "E2E_FINANCE_BUYER_EMAIL",
+        "finance-buyer-e2e@example.com",
+        "SmokeTest123!financebuyer",
+        "",
+        "admin-finance.spec.ts (fixture purchase only)",
+    ),
     (
         "E2E_ORG_EMAIL",
         "org-e2e@example.com",
