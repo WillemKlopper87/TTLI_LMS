@@ -20,14 +20,20 @@ export interface Theme {
 }
 
 export async function getTheme(): Promise<Theme | null> {
-  const host = (await headers()).get("host") ?? "localhost";
-  const client = createApiClient(API_URL);
-  const { data, response } = await client.GET("/api/v1/tenant/theme", {
-    headers: { "X-Tenant-Host": host },
-    cache: "no-store",
-  });
-  if (!response.ok || !data) return null;
-  return data as Theme;
+  try {
+    const host = (await headers()).get("host") ?? "localhost";
+    const client = createApiClient(API_URL);
+    const { data, response } = await client.GET("/api/v1/tenant/theme", {
+      headers: { "X-Tenant-Host": host },
+      cache: "no-store",
+    });
+    if (!response.ok || !data) return null;
+    return data as Theme;
+  } catch {
+    // Theme is enhancement data, not a reason to take down every route.
+    // This also keeps the public/a11y CI gate meaningful without an API.
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ *

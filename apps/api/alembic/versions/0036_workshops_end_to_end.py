@@ -125,9 +125,7 @@ def upgrade() -> None:
 
     op.add_column(
         "workshops",
-        sa.Column(
-            "requires_credit", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("requires_credit", sa.Boolean(), nullable=False, server_default=sa.text("false")),
     )
     # Raw DDL, not op.add_column(sa.Enum(...)): meeting_provider already
     # exists as a Postgres type (0018) — referencing it by name in raw

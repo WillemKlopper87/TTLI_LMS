@@ -39,7 +39,10 @@ export default defineConfig({
     ? undefined
     : {
         command: "npm run build && npm run start:e2e",
-        url: "http://localhost:3011",
+        // Readiness must not render a server component that calls the API:
+        // the CI web job intentionally starts no API. robots.txt is static,
+        // while the authenticated specs perform their own API probe and skip.
+        url: "http://localhost:3011/robots.txt",
         reuseExistingServer: !process.env.CI,
         timeout: 300_000,
       },

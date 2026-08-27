@@ -278,6 +278,7 @@ jobs:
           sudo mv gitleaks /usr/local/bin/gitleaks
 
       - name: Secret scan (full history)
+        working-directory: .
         run: gitleaks detect --source . --config .gitleaks.toml -v
 
   # The deployment artefacts are code too: a Dockerfile that stopped
