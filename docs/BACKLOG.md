@@ -15,6 +15,45 @@ Sources: `docs/research/enterprise-gaps-plan.md` (Passes A–K),
 
 ---
 
+## Immediate TODO — review refresh 2026-08-27
+
+This is the current execution queue. It takes precedence over the older
+suggested-order history at the end of this file.
+
+- [ ] **T1 — Restore green CI on `a0064e5` (S).** Run Ruff formatting on
+  `apps/api/src/services/survey.py` and `apps/api/tests/test_assessment.py`,
+  then rerun the complete quality job. Done means formatting, mypy,
+  migrations, the full API suite, migration round-trip, model-drift check,
+  OpenAPI/client drift and documentation gates all pass — not merely that the
+  formatting step is green.
+- [ ] **T2 — Verify P9 Phase 1 against real services (S).** With the isolated
+  test Postgres/Redis stack available, run `tests/test_assessment.py` and the
+  full API suite. Smoke the survey list, below-threshold result, threshold
+  transition and CSV export through the BFF. The latest CI never reached these
+  checks because T1 failed first.
+- [ ] **T3 — Make the new authenticated browser journeys enforceable (M).**
+  CI currently starts no API, so `learner-assessment.spec.ts`,
+  `checkout.spec.ts`, `admin-finance.spec.ts` and `organisations.spec.ts` all
+  skip. Add a CI service/fixture path or a separate integration workflow that
+  starts the API dependencies, runs `seed_e2e_accounts.py`, executes these
+  specs, and fails on skips. Preserve the fast public-page/axe job.
+- [ ] **T4 — Refresh current-state documentation (S).** Update
+  `NEXT_AGENT_BRIEF.md`, O6 and any coverage tables after T3; remove obsolete
+  claims about duplicated `authedFetch`, dead GitHub Actions billing, old HEAD,
+  migration/test counts and missing browser specs. Keep `BACKLOG.md` as the
+  status authority rather than adding another append-only status log.
+- [ ] **T5 — Continue P9 assessment depth (M).** Phase 2: add pre/post skills
+  pairing (`evaluation_role`, `pair_id`) and a privacy-gated delta report.
+  Phase 3: add reusable question banks. Each phase needs tenant/permission
+  tests, minimum-group-size regression coverage, UI and a browser journey.
+- [ ] **T6 — Reduce the frontend warning baseline (M).** Address the current
+  53 ESLint warnings, starting with request-triggering
+  `react-hooks/set-state-in-effect` sites and the quiz timeout submission path.
+  Work in small behavioural slices with focused browser coverage; do not
+  blanket-disable the rule.
+
+---
+
 ## P — Product gaps (the enterprise-gaps-plan Passes A–K)
 
 The table is the authority for item state; several passes shipped after the
@@ -76,9 +115,9 @@ These remain.
 | ~~**O13**~~ | ~~Upload handlers are easy to get wrong~~ **DONE 2026-08-24.** New `core/object_keys.py::build_object_key()` — joins server-controlled prefix segments with a sanitised filename in one call, so a new upload site can't skip sanitising by forgetting the join. All six existing call sites (`orders.py` PO/proof, `media.py` source/playback, `assessment.py` submissions, `podcasts.py` audio) migrated. Surfaced a real edge case along the way: two sites fused a `uuid4().hex` uniqueness prefix into the filename with a hyphen before sanitising — running the *combined* string through `safe_filename` would silently drop that prefix for a client filename containing a `/`, since `safe_filename` takes only the last segment. Fixed by making the uuid its own path segment instead. 6 new unit tests. Original scope: the 2026-08-21 key-sanitising fix touched six call sites that had all copied the same unsafe pattern; a single helper call sites must use would stop the seventh | S | — | DONE |
 | ~~**O4**~~ | ~~Secret scanning in CI~~ **DONE 2026-08-23.** New `secrets` job: gitleaks (checksum-verified release download, same supply-chain reasoning as the `quality` job's Trivy step), full commit history (`fetch-depth: 0`), gated (`--exit-code` default). `.gitleaks.toml` allowlists exactly the nine pre-existing dev/test fixtures found by an actual run (Garage's dev keys, its rpc/admin tokens, two test-fixture secrets) — each verified individually against its file, matched by literal secret value so a *different* new secret in the same file still fails. Original scope: no gitleaks/trufflehog despite dev credentials committed in `infra/docker-compose.yml` and `ci.yml`; those are defensibly dev-scoped, but nothing caught the day a real key landed | S | — | DONE |
 | ~~**O5**~~ | ~~Release management~~ **PARTLY DONE 2026-08-23.** `CHANGELOG.md` (Keep a Changelog format, linked from README) plus the `v0.1.0` tag on this pass — the first version marker; `[Unreleased]` is where the next tag's entries land. Deliberately not backfilled further back than that: reconstructing exact per-commit boundaries across 150+ untagged commits after the fact would carry false precision. **Still open**: no PRs (direct-to-main is this project's existing, documented convention — that's a workflow decision for the user, not something to change unilaterally) and the 29 `autosave:` commits already on `main` stay as they are (history, not something to rewrite silently) | S | — | PARTLY DONE |
-| **O6** | **Deeper browser coverage** | M | Playwright + axe landed 2026-08-20 but coverage is deliberately shallow: public pages + one authenticated journey. Admin screens, the learner player and the checkout flow have no browser coverage | OPEN |
-| **O7** | **`react-hooks/set-state-in-effect` cleanup** | M | 34 pre-existing sites, warn-only in ESLint so the gate could start honest. Each is a real behavioural refactor | OPEN |
-| **O8** | **Docs consolidation + codebase shrink** | M | The user asked for this on 2026-08-16. `HANDOFF.md` is 209 KB and `STATUS.md` 185 KB, both append-only; `authedFetch` is copy-pasted into 18 files; the 11k-line generated API client is imported once; `components/` has 2 files for 50 pages | OPEN |
+| **O6** | **Deeper browser coverage** | M | Public + axe coverage is CI-gated. Local authenticated specs now cover the learner assessment flow, EFT checkout/return, finance approval and organisation seat purchasing, but they deliberately skip in CI because that job starts no API. Make those journeys run against a seeded integration stack and fail on skips (T3); video remains uncovered | OPEN |
+| **O7** | **`react-hooks/set-state-in-effect` cleanup** | M | ESLint currently reports 53 warnings across roughly 34 behavioural sites, warn-only so the gate remains honest. Prioritise request-triggering effects and quiz timeout submission; each is a real behavioural refactor, not a bulk auto-fix | OPEN |
+| **O8** | **Docs consolidation + codebase shrink** | M | `authedFetch` consolidation is DONE: authenticated network calls now use the shared refresh-aware transport, with remaining `getAccessToken()` calls serving readiness guards. Still open: `HANDOFF.md`/`STATUS.md` append-only bloat, the stale `NEXT_AGENT_BRIEF.md`, the 11k-line generated API client being barely used, and an undersized shared-component layer | OPEN |
 | ~~**O9**~~ | ~~Test courses in the dev catalogue~~ **DONE 2026-08-21** — `--apply` run: 276 course assignments, 16 episodes, 8 articles, 8 recommendations hidden (nothing deleted, reversible). Catalogue is now the 7 real programmes | S | — | DONE |
 | **O10** | **Multi-currency / i18n plumbing** | M | Tax engine seeds SA VAT only and refuses international buyers; UI is English-only, ZAR-only. README's pitch is "South Africa and internationally" | BLOCKED on B2 |
 | **O11** | **Cloud provisioning: Azure Container Apps, Front Door, IaC, registry push, staging** | L | Containerisation is done and verified (2026-08-20). Everything above the image is not: no IaC, no registry, no environment, no TLS/edge, no staging | BLOCKED on B3 |
@@ -100,7 +139,7 @@ Do not build around these; they change the build, not just the schedule.
 | **B6** | Brand/design system sign-off; wireframes for the six persona views | — |
 | **B7** | Real footer social URLs | The last `homepage-redesign.md` item |
 | **B8** | Information Officer registered with the Information Regulator | POPIA compliance posture (customer obligation) |
-| **B9** | GitHub Actions billing | CI has been dead account-wide since 2026-08-20; `scripts/gates.sh` is the gate meanwhile |
+| ~~**B9**~~ | ~~GitHub Actions billing~~ | **RESOLVED by 2026-08-27:** Actions runs are executing again. Keep `scripts/gates.sh` as the local equivalent; current red CI is the actionable formatting failure in T1, not billing |
 
 ---
 
@@ -112,4 +151,6 @@ Do not build around these; they change the build, not just the schedule.
 4. ~~**P6**~~ — done 2026-08-21 (bar #31, blocked on Payfast credentials).
 5. ~~**P3**~~ — done 2026-08-21. ~~**P4**~~ — SSO done 2026-08-22/23 (see git log; not yet given its own STATUS pass header).
 6. ~~Quick wins~~ — **R4**, **R6**, **O4**, **O5** (partly — no PRs/autosave-rewrite deliberately left alone), **O9**, **P14** all done 2026-08-21/23.
-7. ~~**P5**~~ — done 2026-08-23. ~~**P7**~~ — done 2026-08-24 (5 phases; Teams client unit-tested against mocked Graph, not live-verified — no Azure AD app registration exists here). Next: **P11**, per the plan's own demo-value-per-effort ranking.
+7. ~~**P5**~~ — done 2026-08-23. ~~**P7**~~ — done 2026-08-24 (5 phases; Teams client unit-tested against mocked Graph, not live-verified — no Azure AD app registration exists here).
+8. **Now:** T1–T4 above, so `main` is green and the recently added coverage is a real gate.
+9. **Then:** P9 phases 2–3 (T5), followed by P11 once the assessment data it consumes has a complete, privacy-gated reporting model.

@@ -192,9 +192,7 @@ async def aggregate_results(
             answered = 0
             for answer_list in responses:
                 answer_dicts = cast("list[dict[str, Any]]", answer_list)
-                match = next(
-                    (a for a in answer_dicts if a.get("question_id") == str(q.id)), None
-                )
+                match = next((a for a in answer_dicts if a.get("question_id") == str(q.id)), None)
                 if match is None:
                     continue
                 answered += 1

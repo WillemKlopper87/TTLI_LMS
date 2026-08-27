@@ -147,11 +147,12 @@ async def _enrol_via_eft(
         headers={"Authorization": f"Bearer {buyer_token}"},
     )
     payment_id = checkout.json()["payment_id"]
-    await client.post(
+    proof = await client.post(
         f"/api/v1/orders/{order_id}/payment-proof",
         headers={"Authorization": f"Bearer {buyer_token}"},
         files={"file": ("proof.pdf", b"%PDF-fake-proof-of-payment", "application/pdf")},
     )
+    assert proof.status_code == 204, proof.text
     approve = await client.post(
         f"/api/v1/payments/{payment_id}/approve",
         headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
@@ -668,9 +669,7 @@ async def test_admin_can_view_survey_without_enrolment(
     assert detail.json()["questions"][0]["prompt"] == "Thoughts?"
 
 
-async def test_survey_results_requires_course_edit(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_survey_results_requires_course_edit(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     author_token, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
