@@ -23,8 +23,8 @@
 # maintainers point to SAQ or Streaq), a real migration, not a version
 # bump — tracked as its own future item, not silently deferred.
 fastapi==0.141.1
-uvicorn[standard]==0.52.1
-sqlalchemy[asyncio]==2.0.51
+uvicorn[standard]==0.52.4
+sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 alembic==1.19.1
 psycopg2-binary==2.9.12
@@ -34,10 +34,10 @@ structlog==26.1.0
 PyJWT==2.13.0
 argon2-cffi==25.1.0
 cryptography==50.0.0
-redis==5.2.1
+redis==5.3.1
 python-multipart==0.0.32
 pyotp==2.10.0
-boto3==1.43.67
+boto3==1.43.78
 azure-storage-blob==12.30.0
 arq==0.28.0
 # The Payfast ITN "confirm with provider" round-trip (03 §5.7,
@@ -49,7 +49,7 @@ httpx==0.28.1
 # Certificate PDF generation + QR codes (Phase 4 sprint 4, REQ-CRED-02).
 # No pure-stdlib equivalent for either — unlike the ClamAV wire protocol,
 # PDF/QR encoding isn't small enough to hand-roll reasonably.
-reportlab==5.0.0
+reportlab==5.0.1
 qrcode[pil]==8.2
 Pillow==12.3.0
 # Web Push (01 §5.9, services/push.py) — VAPID signing + aes128gcm

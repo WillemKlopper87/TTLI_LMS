@@ -3,7 +3,7 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 httpx==0.28.1
-ruff==0.16.2
+ruff==0.16.4
 # Dependency-upgrade sprint D: bumped from 1.14.1. Checked both defaults
 # this jump was expected to flip: --local-partial-types has no toggle
 # left at all in 2.3.0 (mandatory now, nothing to fix around), and
@@ -11,7 +11,7 @@ ruff==0.16.2
 # — `mypy src` reports zero new issues against this codebase either way,
 # so no fixup pass was actually needed. Full gate sweep + suite re-run
 # confirmed clean, not just inferred from the changelog.
-mypy==2.3.0
-moto[s3]==5.2.2
+mypy==2.3.1
+moto[s3]==5.2.3
 # CI dependency scanning (04 §3, §10) — apps/api/openapi.json workflow step.
 pip-audit==2.10.1
