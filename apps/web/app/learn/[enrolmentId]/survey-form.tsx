@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface SurveyQuestionView {
   question_id: string;
@@ -33,10 +33,7 @@ export function SurveyForm({ surveyId, onSubmitted }: { surveyId: string; onSubm
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const token = getAccessToken();
-      const resp = await fetch(`/api/bff/surveys/${surveyId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await authedFetch(`/api/bff/surveys/${surveyId}`);
       if (!resp.ok) {
         if (!cancelled) setError("This survey could not be loaded.");
         return;
@@ -53,10 +50,9 @@ export function SurveyForm({ surveyId, onSubmitted }: { surveyId: string; onSubm
     if (!survey) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/surveys/${surveyId}/responses`, {
+    const resp = await authedFetch(`/api/bff/surveys/${surveyId}/responses`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         answers: survey.questions.map((q) => ({
           question_id: q.question_id,

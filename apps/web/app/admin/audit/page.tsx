@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -67,9 +67,7 @@ export default function AuditLog() {
       setLoading(true);
       try {
         const params = query(append && cursor ? { cursor } : undefined);
-        const resp = await fetch(`/api/bff/audit-events?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-        });
+        const resp = await authedFetch(`/api/bff/audit-events?${params.toString()}`);
         if (!resp.ok) {
           setError("The audit log could not be loaded.");
           return;
@@ -91,9 +89,7 @@ export default function AuditLog() {
     if (!canRead) return;
     void (async () => {
       try {
-        const resp = await fetch("/api/bff/audit-events/actions", {
-          headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-        });
+        const resp = await authedFetch("/api/bff/audit-events/actions");
         if (resp.ok) setActions(((await resp.json()) as { actions: string[] }).actions);
       } catch {
         // The dropdown degrades to "any action"; the log itself still loads.

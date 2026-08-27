@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useRequireAuth } from "@/lib/session-context";
 
 /**
@@ -54,9 +54,7 @@ export default function MyInvoices() {
 
   const load = useCallback(async () => {
     try {
-      const resp = await fetch("/api/bff/invoices", {
-        headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-      });
+      const resp = await authedFetch("/api/bff/invoices");
       if (!resp.ok) {
         setError("Your invoices could not be loaded.");
         return;

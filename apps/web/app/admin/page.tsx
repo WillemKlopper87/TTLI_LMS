@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "./admin-context";
 
@@ -105,9 +105,7 @@ export default function AdminOverview() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch("/api/bff/analytics/overview", {
-        headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-      });
+      const resp = await authedFetch("/api/bff/analytics/overview");
       if (!resp.ok) {
         setError("The overview could not be loaded.");
         return;

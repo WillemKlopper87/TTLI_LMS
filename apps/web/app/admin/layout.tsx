@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { useRequireAuth, useSession } from "@/lib/session-context";
+import { authedFetch } from "@/lib/authed-fetch";
 import type { Theme } from "@/lib/server-api";
+import { useRequireAuth, useSession } from "@/lib/session-context";
 
 import { AdminContext, type Me } from "./admin-context";
 
@@ -59,7 +60,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready || !accessToken) return;
-    fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${accessToken}` } })
+    authedFetch("/api/bff/auth/me")
       .then(async (resp) => {
         if (!resp.ok) throw new Error("unauthenticated");
         setMe(await resp.json());

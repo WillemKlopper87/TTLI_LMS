@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -31,8 +32,7 @@ export default function CheckoutReturnPage() {
       setStatus("no_order");
       return;
     }
-    const token = getAccessToken();
-    if (!token) return;
+    if (!getAccessToken()) return;
 
     let cancelled = false;
     let attempts = 0;
@@ -40,9 +40,7 @@ export default function CheckoutReturnPage() {
 
     async function poll() {
       attempts += 1;
-      const resp = await fetch(`/api/bff/orders/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => null);
+      const resp = await authedFetch(`/api/bff/orders/${orderId}`).catch(() => null);
       if (cancelled) return;
       if (!resp || !resp.ok) {
         setStatus("error");

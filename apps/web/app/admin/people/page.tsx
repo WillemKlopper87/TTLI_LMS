@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -57,11 +57,10 @@ export default function People() {
 
   const authed = useCallback(
     (path: string, init?: RequestInit) =>
-      fetch(`/api/bff${path}`, {
+      authedFetch(`/api/bff${path}`, {
         ...init,
         headers: {
           ...(init?.headers ?? {}),
-          Authorization: `Bearer ${getAccessToken() ?? ""}`,
           ...(init?.body ? { "Content-Type": "application/json" } : {}),
         },
       }),

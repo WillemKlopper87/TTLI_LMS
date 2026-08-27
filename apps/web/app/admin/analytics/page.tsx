@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedDownload } from "@/lib/authed-download";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import RevenueChart, { type RevenuePoint } from "./revenue-chart";
 
@@ -170,14 +171,12 @@ export default function AnalyticsScreen() {
     }
     setLoading(true);
     setError(null);
-    const token = getAccessToken();
-    const headers = { Authorization: `Bearer ${token}` };
     try {
       const [r1, r2, r3, r4] = await Promise.all([
-        fetch(`/api/bff/analytics/revenue-summary?preset=${preset}`, { headers }),
-        fetch(`/api/bff/analytics/registrations?preset=${preset}`, { headers }),
-        fetch(`/api/bff/analytics/revenue-series?preset=${preset}`, { headers }),
-        fetch(`/api/bff/analytics/podcast-engagement?preset=${preset}`, { headers }),
+        authedFetch(`/api/bff/analytics/revenue-summary?preset=${preset}`),
+        authedFetch(`/api/bff/analytics/registrations?preset=${preset}`),
+        authedFetch(`/api/bff/analytics/revenue-series?preset=${preset}`),
+        authedFetch(`/api/bff/analytics/podcast-engagement?preset=${preset}`),
       ]);
       if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) {
         setError("Could not load the report. Try again shortly.");
@@ -203,23 +202,8 @@ export default function AnalyticsScreen() {
   }
 
   async function download(report: "revenue-summary" | "registrations") {
-    // The BFF needs the bearer, so the file is fetched rather than linked.
-    const resp = await fetch(exportUrl(report), {
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
-    });
-    if (!resp.ok) {
-      setError("The export could not be generated.");
-      return;
-    }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${report}-${preset}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const ok = await authedDownload(exportUrl(report), `${report}-${preset}.csv`);
+    if (!ok) setError("The export could not be generated.");
   }
 
   if (!canView) {

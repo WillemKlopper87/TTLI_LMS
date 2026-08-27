@@ -18,6 +18,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
+
 import { useSession } from "@/lib/session-context";
 
 export interface SiteHeaderProps {
@@ -132,7 +134,7 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
       return;
     }
     let cancelled = false;
-    fetch("/api/bff/auth/me", { headers: { Authorization: `Bearer ${accessToken}` } })
+    authedFetch("/api/bff/auth/me")
       .then((resp) => (resp.ok ? resp.json() : null))
       .then((data) => {
         if (cancelled || !data) return;

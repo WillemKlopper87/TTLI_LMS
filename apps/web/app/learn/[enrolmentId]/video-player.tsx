@@ -3,7 +3,7 @@
 import Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface Watermark {
   text: string;
@@ -35,10 +35,7 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
     let cancelled = false;
 
     async function setup() {
-      const token = getAccessToken();
-      const resp = await fetch(`/api/bff/media/${videoAssetId}/playback`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await authedFetch(`/api/bff/media/${videoAssetId}/playback`);
       if (!resp.ok) {
         if (!cancelled) setError("This video is not available right now.");
         return;
@@ -66,13 +63,9 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
 
       heartbeatTimer = setInterval(() => {
         if (video.paused || video.seeking) return;
-        const heartbeatToken = getAccessToken();
-        fetch(`/api/bff/lessons/${lessonId}/heartbeat`, {
+        authedFetch(`/api/bff/lessons/${lessonId}/heartbeat`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${heartbeatToken}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             position_seconds: video.currentTime,
             playback_rate: video.playbackRate || 1.0,

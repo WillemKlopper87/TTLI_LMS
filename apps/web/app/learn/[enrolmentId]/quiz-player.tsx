@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatClock } from "@/lib/format";
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface QuizQuestionView {
   question_id: string;
@@ -68,11 +68,7 @@ export function QuizPlayer({
   useEffect(() => {
     let cancelled = false;
     async function start() {
-      const token = getAccessToken();
-      const resp = await fetch(`/api/bff/quizzes/${quizId}/attempts`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await authedFetch(`/api/bff/quizzes/${quizId}/attempts`, { method: "POST" });
       if (!resp.ok) {
         if (!cancelled) setError("This quiz could not be started.");
         return;
@@ -93,10 +89,9 @@ export function QuizPlayer({
     submittedRef.current = true;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/quiz-attempts/${attempt.attempt_id}/submit`, {
+    const resp = await authedFetch(`/api/bff/quiz-attempts/${attempt.attempt_id}/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         answers: attempt.questions.map((q) => {
           const value = answers[q.question_id];

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 /**
  * Tenant branding and custom domains (backlog P3, gaps #44 and #45).
@@ -53,11 +53,10 @@ export default function BrandingPanel() {
 
   const authed = useCallback(
     (path: string, init?: RequestInit) =>
-      fetch(`/api/bff${path}`, {
+      authedFetch(`/api/bff${path}`, {
         ...init,
         headers: {
           ...(init?.headers ?? {}),
-          Authorization: `Bearer ${getAccessToken() ?? ""}`,
           ...(init?.body && !(init.body instanceof FormData)
             ? { "Content-Type": "application/json" }
             : {}),

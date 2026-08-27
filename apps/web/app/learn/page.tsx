@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { formatDate, formatDateTime, weekdayLabel } from "@/lib/format";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
@@ -110,9 +111,8 @@ export default function LearnDashboardPage() {
   const [paths, setPaths] = useState<OwnPathEnrolment[]>([]);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!ready || !token) return;
-    fetch("/api/bff/learn/dashboard", { headers: { Authorization: `Bearer ${token}` } })
+    if (!ready || !getAccessToken()) return;
+    authedFetch("/api/bff/learn/dashboard")
       .then(async (resp) => {
         if (!resp.ok) {
           setError("Your learning could not be loaded. Try again shortly.");
@@ -121,7 +121,7 @@ export default function LearnDashboardPage() {
         setData(await resp.json());
       })
       .catch(() => setError("Your learning could not be loaded. Try again shortly."));
-    fetch("/api/bff/path-enrolments", { headers: { Authorization: `Bearer ${token}` } })
+    authedFetch("/api/bff/path-enrolments")
       .then((resp) => (resp.ok ? resp.json() : []))
       .then((rows) => setPaths(rows ?? []))
       .catch(() => undefined);

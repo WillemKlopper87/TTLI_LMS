@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface CertificateInfo {
   id: string;
@@ -63,13 +63,10 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
-    const token = getAccessToken();
     const path = pathEnrolmentId
       ? `/api/bff/path-enrolments/${pathEnrolmentId}/credentials`
       : `/api/bff/enrolments/${enrolmentId}/credentials`;
-    const resp = await fetch(path, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(path);
     if (!resp.ok) return;
     setData(await resp.json());
   }, [enrolmentId, pathEnrolmentId]);
@@ -82,10 +79,7 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
     if (!data?.certificate) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/certificates/${data.certificate.id}/pdf`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(`/api/bff/certificates/${data.certificate.id}/pdf`);
     setBusy(false);
     if (!resp.ok) {
       setError("The certificate PDF could not be retrieved.");
@@ -99,10 +93,9 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
     if (!data?.certificate) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/certificates/${data.certificate.id}`, {
+    const resp = await authedFetch(`/api/bff/certificates/${data.certificate.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ visibility }),
     });
     setBusy(false);
@@ -117,10 +110,9 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
     if (!data?.badge) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/badges/${data.badge.id}`, {
+    const resp = await authedFetch(`/api/bff/badges/${data.badge.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ visibility }),
     });
     setBusy(false);
@@ -144,10 +136,7 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
     if (!path) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(path, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(path);
     setBusy(false);
     if (!resp.ok) {
       setError("Sharing is only available once this certificate has been issued.");

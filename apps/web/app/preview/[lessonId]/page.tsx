@@ -153,8 +153,7 @@ export default function PreviewPage() {
         setError(true);
         return;
       }
-      const auth = { Authorization: `Bearer ${accessToken}` };
-      const meResp = await fetch("/api/bff/auth/me", { headers: auth });
+      const meResp = await authedFetch("/api/bff/auth/me");
       if (!meResp.ok) {
         setError(true);
         return;
@@ -164,7 +163,7 @@ export default function PreviewPage() {
         setError(true);
         return;
       }
-      const authored = await fetch(`/api/bff/lessons/${params.lessonId}`, { headers: auth });
+      const authored = await authedFetch(`/api/bff/lessons/${params.lessonId}`);
       if (!authored.ok) {
         setError(true);
         return;

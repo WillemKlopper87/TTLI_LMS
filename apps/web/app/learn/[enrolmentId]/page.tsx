@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -55,11 +56,8 @@ export default function LearnEnrolmentPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const token = getAccessToken();
-    if (!token) return;
-    const resp = await fetch(`/api/bff/enrolments/${enrolmentId}/progress`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    if (!getAccessToken()) return;
+    const resp = await authedFetch(`/api/bff/enrolments/${enrolmentId}/progress`);
     if (!resp.ok) {
       setError("This course could not be loaded.");
       return;
@@ -110,25 +108,17 @@ export default function LearnEnrolmentPage() {
   }
 
   async function startLesson(lessonId: string) {
-    const token = getAccessToken();
     setBusy(true);
     setRefusal(null);
-    await fetch(`/api/bff/lessons/${lessonId}/start`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await authedFetch(`/api/bff/lessons/${lessonId}/start`, { method: "POST" });
     await load();
     setBusy(false);
   }
 
   async function completeLesson(lessonId: string) {
-    const token = getAccessToken();
     setBusy(true);
     setRefusal(null);
-    const resp = await fetch(`/api/bff/lessons/${lessonId}/complete`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(`/api/bff/lessons/${lessonId}/complete`, { method: "POST" });
     if (!resp.ok) {
       // 423 LESSON_LOCKED — show the server's own reasons rather than
       // guessing client-side (REQ-BYPASS-01).

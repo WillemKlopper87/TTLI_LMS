@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 
 interface LeadSummary {
@@ -40,12 +41,9 @@ export default function LeadsScreen() {
   const [error, setError] = useState<"forbidden" | "unknown" | null>(null);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
+    if (!getAccessToken()) return;
     setError(null);
-    fetch(`/api/bff/leads?limit=${PAGE_SIZE}&offset=${offset}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    authedFetch(`/api/bff/leads?limit=${PAGE_SIZE}&offset=${offset}`)
       .then(async (resp) => {
         if (resp.status === 403) {
           setError("forbidden");

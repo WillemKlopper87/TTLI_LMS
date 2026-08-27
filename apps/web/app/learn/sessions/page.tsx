@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
+import { authedFetch } from "@/lib/authed-fetch";
 import { formatDateTime } from "@/lib/format";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
@@ -63,9 +64,8 @@ export default function LearnSessionsPage() {
   const [targetSessionId, setTargetSessionId] = useState("");
 
   const load = useCallback(async () => {
-    const token = getAccessToken();
-    if (!token) return;
-    const resp = await fetch("/api/bff/bookings", { headers: { Authorization: `Bearer ${token}` } });
+    if (!getAccessToken()) return;
+    const resp = await authedFetch("/api/bff/bookings");
     if (!resp.ok) {
       setError("Your sessions could not be loaded.");
       return;
@@ -81,11 +81,7 @@ export default function LearnSessionsPage() {
   async function cancelBooking(bookingId: string) {
     setBusy(bookingId);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/bookings/${bookingId}/cancel`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(`/api/bff/bookings/${bookingId}/cancel`, { method: "POST" });
     setBusy(null);
     if (!resp.ok) {
       setError("That booking could not be cancelled.");
@@ -107,10 +103,7 @@ export default function LearnSessionsPage() {
     setRescheduling(booking);
     setOtherSessions(null);
     setTargetSessionId("");
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/workshops/${booking.workshop_id}/sessions`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(`/api/bff/workshops/${booking.workshop_id}/sessions`);
     if (!resp.ok) return;
     const items: OtherSession[] = (await resp.json()).items;
     setOtherSessions(
@@ -122,10 +115,9 @@ export default function LearnSessionsPage() {
     if (!rescheduling || !targetSessionId) return;
     setBusy(rescheduling.booking_id);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/bookings/${rescheduling.booking_id}/reschedule`, {
+    const resp = await authedFetch(`/api/bff/bookings/${rescheduling.booking_id}/reschedule`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target_session_id: targetSessionId }),
     });
     setBusy(null);
