@@ -16,7 +16,7 @@ import csv
 import io
 import uuid
 
-from fastapi import APIRouter, File, Response, UploadFile, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
@@ -26,6 +26,7 @@ from src.core.object_keys import build_object_key
 from src.models.assessment import (
     Assignment,
     AssignmentSubmission,
+    QuestionBankItem,
     Quiz,
     QuizAttempt,
     QuizQuestion,
@@ -43,6 +44,11 @@ from src.schemas.assessment import (
     AssignmentSubmissionResponse,
     PendingSubmissionItem,
     PendingSubmissionsResponse,
+    QuestionBankApplyRequest,
+    QuestionBankItemCreateRequest,
+    QuestionBankItemView,
+    QuestionBankOption,
+    QuestionBankPageResponse,
     QuizAttemptResponse,
     QuizAttemptResult,
     QuizCreateRequest,
@@ -77,6 +83,7 @@ from src.schemas.assessment import (
 from src.services import antivirus
 from src.services import assignment as assignment_service
 from src.services import enrolment as enrolment_service
+from src.services import question_bank as question_bank_service
 from src.services import quiz as quiz_service
 from src.services import survey as survey_service
 from src.services.quiz import AnswerSubmission, question_view
@@ -90,6 +97,61 @@ def _parse_uuid(value: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError as exc:
         raise NotFound("No such resource.") from exc
+
+
+def _question_bank_view(item: QuestionBankItem) -> QuestionBankItemView:
+    return QuestionBankItemView(
+        id=str(item.id),
+        assessment_kind=item.assessment_kind,
+        question_type=item.question_type,
+        prompt=item.prompt,
+        options=[QuestionBankOption(**option) for option in item.options],
+        points=item.points,
+    )
+
+
+@router.get("/question-bank", response_model=QuestionBankPageResponse)
+async def list_question_bank(
+    principal: PrincipalDep,
+    session: SessionDep,
+    assessment_kind: str | None = Query(default=None, pattern="^(quiz|survey)$"),
+) -> QuestionBankPageResponse:
+    principal.require("course:edit")
+    items = await question_bank_service.list_items(
+        session, tenant_id=principal.tenant_id, assessment_kind=assessment_kind
+    )
+    return QuestionBankPageResponse(items=[_question_bank_view(item) for item in items])
+
+
+@router.post(
+    "/question-bank", response_model=QuestionBankItemView, status_code=status.HTTP_201_CREATED
+)
+async def create_question_bank_item(
+    body: QuestionBankItemCreateRequest, principal: PrincipalDep, session: SessionDep
+) -> QuestionBankItemView:
+    principal.require("course:edit")
+    item = await question_bank_service.create_item(
+        session,
+        tenant_id=principal.tenant_id,
+        assessment_kind=body.assessment_kind,
+        question_type=body.question_type,
+        prompt=body.prompt,
+        options=[option.model_dump(exclude_none=True) for option in body.options],
+        points=body.points,
+    )
+    return _question_bank_view(item)
+
+
+@router.delete(
+    "/question-bank/{item_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+)
+async def delete_question_bank_item(
+    item_id: str, principal: PrincipalDep, session: SessionDep
+) -> None:
+    principal.require("course:edit")
+    await question_bank_service.delete_item(
+        session, tenant_id=principal.tenant_id, item_id=_parse_uuid(item_id)
+    )
 
 
 # ============================================================ Quizzes ===
@@ -219,6 +281,28 @@ async def add_quiz_question(
         )
     )
     await session.flush()
+
+
+@router.post(
+    "/quizzes/{quiz_id}/questions/from-bank/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+async def add_quiz_question_from_bank(
+    quiz_id: str,
+    item_id: str,
+    body: QuestionBankApplyRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> None:
+    principal.require("course:edit")
+    await question_bank_service.apply_to_quiz(
+        session,
+        tenant_id=principal.tenant_id,
+        item_id=_parse_uuid(item_id),
+        quiz_id=_parse_uuid(quiz_id),
+        position=body.position,
+    )
 
 
 @router.post(
@@ -426,6 +510,28 @@ async def add_survey_question(
         )
     )
     await session.flush()
+
+
+@router.post(
+    "/surveys/{survey_id}/questions/from-bank/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+async def add_survey_question_from_bank(
+    survey_id: str,
+    item_id: str,
+    body: QuestionBankApplyRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> None:
+    principal.require("course:edit")
+    await question_bank_service.apply_to_survey(
+        session,
+        tenant_id=principal.tenant_id,
+        item_id=_parse_uuid(item_id),
+        survey_id=_parse_uuid(survey_id),
+        position=body.position,
+    )
 
 
 @router.post(

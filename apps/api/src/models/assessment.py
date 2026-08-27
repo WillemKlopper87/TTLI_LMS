@@ -185,6 +185,29 @@ class SurveyQuestion(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class QuestionBankItem(Base, TimestampMixin):
+    """Tenant-owned reusable authoring template; applying it creates a copy."""
+
+    __tablename__ = "question_bank_items"
+    __table_args__ = (
+        CheckConstraint("assessment_kind IN ('quiz', 'survey')", name="ck_question_bank_kind"),
+        CheckConstraint("points > 0", name="ck_question_bank_points_positive"),
+        Index("ix_question_bank_items_tenant_kind", "tenant_id", "assessment_kind"),
+    )
+
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    assessment_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    question_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    options: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'")
+    )
+    points: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+
+
 class SurveyResponse(Base):
     """`user_id` and `respondent_reference` are mutually exclusive
     (`ck_survey_responses_one_subject`, 0013) — an anonymous response
@@ -281,6 +304,7 @@ class AssignmentSubmission(Base):
 __all__ = [
     "Assignment",
     "AssignmentSubmission",
+    "QuestionBankItem",
     "Quiz",
     "QuizAnswer",
     "QuizAttempt",

@@ -13,6 +13,37 @@ class QuizQuestionOption(BaseModel):
     correct: bool = False
 
 
+class QuestionBankOption(BaseModel):
+    id: str
+    text: str
+    correct: bool | None = None
+
+
+class QuestionBankItemCreateRequest(BaseModel):
+    assessment_kind: str = Field(pattern="^(quiz|survey)$")
+    question_type: str
+    prompt: str = Field(min_length=1)
+    options: list[QuestionBankOption] = Field(default_factory=list)
+    points: int = Field(default=1, ge=1)
+
+
+class QuestionBankItemView(BaseModel):
+    id: str
+    assessment_kind: str
+    question_type: str
+    prompt: str
+    options: list[QuestionBankOption]
+    points: int
+
+
+class QuestionBankPageResponse(BaseModel):
+    items: list[QuestionBankItemView]
+
+
+class QuestionBankApplyRequest(BaseModel):
+    position: int = Field(ge=0)
+
+
 class QuizCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     randomise_questions: bool = False
@@ -352,6 +383,11 @@ __all__ = [
     "AssignmentsPageResponse",
     "PendingSubmissionItem",
     "PendingSubmissionsResponse",
+    "QuestionBankApplyRequest",
+    "QuestionBankItemCreateRequest",
+    "QuestionBankItemView",
+    "QuestionBankOption",
+    "QuestionBankPageResponse",
     "QuizAnswerSubmission",
     "QuizAttemptResponse",
     "QuizAttemptResult",

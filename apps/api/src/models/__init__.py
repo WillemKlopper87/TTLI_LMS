@@ -9,6 +9,7 @@ from src.models.article import Article
 from src.models.assessment import (
     Assignment,
     AssignmentSubmission,
+    QuestionBankItem,
     Quiz,
     QuizAnswer,
     QuizAttempt,
@@ -181,6 +182,7 @@ __all__ = [
     "Price",
     "Product",
     "PushSubscription",
+    "QuestionBankItem",
     "Quiz",
     "QuizAnswer",
     "QuizAttempt",

@@ -59,9 +59,17 @@ test.beforeEach(async ({ request }) => {
   test.skip(!probe || !probe.ok(), "no live API and seeded admin account available");
 });
 
-test("an admin can see a paired survey and its privacy-gated delta report", async ({ page, request }) => {
+test("an admin can manage reusable questions and inspect a privacy-gated survey pair", async ({
+  page,
+  request,
+}) => {
   const pair = await createPair(request);
   await signIn(page);
+
+  await page.goto("/admin/question-bank");
+  await page.getByLabel("Prompt").fill(`Reusable confidence ${pair.suffix}`);
+  await page.getByRole("button", { name: "Save to bank" }).click();
+  await expect(page.getByText(`Reusable confidence ${pair.suffix}`, { exact: true })).toBeVisible();
 
   await page.goto("/admin/surveys");
   const preRow = page.getByRole("row").filter({ hasText: `Pre-course confidence ${pair.suffix}` });

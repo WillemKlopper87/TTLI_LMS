@@ -75,6 +75,14 @@ interface SurveyDetail {
   questions: SurveyQuestionView[];
 }
 
+interface QuestionBankItem {
+  id: string;
+  assessment_kind: "quiz" | "survey";
+  question_type: string;
+  prompt: string;
+  points: number;
+}
+
 interface AssignmentListItem {
   id: string;
   title: string;
@@ -185,6 +193,8 @@ export function LessonActivityPanel({
   const [qPoints, setQPoints] = useState(1);
   const [qOptions, setQOptions] = useState<OptionRow[]>(defaultOptionsFor(QUESTION_TYPES[0].value));
   const [questionBusy, setQuestionBusy] = useState(false);
+  const [bankItems, setBankItems] = useState<QuestionBankItem[]>([]);
+  const [bankItemId, setBankItemId] = useState("");
 
   async function loadExisting(kind: ActivityKind) {
     if (kind === "quiz") {
@@ -216,6 +226,11 @@ export function LessonActivityPanel({
     setVideoDetail(null);
     setCaptionsError(null);
     loadExisting(tab);
+    if (tab === "quiz" || tab === "survey") {
+      authedFetch(`/api/bff/question-bank?assessment_kind=${tab}`).then(async (response) => {
+        if (response.ok) setBankItems((await response.json()).items);
+      });
+    }
   }, [tab]);
 
   useEffect(() => {
@@ -491,6 +506,29 @@ export function LessonActivityPanel({
     else await openSurvey(workingId);
   }
 
+  async function addQuestionFromBank() {
+    if (!workingId || !bankItemId || (tab !== "quiz" && tab !== "survey")) return;
+    setQuestionBusy(true);
+    setError(null);
+    const response = await authedFetch(
+      `/api/bff/${tab === "quiz" ? "quizzes" : "surveys"}/${workingId}/questions/from-bank/${bankItemId}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ position: nextPosition }),
+      },
+    );
+    setQuestionBusy(false);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setError(body?.error?.message ?? "Could not add that reusable question.");
+      return;
+    }
+    setBankItemId("");
+    if (tab === "quiz") await openQuiz(workingId);
+    else await openSurvey(workingId);
+  }
+
   return (
     <div className="card mt-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -506,7 +544,10 @@ export function LessonActivityPanel({
             key={k}
             type="button"
             className={`btn ${tab === k ? "btn--primary" : "btn--ghost"}`}
-            onClick={() => setTab(k)}
+            onClick={() => {
+              setBankItemId("");
+              setTab(k);
+            }}
           >
             {k[0].toUpperCase() + k.slice(1)}
           </button>
@@ -903,6 +944,18 @@ export function LessonActivityPanel({
 
           {canEdit && (tab === "quiz" || tab === "survey") ? (
             <div className="card mt-3 p-3" style={{ background: "var(--bg)" }}>
+              <b style={{ fontSize: "0.8125rem" }}>Reuse a bank question</b>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="field">
+                  <b>Saved question</b>
+                  <select className="input" value={bankItemId} onChange={(e) => setBankItemId(e.target.value)}>
+                    <option value="">Choose…</option>
+                    {bankItems.map((item) => <option key={item.id} value={item.id}>{item.prompt}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="btn btn--ghost" disabled={questionBusy || !bankItemId} onClick={addQuestionFromBank}>Add from bank</button>
+              </div>
+              <hr className="my-3" />
               <b style={{ fontSize: "0.8125rem" }}>Add a question</b>
               <div className="mt-2 flex flex-wrap items-end gap-2">
                 <label className="field">

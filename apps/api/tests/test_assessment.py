@@ -16,7 +16,7 @@ from src.core.db import dispose_engine, init_engine
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
-from src.models.assessment import SurveyQuestion, SurveyResponse
+from src.models.assessment import QuestionBankItem, SurveyQuestion, SurveyResponse
 from src.models.rbac import RoleAssignment
 from src.services import identity
 
@@ -80,6 +80,15 @@ def _unique_email() -> str:
 async def _demo_tenant_id(tenant_session_factory) -> uuid.UUID:  # type: ignore[no-untyped-def]
     async with tenant_session_factory(None) as s:
         row = (await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'demo'"))).first()
+    assert row is not None
+    return uuid.UUID(str(row[0]))
+
+
+async def _tenant_id(tenant_session_factory, slug: str) -> uuid.UUID:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(None) as s:
+        row = (
+            await s.execute(sa.text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": slug})
+        ).first()
     assert row is not None
     return uuid.UUID(str(row[0]))
 
@@ -622,6 +631,96 @@ async def test_identified_survey_response_stores_user_id(
         ).first()
     assert row is not None
     assert row[0] == buyer_id
+
+
+async def test_question_bank_is_tenant_scoped_permission_gated_and_reusable(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    headers = {"Authorization": f"Bearer {author_token}"}
+    created = await client.post(
+        "/api/v1/question-bank",
+        headers=headers,
+        json={
+            "assessment_kind": "quiz",
+            "question_type": "single_choice",
+            "prompt": "Which principle comes first?",
+            "options": [
+                {"id": "people", "text": "People", "correct": True},
+                {"id": "process", "text": "Process", "correct": False},
+            ],
+            "points": 2,
+        },
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["id"]
+
+    listed = await client.get("/api/v1/question-bank?assessment_kind=quiz", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["items"]] == [item_id]
+
+    acme_id = await _tenant_id(tenant_session_factory, "acme")
+    async with tenant_session_factory(acme_id) as session:
+        assert (await session.execute(sa.select(QuestionBankItem))).scalars().all() == []
+
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    forbidden = await client.get(
+        "/api/v1/question-bank", headers={"Authorization": f"Bearer {learner_token}"}
+    )
+    assert forbidden.status_code == 403
+
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers=headers,
+        json={"title": "Bank target", "pass_score": 70, "max_attempts": 1},
+    )
+    quiz_id = quiz.json()["id"]
+    applied = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/questions/from-bank/{item_id}",
+        headers=headers,
+        json={"position": 0},
+    )
+    assert applied.status_code == 204, applied.text
+    detail = await client.get(f"/api/v1/quizzes/{quiz_id}", headers=headers)
+    question = detail.json()["questions"][0]
+    assert question["prompt"] == "Which principle comes first?"
+    assert question["points"] == 2
+    assert question["options"][0]["correct"] is True
+
+    survey_item = await client.post(
+        "/api/v1/question-bank",
+        headers=headers,
+        json={
+            "assessment_kind": "survey",
+            "question_type": "long_text",
+            "prompt": "What will you apply?",
+            "options": [],
+        },
+    )
+    survey = await client.post(
+        "/api/v1/surveys",
+        headers=headers,
+        json={"title": "Bank survey", "response_mode": "identified"},
+    )
+    survey_id = survey.json()["id"]
+    survey_applied = await client.post(
+        f"/api/v1/surveys/{survey_id}/questions/from-bank/{survey_item.json()['id']}",
+        headers=headers,
+        json={"position": 0},
+    )
+    assert survey_applied.status_code == 204, survey_applied.text
+    survey_detail = await client.get(f"/api/v1/surveys/{survey_id}", headers=headers)
+    assert survey_detail.json()["questions"][0]["prompt"] == "What will you apply?"
+
+    deleted = await client.delete(f"/api/v1/question-bank/{item_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    detail_after_delete = await client.get(f"/api/v1/quizzes/{quiz_id}", headers=headers)
+    assert detail_after_delete.json()["questions"][0]["prompt"] == question["prompt"]
 
 
 async def test_survey_list_requires_course_edit(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]

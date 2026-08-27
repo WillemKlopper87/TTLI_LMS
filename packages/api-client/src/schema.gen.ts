@@ -2400,6 +2400,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/question-bank": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Question Bank */
+        get: operations["list_question_bank_api_v1_question_bank_get"];
+        put?: never;
+        /** Create Question Bank Item */
+        post: operations["create_question_bank_item_api_v1_question_bank_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/question-bank/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Question Bank Item */
+        delete: operations["delete_question_bank_item_api_v1_question_bank__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quizzes": {
         parameters: {
             query?: never;
@@ -2469,6 +2504,23 @@ export interface paths {
         put?: never;
         /** Add Quiz Question */
         post: operations["add_quiz_question_api_v1_quizzes__quiz_id__questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quizzes/{quiz_id}/questions/from-bank/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Quiz Question From Bank */
+        post: operations["add_quiz_question_from_bank_api_v1_quizzes__quiz_id__questions_from_bank__item_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2589,6 +2641,23 @@ export interface paths {
         put?: never;
         /** Add Survey Question */
         post: operations["add_survey_question_api_v1_surveys__survey_id__questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/surveys/{survey_id}/questions/from-bank/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Survey Question From Bank */
+        post: operations["add_survey_question_from_bank_api_v1_surveys__survey_id__questions_from_bank__item_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7077,6 +7146,56 @@ export interface components {
         PushSubscriptionResponse: {
             /** Id */
             id: string;
+        };
+        /** QuestionBankApplyRequest */
+        QuestionBankApplyRequest: {
+            /** Position */
+            position: number;
+        };
+        /** QuestionBankItemCreateRequest */
+        QuestionBankItemCreateRequest: {
+            /** Assessment Kind */
+            assessment_kind: string;
+            /** Question Type */
+            question_type: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options?: components["schemas"]["QuestionBankOption"][];
+            /**
+             * Points
+             * @default 1
+             */
+            points: number;
+        };
+        /** QuestionBankItemView */
+        QuestionBankItemView: {
+            /** Id */
+            id: string;
+            /** Assessment Kind */
+            assessment_kind: string;
+            /** Question Type */
+            question_type: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options: components["schemas"]["QuestionBankOption"][];
+            /** Points */
+            points: number;
+        };
+        /** QuestionBankOption */
+        QuestionBankOption: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+            /** Correct */
+            correct?: boolean | null;
+        };
+        /** QuestionBankPageResponse */
+        QuestionBankPageResponse: {
+            /** Items */
+            items: components["schemas"]["QuestionBankItemView"][];
         };
         /** QuizAnswerSubmission */
         QuizAnswerSubmission: {
@@ -13265,6 +13384,99 @@ export interface operations {
             };
         };
     };
+    list_question_bank_api_v1_question_bank_get: {
+        parameters: {
+            query?: {
+                assessment_kind?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionBankPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_question_bank_item_api_v1_question_bank_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionBankItemCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionBankItemView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_question_bank_item_api_v1_question_bank__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_quizzes_api_v1_quizzes_get: {
         parameters: {
             query?: never;
@@ -13392,6 +13604,40 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["QuizQuestionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_quiz_question_from_bank_api_v1_quizzes__quiz_id__questions_from_bank__item_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quiz_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionBankApplyRequest"];
             };
         };
         responses: {
@@ -13628,6 +13874,40 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SurveyQuestionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_survey_question_from_bank_api_v1_surveys__survey_id__questions_from_bank__item_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                survey_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionBankApplyRequest"];
             };
         };
         responses: {
