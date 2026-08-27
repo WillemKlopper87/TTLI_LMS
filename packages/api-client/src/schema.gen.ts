@@ -2646,6 +2646,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/surveys/{survey_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Survey Results
+         * @description REQ-ASSESS-06: the read side of the anonymous-survey story
+         *     (services/survey.py::aggregate_results) — course:edit, matching every
+         *     other survey read/authoring endpoint in this router (there is no
+         *     per-response identity to protect beyond what minimum_group_size
+         *     already gates, unlike quiz answer keys).
+         */
+        get: operations["get_survey_results_api_v1_surveys__survey_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/surveys/{survey_id}/results/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CSV of the survey results, same rows as the JSON report */
+        get: operations["get_survey_results_csv_api_v1_surveys__survey_id__results_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assignments": {
         parameters: {
             query?: never;
@@ -7913,6 +7954,55 @@ export interface components {
             title: string;
             /** Response Mode */
             response_mode: string;
+        };
+        /**
+         * SurveyResultQuestion
+         * @description `counts` is `None` for a free-text question (no `options`) -- this
+         *     endpoint reports how many people answered it, never the text itself.
+         *     Reading individual free-text responses is a separate, not-yet-built
+         *     capability; exposing it here would make "aggregate" a lie for
+         *     exactly the questions REQ-ASSESS-05 cares most about.
+         */
+        SurveyResultQuestion: {
+            /** Question Id */
+            question_id: string;
+            /** Question Type */
+            question_type: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options: {
+                [key: string]: string;
+            }[];
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            } | null;
+            /** Response Count */
+            response_count: number;
+        };
+        /**
+         * SurveyResultsResponse
+         * @description REQ-ASSESS-06: `questions` stays empty and `available` is false
+         *     until `response_count` reaches `minimum_group_size` -- whatever the
+         *     survey's `response_mode`. `response_count` alone is always safe to
+         *     show; it is just a number, not an aggregate of anyone's answers.
+         */
+        SurveyResultsResponse: {
+            /** Survey Id */
+            survey_id: string;
+            /** Title */
+            title: string;
+            /** Response Mode */
+            response_mode: string;
+            /** Minimum Group Size */
+            minimum_group_size: number;
+            /** Response Count */
+            response_count: number;
+            /** Available */
+            available: boolean;
+            /** Questions */
+            questions: components["schemas"]["SurveyResultQuestion"][];
         };
         /** SurveyView */
         SurveyView: {
@@ -13553,6 +13643,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_survey_results_api_v1_surveys__survey_id__results_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                survey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SurveyResultsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_survey_results_csv_api_v1_surveys__survey_id__results_export_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                survey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

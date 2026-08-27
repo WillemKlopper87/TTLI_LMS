@@ -1,28 +1,25 @@
-# TTLI_LMS — Next-agent brief (updated 2026-08-20)
+# TTLI_LMS — Next-agent brief (updated 2026-08-27)
 
-Read this first. It is the short, current-state handoff; `STATUS.md` and `HANDOFF.md` are the
-long-form logs and only need to be opened for detail on a specific subsystem. Verified against
-the working tree on 2026-08-18; **updated 2026-08-20 after platform-hardening pass 1**, which
-closed §3a items 1–4 and 8 (CI unbroken, the three core defects fixed with regression tests,
-the flaky workshops test made self-cleaning). Struck-through items below are done; §7 is the
-gap list the user has chosen as the build queue — operational gaps (§7b) first, then product
-gaps (§7a).
+Read this first for operating context, then use `docs/BACKLOG.md` as the
+authoritative work queue. `STATUS.md` and `HANDOFF.md` are long-form historical
+logs and should only be opened for detail on a specific subsystem. This brief
+was refreshed after the 2026-08-27 review, authenticated-fetch consolidation,
+new browser journeys and P9 survey-results phase; older sections below retain
+useful design rationale but may contain historical counts.
 
 ---
 
 ## 1. State at a glance
 
-| Item | State (verified 2026-08-18) |
+| Item | State (verified 2026-08-27) |
 |---|---|
-| Branch / HEAD | `main` @ `260e184`, in sync with `origin/main`, working tree clean |
-| CI (`.github/workflows/ci.yml`; renamed from `api.yml` 2026-08-20) | Code-red causes fixed 2026-08-20, but **GitHub Actions is now billing-blocked on this account** ("recent account payments have failed or your spending limit needs to be increased") — jobs die in 4s with zero steps. Until billing is fixed: run the full local gate sweep (§6) and push directly; do not gate on CI. Same block as the account's other repos. |
-| Why red | (1) `ruff format --check` fails on `src/services/recommendations.py` and `scripts/seed_demo_content.py`; (2) **api-client drift** — `apps/api/openapi.json` + `packages/api-client/src/schema.gen.ts` are missing 12 endpoints (`/articles*`, `/recommendations*`, `/public/articles*`, `/public/recommendations`, `/public/workshops`) and 10 schemas. The Format failure now masks the drift failure. |
-| `ruff check` / `mypy src` | pass (ruff 0.16.2 from the venv; the global `ruff` 0.5.5 on this machine disagrees — always use `apps/api/.venv/Scripts/ruff.exe`) |
-| `pytest` (local, Docker up) | 1 failure: `tests/test_workshops.py::test_public_workshops_lists_upcoming_sessions_without_auth` — the dev DB has accumulated stale workshop sessions past the endpoint's `limit=12`; the test is data-dependent, not the code. Passes on a fresh DB. |
-| Web `npm run typecheck` | pass |
-| `wip/enterprise-ui` branch | **Already merged** (squash commit `717dee2`; branch tree is byte-identical to it). Stale — safe to delete locally and on origin. |
+| Branch / HEAD | `main` tracks `origin/main`; inspect `git status`/`git log -1` rather than copying a commit id from this document |
+| CI (`.github/workflows/ci.yml`) | GitHub Actions billing is resolved and jobs execute normally. `013ebc2` repaired the P9 formatting gate; `2cfe90e` adds a required authenticated-browser job. Confirm the latest run before marking T1/T3 done |
+| API gates | Ruff format/check and mypy pass. The full API suite and all 23 assessment tests pass locally against real Postgres/Redis/Garage/ClamAV; CI also enforces migrations, zero skipped integration tests, migration round-trip, model drift and generated-client drift |
+| Web gates | Typecheck/build pass; ESLint has 0 errors and 53 tracked warnings. Public/axe tests remain fast and API-free; learner assessment, checkout, finance and organisation journeys now have a separate seeded integration job |
+| Immediate work | Follow `docs/BACKLOG.md` T1–T6. Do not resurrect the obsolete 2026-08-20 order later in this file |
 | Dev services | `docker compose -f infra/docker-compose.yml` (or `scripts/dev-up.sh`) — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145, clamav 3410. API :8010, web :3010. |
-| Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py` — it creates/repairs all three demo-tenant accounts idempotently. Learner `smoke-agent@example.com` / `SmokeTest123!agent`; admin `ops-admin@example.com` / `SmokeTest123!admin` (super_admin, `admin.spec.ts`); `refresh-admin@example.com` / `SmokeTest123!refresh` (admin, `session-refresh.spec.ts` — its own account because login is 5/min per account). Before 2026-08-27 `smoke-agent@` was simply absent from the dev DB and nothing in the repo could create it, so `learner.spec.ts` could only fail at the login form. `admin@ttli.local` cannot log in via API (`.local` fails `EmailStr`). |
+| Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py`; it idempotently repairs the nine least-privilege accounts used by the Playwright specs. The script is the credential/role authority — do not copy its values into another seed path |
 
 ## 2. What is built
 
@@ -77,9 +74,9 @@ Ranked by how much it will cost the next agent.
 
 ### Frontend architecture
 - **The generated API client is 11,398 lines and is imported once** (`lib/server-api.ts:8`, for `getTheme()`). Everything else is raw `fetch` + hand-written interfaces (~12 in `lib/server-api.ts`, ~60 more inline in pages; 14 in `lesson-activity-panel.tsx` alone). The type contract, its CI drift gate and the regenerate step all exist and are bypassed — an API field rename typechecks clean and fails at runtime. I would have made every BFF/server call go through the generated types from day one; the fix now is a `lib/api.ts` wrapper typed from `schema.gen.ts` and a page-by-page migration.
-- **`authedFetch` is copy-pasted byte-identical into 18 files** and `readError` into 5. None handle 401→refresh→retry; that relies solely on the 80%-of-TTL timer in `SessionProvider`, which fails on backgrounded/suspended tabs. One `lib/authed-fetch.ts` with retry-on-401, abort-on-unmount and error normalisation.
+- ~~**`authedFetch` copied across 18 files**~~ — fixed 2026-08-27. Authenticated network calls use `lib/authed-fetch.ts`, which preserves caller headers and refreshes/retries once on a stale-token 401; authenticated files use `lib/authed-download.ts`. Remaining `getAccessToken()` calls are readiness guards or the shared transport itself.
 - **`components/` has two files** for a 50-page app; `lesson-activity-panel.tsx` is 964 lines and eight more pages exceed 430. Inline `style={{}}` is pervasive enough that the CSP keeps `style-src 'unsafe-inline'` *because of it* (`proxy.ts` says so). I would have extracted a small component set (card, table, form field, button, status pill, modal) when the enterprise design system landed, and moved styles to Tailwind classes so the CSP could drop `unsafe-inline`.
-- ~~**No web tests**~~ — Playwright + axe landed 2026-08-20 (20 specs, production build on :3011). Coverage is deliberately shallow: public pages + one authenticated journey. Admin screens, the learner player and the checkout flow have no browser coverage yet.
+- ~~**No web tests**~~ — Playwright + axe landed 2026-08-20. Coverage now includes public/axe, learner assessment/completion, EFT checkout/return, finance approval and organisation seat purchasing. The authenticated journeys gained their own required API-backed CI job on 2026-08-27; video playback remains the explicit browser gap.
 - Static content in code (`lib/facilitators.ts`) is fine as a stopgap but is a third content source next to the DB and the CMS-ish admin pages; it should move behind the API once bios exist.
 
 ### Backend architecture
@@ -102,7 +99,10 @@ Ranked by how much it will cost the next agent.
 ### Things done well that the next agent should keep
 RLS with `set_config(..., true)` + `FORCE ROW LEVEL SECURITY` + double tenant assertion; `check_production_safety()` fail-fast; the single error envelope; the BFF that overwrites `X-Tenant-Host` from its own `Host` and forwards bodies as `arrayBuffer`; refresh cookie path-scoped to `/api/bff/auth` with `navigator.locks` refresh serialisation; per-request CSP nonce; graceful degradation for every un-provisioned third party (Payfast, Spotify, VAPID, Graph); the ruff/mypy strictness; and — above all — the *why* comments throughout both apps. Do not strip those comments; they are the real documentation.
 
-## 5. Recommended order for the next agent
+## 5. Historical recommended order — superseded
+
+This 2026-08-20 sequence is retained as history. Do not execute it: most items
+are complete. The live order is `docs/BACKLOG.md` T1–T6.
 
 1. Green CI (§3a.1) — one commit, push, wait for green. Delete `wip/enterprise-ui`.
 2. The three `core/` fixes (§3a.2–4) with a test each — one commit, live-smoke MFA login through the BFF.
