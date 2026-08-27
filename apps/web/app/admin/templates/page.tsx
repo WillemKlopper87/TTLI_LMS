@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -60,11 +60,6 @@ export default function TemplatesScreen() {
   const [badgeLevel, setBadgeLevel] = useState("");
   const [badgeBusy, setBadgeBusy] = useState(false);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadCertificateTemplates() {
     const resp = await authedFetch("/api/bff/certificate-templates");
     if (resp.ok) setCertificateTemplates((await resp.json()).items);
@@ -78,7 +73,6 @@ export default function TemplatesScreen() {
   useEffect(() => {
     loadCertificateTemplates();
     loadBadgeTemplates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function createCertificateTemplate() {

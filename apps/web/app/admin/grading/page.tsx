@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -50,11 +50,6 @@ export default function GradingScreen() {
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadAnswers() {
     const resp = await authedFetch("/api/bff/quiz-answers/ungraded");
     if (resp.ok) setAnswers((await resp.json()).items);
@@ -69,7 +64,6 @@ export default function GradingScreen() {
     if (!canGrade) return;
     loadAnswers();
     loadSubmissions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canGrade]);
 
   async function gradeAnswer(answer: UngradedAnswer) {

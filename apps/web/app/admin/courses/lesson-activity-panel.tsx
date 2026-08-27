@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import type { LessonItem } from "./types";
 
@@ -182,11 +182,6 @@ export function LessonActivityPanel({
   const [qOptions, setQOptions] = useState<OptionRow[]>(defaultOptionsFor(QUESTION_TYPES[0].value));
   const [questionBusy, setQuestionBusy] = useState(false);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadExisting(kind: ActivityKind) {
     if (kind === "quiz") {
       const resp = await authedFetch("/api/bff/quizzes");
@@ -217,7 +212,6 @@ export function LessonActivityPanel({
     setVideoDetail(null);
     setCaptionsError(null);
     loadExisting(tab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   useEffect(() => {
@@ -239,7 +233,6 @@ export function LessonActivityPanel({
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoPhase, uploadingAssetId]);
 
   function resetQuestionForm(nextType = QUESTION_TYPES[0].value) {

@@ -8,10 +8,22 @@
  * bouncing to /login, and lets a scheduled timer rotate the access token
  * before it actually expires.
  */
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 
-import { setAccessToken as setLegacyAccessToken } from "@/lib/session";
+import {
+  setAccessToken as setLegacyAccessToken,
+  setSessionRefresher,
+} from "@/lib/session";
 
 type Status = "loading" | "authenticated" | "anonymous";
 
@@ -24,6 +36,7 @@ interface SessionValue {
   accessToken: string | null;
   status: Status;
   setSession: (token: TokenPayload) => void;
+  refreshSession: () => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
@@ -61,9 +74,11 @@ let inFlightRefresh: Promise<RefreshResult> | null = null;
  *
  * That is not theoretical. Two concurrent POSTs to /api/bff/auth/refresh
  * were confirmed live to return 200 + 401 and leave the session dead —
- * including the winner's brand-new token. Three real triggers reach it:
+ * including the winner's brand-new token. Four real triggers reach it:
  * React StrictMode's development double-mount, several tabs restoring at
- * once, and two tabs' scheduled timers firing together.
+ * once, two tabs' scheduled timers firing together, and — since
+ * lib/authed-fetch.ts — several panels on one page each retrying a 401 in
+ * the same tick.
  *
  * The fix belongs here, at the source of the concurrency — not in the API,
  * whose reuse detection is correct and load-bearing. Web Locks serialises
@@ -91,62 +106,97 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+  // applyToken schedules the next rotation, which calls back into
+  // refreshSession, which applies the token it gets — a cycle useCallback
+  // cannot express directly. The ref breaks it without either callback
+  // depending on the other, which is what keeps both stable for the whole
+  // life of the provider (see the identity note on the value memo below).
+  const refreshRef = useRef<() => Promise<string | null>>(async () => null);
 
-  function applyToken(token: TokenPayload) {
+  const applyToken = useCallback((token: TokenPayload) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setAccessTokenState(token.access_token);
     setLegacyAccessToken(token.access_token);
     setStatus("authenticated");
-    const delayMs = Math.max(token.expires_in * REFRESH_AT_FRACTION, MIN_REFRESH_DELAY_SECONDS) * 1000;
+    const delayMs =
+      Math.max(token.expires_in * REFRESH_AT_FRACTION, MIN_REFRESH_DELAY_SECONDS) * 1000;
     timerRef.current = setTimeout(() => {
-      void runRefresh();
+      void refreshRef.current();
     }, delayMs);
-  }
+  }, []);
 
-  function clearToken() {
+  const clearToken = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setAccessTokenState(null);
     setLegacyAccessToken(null);
     setStatus("anonymous");
-  }
+  }, []);
 
-  async function runRefresh() {
+  /**
+   * Rotate now, and report the access token that resulted — or null if the
+   * session is genuinely over, in which case the provider has already
+   * dropped to "anonymous" and useRequireAuth's guard fires as usual.
+   *
+   * Returning the token, rather than only setting state, is what lets the
+   * caller retry the request that provoked the refresh in the same tick:
+   * `accessToken` from context is still the stale value until React has
+   * re-rendered, so a 401 retry reading it from context would present the
+   * dead token a second time. lib/authed-fetch.ts is the caller that needs
+   * this; the boot-time and timer paths ignore the return value.
+   */
+  const refreshSession = useCallback(async (): Promise<string | null> => {
     const { ok, payload } = await serialisedRefresh();
-    if (cancelledRef.current) return;
+    if (cancelledRef.current) return null;
     if (!ok || !payload) {
       clearToken();
-      return;
+      return null;
     }
     applyToken(payload);
-  }
+    return payload.access_token;
+  }, [applyToken, clearToken]);
+
+  useEffect(() => {
+    refreshRef.current = refreshSession;
+    // Publish the same refresh to the non-context mirror, so
+    // lib/authed-fetch.ts can rotate a stale token without a second
+    // implementation racing this one. Cleared on unmount so a torn-down
+    // provider cannot be called back into.
+    setSessionRefresher(refreshSession);
+    return () => setSessionRefresher(null);
+  }, [refreshSession]);
 
   useEffect(() => {
     cancelledRef.current = false;
-    void runRefresh();
+    void refreshSession();
     return () => {
       cancelledRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-    // Boot-time restore only — applyToken/runRefresh close over refs and
-    // useState setters, both stable across renders, so this is safe to run
-    // once rather than on every redefinition.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Boot-time restore only, and honestly declared rather than suppressed:
+    // refreshSession is stable for the provider's whole lifetime, because
+    // applyToken and clearToken close over refs and useState setters — both
+    // stable across renders — so this effect never actually re-runs.
+  }, [refreshSession]);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     try {
       await fetch("/api/bff/auth/logout", { method: "POST", cache: "no-store" });
     } finally {
       clearToken();
     }
-  }
+  }, [clearToken]);
 
-  return (
-    <SessionContext.Provider value={{ accessToken, status, setSession: applyToken, logout }}>
-      {children}
-    </SessionContext.Provider>
+  // Only accessToken and status ever actually change; all three callbacks
+  // are stable. Memoising anyway ties the context value's own identity to
+  // the data, so a consumer is not woken by an unrelated re-render of this
+  // provider's parent.
+  const value = useMemo<SessionValue>(
+    () => ({ accessToken, status, setSession: applyToken, refreshSession, logout }),
+    [accessToken, status, applyToken, refreshSession, logout],
   );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession(): SessionValue {

@@ -1,5 +1,38 @@
 # STATUS
 
+**Updated:** 2026-08-27 — **One `authedFetch` for the whole web app, and
+the e2e account fixtures that were missing.** Nineteen client pages each
+carried the same four-line private `authedFetch`, and five carried a
+byte-identical `readError`; both collapse into `apps/web/lib/authed-fetch.
+ts` and `apps/web/lib/api-error.ts` (-222 lines across the pages). The
+duplication was not the point — all nineteen copies shared one gap. The
+scheduled rotation at 80% of token lifetime covers an idle tab, but not a
+request in flight when the token dies, a tab the OS suspended, or a jumped
+clock; those surfaced as "could not be loaded" while a valid refresh
+cookie sat unused. `authedFetch` now refreshes once on a 401 and replays
+the request, calling the *provider's* refresh through a registration in
+`lib/session.ts` rather than a second implementation that would
+reintroduce the documented token-rotation race. `refreshSession` returns
+the new token (context still holds the stale one until React re-renders),
+and `SessionProvider`'s callbacks are now stable + memoised so the added
+consumer does not re-trigger effects on every rotation.
+`e2e/session-refresh.spec.ts` covers the path, and was verified by
+mutation: with the retry removed it fails at the table assertion. Two
+fixture problems surfaced doing that, both older than this change —
+`smoke-agent@example.com` (the account `learner.spec.ts` signs in as, and
+the brief's advertised dev login) did not exist in the dev database at all,
+so that spec could only ever have failed at its login form, and
+`ops-admin@example.com` existed but was created by nothing in the repo.
+`apps/api/scripts/seed_e2e_accounts.py` (new, idempotent, local-only) now
+creates all three, one account per spec — login is 5/min per account and
+`admin.spec.ts` already spends four, so the new spec gets
+`refresh-admin@example.com` with `admin` (least privilege carrying
+`product:manage`) rather than a fifth login on the shared account.
+Verified: web `typecheck` + `lint` clean, all 38 Playwright specs pass
+across 8 parallel workers (every login inside one rate-limit window),
+API suite green (exit 0; its 9 skips are all `no ffmpeg/ffprobe on PATH`,
+this machine's gap and not the change's).
+
 **Updated:** 2026-08-26 (second pass, same day) — **P13 phase 5: the
 real Google Meet provider.** `docs/BACKLOG.md` P13. `services/meeting/
 meet.py`, new — mirrors the Teams and Zoom providers' exact rigor:

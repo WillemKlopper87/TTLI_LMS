@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -54,11 +54,6 @@ export default function SubscriptionsScreen() {
   const [planCourses, setPlanCourses] = useState<PlanCourseRow[] | null>(null);
   const [addCourseId, setAddCourseId] = useState("");
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadPlans() {
     const resp = await authedFetch("/api/bff/subscription-plans");
     if (resp.ok) setPlans((await resp.json()).items);
@@ -73,7 +68,6 @@ export default function SubscriptionsScreen() {
     if (!canManage) return;
     loadPlans();
     loadCourses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage]);
 
   async function createPlan() {

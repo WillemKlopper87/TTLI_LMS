@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -147,11 +147,6 @@ export default function WorkshopsScreen() {
   const [meetConfigured, setMeetConfigured] = useState(false);
   const [providerBusy, setProviderBusy] = useState(false);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadFacilitators() {
     const resp = await authedFetch("/api/bff/facilitators");
     if (resp.ok) setFacilitators((await resp.json()).items);
@@ -171,7 +166,6 @@ export default function WorkshopsScreen() {
   useEffect(() => {
     loadFacilitators();
     loadWorkshops();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadWindows(facilitatorId: string) {

@@ -1,12 +1,17 @@
 /**
  * The wizard's transport helpers. Everything goes through the BFF proxy
- * (`/api/bff/<path>` → API `/api/v1/<path>`) with the in-memory bearer from
- * `lib/session`, exactly as `admin/catalogue/page.tsx` and the lesson
- * activity panel already do — no direct API origin is ever contacted from
- * the browser.
+ * (`/api/bff/<path>` → API `/api/v1/<path>`) with the in-memory bearer —
+ * no direct API origin is ever contacted from the browser.
+ *
+ * `authedFetch` and `readError` moved to `lib/authed-fetch.ts` and
+ * `lib/api-error.ts` when the nineteen private copies of the first and the
+ * five of the second were consolidated. They are re-exported here rather
+ * than repointed at the source in all twelve consumers: this module is the
+ * wizard's transport surface, and that is still the honest place for a
+ * wizard step to import them from.
  */
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import type {
   CourseItem,
@@ -16,29 +21,13 @@ import type {
   StepState,
 } from "./types";
 
-export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = getAccessToken();
-  return fetch(path, {
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
-  });
-}
-
-/**
- * Surfaces the API's own refusal text rather than a generic message. Every
- * refusal this surface can hit — `COURSE_AUTHORING_ERROR` on a delete with
- * learner progress, a publish with an empty module, an invalid
- * `completion_rules` shape, activating a product with no price — already
- * carries a specific, actionable reason written server-side.
- */
-export async function readError(resp: Response, fallback: string): Promise<string> {
-  try {
-    const body = await resp.json();
-    return body?.error?.message ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
+export { authedFetch };
+// Surfaces the API's own refusal text rather than a generic message. Every
+// refusal this surface can hit — `COURSE_AUTHORING_ERROR` on a delete with
+// learner progress, a publish with an empty module, an invalid
+// `completion_rules` shape, activating a product with no price — already
+// carries a specific, actionable reason written server-side.
+export { readError } from "@/lib/api-error";
 
 export async function getJson<T>(path: string): Promise<T | null> {
   const resp = await authedFetch(path);

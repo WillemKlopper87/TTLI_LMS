@@ -3509,6 +3509,84 @@ validated content type, fixed stem.
 Worth carrying: when copying an upload handler in this codebase, the
 key-building line is the part to look at. It was wrong in every one.
 
+**One authenticated fetch, and the e2e account fixtures that turned out to
+be missing — 2026-08-27.** Nineteen client pages had each grown the same
+four-line private `authedFetch` (read the in-memory token, set a bearer,
+call fetch), and five had grown a byte-identical `readError` for the
+error envelope. Both are now one module — [lib/authed-fetch.ts](../apps/web/lib/authed-fetch.ts)
+and [lib/api-error.ts](../apps/web/lib/api-error.ts) — and 222 lines came
+out of the pages.
+
+The reason to consolidate was not the duplication; it was that all
+nineteen copies shared a gap. The scheduled rotation at 80% of the token's
+lifetime covers an idle tab. It does not cover a request already in flight
+when the token dies, a tab the OS suspended and woke with a dead token, or
+a clock that jumped — and in each of those the copies surfaced a 401 to the
+user as "could not be loaded" with a perfectly valid refresh cookie sitting
+unused in the browser. `authedFetch` now refreshes once on a 401 and
+replays the request. It is a plain module function, not a hook, because
+the course wizard's shared api module (`app/admin/courses/wizard-api.ts`,
+imported by 16 files at 94 call sites) is not a component and could not
+have been served by a hook without threading a callback through all of
+them; a module function also has a stable identity, so it drops out of
+dependency arrays instead of re-triggering effects on every rotation.
+
+The refresh it calls is the *provider's*, reached through a registration
+in [lib/session.ts](../apps/web/lib/session.ts) (`setSessionRefresher`),
+not a second implementation. That matters: a second one would reintroduce
+the rotation race `session-context.tsx` documents at length, where two
+concurrent refreshes return 200 + 401 and the API's reuse detection
+correctly kills the whole family. `refreshSession` now returns the new
+token rather than only setting state, because context still holds the
+stale value until React re-renders — a retry reading the token from
+context would present the dead one a second time.
+
+**The new e2e spec was verified by mutation, not by watching it go green.**
+`session-refresh.spec.ts` injects a single 401 on the products GET and
+asserts the recovery. A test like that can pass for the wrong reason —
+`/admin/catalogue` re-fires its load effect when `canManage` flips, so a
+green run does not by itself prove the replay ran. Removing the retry
+(restoring the pre-consolidation body) makes it fail at the table
+assertion, which is the proof. Two things learned doing that:
+
+- TypeScript rejects the obvious mutation. An early `return resp;` left
+  the rest of the function unreachable and `tsc` failed the build, so the
+  honest mutation is to restore the old two-line body, not to short-circuit
+  the new one.
+- **`reuseExistingServer` will serve a stale bundle at you.** Playwright's
+  webServer reuses whatever already listens on :3011, so a mutation run can
+  quietly exercise the *previous* build and "pass". Kill the listener first
+  — and then delete `.next/lock`, because `next build` refuses with
+  "Another next build process is already running" when a killed `next
+  start` left its lock behind.
+
+**Two of the three e2e accounts did not exist, and one never had.**
+`smoke-agent@example.com` — the account `learner.spec.ts` signs in as, and
+the one `NEXT_AGENT_BRIEF.md` still advertises as the dev login — is absent
+from the dev database, so that spec could only ever have failed at the
+login form. `ops-admin@example.com` exists but is not created by anything
+in the repo. Both are now in [scripts/seed_e2e_accounts.py](../apps/api/scripts/seed_e2e_accounts.py):
+idempotent, matched on the email blind index, local-only, resets the
+password and re-asserts the role rather than duplicating.
+
+The third account is new, and the reason is the rate limit. Login is
+5/min per account and the fixed-window counter admits exactly the fifth
+hit; `admin.spec.ts` spends four of those on `ops-admin@` and says in its
+own header that a fifth spec gets its own account. `session-refresh.spec.ts`
+is that fifth spec, so it signs in as `refresh-admin@example.com`, holding
+`admin` (which carries the `product:manage` the catalogue screen needs)
+rather than `super_admin`. Verified by running all 38 specs across 8
+parallel workers — every login inside one window, no 429.
+
+**A trap worth carrying, unrelated to the change.** After Docker restarts,
+a long-running `uvicorn` still holds pooled connections to the *old*
+Postgres. The first requests through it fail, and because auth responses
+are deliberately uniform, the login form reports "those credentials are
+not valid" — which reads as a bad fixture and sends you looking for a
+missing account. The tell is `users.failed_login_count` staying at 0: the
+password was never actually checked. Restart the API after bringing the
+stack up.
+
 **Read this before touching code.** It records verified state, unfinished work in
 priority order, known weaknesses worth reviewing, and the conventions that are
 easy to break by accident.

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -30,11 +31,6 @@ interface EftCheckoutResponse {
   branch_code: string;
   amount: string;
   currency: string;
-}
-
-async function authedFetch(path: string, init: RequestInit = {}) {
-  const token = getAccessToken();
-  return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
 }
 
 function EftPanel({ orderId, onDone }: { orderId: string; onDone: () => void }) {
@@ -129,7 +125,6 @@ export default function SubscriptionAccountPage() {
         if (resp.ok) setSubscription(await resp.json());
       })
       .finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   async function startSubscribe(planId: string) {

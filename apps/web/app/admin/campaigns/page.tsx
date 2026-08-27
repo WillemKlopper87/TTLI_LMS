@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface Segment {
   id: string;
@@ -66,11 +66,6 @@ export default function CampaignsScreen() {
   const [statsId, setStatsId] = useState<string | null>(null);
   const [stats, setStats] = useState<CampaignStats | null>(null);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function loadAll() {
     const [s, t, c] = await Promise.all([
       authedFetch("/api/bff/segments"),
@@ -88,7 +83,6 @@ export default function CampaignsScreen() {
 
   useEffect(() => {
     loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function createSegment() {

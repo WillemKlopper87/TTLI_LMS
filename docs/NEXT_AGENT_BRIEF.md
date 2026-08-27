@@ -22,7 +22,7 @@ gaps (§7a).
 | Web `npm run typecheck` | pass |
 | `wip/enterprise-ui` branch | **Already merged** (squash commit `717dee2`; branch tree is byte-identical to it). Stale — safe to delete locally and on origin. |
 | Dev services | `docker compose -f infra/docker-compose.yml` (or `scripts/dev-up.sh`) — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145, clamav 3410. API :8010, web :3010. |
-| Dev login | `smoke-agent@example.com` / `SmokeTest123!agent` (demo tenant, created 2026-08-20; the older `podcast-smoke@` account no longer authenticates). `admin@ttli.local` cannot log in via API (`.local` fails `EmailStr`). |
+| Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py` — it creates/repairs all three demo-tenant accounts idempotently. Learner `smoke-agent@example.com` / `SmokeTest123!agent`; admin `ops-admin@example.com` / `SmokeTest123!admin` (super_admin, `admin.spec.ts`); `refresh-admin@example.com` / `SmokeTest123!refresh` (admin, `session-refresh.spec.ts` — its own account because login is 5/min per account). Before 2026-08-27 `smoke-agent@` was simply absent from the dev DB and nothing in the repo could create it, so `learner.spec.ts` could only fail at the login form. `admin@ttli.local` cannot log in via API (`.local` fails `EmailStr`). |
 
 ## 2. What is built
 

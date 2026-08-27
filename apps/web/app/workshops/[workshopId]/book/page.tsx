@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { formatDate } from "@/lib/format";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -50,7 +51,7 @@ function toDateParam(d: Date): string {
  */
 export default function BookOneOnOnePage() {
   const { workshopId } = useParams<{ workshopId: string }>();
-  const { accessToken, ready } = useRequireAuth();
+  const { ready } = useRequireAuth();
 
   const [workshop, setWorkshop] = useState<Workshop | null | undefined>(undefined);
   const [facilitators, setFacilitators] = useState<Facilitator[] | null>(null);
@@ -60,17 +61,6 @@ export default function BookOneOnOnePage() {
   const [booking, setBooking] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const authedFetch = useCallback(
-    (path: string, init: RequestInit = {}) => {
-      if (!accessToken) throw new Error("An authenticated session is required.");
-      return fetch(path, {
-        ...init,
-        headers: { ...init.headers, Authorization: `Bearer ${accessToken}` },
-      });
-    },
-    [accessToken],
-  );
 
   useEffect(() => {
     if (!ready || !workshopId) return;
@@ -89,7 +79,7 @@ export default function BookOneOnOnePage() {
       }
       setFacilitators(facilitatorsResp.ok ? (await facilitatorsResp.json()).items : []);
     })();
-  }, [ready, workshopId, authedFetch]);
+  }, [ready, workshopId]);
 
   const loadSlots = useCallback(
     async (facilitatorId: string) => {
@@ -113,7 +103,7 @@ export default function BookOneOnOnePage() {
       }
       setSlots((await resp.json()).items);
     },
-    [workshopId, authedFetch],
+    [workshopId],
   );
 
   function selectFacilitator(facilitatorId: string) {

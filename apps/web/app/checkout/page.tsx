@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { formatDuration, formatMoney } from "@/lib/format";
-import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
 interface OrderResponse {
@@ -102,14 +102,6 @@ export default function CheckoutPage() {
       cancelled = true;
     };
   }, [priceId]);
-
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, {
-      ...init,
-      headers: { ...init.headers, Authorization: `Bearer ${token}` },
-    });
-  }
 
   async function createOrder(): Promise<OrderResponse | null> {
     if (!priceId) {

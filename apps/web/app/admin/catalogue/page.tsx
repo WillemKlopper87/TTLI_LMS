@@ -2,7 +2,8 @@
 
 import { Fragment, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { readError } from "@/lib/api-error";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -64,11 +65,6 @@ export default function CatalogueScreen() {
   const [priceCurrency, setPriceCurrency] = useState("ZAR");
   const [priceTax, setPriceTax] = useState("exclusive");
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function load() {
     const [p, c] = await Promise.all([
       authedFetch("/api/bff/catalogue/products"),
@@ -82,22 +78,12 @@ export default function CatalogueScreen() {
   useEffect(() => {
     if (!canManage) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage]);
 
   /** Surfaces the API's own refusal text rather than a generic message —
    * every failure this screen can hit (duplicate slug, unassigned course,
    * publishing with no price, deleting a sold price) has a specific,
    * actionable reason the server already wrote. */
-  async function readError(resp: Response, fallback: string) {
-    try {
-      const body = await resp.json();
-      return body?.error?.message ?? fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
   async function createProduct(event: React.FormEvent) {
     event.preventDefault();
     setCreateBusy(true);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface Deal {
   id: string;
@@ -79,11 +79,6 @@ export default function DealsScreen() {
   const [detail, setDetail] = useState<DealDetail | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
-
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
 
   async function load() {
     const resp = await authedFetch(`/api/bff/deals?limit=${PAGE_SIZE}&offset=${offset}`);

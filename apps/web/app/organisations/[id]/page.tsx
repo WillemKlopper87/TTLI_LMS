@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -101,11 +102,6 @@ export default function OrganisationDetailPage() {
 
   const [reportCourseId, setReportCourseId] = useState<string | null>(null);
   const [report, setReport] = useState<ProgressReport | null>(null);
-
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
 
   async function load() {
     const [orgResp, membersResp, seatsResp] = await Promise.all([

@@ -2,7 +2,8 @@
 
 import { Fragment, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { readError } from "@/lib/api-error";
+import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
 
@@ -51,11 +52,6 @@ export default function ArticlesAdminScreen() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  async function authedFetch(path: string, init: RequestInit = {}) {
-    const token = getAccessToken();
-    return fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-  }
-
   async function load() {
     const [a, c] = await Promise.all([
       authedFetch("/api/bff/articles"),
@@ -69,17 +65,7 @@ export default function ArticlesAdminScreen() {
   useEffect(() => {
     if (!canManage) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage]);
-
-  async function readError(resp: Response, fallback: string) {
-    try {
-      const body = await resp.json();
-      return body?.error?.message ?? fallback;
-    } catch {
-      return fallback;
-    }
-  }
 
   async function createArticle(event: React.FormEvent) {
     event.preventDefault();

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useSession } from "@/lib/session-context";
 
 import { VideoPlayer } from "../../learn/[enrolmentId]/video-player";
@@ -32,11 +32,6 @@ interface SurveyQuestionView {
   question_type: string;
   prompt: string;
   options: { id: string; text: string }[];
-}
-
-async function authedFetch(path: string) {
-  const token = getAccessToken();
-  return fetch(path, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 function SignInGate() {
