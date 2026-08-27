@@ -71,6 +71,47 @@ ACCOUNTS: list[tuple[str, str, str, str, str]] = [
         "admin",
         "session-refresh.spec.ts",
     ),
+    # super_admin, not content_author: course:edit + course:publish authors
+    # the fixture content, but product:manage (needed to price and activate
+    # it — 0022 deliberately withholds that from content_author) does not
+    # exist on that role. This account is never signed into through the
+    # browser — only used via Playwright's `request` context in a
+    # `beforeAll`, so it costs one login per file, not one per test.
+    (
+        "E2E_CONTENT_EMAIL",
+        "content-fixture@example.com",
+        "SmokeTest123!content",
+        "super_admin",
+        "learner-assessment.spec.ts, checkout.spec.ts (fixture authoring only)",
+    ),
+    (
+        "E2E_ASSESS_EMAIL",
+        "assess-learner@example.com",
+        "SmokeTest123!assess",
+        "learner",
+        "learner-assessment.spec.ts",
+    ),
+    (
+        "E2E_BUYER_EMAIL",
+        "checkout-buyer@example.com",
+        "SmokeTest123!buyer",
+        "",
+        "checkout.spec.ts",
+    ),
+    (
+        "E2E_FINANCE_EMAIL",
+        "finance-e2e@example.com",
+        "SmokeTest123!finance",
+        "finance",
+        "admin-finance.spec.ts",
+    ),
+    (
+        "E2E_ORG_EMAIL",
+        "org-e2e@example.com",
+        "SmokeTest123!orge2e",
+        "",
+        "organisations.spec.ts",
+    ),
 ]
 
 
@@ -92,6 +133,11 @@ async def _upsert(
     password: str,
     role: str,
 ) -> str:
+    """`role=""` means deliberately roleless — checkout.spec.ts's buyer and
+    organisations.spec.ts's org creator both need nothing beyond being
+    authenticated (order/payment-proof endpoints gate on order ownership,
+    not a permission; creating an organisation is self-service for any
+    signed-in user, services/organisations.py)."""
     user = (
         await session.execute(
             select(User).where(User.email_blind_index == crypto.blind_index(email))
@@ -122,16 +168,17 @@ async def _upsert(
             RoleAssignment.role_code != role,
         )
     )
-    existing = (
-        await session.execute(
-            select(RoleAssignment).where(
-                RoleAssignment.user_id == user.id, RoleAssignment.role_code == role
+    if role:
+        existing = (
+            await session.execute(
+                select(RoleAssignment).where(
+                    RoleAssignment.user_id == user.id, RoleAssignment.role_code == role
+                )
             )
-        )
-    ).scalar_one_or_none()
-    if existing is None:
-        session.add(RoleAssignment(tenant_id=tenant_id, user_id=user.id, role_code=role))
-        action += " + role granted"
+        ).scalar_one_or_none()
+        if existing is None:
+            session.add(RoleAssignment(tenant_id=tenant_id, user_id=user.id, role_code=role))
+            action += " + role granted"
     return action
 
 
