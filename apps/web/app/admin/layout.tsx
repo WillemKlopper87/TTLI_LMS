@@ -36,6 +36,7 @@ const WORKING_SECTIONS = [
   { label: "Articles", href: "/admin/articles" },
   { label: "Recommendations", href: "/admin/recommendations" },
   { label: "Grading", href: "/admin/grading" },
+  { label: "Surveys", href: "/admin/surveys" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },

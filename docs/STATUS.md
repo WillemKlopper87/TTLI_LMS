@@ -1,5 +1,37 @@
 # STATUS
 
+**Updated:** 2026-08-27 (second pass, same day) — **P9 Phase 1: survey
+results, the read side.** `docs/BACKLOG.md` P9 (REQ-ASSESS-06). The
+anonymous-survey story was write-only — responses went in, nothing
+read them back, and every survey has always carried a
+`minimum_group_size` that was never actually enforced anywhere. New
+`services/survey.py::aggregate_results` (Python-side aggregation over
+`SurveyResponse.answers` JSONB — no separate answer table exists to
+`GROUP BY`, matching this codebase's established small-response-volume
+reasoning): `response_count` is always safe to show, but `questions`
+stays empty and `available` is `false` until `response_count >=
+minimum_group_size`. A free-text question (no `options`) reports only
+how many people answered it, never the text itself — exposing that
+would make "aggregate" a lie for exactly the case REQ-ASSESS-05 cares
+about anonymity for. New `GET /surveys/{id}/results` and `GET
+/surveys/{id}/results/export.csv`, both `course:edit`-gated to match
+every other survey endpoint in the router. Admin UI: `/admin/surveys`
+(list with question count and minimum group size) and
+`/admin/surveys/{id}/results` (per-option bar breakdown for choice
+questions, a response-count line for free-text ones, a CSV download
+button, and a "not enough responses yet" progress callout while
+gated).
+Verified: 3 new API tests (`course:edit` refused for a learner; the
+gated-to-available transition at exactly `minimum_group_size` with
+correct per-option counts; a free-text answer's own text never appears
+in either the JSON or the CSV response body) — pass alongside the 5
+pre-existing survey tests and the full backend suite (exit 0). `ruff`/
+`mypy` clean on the three backend files touched; web `lint`/`tsc`/
+`build` clean, both new admin routes compile.
+Not yet built, same backlog row: pre/post skills pairing
+(`evaluation_role`/`pair_id`, delta report) and question banks —
+Phase 2 and 3 of this pass.
+
 **Updated:** 2026-08-27 — **One `authedFetch` for the whole web app, and
 the e2e account fixtures that were missing.** Nineteen client pages each
 carried the same four-line private `authedFetch`, and five carried a

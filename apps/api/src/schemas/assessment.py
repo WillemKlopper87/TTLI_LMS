@@ -211,6 +211,36 @@ class SurveysPageResponse(BaseModel):
     items: list[SurveyListItem]
 
 
+class SurveyResultQuestion(BaseModel):
+    """`counts` is `None` for a free-text question (no `options`) -- this
+    endpoint reports how many people answered it, never the text itself.
+    Reading individual free-text responses is a separate, not-yet-built
+    capability; exposing it here would make "aggregate" a lie for
+    exactly the questions REQ-ASSESS-05 cares most about."""
+
+    question_id: str
+    question_type: str
+    prompt: str
+    options: list[dict[str, str]]
+    counts: dict[str, int] | None
+    response_count: int
+
+
+class SurveyResultsResponse(BaseModel):
+    """REQ-ASSESS-06: `questions` stays empty and `available` is false
+    until `response_count` reaches `minimum_group_size` -- whatever the
+    survey's `response_mode`. `response_count` alone is always safe to
+    show; it is just a number, not an aggregate of anyone's answers."""
+
+    survey_id: str
+    title: str
+    response_mode: str
+    minimum_group_size: int
+    response_count: int
+    available: bool
+    questions: list[SurveyResultQuestion]
+
+
 # --- Assignments ---
 class AssignmentCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
@@ -307,6 +337,8 @@ __all__ = [
     "SurveyQuestionView",
     "SurveyResponseSubmitRequest",
     "SurveyResponse_",
+    "SurveyResultQuestion",
+    "SurveyResultsResponse",
     "SurveyView",
     "SurveysPageResponse",
     "UngradedQuizAnswerItem",

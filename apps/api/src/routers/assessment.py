@@ -12,9 +12,11 @@ pattern already used throughout routers/learning.py.
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Response, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
@@ -62,6 +64,8 @@ from src.schemas.assessment import (
     SurveyQuestionView,
     SurveyResponse_,
     SurveyResponseSubmitRequest,
+    SurveyResultQuestion,
+    SurveyResultsResponse,
     SurveysPageResponse,
     SurveyView,
     UngradedQuizAnswerItem,
@@ -510,6 +514,79 @@ async def submit_survey_response(
         enrolment_id=enrolment.id,
         answers=[a.model_dump() for a in body.answers],
         ip=None,
+    )
+
+
+def _survey_results_response(aggregate: survey_service.SurveyAggregate) -> SurveyResultsResponse:
+    return SurveyResultsResponse(
+        survey_id=str(aggregate.survey.id),
+        title=aggregate.survey.title,
+        response_mode=aggregate.survey.response_mode,
+        minimum_group_size=aggregate.survey.minimum_group_size,
+        response_count=aggregate.response_count,
+        available=aggregate.available,
+        questions=[
+            SurveyResultQuestion(
+                question_id=str(q.question_id),
+                question_type=q.question_type,
+                prompt=q.prompt,
+                options=[{"id": o["id"], "text": o["text"]} for o in q.options],
+                counts=q.counts,
+                response_count=q.response_count,
+            )
+            for q in aggregate.questions
+        ],
+    )
+
+
+@router.get("/surveys/{survey_id}/results", response_model=SurveyResultsResponse)
+async def get_survey_results(
+    survey_id: str, principal: PrincipalDep, session: SessionDep
+) -> SurveyResultsResponse:
+    """REQ-ASSESS-06: the read side of the anonymous-survey story
+    (services/survey.py::aggregate_results) — course:edit, matching every
+    other survey read/authoring endpoint in this router (there is no
+    per-response identity to protect beyond what minimum_group_size
+    already gates, unlike quiz answer keys)."""
+    principal.require("course:edit")
+    aggregate = await survey_service.aggregate_results(
+        session, tenant_id=principal.tenant_id, survey_id=_parse_uuid(survey_id)
+    )
+    return _survey_results_response(aggregate)
+
+
+@router.get(
+    "/surveys/{survey_id}/results/export.csv",
+    summary="CSV of the survey results, same rows as the JSON report",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+async def get_survey_results_csv(
+    survey_id: str, principal: PrincipalDep, session: SessionDep
+) -> Response:
+    principal.require("course:edit")
+    aggregate = await survey_service.aggregate_results(
+        session, tenant_id=principal.tenant_id, survey_id=_parse_uuid(survey_id)
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator=chr(10))
+    writer.writerow(("question", "answer", "response_count"))
+    writer.writerow(("(overall)", "total responses", aggregate.response_count))
+    if not aggregate.available:
+        writer.writerow(
+            ("(overall)", f"below minimum group size ({aggregate.survey.minimum_group_size})", "")
+        )
+    for q in aggregate.questions:
+        if q.counts is not None:
+            option_text = {o["id"]: o["text"] for o in q.options}
+            for option_id, count in q.counts.items():
+                writer.writerow((q.prompt, option_text.get(option_id, option_id), count))
+        else:
+            writer.writerow((q.prompt, "(free text)", q.response_count))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="survey-{survey_id}-results.csv"'},
     )
 
 

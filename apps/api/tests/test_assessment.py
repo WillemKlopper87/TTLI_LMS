@@ -668,6 +668,182 @@ async def test_admin_can_view_survey_without_enrolment(
     assert detail.json()["questions"][0]["prompt"] == "Thoughts?"
 
 
+async def test_survey_results_requires_course_edit(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    survey = await client.post(
+        "/api/v1/surveys",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Gate Check", "response_mode": "anonymous"},
+    )
+    survey_id = survey.json()["id"]
+
+    learner_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        f"/api/v1/surveys/{survey_id}/results",
+        headers={"Authorization": f"Bearer {learner_token}"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_survey_results_gated_until_minimum_group_size(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    survey = await client.post(
+        "/api/v1/surveys",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Session Rating", "response_mode": "anonymous", "minimum_group_size": 2},
+    )
+    survey_id = survey.json()["id"]
+    q = await client.post(
+        f"/api/v1/surveys/{survey_id}/questions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={
+            "question_type": "single_choice",
+            "prompt": "How was the session?",
+            "options": [{"id": "good", "text": "Good"}, {"id": "bad", "text": "Bad"}],
+            "position": 0,
+        },
+    )
+    assert q.status_code == 204
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    async def _respond(value: str) -> None:
+        buyer_token, _ = await _enrol_via_eft(
+            client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+        )
+        form = await client.get(
+            f"/api/v1/surveys/{survey_id}",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        question_id = form.json()["questions"][0]["question_id"]
+        submit = await client.post(
+            f"/api/v1/surveys/{survey_id}/responses",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"answers": [{"question_id": question_id, "value": value}]},
+        )
+        assert submit.status_code == 204
+
+    await _respond("good")
+
+    below = await client.get(
+        f"/api/v1/surveys/{survey_id}/results",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert below.status_code == 200, below.text
+    body = below.json()
+    assert body["response_count"] == 1
+    assert body["available"] is False
+    assert body["questions"] == []
+
+    await _respond("bad")
+
+    reached = await client.get(
+        f"/api/v1/surveys/{survey_id}/results",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert reached.status_code == 200, reached.text
+    body = reached.json()
+    assert body["response_count"] == 2
+    assert body["available"] is True
+    assert len(body["questions"]) == 1
+    counts = body["questions"][0]["counts"]
+    assert counts == {"good": 1, "bad": 1}
+    assert body["questions"][0]["response_count"] == 2
+
+    csv_resp = await client.get(
+        f"/api/v1/surveys/{survey_id}/results/export.csv",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert csv_resp.status_code == 200, csv_resp.text
+    assert "text/csv" in csv_resp.headers["content-type"]
+    csv_text = csv_resp.text
+    assert "How was the session?" in csv_text
+    assert "Good" in csv_text and "Bad" in csv_text
+
+
+async def test_survey_results_never_exposes_free_text_answers(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    survey = await client.post(
+        "/api/v1/surveys",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Open Feedback", "response_mode": "anonymous", "minimum_group_size": 1},
+    )
+    survey_id = survey.json()["id"]
+    q = await client.post(
+        f"/api/v1/surveys/{survey_id}/questions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={
+            "question_type": "long_text",
+            "prompt": "Anything else?",
+            "options": [],
+            "position": 0,
+        },
+    )
+    assert q.status_code == 204
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    form = await client.get(
+        f"/api/v1/surveys/{survey_id}",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    question_id = form.json()["questions"][0]["question_id"]
+    secret_text = "The facilitator's shoes were a distraction, honestly."
+    submit = await client.post(
+        f"/api/v1/surveys/{survey_id}/responses",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "value": secret_text}]},
+    )
+    assert submit.status_code == 204
+
+    results = await client.get(
+        f"/api/v1/surveys/{survey_id}/results",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert results.status_code == 200, results.text
+    assert secret_text not in results.text
+    body = results.json()
+    assert body["available"] is True
+    assert len(body["questions"]) == 1
+    assert body["questions"][0]["counts"] is None
+    assert body["questions"][0]["response_count"] == 1
+
+    csv_resp = await client.get(
+        f"/api/v1/surveys/{survey_id}/results/export.csv",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert csv_resp.status_code == 200, csv_resp.text
+    assert secret_text not in csv_resp.text
+
+
 # ============================================================ Assignments ===
 
 

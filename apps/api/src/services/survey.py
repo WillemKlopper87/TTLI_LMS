@@ -9,7 +9,8 @@ identifying who responded.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,4 +120,112 @@ async def list_surveys(session: AsyncSession) -> list[tuple[Survey, int]]:
     return [(s, count) for s, count in (await session.execute(stmt)).all()]
 
 
-__all__ = ["has_responded", "list_surveys", "submit_response"]
+@dataclass(frozen=True, slots=True)
+class SurveyQuestionAggregate:
+    question_id: uuid.UUID
+    question_type: str
+    prompt: str
+    options: list[dict[str, Any]]
+    counts: dict[str, int] | None
+    response_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyAggregate:
+    survey: Survey
+    response_count: int
+    available: bool
+    questions: list[SurveyQuestionAggregate]
+
+
+async def aggregate_results(
+    session: AsyncSession, *, tenant_id: uuid.UUID, survey_id: uuid.UUID
+) -> SurveyAggregate:
+    """REQ-ASSESS-06: minimum_group_size enforced before any aggregate
+    result is displayed — `response_count` is always safe to show (it's
+    just a number), but `questions` stays empty until enough people have
+    answered, whatever the survey's `response_mode`. A free-text question
+    (no `options`) reports only how many people answered it, never the
+    text itself — reading individual free-text answers is a separate,
+    not-yet-built capability, and exposing it here would make "aggregate"
+    a lie for exactly the questions REQ-ASSESS-05 cares most about.
+
+    Python-side aggregation, not SQL `GROUP BY`: answers live inline as a
+    JSONB array on `SurveyResponse.answers` (0013's design — no separate
+    answer table), and response volume for a survey is small enough that
+    unnesting JSONB in the query would be more ceremony than it's worth.
+    """
+    survey = await session.get(Survey, survey_id)
+    if survey is None:
+        raise NotFound("No such survey.")
+
+    responses = (
+        (
+            await session.execute(
+                select(SurveyResponse.answers).where(
+                    SurveyResponse.tenant_id == tenant_id,
+                    SurveyResponse.survey_id == survey_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    response_count = len(responses)
+    available = response_count >= survey.minimum_group_size
+
+    questions: list[SurveyQuestionAggregate] = []
+    if available:
+        question_rows = (
+            (
+                await session.execute(
+                    select(SurveyQuestion)
+                    .where(SurveyQuestion.survey_id == survey_id)
+                    .order_by(SurveyQuestion.position)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for q in question_rows:
+            counts: dict[str, int] | None = {o["id"]: 0 for o in q.options} if q.options else None
+            answered = 0
+            for answer_list in responses:
+                answer_dicts = cast("list[dict[str, Any]]", answer_list)
+                match = next(
+                    (a for a in answer_dicts if a.get("question_id") == str(q.id)), None
+                )
+                if match is None:
+                    continue
+                answered += 1
+                if counts is not None:
+                    value = match.get("value")
+                    if value in counts:
+                        counts[value] += 1
+            questions.append(
+                SurveyQuestionAggregate(
+                    question_id=q.id,
+                    question_type=q.question_type,
+                    prompt=q.prompt,
+                    options=q.options,
+                    counts=counts,
+                    response_count=answered,
+                )
+            )
+
+    return SurveyAggregate(
+        survey=survey,
+        response_count=response_count,
+        available=available,
+        questions=questions,
+    )
+
+
+__all__ = [
+    "SurveyAggregate",
+    "SurveyQuestionAggregate",
+    "aggregate_results",
+    "has_responded",
+    "list_surveys",
+    "submit_response",
+]
