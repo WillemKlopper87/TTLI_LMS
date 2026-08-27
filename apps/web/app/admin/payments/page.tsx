@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface PendingPayment {
   payment_id: string;
@@ -40,10 +40,8 @@ export default function PaymentsScreen() {
   const [refundError, setRefundError] = useState<string | null>(null);
 
   async function load() {
-    const token = getAccessToken();
-    if (!token) return;
     setError(null);
-    const resp = await fetch("/api/bff/payments", { headers: { Authorization: `Bearer ${token}` } });
+    const resp = await authedFetch("/api/bff/payments");
     if (resp.status === 403) {
       setError("forbidden");
       return;
@@ -62,12 +60,11 @@ export default function PaymentsScreen() {
 
   async function approve(paymentId: string) {
     setBusyId(paymentId);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/payments/${paymentId}/approve`, {
+    const resp = await authedFetch(`/api/bff/payments/${paymentId}/approve`, {
       method: "POST",
       // Idempotency-Key (03 §1.6): finance clicking twice on a slow
       // connection must not issue two invoices for one payment.
-      headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": crypto.randomUUID() },
     });
     setBusyId(null);
     if (resp.ok) await load();
@@ -77,12 +74,10 @@ export default function PaymentsScreen() {
     const text = reason[paymentId]?.trim();
     if (!text) return;
     setBusyId(paymentId);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/payments/${paymentId}/reject`, {
+    const resp = await authedFetch(`/api/bff/payments/${paymentId}/reject`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
         "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify({ reason: text }),
@@ -98,12 +93,10 @@ export default function PaymentsScreen() {
     setRefundBusy(true);
     setRefundError(null);
     setRefundResult(null);
-    const token = getAccessToken();
-    const resp = await fetch(`/api/bff/orders/${orderId}/refund`, {
+    const resp = await authedFetch(`/api/bff/orders/${orderId}/refund`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
         "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify({ reason: text }),

@@ -23,9 +23,9 @@ Roles are least-privilege per spec, not super_admin everywhere:
 else, which is the `admin` role.
 
 Idempotent: matched on the email blind index, so re-running resets the
-password and re-asserts the role assignment rather than creating
-duplicates. It never deletes anything. Learner dashboards still need
-`seed_demo_enrolment.py` -- this script only creates the identities.
+password and enforces exactly the declared role rather than creating
+duplicates or retaining stale fixture privileges. Learner dashboards still
+need `seed_demo_enrolment.py` -- this script only creates the identities.
 
     apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py
 
@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.crypto import CryptoBox
@@ -111,6 +111,17 @@ async def _upsert(
         user.failed_login_count = 0
         action = "reset"
 
+    # These are repo-owned local fixtures, so make their authorization
+    # deterministic as well as their credentials. An account previously
+    # granted super_admin must not silently retain that access when a spec
+    # is narrowed to admin or learner.
+    await session.execute(
+        delete(RoleAssignment).where(
+            RoleAssignment.tenant_id == tenant_id,
+            RoleAssignment.user_id == user.id,
+            RoleAssignment.role_code != role,
+        )
+    )
     existing = (
         await session.execute(
             select(RoleAssignment).where(

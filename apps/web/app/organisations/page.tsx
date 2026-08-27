@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -27,28 +28,22 @@ export default function OrganisationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const token = getAccessToken();
-    if (!token) return;
-    const resp = await fetch("/api/bff/organisations", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch("/api/bff/organisations");
     if (resp.ok) setOrgs(await resp.json());
   }
 
   useEffect(() => {
     if (!ready || !getAccessToken()) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   async function createOrganisation() {
     if (!name.trim()) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
-    const resp = await fetch("/api/bff/organisations", {
+    const resp = await authedFetch("/api/bff/organisations", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim() }),
     });
     setBusy(false);

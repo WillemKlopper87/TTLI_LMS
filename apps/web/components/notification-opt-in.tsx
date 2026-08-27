@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useSession } from "@/lib/session-context";
 
 const DISMISSED_KEY = "ttli-push-prompt-dismissed";
@@ -72,10 +72,9 @@ export function NotificationOptIn() {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       });
-      const token = getAccessToken();
-      await fetch("/api/bff/push-subscriptions", {
+      await authedFetch("/api/bff/push-subscriptions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(subscription.toJSON()),
       });
       setVisible(false);

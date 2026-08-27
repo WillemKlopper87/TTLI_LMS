@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useRequireAuth } from "@/lib/session-context";
 
 import { CredentialsPanel } from "../../[enrolmentId]/credentials-panel";
@@ -43,11 +43,7 @@ export default function LearnPathEnrolmentPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const token = getAccessToken();
-    if (!token) return;
-    const resp = await fetch(`/api/bff/path-enrolments/${pathEnrolmentId}/progress`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await authedFetch(`/api/bff/path-enrolments/${pathEnrolmentId}/progress`);
     if (!resp.ok) {
       setError("This learning path could not be loaded.");
       return;

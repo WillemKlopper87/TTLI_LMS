@@ -11,16 +11,14 @@
  * `open` opens the object URL in a new tab instead of saving it — right
  * for a PDF the browser can render, wrong for a CSV.
  */
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 export async function authedDownload(
   url: string,
   filename: string,
   { open = false }: { open?: boolean } = {},
 ): Promise<boolean> {
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-  }).catch(() => null);
+  const resp = await authedFetch(url).catch(() => null);
   if (!resp || !resp.ok) return false;
 
   const objectUrl = URL.createObjectURL(await resp.blob());

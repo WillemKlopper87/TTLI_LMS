@@ -28,7 +28,13 @@
 import { getAccessToken, refreshAccessToken } from "@/lib/session";
 
 function withBearer(init: RequestInit, token: string): RequestInit {
-  return { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } };
+  // `RequestInit.headers` may be a Headers instance or tuple array, neither
+  // of which survives object spread correctly. Normalise through the web
+  // platform class, preserving every caller-supplied header before setting
+  // the one this transport owns.
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
 }
 
 export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {

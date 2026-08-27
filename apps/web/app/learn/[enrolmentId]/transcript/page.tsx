@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useRequireAuth } from "@/lib/session-context";
 
 interface TranscriptLesson {
@@ -39,11 +39,7 @@ export default function TranscriptPage() {
     if (!ready) return;
     let cancelled = false;
     async function load() {
-      const token = getAccessToken();
-      if (!token) return;
-      const resp = await fetch(`/api/bff/enrolments/${enrolmentId}/transcript`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await authedFetch(`/api/bff/enrolments/${enrolmentId}/transcript`);
       if (!resp.ok) {
         if (!cancelled) setError("This transcript could not be loaded.");
         return;

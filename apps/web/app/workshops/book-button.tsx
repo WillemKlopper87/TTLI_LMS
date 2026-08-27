@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useSession } from "@/lib/session-context";
 
 /**
@@ -44,9 +44,8 @@ export function BookButton({
     }
     setBusy(true);
     setError(null);
-    const resp = await fetch(`/api/bff/sessions/${sessionId}/book`, {
+    const resp = await authedFetch(`/api/bff/sessions/${sessionId}/book`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${getAccessToken()}` },
     });
     setBusy(false);
     if (!resp.ok) {

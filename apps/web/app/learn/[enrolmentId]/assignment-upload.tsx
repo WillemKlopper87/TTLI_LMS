@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { getAccessToken } from "@/lib/session";
+import { authedFetch } from "@/lib/authed-fetch";
 
 interface SubmissionResponse {
   id: string;
@@ -27,12 +27,10 @@ export function AssignmentUpload({ assignmentId }: { assignmentId: string }) {
     if (!file) return;
     setBusy(true);
     setError(null);
-    const token = getAccessToken();
     const body = new FormData();
     body.append("file", file);
-    const resp = await fetch(`/api/bff/assignments/${assignmentId}/submissions`, {
+    const resp = await authedFetch(`/api/bff/assignments/${assignmentId}/submissions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
       body,
     });
     setBusy(false);
