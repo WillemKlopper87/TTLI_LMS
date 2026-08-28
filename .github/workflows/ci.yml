@@ -259,7 +259,6 @@ jobs:
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
             echo "::endgroup::"
           done
-          retention-days: 7
 
   # Secret scanning (04 §3, §10; BACKLOG.md O4). Dev credentials are
   # deliberately hardcoded in infra/docker-compose.yml, .env.example and
