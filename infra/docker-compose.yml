@@ -127,8 +127,13 @@ services:
   # v1.29.2 (bumped from v1.24, dependency-upgrade sprint A): fixes
   # CVE-2026-27808, where the Link Check API could be used to probe
   # internal network IPs.
+  #
+  # v1.31.0 (report M7, Trivy remediation pass): v1.29.2 was six months
+  # stale and alone accounted for ~35 of the CVEs that pass found, almost
+  # all in its bundled Go toolchain/stdlib -- current as of the bump.
+  # Digest-pinned for the same reason as the Dockerfiles' base images.
   mailpit:
-    image: axllent/mailpit:v1.29.2
+    image: axllent/mailpit:v1.31.0@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
     container_name: ttli-mailpit
     ports:
       - "1145:1025"

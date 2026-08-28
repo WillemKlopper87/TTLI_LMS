@@ -57,8 +57,11 @@ jobs:
       # reasoning for why it's not mailhog/mailhog; the service is named for
       # what it actually runs) — no health-cmd, no
       # launch args, so it starts serving as soon as the container is up.
+      # Digest-pinned (report M7): v1.29.2 was six months stale and alone
+      # accounted for ~35 of the CVEs the M7 Trivy pass found (its bundled
+      # Go toolchain/stdlib) -- v1.31.0 is current as of the bump.
       mailpit:
-        image: axllent/mailpit:v1.29.2
+        image: axllent/mailpit:v1.31.0@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
         ports: ["1145:1025", "8145:8025"]
 
       # No health-cmd: the image ships no CLI to probe with, and it needs
@@ -247,7 +250,7 @@ jobs:
       - name: Container image scan (report-only)
         run: |
           mkdir -p "$GITHUB_WORKSPACE/trivy-reports"
-          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.29.2 clamav/clamav-debian:stable; do
+          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable; do
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH "$img"
             safe=$(echo "$img" | tr '/:' '__')
