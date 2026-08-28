@@ -1,0 +1,147 @@
+# Reviewed, dated exceptions for the M7 Trivy blocking-policy pass
+# (TTLI_Code_report.md M7; docs/STATUS.md §10 has the original clamav-
+# debian review this pass builds on). Every entry below was individually
+# checked against real `trivy image --format json` output on 2026-08-28,
+# after fixing everything this repo actually controls (see the fix:
+# report M7 commits immediately before this file was added -- an
+# openssl point-release bump in apps/api/Dockerfile, stripping the
+# unused bundled npm CLI from apps/web's runtime stage, and bumping
+# mailpit six tag-versions to current). What's left is either an
+# upstream package Debian/Alpine hasn't patched yet, or a binary
+# embedded in a third-party image this repo only pulls and doesn't
+# build. `exp:2026-11-26` (90 days out): once an entry expires, Trivy
+# stops honouring it and the CVE goes back to failing the build --
+# forces a real re-check instead of a permanent exception. Regenerate
+# with the same JSON-diffing approach documented in the M7 commits
+# rather than re-typing this by hand.
+
+# --- postgres:18-alpine: bundled `gosu` static binary, built with an
+# older Go toolchain than upstream Postgres has since picked up. Not
+# something this repo builds -- waiting on the official postgres image's
+# next rebuild to carry a newer gosu.
+CVE-2025-61726 exp:2026-11-26
+CVE-2025-61729 exp:2026-11-26
+CVE-2025-68121 exp:2026-11-26
+CVE-2026-25679 exp:2026-11-26
+CVE-2026-27145 exp:2026-11-26
+CVE-2026-32280 exp:2026-11-26
+CVE-2026-32281 exp:2026-11-26
+CVE-2026-32283 exp:2026-11-26
+CVE-2026-33811 exp:2026-11-26
+CVE-2026-33814 exp:2026-11-26
+CVE-2026-33818 exp:2026-11-26
+CVE-2026-39820 exp:2026-11-26
+CVE-2026-39821 exp:2026-11-26
+CVE-2026-39822 exp:2026-11-26
+CVE-2026-39836 exp:2026-11-26
+CVE-2026-42499 exp:2026-11-26
+CVE-2026-42504 exp:2026-11-26
+CVE-2026-56853 exp:2026-11-26
+CVE-2026-56858 exp:2026-11-26
+CVE-2026-56859 exp:2026-11-26
+CVE-2026-56860 exp:2026-11-26
+CVE-2026-56862 exp:2026-11-26
+
+# --- openssl 3.5.x point release: shared across every Alpine/Debian
+# base image pulled here (mailpit, clamav-debian, postgres, redis) --
+# status "fixed" means Debian/Alpine has published the patch, but none
+# of these four base images' maintainers have rebuilt with it yet as of
+# 2026-08-28. Nothing to bump on our side; re-check at expiry.
+CVE-2026-14456 exp:2026-11-26
+
+# --- clamav-debian: bundled util-linux family, same "fixed upstream,
+# not yet rebuilt into this image" situation as the openssl entry above.
+CVE-2026-53612 exp:2026-11-26
+CVE-2026-53613 exp:2026-11-26
+CVE-2026-53614 exp:2026-11-26
+CVE-2026-53615 exp:2026-11-26
+
+# --- Debian trixie perl-base: affected/fix_deferred upstream (no
+# patched Debian package yet). Shared by ttli-api, ttli-web and
+# clamav-debian since all three are Debian-trixie-based.
+CVE-2026-13221 exp:2026-11-26
+CVE-2026-42496 exp:2026-11-26
+CVE-2026-42497 exp:2026-11-26
+CVE-2026-48962 exp:2026-11-26
+CVE-2026-57432 exp:2026-11-26
+CVE-2026-57433 exp:2026-11-26
+CVE-2026-8376 exp:2026-11-26
+CVE-2026-9538 exp:2026-11-26
+
+# --- Debian trixie curl/libcurl4t64: affected, no patched Debian
+# package yet (ttli-api, clamav-debian).
+CVE-2026-12064 exp:2026-11-26
+CVE-2026-8286 exp:2026-11-26
+CVE-2026-8458 exp:2026-11-26
+CVE-2026-8927 exp:2026-11-26
+
+# --- ffmpeg/libav*: Debian trixie marks these fix_deferred (a packaging
+# decision, not yet backported). ffmpeg is a real runtime dependency
+# here (services/media/ transcoding, apps/api/Dockerfile's own comment),
+# not build tooling this repo could simply drop.
+CVE-2026-58049 exp:2026-11-26
+CVE-2026-64830 exp:2026-11-26
+CVE-2026-64831 exp:2026-11-26
+CVE-2026-64832 exp:2026-11-26
+CVE-2026-64833 exp:2026-11-26
+CVE-2026-64834 exp:2026-11-26
+CVE-2026-64835 exp:2026-11-26
+CVE-2026-66036 exp:2026-11-26
+CVE-2026-66039 exp:2026-11-26
+CVE-2026-66040 exp:2026-11-26
+CVE-2026-66041 exp:2026-11-26
+CVE-2026-70628 exp:2026-11-26
+CVE-2026-70632 exp:2026-11-26
+
+# --- Debian trixie libmbedcrypto16: affected, no patched package yet
+# (ttli-api).
+CVE-2026-25835 exp:2026-11-26
+CVE-2026-34872 exp:2026-11-26
+CVE-2026-34873 exp:2026-11-26
+CVE-2026-34875 exp:2026-11-26
+
+# --- Debian trixie libcjson1: affected, no patched package yet
+# (ttli-api).
+CVE-2026-16554 exp:2026-11-26
+CVE-2026-29036 exp:2026-11-26
+CVE-2026-67215 exp:2026-11-26
+CVE-2026-67216 exp:2026-11-26
+
+# --- Debian trixie libglib2.0-0t64: affected, no patched package yet
+# (ttli-api).
+CVE-2026-58010 exp:2026-11-26
+CVE-2026-58011 exp:2026-11-26
+CVE-2026-58012 exp:2026-11-26
+CVE-2026-58013 exp:2026-11-26
+CVE-2026-58014 exp:2026-11-26
+CVE-2026-58015 exp:2026-11-26
+CVE-2026-58016 exp:2026-11-26
+
+# --- Debian trixie libtiff6: CVE-2026-36849 is will_not_fix upstream
+# (Debian's own call), CVE-2026-52490 is affected with no package yet
+# (ttli-api).
+CVE-2026-36849 exp:2026-11-26
+CVE-2026-52490 exp:2026-11-26
+
+# --- Single-package Debian trixie findings with no patched package yet,
+# each affecting only ttli-api (or ttli-api + clamav-debian, both
+# trixie-based): libsndfile1, libsqlite3-0, libssh2-1t64, libexpat1,
+# libxml2.
+CVE-2026-37555 exp:2026-11-26
+CVE-2026-11822 exp:2026-11-26
+CVE-2026-11824 exp:2026-11-26
+CVE-2026-58050 exp:2026-11-26
+CVE-2026-66046 exp:2026-11-26
+CVE-2026-6653 exp:2026-11-26
+
+# --- Shared Debian trixie findings across ttli-api, ttli-web and
+# clamav-debian: ncurses/libtinfo family, gzip, libacl1 -- all
+# affected/fix_deferred, no patched package yet.
+CVE-2025-69720 exp:2026-11-26
+CVE-2026-41992 exp:2026-11-26
+CVE-2026-54369 exp:2026-11-26
+
+# --- ttli-web: zlib1g's minizip CVE, Debian has explicitly marked this
+# will_not_fix (their own severity/applicability call, not a gap on our
+# side).
+CVE-2023-45853 exp:2026-11-26

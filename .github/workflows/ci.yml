@@ -232,13 +232,18 @@ jobs:
       # real supply-chain compromise in March 2026 (76 of 77 version tags
       # force-pushed to credential-stealing malware) — pinning a third-party
       # Action by a mutable tag would reintroduce exactly the kind of risk
-      # this step exists to catch. `trivy image` doesn't fail on findings by
-      # default (no `--exit-code` passed) — deliberately report-only, not a
-      # gate: these are fixed upstream base images this project doesn't
-      # control the code of, and at least one already-reviewed finding
-      # (clamav-debian's bundled Debian packages, docs/STATUS.md §10) has no
-      # upstream fix available at all, so failing the build on it would turn
-      # every unrelated PR red for something engineering can't act on.
+      # this step exists to catch.
+      #
+      # Blocking (report M7): `--exit-code 1` fails the build on any
+      # CRITICAL/HIGH finding not covered by ../../.trivyignore at the repo
+      # root. Every current exception there was individually reviewed
+      # against real `trivy image --format json` output (2026-08-28, after
+      # fixing everything this repo actually controls — see the "fix:
+      # report M7" commits right before .trivyignore was added) and dated
+      # with `exp:` so it stops applying and forces re-review rather than
+      # living forever. A NEW finding — one not already in that file — now
+      # genuinely fails this job; that's the point of flipping this from
+      # report-only.
       - name: Install Trivy
         run: |
           sudo apt-get install -y wget apt-transport-https gnupg
@@ -247,28 +252,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      - name: Container image scan (report-only)
+      - name: Container image scan
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/trivy-reports"
           for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH "$img"
-            safe=$(echo "$img" | tr '/:' '__')
-            trivy image --severity CRITICAL,HIGH --format json -o "$GITHUB_WORKSPACE/trivy-reports/$safe.json" "$img"
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
             echo "::endgroup::"
           done
-
-      # Temporary research artifact for the M7 Trivy remediation pass — JSON
-      # is unambiguous where the table output merges repeated cells across
-      # consecutive rows, needed to build a real, per-CVE .trivyignore
-      # instead of a blanket report-only stance. Absolute path: this job
-      # defaults to apps/api as its working directory, but upload-artifact's
-      # `path` resolves relative to the repo root regardless.
-      - name: Upload Trivy JSON (quality)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: trivy-json-quality
-          path: trivy-reports/
           retention-days: 7
 
   # Secret scanning (04 §3, §10; BACKLOG.md O4). Dev credentials are
@@ -305,8 +295,9 @@ jobs:
   # no registry push, because there is no deployment target yet
   # (docs/research/devsecops-deployment.md §2.1 picks Azure Container
   # Apps; nothing is provisioned). Trivy scans what was just built, at
-  # the same report-only setting as the upstream images above and for
-  # the same reason: base-image CVEs this project cannot fix.
+  # the same blocking-with-reviewed-exceptions policy as the `quality`
+  # job's upstream image scan above and for the same reason — see that
+  # job's comment for the .trivyignore/`exp:` mechanics.
   images:
     runs-on: ubuntu-latest
     defaults:
@@ -330,23 +321,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      - name: Scan built images (report-only)
+      - name: Scan built images
         run: |
-          mkdir -p trivy-reports
           for img in ttli-api:ci ttli-web:ci; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH "$img"
-            safe=$(echo "$img" | tr '/:' '__')
-            trivy image --severity CRITICAL,HIGH --format json -o "trivy-reports/$safe.json" "$img"
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
             echo "::endgroup::"
           done
-
-      - name: Upload Trivy JSON (images)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: trivy-json-images
-          path: trivy-reports/
-          retention-days: 7
 
   web:
     runs-on: ubuntu-latest
