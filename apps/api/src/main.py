@@ -20,7 +20,7 @@ from src.core.errors import (
     validation_error_handler,
 )
 from src.core.idempotency import idempotency_middleware
-from src.core.logging import configure_logging, get_logger
+from src.core.logging import configure_logging, get_logger, init_sentry
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.routers import (
@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             + "; ".join(problems)
         )
 
+    init_sentry(settings)
     init_engine(settings)
     init_redis(settings)
     await init_queue(settings)

@@ -58,3 +58,9 @@ Pillow==12.3.0
 # keypair, not a credential from anyone else, so this ships fully
 # functional, not another empty-default "coded but not configured" gap.
 pywebpush==2.4.0
+# Error tracking (core/logging.py::init_sentry). `check_production_safety`
+# has required SENTRY_DSN to be set since it was written, but nothing ever
+# imported sentry_sdk to act on it — the guard made the gap look closed
+# when it wasn't. No-ops cleanly with an empty DSN, same as every other
+# unconfigured-third-party path in this codebase.
+sentry-sdk==2.68.1
