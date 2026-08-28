@@ -8,23 +8,16 @@ about who has expressed interest.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request, status
-from redis.asyncio import Redis
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from src.core.config import get_settings
-from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, TenantDep
-from src.core.errors import AppError, TooManyAttempts
+from src.core.deps import CryptoDep, PrincipalDep, SessionDep, TenantDep
+from src.core.errors import AppError
 from src.core.net import client_ip
 from src.schemas.leads import LeadRequest, LeadsPage, LeadSummary
 from src.services import consent, events, leads, rate_limit
 
 router = APIRouter(prefix="/leads", tags=["leads"])
-
-# 03 §1.8 has no explicit "leads" row; "Guest signup | 5/hour per IP" is the
-# closest documented number for a public funnel-entry endpoint and is reused
-# here rather than inventing an unreviewed limit.
-LEADS_RATE_LIMIT_PER_IP = 5
-LEADS_RATE_LIMIT_WINDOW_SECONDS = 3600
 
 # No published privacy policy exists yet (Phase 0 is blocked on the
 # customer, and legal copy is part of that) — this is a placeholder version
@@ -37,24 +30,12 @@ def _client_ip(request: Request) -> str | None:
     return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
-async def _enforce_leads_rate_limit(redis: Redis, *, ip: str | None) -> None:
-    if ip is None:
-        return
-    ok = await rate_limit.hit(
-        redis,
-        key=f"ratelimit:leads:ip:{ip}",
-        limit=LEADS_RATE_LIMIT_PER_IP,
-        window_seconds=LEADS_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not ok:
-        raise TooManyAttempts("Too many attempts. Try again later.")
-
-
 @router.post(
     "",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
     summary="Capture a lead",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.LEADS))],
 )
 async def capture_lead(
     body: LeadRequest,
@@ -62,10 +43,7 @@ async def capture_lead(
     session: SessionDep,
     crypto: CryptoDep,
     tenant: TenantDep,
-    redis: RedisDep,
 ) -> None:
-    await _enforce_leads_rate_limit(redis, ip=_client_ip(request))
-
     if not body.privacy_consent:
         # The one required checkbox — REQ-LEAD-01. Not itself a
         # consent_records purpose (04 §5.1's three purposes are marketing,

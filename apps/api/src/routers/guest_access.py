@@ -7,12 +7,11 @@ response may reveal whether the email already had an account.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, status
-from redis.asyncio import Redis
+from fastapi import APIRouter, Depends, Request, status
 
 from src.core.config import get_settings
-from src.core.deps import CryptoDep, RedisDep, SessionDep, SettingsDep, TenantDep
-from src.core.errors import AppError, TooManyAttempts
+from src.core.deps import CryptoDep, SessionDep, SettingsDep, TenantDep
+from src.core.errors import AppError
 from src.core.net import client_ip
 from src.schemas.leads import LeadRequest
 from src.services import consent, events, guest_access, identity, rate_limit
@@ -20,11 +19,6 @@ from src.services.email import send_email
 from src.services.leads import LeadCapture
 
 router = APIRouter(tags=["leads"])
-
-# Same public funnel-entry rate limit as POST /leads (03 §1.8's "Guest
-# signup | 5/hour per IP" is the closest documented number).
-GUEST_ACCESS_RATE_LIMIT_PER_IP = 5
-GUEST_ACCESS_RATE_LIMIT_WINDOW_SECONDS = 3600
 
 # Mirrors routers/leads.py's POLICY_VERSION — no published privacy policy
 # exists yet (Phase 0 is blocked on the customer). Replace once Legal
@@ -36,24 +30,12 @@ def _client_ip(request: Request) -> str | None:
     return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
-async def _enforce_rate_limit(redis: Redis, *, ip: str | None) -> None:
-    if ip is None:
-        return
-    ok = await rate_limit.hit(
-        redis,
-        key=f"ratelimit:guest-access:ip:{ip}",
-        limit=GUEST_ACCESS_RATE_LIMIT_PER_IP,
-        window_seconds=GUEST_ACCESS_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not ok:
-        raise TooManyAttempts("Too many attempts. Try again later.")
-
-
 @router.post(
     "/guest-access",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
     summary="Provision a time-limited guest account",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.GUEST_ACCESS))],
 )
 async def request_guest_access(
     body: LeadRequest,
@@ -61,11 +43,8 @@ async def request_guest_access(
     session: SessionDep,
     crypto: CryptoDep,
     tenant: TenantDep,
-    redis: RedisDep,
     settings: SettingsDep,
 ) -> None:
-    await _enforce_rate_limit(redis, ip=_client_ip(request))
-
     if not body.privacy_consent:
         raise AppError("Privacy consent is required to submit this form.")
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
 from src.core.errors import NotFound
@@ -40,7 +40,7 @@ from src.schemas.learning_paths import (
     ReorderPathCoursesRequest,
     TenantAssignmentCreateRequest,
 )
-from src.services import audit
+from src.services import audit, rate_limit
 from src.services import learning_paths as paths_service
 from src.services.courses import PublicPriceRow
 
@@ -338,6 +338,7 @@ def _public_price(row: PublicPriceRow | None) -> PublicPrice | None:
     "/public/learning-paths",
     response_model=PublicPathsResponse,
     summary="Every published learning path this tenant offers, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def list_public_paths(session: SessionDep, tenant: TenantDep) -> PublicPathsResponse:
     paths = await paths_service.list_public_paths(session, tenant_id=tenant.id)
@@ -366,6 +367,7 @@ async def list_public_paths(session: SessionDep, tenant: TenantDep) -> PublicPat
     "/public/learning-paths/{learning_path_id}",
     response_model=PublicPathDetailResponse,
     summary="A published learning path's member courses, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def get_public_path(
     learning_path_id: str, session: SessionDep, tenant: TenantDep

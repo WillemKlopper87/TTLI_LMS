@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, Principal, PrincipalDep, SessionDep, SettingsDep, TenantDep
@@ -53,7 +53,7 @@ from src.schemas.workshops import (
     WorkshopResponse,
     WorkshopsPage,
 )
-from src.services import identity
+from src.services import identity, rate_limit
 from src.services import workshops as workshops_service
 from src.services.ics import IcsEvent, build_ics
 from src.services.meeting.meet import MeetMeetingProvider
@@ -672,6 +672,7 @@ async def list_roster(
     "/public/workshops",
     response_model=PublicWorkshopsResponse,
     summary="Upcoming bookable sessions, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def list_public_workshops(
     session: SessionDep, tenant: TenantDep, crypto: CryptoDep

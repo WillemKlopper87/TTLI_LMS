@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
 from src.core.deps import PrincipalDep, SessionDep, TenantDep
@@ -49,7 +49,7 @@ from src.schemas.courses import (
     TenantAssignmentsPageResponse,
     UpdateManagerVisibilityRequest,
 )
-from src.services import audit
+from src.services import audit, rate_limit
 from src.services import course_wizard as wizard_service
 from src.services import courses as courses_service
 
@@ -405,6 +405,7 @@ def _public_modules(outline: list[wizard_service.ModuleOutline]) -> list[PublicM
     "/public/courses",
     response_model=PublicCoursesResponse,
     summary="Every published course this tenant offers, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def list_public_courses(session: SessionDep, tenant: TenantDep) -> PublicCoursesResponse:
     """The catalogue / landing grid. Facet counts (topic / format /
@@ -448,6 +449,7 @@ async def list_public_courses(session: SessionDep, tenant: TenantDep) -> PublicC
     "/public/courses/{course_id}/curriculum",
     response_model=PublicCurriculumResponse,
     summary="A published course's curriculum shape, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def get_public_curriculum(
     course_id: str, session: SessionDep, tenant: TenantDep
@@ -485,6 +487,7 @@ async def get_public_curriculum(
     "/public/lessons/{lesson_id}/preview",
     response_model=PublicLessonPreviewResponse,
     summary="A free-preview lesson's content, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def get_public_lesson_preview(
     lesson_id: str, session: SessionDep, tenant: TenantDep

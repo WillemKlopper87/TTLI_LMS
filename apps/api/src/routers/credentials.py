@@ -11,20 +11,18 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 
-from src.core.config import get_settings
 from src.core.deps import (
     CryptoDep,
     PrincipalDep,
-    RedisDep,
     SessionDep,
     SettingsDep,
     StorageDep,
     TenantDep,
 )
-from src.core.errors import Forbidden, NotFound, TooManyAttempts
+from src.core.errors import Forbidden, NotFound
 from src.core.ids import uuid7
 from src.core.net import client_ip
 from src.models.audit import AuditAction
@@ -55,19 +53,12 @@ from src.services.storage import Container
 
 router = APIRouter(tags=["credentials"])
 
-VERIFY_RATE_LIMIT_PER_IP = 20
-VERIFY_RATE_LIMIT_WINDOW_SECONDS = 3600
-
 
 def _parse_uuid(value: str) -> uuid.UUID:
     try:
         return uuid.UUID(value)
     except ValueError as exc:
         raise NotFound("No such resource.") from exc
-
-
-def _client_ip(request: Request) -> str | None:
-    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
 
 
 async def _owns_certificate(
@@ -194,32 +185,29 @@ async def get_certificate_linkedin_share(
     return LinkedInShareResponse(**fields)
 
 
-@router.get("/verify/{token}", response_model=VerificationResponse)
+@router.get(
+    "/verify/{token}",
+    response_model=VerificationResponse,
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_VERIFY))],
+)
 async def verify_credential(
     token: str,
     request: Request,
     tenant: TenantDep,
     session: SessionDep,
-    redis: RedisDep,
     crypto: CryptoDep,
+    settings: SettingsDep,
 ) -> VerificationResponse:
-    ip = _client_ip(request)
-    if ip is not None:
-        ok = await rate_limit.hit(
-            redis,
-            key=f"ratelimit:verify:ip:{ip}",
-            limit=VERIFY_RATE_LIMIT_PER_IP,
-            window_seconds=VERIFY_RATE_LIMIT_WINDOW_SECONDS,
-        )
-        if not ok:
-            raise TooManyAttempts("Too many attempts. Try again later.")
-
+    # Not the rate limit (the dependency above handles that) — this IP feeds
+    # the verify-attempt audit log itself (module docstring: every lookup is
+    # logged, hit or miss, which is what makes the log double as abuse
+    # detection rather than just a hit counter).
     result = await credentials_service.verify(
         session,
         crypto,
         tenant_id=tenant.id,
         raw_token=token,
-        ip=ip,
+        ip=client_ip(request, trust_x_forwarded_for=settings.trust_x_forwarded_for),
         user_agent=request.headers.get("user-agent"),
     )
     return VerificationResponse(

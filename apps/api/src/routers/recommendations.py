@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
@@ -21,6 +21,7 @@ from src.schemas.recommendations import (
     RecommendationsPageResponse,
     RecommendationUpdateRequest,
 )
+from src.services import rate_limit
 from src.services import recommendations as recommendations_service
 
 router = APIRouter(tags=["recommendations"])
@@ -144,6 +145,7 @@ async def unpublish_recommendation(
     "/public/recommendations",
     response_model=RecommendationsPageResponse,
     summary="Published recommendations, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def list_public_recommendations(
     session: SessionDep, tenant: TenantDep

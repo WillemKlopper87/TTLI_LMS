@@ -69,10 +69,11 @@ MFA_ENROLL_PURPOSE = "mfa_enroll"
 # account". Applied to login and the magic-link request — the two endpoints
 # an enumeration or brute-force attempt would actually hit. mfa/verify has
 # its own purpose-built 6-attempt/15-minute lockout instead (identity.py);
-# stacking this on top of it would just be a second, looser limit.
-LOGIN_RATE_LIMIT_PER_IP = 10
-LOGIN_RATE_LIMIT_PER_ACCOUNT = 5
-LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
+# stacking this on top of it would just be a second, looser limit. Numbers
+# live in services/rate_limit.py's LOGIN_IP/LOGIN_ACCOUNT now (report M8) —
+# this function stays local rather than becoming a plain Depends() because
+# the account check needs `email` from the parsed request body, which
+# FastAPI dependencies resolve before body parsing happens.
 
 
 def _client_ip(request: Request) -> str | None:
@@ -96,9 +97,9 @@ async def _enforce_login_rate_limit(redis: Redis, *, ip: str | None, email: str)
     if ip is not None:
         ip_ok = await rate_limit.hit(
             redis,
-            key=f"ratelimit:auth:ip:{ip}",
-            limit=LOGIN_RATE_LIMIT_PER_IP,
-            window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+            key=f"ratelimit:{rate_limit.LOGIN_IP.key_prefix}:{ip}",
+            limit=rate_limit.LOGIN_IP.limit,
+            window_seconds=rate_limit.LOGIN_IP.window_seconds,
         )
         if not ip_ok:
             raise TooManyAttempts("Too many attempts. Try again shortly.")
@@ -108,9 +109,9 @@ async def _enforce_login_rate_limit(redis: Redis, *, ip: str | None, email: str)
     account_key = hash_token(email.strip().lower()).hex()
     account_ok = await rate_limit.hit(
         redis,
-        key=f"ratelimit:auth:account:{account_key}",
-        limit=LOGIN_RATE_LIMIT_PER_ACCOUNT,
-        window_seconds=LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        key=f"ratelimit:{rate_limit.LOGIN_ACCOUNT.key_prefix}:{account_key}",
+        limit=rate_limit.LOGIN_ACCOUNT.limit,
+        window_seconds=rate_limit.LOGIN_ACCOUNT.window_seconds,
     )
     if not account_ok:
         raise TooManyAttempts("Too many attempts. Try again shortly.")

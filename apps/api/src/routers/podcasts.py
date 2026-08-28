@@ -14,13 +14,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Query, Request, UploadFile, status
-from redis.asyncio import Redis
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
-from src.core.config import Settings, get_settings
-from src.core.deps import PrincipalDep, RedisDep, SessionDep, SettingsDep, StorageDep, TenantDep
-from src.core.errors import NotFound, TooManyAttempts
-from src.core.net import client_ip
+from src.core.config import Settings
+from src.core.deps import PrincipalDep, SessionDep, SettingsDep, StorageDep, TenantDep
+from src.core.errors import NotFound
 from src.models.podcast import PodcastEpisode
 from src.schemas.podcasts import (
     PodcastEpisodeCreateRequest,
@@ -35,31 +33,6 @@ from src.services import podcasts as podcasts_service
 from src.services.storage.base import StorageService
 
 router = APIRouter(tags=["podcasts"])
-
-# 03 §1.8 has no row specific to engagement-event logging; the general
-# anonymous ceiling is reused rather than inventing an unreviewed limit
-# (overall-review F5 — the endpoint had no rate limit at all before
-# this, so an anonymous loop could both bloat the events table and
-# directly inflate the new R2 dashboard's counts).
-EVENT_RATE_LIMIT_PER_IP = 60
-EVENT_RATE_LIMIT_WINDOW_SECONDS = 60
-
-
-def _client_ip(request: Request) -> str | None:
-    return client_ip(request, trust_x_forwarded_for=get_settings().trust_x_forwarded_for)
-
-
-async def _enforce_event_rate_limit(redis: Redis, *, key_prefix: str, ip: str | None) -> None:
-    if ip is None:
-        return
-    ok = await rate_limit.hit(
-        redis,
-        key=f"ratelimit:{key_prefix}:ip:{ip}",
-        limit=EVENT_RATE_LIMIT_PER_IP,
-        window_seconds=EVENT_RATE_LIMIT_WINDOW_SECONDS,
-    )
-    if not ok:
-        raise TooManyAttempts("Too many attempts. Try again later.")
 
 
 def _parse_uuid(value: str) -> uuid.UUID:
@@ -254,6 +227,7 @@ async def upload_podcast_audio(
     "/public/podcasts",
     response_model=PodcastEpisodesPageResponse,
     summary="Published podcast episodes, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def list_public_podcast_episodes(
     session: SessionDep, tenant: TenantDep, storage: StorageDep
@@ -266,6 +240,7 @@ async def list_public_podcast_episodes(
     "/public/podcasts/{slug}",
     response_model=PodcastEpisodeResponse,
     summary="A published podcast episode, no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PUBLIC_READ))],
 )
 async def get_public_podcast_episode(
     slug: str, session: SessionDep, tenant: TenantDep, storage: StorageDep
@@ -279,16 +254,14 @@ async def get_public_podcast_episode(
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
     summary="Log a podcast engagement event (play/progress/CTA-click), no auth required",
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.PODCAST_EVENTS))],
 )
 async def log_podcast_event(
-    request: Request,
     slug: str,
     body: PodcastEventRequest,
     session: SessionDep,
     tenant: TenantDep,
-    redis: RedisDep,
 ) -> None:
-    await _enforce_event_rate_limit(redis, key_prefix="podcast-events", ip=_client_ip(request))
     if body.event_name not in podcasts_service.ALLOWED_PODCAST_EVENT_NAMES:
         raise NotFound("Unknown event name.")
     episode = await podcasts_service.get_published_episode(session, tenant_id=tenant.id, slug=slug)
