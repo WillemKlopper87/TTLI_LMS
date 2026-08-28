@@ -82,6 +82,61 @@ def _database_reachable(url: str) -> bool:
         sock.close()
 
 
+def _redis_reachable(url: str) -> bool:
+    parsed = urlparse(url)
+    sock = socket.socket()
+    sock.settimeout(2)
+    try:
+        sock.connect((parsed.hostname or "localhost", parsed.port or 6379))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def pytest_collection_modifyitems(session: pytest.Session, items: list[pytest.Item]) -> None:
+    """Every `pytest.mark.integration` test's own fixtures already skip
+    individually when a service is unreachable, which is correct for a
+    single missing dependency mid-run — but when NEITHER service is up at
+    all, that means skipping module after module, hundreds of times, only
+    to finish green having exercised almost nothing. A green run should
+    mean tests ran, not that they were all quietly excused.
+
+    Checked once, here, right after collection, and only when the
+    collected set actually contains an integration test — `pytest tests/
+    test_config.py` alone needs neither service and must keep working
+    with no ceremony. `ALLOW_SKIP_INTEGRATION=1` is the explicit escape
+    hatch for the rare case of deliberately running integration tests
+    with a service down (e.g. to confirm every one of them skips
+    cleanly); every other invocation is expected to have both up, same as
+    CI's own `services:` block guarantees.
+    """
+    if os.environ.get("ALLOW_SKIP_INTEGRATION") == "1":
+        return
+    if not any(item.get_closest_marker("integration") for item in items):
+        return
+    db_url = os.environ["DATABASE_URL"]
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6399/1")
+    missing = [
+        name
+        for name, ok in (
+            ("Postgres", _database_reachable(db_url)),
+            ("Redis", _redis_reachable(redis_url)),
+        )
+        if not ok
+    ]
+    if missing:
+        pytest.exit(
+            f"{' and '.join(missing)} unreachable — the selected tests include "
+            "pytest.mark.integration ones that need both. Run: docker compose "
+            "-f infra/docker-compose.yml up -d postgres redis\n"
+            "To run these with a service deliberately down instead (e.g. to "
+            "confirm they skip cleanly), set ALLOW_SKIP_INTEGRATION=1.",
+            returncode=1,
+        )
+
+
 @pytest.fixture(scope="session")
 def settings() -> Settings:
     return get_settings()

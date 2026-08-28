@@ -41,14 +41,10 @@ export default function QuestionBankScreen() {
 
   useEffect(() => {
     if (!canEdit) return;
-    authedFetch("/api/bff/question-bank").then(async (response) => {
-      if (!response.ok) {
-        setError("Question bank could not be loaded.");
-        return;
-      }
-      setItems((await response.json()).items);
-    });
-  }, [canEdit]);
+    void (async () => {
+      await load();
+    })();
+  }, [canEdit, load]);
 
   async function createItem(event: React.FormEvent) {
     event.preventDefault();

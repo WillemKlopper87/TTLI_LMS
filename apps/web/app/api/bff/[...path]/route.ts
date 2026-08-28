@@ -10,6 +10,14 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const API_URL = process.env.API_URL ?? "http://localhost:8010";
 
+const RESPONSE_HEADER_ALLOWLIST = [
+  "content-disposition",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "retry-after",
+];
+
 async function forward(request: NextRequest, path: string[]): Promise<NextResponse> {
   const url = `${API_URL}/api/v1/${path.join("/")}${request.nextUrl.search}`;
 
@@ -51,11 +59,24 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   const upstream = await fetch(url, { method: request.method, headers, body, cache: "no-store" });
 
   const responseBody = await upstream.arrayBuffer();
+  const responseHeaders: Record<string, string> = {
+    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+  };
+  // Safe response metadata only — never a hop-by-hop, cookie, or other
+  // header that would let the API set state in the browser's own origin
+  // (that's the refresh cookie's job, scoped to /api/bff/auth, not this
+  // proxy). Downloads (invoices, credentials, CSV exports) need
+  // Content-Disposition for their filename; the others are cheap,
+  // standard wins (correct caching/conditional-request behaviour,
+  // honouring a 429/503's Retry-After) that silently vanished for every
+  // endpoint until now, not just the ones with their own download helper.
+  for (const name of RESPONSE_HEADER_ALLOWLIST) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders[name] = value;
+  }
   return new NextResponse(responseBody.byteLength > 0 ? responseBody : null, {
     status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-    },
+    headers: responseHeaders,
   });
 }
 
