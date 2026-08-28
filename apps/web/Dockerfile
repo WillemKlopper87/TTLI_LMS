@@ -4,14 +4,19 @@
 # Build context is the REPO ROOT, not apps/web: this app consumes
 # @ttli/api-client as `file:../../packages/api-client`, so that package
 # has to be inside the context. See infra/docker-compose.prod.yml.
-FROM node:24-slim AS deps
+#
+# Digest-pinned (report M7), all three stages the same tag/digest — a
+# mutable tag lets whoever controls it change what a production build
+# actually pulls. Re-resolve deliberately (not on a schedule) with:
+#   docker buildx imagetools inspect node:24-slim
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS deps
 WORKDIR /repo
 COPY packages/api-client/package.json packages/api-client/package-lock.json ./packages/api-client/
 RUN cd packages/api-client && npm ci
 COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
 RUN cd apps/web && npm ci
 
-FROM node:24-slim AS build
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS build
 WORKDIR /repo
 COPY --from=deps /repo/packages/api-client/node_modules ./packages/api-client/node_modules
 COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
@@ -25,7 +30,7 @@ COPY apps/web ./apps/web
 ENV BUILD_STANDALONE=1
 RUN cd apps/web && npm run build
 
-FROM node:24-slim AS runtime
+FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
 RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 ENV NODE_ENV=production PORT=3010 HOSTNAME=0.0.0.0
