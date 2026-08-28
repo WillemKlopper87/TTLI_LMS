@@ -246,19 +246,21 @@ jobs:
 
       - name: Container image scan (report-only)
         run: |
-          mkdir -p trivy-reports
+          mkdir -p "$GITHUB_WORKSPACE/trivy-reports"
           for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.29.2 clamav/clamav-debian:stable; do
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH "$img"
             safe=$(echo "$img" | tr '/:' '__')
-            trivy image --severity CRITICAL,HIGH --format json -o "trivy-reports/$safe.json" "$img"
+            trivy image --severity CRITICAL,HIGH --format json -o "$GITHUB_WORKSPACE/trivy-reports/$safe.json" "$img"
             echo "::endgroup::"
           done
 
-      # Temporary research artifact for the M7 Trivy remediation pass
-      # (docs/research/trivy-remediation-*.md) — JSON is unambiguous where
-      # the table output merges repeated cells, needed to build a real,
-      # per-CVE .trivyignore instead of a blanket report-only stance.
+      # Temporary research artifact for the M7 Trivy remediation pass — JSON
+      # is unambiguous where the table output merges repeated cells across
+      # consecutive rows, needed to build a real, per-CVE .trivyignore
+      # instead of a blanket report-only stance. Absolute path: this job
+      # defaults to apps/api as its working directory, but upload-artifact's
+      # `path` resolves relative to the repo root regardless.
       - name: Upload Trivy JSON (quality)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
