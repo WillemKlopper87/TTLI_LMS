@@ -54,8 +54,9 @@ export default function PaymentsScreen() {
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void (async () => {
+      await load();
+    })();
   }, []);
 
   async function approve(paymentId: string) {

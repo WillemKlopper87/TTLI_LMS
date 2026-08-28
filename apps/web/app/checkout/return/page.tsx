@@ -29,7 +29,9 @@ export default function CheckoutReturnPage() {
   useEffect(() => {
     if (!ready) return;
     if (!orderId) {
-      setStatus("no_order");
+      void (async () => {
+        setStatus("no_order");
+      })();
       return;
     }
     if (!getAccessToken()) return;
@@ -59,7 +61,9 @@ export default function CheckoutReturnPage() {
       timer = setTimeout(poll, POLL_INTERVAL_MS);
     }
 
-    setStatus("checking");
+    void (async () => {
+      setStatus("checking");
+    })();
     timer = setTimeout(poll, 0);
     return () => {
       cancelled = true;

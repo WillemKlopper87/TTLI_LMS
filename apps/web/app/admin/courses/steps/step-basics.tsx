@@ -70,7 +70,9 @@ export function StepBasics({ ctx, stepStates, onStep, savedAt, error, notice }: 
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (ctx.course) setDraft(draftFrom(ctx.course));
+    void (async () => {
+      if (ctx.course) setDraft(draftFrom(ctx.course));
+    })();
   }, [ctx.course]);
 
   function set<K extends keyof Draft>(key: K, value: Draft[K]) {

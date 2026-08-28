@@ -179,18 +179,20 @@ export function CompletionRulesBuilder({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setApplied(
-      Object.fromEntries(RULE_FIELDS.map((f) => [f.key, isApplied(f, value)])) as Record<
-        RuleKey,
-        boolean
-      >,
-    );
-    setValues(
-      Object.fromEntries(RULE_FIELDS.map((f) => [f.key, toFormValue(f, value)])) as Record<
-        RuleKey,
-        number
-      >,
-    );
+    void (async () => {
+      setApplied(
+        Object.fromEntries(RULE_FIELDS.map((f) => [f.key, isApplied(f, value)])) as Record<
+          RuleKey,
+          boolean
+        >,
+      );
+      setValues(
+        Object.fromEntries(RULE_FIELDS.map((f) => [f.key, toFormValue(f, value)])) as Record<
+          RuleKey,
+          number
+        >,
+      );
+    })();
   }, [value]);
 
   const draft = buildRules(applied, values);

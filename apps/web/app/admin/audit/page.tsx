@@ -102,7 +102,12 @@ export default function AuditLog() {
     // filter change starts a new walk from the head of the log, while a
     // cursor change is "load more" appending to the walk already in
     // progress. Including either would restart the list on every page.
-    if (canRead) void load(false);
+    if (canRead) {
+      void (async () => {
+        await load(false);
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canRead, action, dateFrom, dateTo]);
 
   if (!canRead) {

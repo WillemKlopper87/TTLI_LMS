@@ -141,7 +141,9 @@ export default function PreviewPage() {
     // Wait for the silent refresh to settle: a draft lesson's fallback
     // needs the bearer, which isn't in memory on the very first tick.
     if (status === "loading") return;
-    setSignedIn(!!accessToken);
+    void (async () => {
+      setSignedIn(!!accessToken);
+    })();
 
     async function loadPreview() {
       const resp = await fetch(`/api/bff/public/lessons/${params.lessonId}/preview`);

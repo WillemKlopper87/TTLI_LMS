@@ -53,7 +53,9 @@ function useSavedLabel(savedAt: number | null): string | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (savedAt === null) return;
-    setNow(Date.now());
+    void (async () => {
+      setNow(Date.now());
+    })();
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, [savedAt]);

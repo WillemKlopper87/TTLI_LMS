@@ -120,8 +120,13 @@ export default function AdminOverview() {
   }, []);
 
   useEffect(() => {
-    if (canView) void load();
-    else setLoading(false);
+    void (async () => {
+      if (canView) {
+        await load();
+      } else {
+        setLoading(false);
+      }
+    })();
   }, [canView, load]);
 
   if (!canView) {

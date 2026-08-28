@@ -49,7 +49,9 @@ export default function VerifyPage() {
   const [href, setHref] = useState<string | null>(null);
 
   useEffect(() => {
-    setHref(window.location.href);
+    void (async () => {
+      setHref(window.location.href);
+    })();
   }, []);
 
   useEffect(() => {

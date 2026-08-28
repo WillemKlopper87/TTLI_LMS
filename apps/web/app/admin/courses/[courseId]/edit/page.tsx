@@ -82,10 +82,10 @@ function CourseWizard() {
   }, [courseId]);
 
   useEffect(() => {
-    setSkips(readSkips(courseId));
-    void reloadCourse();
-    void reloadOutline();
-    void reloadReadiness();
+    void (async () => {
+      setSkips(readSkips(courseId));
+      await Promise.all([reloadCourse(), reloadOutline(), reloadReadiness()]);
+    })();
   }, [courseId, reloadCourse, reloadOutline, reloadReadiness]);
 
   function goToStep(n: number) {

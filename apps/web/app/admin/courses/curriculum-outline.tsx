@@ -73,7 +73,9 @@ export function CurriculumOutline({
   const dragRef = useRef<DragRef | null>(null);
 
   useEffect(() => {
-    setModules(outline.modules);
+    void (async () => {
+      setModules(outline.modules);
+    })();
   }, [outline]);
 
   function startDrag(event: DragEvent, payload: DragRef) {

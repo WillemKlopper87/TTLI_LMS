@@ -35,11 +35,13 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
   // Select the first lesson once the outline arrives, and keep the body
   // textarea in step with whichever lesson is open.
   useEffect(() => {
-    if (rows.length === 0) return;
-    if (selectedId === null || !rows.some((r) => r.lesson.id === selectedId)) {
-      setSelectedId(rows[0].lesson.id);
-      setBody(rows[0].lesson.body ?? "");
-    }
+    void (async () => {
+      if (rows.length === 0) return;
+      if (selectedId === null || !rows.some((r) => r.lesson.id === selectedId)) {
+        setSelectedId(rows[0].lesson.id);
+        setBody(rows[0].lesson.body ?? "");
+      }
+    })();
   }, [rows, selectedId]);
 
   const transcoding = rows.filter(

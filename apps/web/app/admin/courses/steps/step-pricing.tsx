@@ -75,10 +75,12 @@ export function StepPricing({ ctx, stepStates, onStep, savedAt, error, notice }:
   }, [ctx.canManageProducts]);
 
   useEffect(() => {
-    if (course && !productName) {
-      setProductName(course.title);
-      setProductSlug(course.slug);
-    }
+    void (async () => {
+      if (course && !productName) {
+        setProductName(course.title);
+        setProductSlug(course.slug);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course]);
 

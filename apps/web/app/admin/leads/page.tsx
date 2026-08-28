@@ -42,9 +42,10 @@ export default function LeadsScreen() {
 
   useEffect(() => {
     if (!getAccessToken()) return;
-    setError(null);
-    authedFetch(`/api/bff/leads?limit=${PAGE_SIZE}&offset=${offset}`)
-      .then(async (resp) => {
+    void (async () => {
+      setError(null);
+      try {
+        const resp = await authedFetch(`/api/bff/leads?limit=${PAGE_SIZE}&offset=${offset}`);
         if (resp.status === 403) {
           setError("forbidden");
           return;
@@ -54,8 +55,10 @@ export default function LeadsScreen() {
           return;
         }
         setPage(await resp.json());
-      })
-      .catch(() => setError("unknown"));
+      } catch {
+        setError("unknown");
+      }
+    })();
   }, [offset]);
 
   if (error === "forbidden") {

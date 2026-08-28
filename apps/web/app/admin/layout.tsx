@@ -76,7 +76,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // Close the slide-in nav on navigation rather than leaving it open over
   // the page the link just went to.
   useEffect(() => {
-    setNavOpen(false);
+    void (async () => {
+      setNavOpen(false);
+    })();
   }, [pathname]);
 
   async function handleLogout() {

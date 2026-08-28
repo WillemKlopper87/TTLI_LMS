@@ -194,7 +194,9 @@ export default function AnalyticsScreen() {
   }, [canView, preset]);
 
   useEffect(() => {
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   function exportUrl(report: "revenue-summary" | "registrations"): string {

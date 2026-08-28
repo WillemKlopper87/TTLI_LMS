@@ -130,7 +130,9 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
 
   useEffect(() => {
     if (status !== "authenticated" || !accessToken) {
-      setMe(null);
+      void (async () => {
+        setMe(null);
+      })();
       return;
     }
     let cancelled = false;
@@ -148,7 +150,9 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
 
   // Query string for the "current item" check; re-read on every navigation.
   useEffect(() => {
-    setSearch(typeof window === "undefined" ? "" : window.location.search);
+    void (async () => {
+      setSearch(typeof window === "undefined" ? "" : window.location.search);
+    })();
   }, [pathname]);
 
   // The admin shell (app/admin/layout.tsx) has its own sidebar with its own

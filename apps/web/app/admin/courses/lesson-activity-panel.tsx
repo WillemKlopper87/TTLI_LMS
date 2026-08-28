@@ -213,24 +213,28 @@ export function LessonActivityPanel({
   }
 
   useEffect(() => {
-    setWorkingId(null);
-    setQuizDetail(null);
-    setSurveyDetail(null);
-    setAttachExistingId("");
-    setError(null);
-    // Stops any running poll: this changes videoPhase, and the poll
-    // effect's own cleanup (keyed on videoPhase) tears the interval down
-    // in response — switching tabs mid-poll must not leave it running.
-    setVideoPhase("idle");
-    setUploadingAssetId(null);
-    setVideoDetail(null);
-    setCaptionsError(null);
-    loadExisting(tab);
-    if (tab === "quiz" || tab === "survey") {
-      authedFetch(`/api/bff/question-bank?assessment_kind=${tab}`).then(async (response) => {
+    void (async () => {
+      setWorkingId(null);
+      setQuizDetail(null);
+      setSurveyDetail(null);
+      setAttachExistingId("");
+      setError(null);
+      // Stops any running poll: this changes videoPhase, and the poll
+      // effect's own cleanup (keyed on videoPhase) tears the interval down
+      // in response — switching tabs mid-poll must not leave it running.
+      // React's dependency-diffing runs the cleanup once this update lands,
+      // whichever tick that is in — the microtask wrapper here only delays
+      // *when in this tick* the update is scheduled, not whether it fires.
+      setVideoPhase("idle");
+      setUploadingAssetId(null);
+      setVideoDetail(null);
+      setCaptionsError(null);
+      loadExisting(tab);
+      if (tab === "quiz" || tab === "survey") {
+        const response = await authedFetch(`/api/bff/question-bank?assessment_kind=${tab}`);
         if (response.ok) setBankItems((await response.json()).items);
-      });
-    }
+      }
+    })();
   }, [tab]);
 
   useEffect(() => {
