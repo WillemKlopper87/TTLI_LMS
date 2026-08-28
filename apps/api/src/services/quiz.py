@@ -35,6 +35,15 @@ AUTO_GRADED_TYPES = frozenset({"single_choice", "multiple_choice", "true_false"}
 TEXT_TYPES = frozenset({"short_text", "long_text"})
 ALL_QUESTION_TYPES = AUTO_GRADED_TYPES | TEXT_TYPES
 
+# The learner's browser submits the instant its own countdown reaches zero,
+# but that request still has to cross the network before it lands here —
+# with no grace period, `elapsed` is *always* past `time_limit_seconds` by
+# the time it arrives, so the one auto-submit the UI promises ("running out
+# must not silently discard the answers") would be refused every time. This
+# buffer covers ordinary round-trip latency, not extra thinking time — the
+# clock the learner sees still hits zero on schedule.
+SUBMIT_GRACE_SECONDS = 15
+
 
 class AttemptLimitExceeded(AppError):
     status_code = 400
@@ -190,7 +199,7 @@ async def submit_attempt(
     # §6.5) — never a client-reported elapsed duration.
     if quiz.time_limit_seconds is not None:
         elapsed = (datetime.now(UTC) - attempt.started_at).total_seconds()
-        if elapsed > quiz.time_limit_seconds:
+        if elapsed > quiz.time_limit_seconds + SUBMIT_GRACE_SECONDS:
             raise TimeLimitExceeded(
                 f"The {quiz.time_limit_seconds}s time limit for this attempt has passed."
             )

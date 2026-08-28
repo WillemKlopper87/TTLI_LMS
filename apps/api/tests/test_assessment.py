@@ -241,6 +241,72 @@ async def test_quiz_attempt_auto_grades_choice_questions(
     assert submit.json()["passed"] is True
 
 
+async def test_quiz_submit_allows_grace_period_but_not_beyond_it(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Timed Quiz", "pass_score": 70, "max_attempts": 2, "time_limit_seconds": 30},
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+
+    async def _start_and_backdate(seconds_ago: int) -> str:
+        attempt = await client.post(
+            f"/api/v1/quizzes/{quiz_id}/attempts",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        assert attempt.status_code == 200, attempt.text
+        attempt_id = attempt.json()["attempt_id"]
+        async with tenant_session_factory(tenant_id) as s:
+            await s.execute(
+                sa.text(
+                    "UPDATE quiz_attempts SET started_at = started_at - "
+                    "make_interval(secs => :secs) WHERE id = :id"
+                ),
+                {"secs": seconds_ago, "id": attempt_id},
+            )
+            await s.commit()
+        return attempt_id
+
+    # 30s limit + 5s past it: inside the network-latency grace period, so
+    # the client's own auto-submit-at-zero must still be accepted.
+    within_grace_id = await _start_and_backdate(35)
+    within_grace = await client.post(
+        f"/api/v1/quiz-attempts/{within_grace_id}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": []},
+    )
+    assert within_grace.status_code == 200, within_grace.text
+
+    # 30s limit + 20s past it: beyond the grace period -- genuinely late,
+    # not just a slow network round-trip, so this must still be refused.
+    beyond_grace_id = await _start_and_backdate(50)
+    beyond_grace = await client.post(
+        f"/api/v1/quiz-attempts/{beyond_grace_id}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": []},
+    )
+    assert beyond_grace.status_code == 400, beyond_grace.text
+    assert beyond_grace.json()["error"]["code"] == "TIME_LIMIT_EXCEEDED"
+
+
 async def test_quiz_attempt_limit_is_enforced(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)

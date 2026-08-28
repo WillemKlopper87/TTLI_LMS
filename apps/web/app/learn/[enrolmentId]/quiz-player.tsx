@@ -116,11 +116,13 @@ export function QuizPlayer({
 
   // A timed attempt submits what exists at zero — the server's limit is
   // the real one, so running out must not silently discard the answers.
+  // The zero-case defers to a timeout rather than calling submit() (which
+  // sets state) synchronously in the effect body, same as the tick below.
   useEffect(() => {
     if (remaining === null || result !== null) return;
     if (remaining <= 0) {
-      void submit();
-      return;
+      const id = setTimeout(() => void submit(), 0);
+      return () => clearTimeout(id);
     }
     const id = setTimeout(() => setRemaining((r) => (r === null ? null : r - 1)), 1000);
     return () => clearTimeout(id);
