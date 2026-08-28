@@ -31,6 +31,14 @@ ENV BUILD_STANDALONE=1
 RUN cd apps/web && npm run build
 
 FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
+# The base image bundles its own npm CLI (with its own vendored deps --
+# brace-expansion, tar, ip-address) at /usr/local/lib/node_modules/npm;
+# report M7's Trivy pass flagged CVEs in those exact vendored versions.
+# Nothing at runtime calls npm/npx (CMD below runs the standalone server
+# directly), so the whole CLI is dead weight here -- removing it drops
+# those CVEs along with some image size, rather than waiting on upstream
+# to rebuild node:24-slim with a newer bundled npm.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 ENV NODE_ENV=production PORT=3010 HOSTNAME=0.0.0.0
