@@ -85,7 +85,9 @@ export default function CourseAnalyticsPage() {
   }, [courseId]);
 
   useEffect(() => {
-    if (canView) void load();
+    if (canView) void (async () => {
+      await load();
+    })();
   }, [canView, load]);
 
   if (!canView) {

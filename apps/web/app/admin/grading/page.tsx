@@ -62,8 +62,12 @@ export default function GradingScreen() {
 
   useEffect(() => {
     if (!canGrade) return;
-    loadAnswers();
-    loadSubmissions();
+    void (async () => {
+      await loadAnswers();
+    })();
+    void (async () => {
+      await loadSubmissions();
+    })();
   }, [canGrade]);
 
   async function gradeAnswer(answer: UngradedAnswer) {

@@ -73,7 +73,9 @@ export default function PodcastsAdminScreen() {
 
   useEffect(() => {
     if (!canManage) return;
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [canManage]);
 
   async function lookupSpotify() {

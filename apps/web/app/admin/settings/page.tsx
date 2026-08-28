@@ -52,7 +52,9 @@ export default function SettingsScreen() {
   }
 
   useEffect(() => {
-    load();
+    void (async () => {
+      await load();
+    })();
   }, []);
 
   async function setCourseVisibility(courseId: string, value: string) {

@@ -62,7 +62,9 @@ export default function RecommendationsAdminScreen() {
 
   useEffect(() => {
     if (!canManage) return;
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [canManage]);
 
   async function createRecommendation(event: React.FormEvent) {

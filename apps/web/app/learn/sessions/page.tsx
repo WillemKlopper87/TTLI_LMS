@@ -75,7 +75,9 @@ export default function LearnSessionsPage() {
 
   useEffect(() => {
     if (!ready) return;
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, [ready, load]);
 
   async function cancelBooking(bookingId: string) {

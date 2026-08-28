@@ -38,7 +38,9 @@ export default function CoursesScreen() {
   }
 
   useEffect(() => {
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, []);
 
   async function duplicate(course: CourseItem) {

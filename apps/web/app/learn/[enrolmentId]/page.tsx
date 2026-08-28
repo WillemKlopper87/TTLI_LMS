@@ -67,7 +67,9 @@ export default function LearnEnrolmentPage() {
 
   useEffect(() => {
     if (!ready) return;
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, [ready, load]);
 
   const lessons = useMemo(() => progress?.lessons ?? [], [progress]);

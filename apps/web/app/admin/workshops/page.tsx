@@ -164,8 +164,12 @@ export default function WorkshopsScreen() {
   }
 
   useEffect(() => {
-    loadFacilitators();
-    loadWorkshops();
+    void (async () => {
+      await loadFacilitators();
+    })();
+    void (async () => {
+      await loadWorkshops();
+    })();
   }, []);
 
   async function loadWindows(facilitatorId: string) {

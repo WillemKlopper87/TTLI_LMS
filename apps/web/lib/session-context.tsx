@@ -167,7 +167,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     cancelledRef.current = false;
-    void refreshSession();
+    void (async () => {
+      await refreshSession();
+    })();
     return () => {
       cancelledRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);

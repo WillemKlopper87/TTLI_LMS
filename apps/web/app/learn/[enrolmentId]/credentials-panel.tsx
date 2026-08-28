@@ -72,7 +72,9 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
   }, [enrolmentId, pathEnrolmentId]);
 
   useEffect(() => {
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   async function downloadCertificate() {

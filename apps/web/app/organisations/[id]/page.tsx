@@ -124,7 +124,9 @@ export default function OrganisationDetailPage() {
 
   useEffect(() => {
     if (!ready || !getAccessToken()) return;
-    load();
+    void (async () => {
+      await load();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, orgId]);
 

@@ -68,7 +68,9 @@ export function StepPricing({ ctx, stepStates, onStep, savedAt, error, notice }:
   }
 
   useEffect(() => {
-    void loadAccess();
+    void (async () => {
+      await loadAccess();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx.canManageProducts]);
 

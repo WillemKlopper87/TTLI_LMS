@@ -41,7 +41,9 @@ export default function LearningPathsScreen() {
   }
 
   useEffect(() => {
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, []);
 
   const drafts = (paths ?? []).filter((p) => p.state !== "published").length;

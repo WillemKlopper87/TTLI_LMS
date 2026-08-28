@@ -66,8 +66,12 @@ export default function SubscriptionsScreen() {
 
   useEffect(() => {
     if (!canManage) return;
-    loadPlans();
-    loadCourses();
+    void (async () => {
+      await loadPlans();
+    })();
+    void (async () => {
+      await loadCourses();
+    })();
   }, [canManage]);
 
   async function createPlan() {

@@ -77,7 +77,9 @@ export default function CatalogueScreen() {
 
   useEffect(() => {
     if (!canManage) return;
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [canManage]);
 
   /** Surfaces the API's own refusal text rather than a generic message —

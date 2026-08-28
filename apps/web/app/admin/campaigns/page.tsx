@@ -82,7 +82,9 @@ export default function CampaignsScreen() {
   }
 
   useEffect(() => {
-    loadAll();
+    void (async () => {
+      await loadAll();
+    })();
   }, []);
 
   async function createSegment() {

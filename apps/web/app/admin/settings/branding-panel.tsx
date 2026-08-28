@@ -79,7 +79,9 @@ export default function BrandingPanel() {
   }, [authed]);
 
   useEffect(() => {
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, [load]);
 
   async function submit(path: string, init: RequestInit, success: string) {

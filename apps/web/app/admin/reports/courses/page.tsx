@@ -50,7 +50,9 @@ export default function CourseReports() {
   }, []);
 
   useEffect(() => {
-    if (canView) void load();
+    if (canView) void (async () => {
+      await load();
+    })();
   }, [canView, load]);
 
   if (!canView) {

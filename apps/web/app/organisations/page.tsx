@@ -34,7 +34,9 @@ export default function OrganisationsPage() {
 
   useEffect(() => {
     if (!ready || !getAccessToken()) return;
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [ready]);
 
   async function createOrganisation() {

@@ -44,7 +44,9 @@ export function StepCertification({ ctx, stepStates, onStep, savedAt, error, not
   }
 
   useEffect(() => {
-    void loadTemplates();
+    void (async () => {
+      await loadTemplates();
+    })();
   }, []);
 
   async function attach(field: "certificate_template_id" | "badge_template_id", id: string) {

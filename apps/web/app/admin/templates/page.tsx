@@ -71,8 +71,12 @@ export default function TemplatesScreen() {
   }
 
   useEffect(() => {
-    loadCertificateTemplates();
-    loadBadgeTemplates();
+    void (async () => {
+      await loadCertificateTemplates();
+    })();
+    void (async () => {
+      await loadBadgeTemplates();
+    })();
   }, []);
 
   async function createCertificateTemplate() {

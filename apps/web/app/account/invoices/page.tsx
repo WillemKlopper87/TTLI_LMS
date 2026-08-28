@@ -67,7 +67,9 @@ export default function MyInvoices() {
   }, []);
 
   useEffect(() => {
-    if (ready) void load();
+    if (ready) void (async () => {
+      await load();
+    })();
   }, [ready, load]);
 
   return (

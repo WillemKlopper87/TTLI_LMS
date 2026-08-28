@@ -101,7 +101,9 @@ export default function EditLearningPathPage() {
   }
 
   useEffect(() => {
-    void loadAll();
+    void (async () => {
+      await loadAll();
+    })();
     void getJson<{ items: CourseItem[] }>("/api/bff/courses").then((r) =>
       setAllCourses(r?.items ?? []),
     );

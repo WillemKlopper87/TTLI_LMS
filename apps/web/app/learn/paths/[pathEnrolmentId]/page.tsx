@@ -53,7 +53,9 @@ export default function LearnPathEnrolmentPage() {
 
   useEffect(() => {
     if (!ready) return;
-    void load();
+    void (async () => {
+      await load();
+    })();
   }, [ready, load]);
 
   if (error) {

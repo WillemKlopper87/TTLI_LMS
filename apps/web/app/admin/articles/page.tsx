@@ -64,7 +64,9 @@ export default function ArticlesAdminScreen() {
 
   useEffect(() => {
     if (!canManage) return;
-    load();
+    void (async () => {
+      await load();
+    })();
   }, [canManage]);
 
   async function createArticle(event: React.FormEvent) {

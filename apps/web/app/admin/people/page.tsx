@@ -86,7 +86,9 @@ export default function People() {
   }, [authed, includeLearners]);
 
   useEffect(() => {
-    if (canInvite) void load();
+    if (canInvite) void (async () => {
+      await load();
+    })();
   }, [canInvite, load]);
 
   async function act(path: string, init: RequestInit, success: string) {
