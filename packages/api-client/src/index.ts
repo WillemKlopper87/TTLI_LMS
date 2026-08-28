@@ -9,8 +9,11 @@ import type { paths } from "./schema.gen";
 
 export type { components, operations, paths } from "./schema.gen";
 
-export function createApiClient(baseUrl: string) {
-  return createClient<paths>({ baseUrl });
+export function createApiClient(
+  baseUrl: string,
+  options: Omit<Parameters<typeof createClient<paths>>[0], "baseUrl"> = {},
+) {
+  return createClient<paths>({ baseUrl, ...options });
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;

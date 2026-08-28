@@ -1,19 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { components } from "@ttli/api-client";
 
-import { authedFetch } from "@/lib/authed-fetch";
+import { api, apiErrorMessage } from "@/lib/api-client";
 
 import { useAdmin } from "../admin-context";
 
-interface BankItem {
-  id: string;
-  assessment_kind: "quiz" | "survey";
-  question_type: string;
-  prompt: string;
-  options: { id: string; text: string; correct?: boolean }[];
-  points: number;
-}
+type BankItem = components["schemas"]["QuestionBankItemView"];
 
 const CHOICE_TYPES = new Set(["single_choice", "multiple_choice", "true_false"]);
 
@@ -21,6 +15,10 @@ export default function QuestionBankScreen() {
   const { me } = useAdmin();
   const canEdit = me.permissions.includes("course:edit");
   const [items, setItems] = useState<BankItem[] | null>(null);
+  // Local UI-composition state, not a wire type: the API's own
+  // `assessment_kind` is untyped `string` (no enum on the FastAPI side),
+  // but this form only ever offers these two, so the narrower literal
+  // union belongs here rather than loosened to match the wire shape.
   const [kind, setKind] = useState<"quiz" | "survey">("quiz");
   const [questionType, setQuestionType] = useState("single_choice");
   const [prompt, setPrompt] = useState("");
@@ -30,13 +28,21 @@ export default function QuestionBankScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // "Latest load wins": a ref, not state, purely to let a load in flight
+  // recognise it's been superseded — without this, a fast reload triggered
+  // while the first is still pending could have the first one's response
+  // land second and stomp the newer data with stale results.
+  const loadGeneration = useRef(0);
+
   const load = useCallback(async () => {
-    const response = await authedFetch("/api/bff/question-bank");
-    if (!response.ok) {
-      setError("Question bank could not be loaded.");
+    const generation = ++loadGeneration.current;
+    const { data, error: err } = await api.GET("/api/v1/question-bank", {});
+    if (generation !== loadGeneration.current) return;
+    if (err) {
+      setError(apiErrorMessage(err, "Question bank could not be loaded."));
       return;
     }
-    setItems((await response.json()).items);
+    setItems(data.items);
   }, []);
 
   useEffect(() => {
@@ -58,21 +64,18 @@ export default function QuestionBankScreen() {
       : [];
     setBusy(true);
     setError(null);
-    const response = await authedFetch("/api/bff/question-bank", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const { error: err } = await api.POST("/api/v1/question-bank", {
+      body: {
         assessment_kind: kind,
         question_type: questionType,
         prompt: prompt.trim(),
         options,
         points,
-      }),
+      },
     });
     setBusy(false);
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      setError(body?.error?.message ?? "Question could not be saved.");
+    if (err) {
+      setError(apiErrorMessage(err, "Question could not be saved."));
       return;
     }
     setPrompt("");
@@ -80,8 +83,10 @@ export default function QuestionBankScreen() {
   }
 
   async function removeItem(id: string) {
-    const response = await authedFetch(`/api/bff/question-bank/${id}`, { method: "DELETE" });
-    if (response.ok) setItems((current) => current?.filter((item) => item.id !== id) ?? []);
+    const { error: err } = await api.DELETE("/api/v1/question-bank/{item_id}", {
+      params: { path: { item_id: id } },
+    });
+    if (!err) setItems((current) => current?.filter((item) => item.id !== id) ?? []);
   }
 
   if (!canEdit) return <p>Your role does not hold course:edit.</p>;
