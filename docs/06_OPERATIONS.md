@@ -178,6 +178,10 @@ Pipeline gates in order: `ruff check` → `ruff format --check` → `mypy src` (
 
 Rolling deployments with health checks and automatic rollback. Migrations are backward-compatible: add nullable, backfill, constrain — never all three in one release.
 
+Concrete Phase 7 implementation detail — image versioning/tagging, the Container Apps
+revision/traffic-split canary mechanics, rollback triggers with actual thresholds, and dependency-
+update-bot wiring — is in [`docs/research/deployment-rollback-strategy.md`](research/deployment-rollback-strategy.md), not spelled out further here.
+
 ---
 
 ## 5. Running it

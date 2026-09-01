@@ -86,6 +86,17 @@ interface PodcastEngagement {
   top_cta_episodes: TopCtaEpisode[];
 }
 
+interface TopPagePath {
+  path: string;
+  views: number;
+}
+
+interface Traffic {
+  period: Period;
+  total_views: number;
+  top_paths: TopPagePath[];
+}
+
 const PRESETS: { value: string; label: string }[] = [
   { value: "last_24h", label: "Last 24 hours" },
   { value: "last_7d", label: "Last 7 days" },
@@ -161,6 +172,7 @@ export default function AnalyticsScreen() {
   const [registrations, setRegistrations] = useState<Registrations | null>(null);
   const [series, setSeries] = useState<RevenueSeries | null>(null);
   const [podcasts, setPodcasts] = useState<PodcastEngagement | null>(null);
+  const [traffic, setTraffic] = useState<Traffic | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -172,13 +184,14 @@ export default function AnalyticsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [r1, r2, r3, r4] = await Promise.all([
+      const [r1, r2, r3, r4, r5] = await Promise.all([
         authedFetch(`/api/bff/analytics/revenue-summary?preset=${preset}`),
         authedFetch(`/api/bff/analytics/registrations?preset=${preset}`),
         authedFetch(`/api/bff/analytics/revenue-series?preset=${preset}`),
         authedFetch(`/api/bff/analytics/podcast-engagement?preset=${preset}`),
+        authedFetch(`/api/bff/analytics/traffic?preset=${preset}`),
       ]);
-      if (!r1.ok || !r2.ok || !r3.ok || !r4.ok) {
+      if (!r1.ok || !r2.ok || !r3.ok || !r4.ok || !r5.ok) {
         setError("Could not load the report. Try again shortly.");
         setLoading(false);
         return;
@@ -187,6 +200,7 @@ export default function AnalyticsScreen() {
       setRegistrations(await r2.json());
       setSeries(await r3.json());
       setPodcasts(await r4.json());
+      setTraffic(await r5.json());
     } catch {
       setError("Could not load the report. Try again shortly.");
     }
@@ -514,6 +528,57 @@ export default function AnalyticsScreen() {
           ) : (
             <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginTop: ".7rem" }}>
               No course-purchase clicks from a podcast episode in this period yet.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {traffic ? (
+        <div>
+          <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".7rem" }}>
+            Site traffic · {traffic.total_views.toLocaleString("en-ZA")} pageviews
+          </h2>
+          <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginBottom: ".7rem" }}>
+            First-party pageviews on the public marketing site (01_PRD.md §5.11) — no
+            third-party tracker, no cookie.
+          </p>
+          {traffic.top_paths.length > 0 ? (
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Page</th>
+                    <th scope="col">Views</th>
+                    <th scope="col">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {traffic.top_paths.map((row) => {
+                    const pct =
+                      traffic.total_views > 0
+                        ? Math.round((row.views / traffic.total_views) * 100)
+                        : 0;
+                    return (
+                      <tr key={row.path}>
+                        <td className="mono">{row.path}</td>
+                        <td className="mono">{row.views.toLocaleString("en-ZA")}</td>
+                        <td>
+                          <span className="bar minibar" style={{ display: "inline-block", width: 90 }}>
+                            <i style={{ width: `${pct}%` }} />
+                          </span>{" "}
+                          <span className="mono" style={{ fontSize: ".6875rem" }}>
+                            {pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p style={{ fontSize: ".8125rem", color: "var(--muted)" }}>
+              No pageviews recorded in this period yet.
             </p>
           )}
         </div>

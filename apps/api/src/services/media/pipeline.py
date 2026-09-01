@@ -75,7 +75,14 @@ async def transcode_video_asset(
 
         try:
             probe = await ffmpeg_service.probe_source(source_path, ffprobe_path=ffprobe_path)
-            rungs = ffmpeg_service.DEFAULT_RUNGS
+            # requested_rungs is set by finalize() before a job is ever
+            # enqueued (0040) — DEFAULT_RUNGS is a defensive fallback
+            # only, not the normal path.
+            rungs = (
+                tuple(asset.requested_rungs)
+                if asset.requested_rungs
+                else ffmpeg_service.DEFAULT_RUNGS
+            )
 
             log.info("transcode_started", video_asset_id=str(video_asset_id), rungs=rungs)
             await run_transcode(

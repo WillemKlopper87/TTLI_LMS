@@ -40,6 +40,16 @@ COPY src ./src
 
 USER app
 
+# Baked at build time, not read from a running container's env — a
+# version string sourced from runtime config could be overridden by
+# whoever writes .env.prod, which defeats the point of it for the
+# system-health/versioning view (routers/platform.py) it exists for.
+# Defaults to "unknown" rather than failing the build when no CI/deploy
+# script passes it, matching every other graceful-degradation default
+# in this codebase.
+ARG GIT_SHA=unknown
+ENV APP_VERSION=$GIT_SHA
+
 # ENVIRONMENT=production must come from the deployment environment, which
 # arms core/config.py's check_production_safety fail-fast. No .env is baked
 # in — configuration is environment-only in a container.

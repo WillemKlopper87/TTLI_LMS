@@ -28,6 +28,13 @@ COPY apps/web ./apps/web
 # which is opt-in because `next start` (used by the Playwright gate)
 # cannot serve a standalone build.
 ENV BUILD_STANDALONE=1
+# Baked at build time (see apps/api/Dockerfile's identical ARG for why:
+# a runtime env var could be overridden by whoever writes .env.prod, and
+# the whole point of this is knowing what was actually built). NEXT_
+# PUBLIC_ so the admin platform page can read it client-side with no
+# extra API round-trip just to show a version string.
+ARG GIT_SHA=unknown
+ENV NEXT_PUBLIC_APP_VERSION=$GIT_SHA
 RUN cd apps/web && npm run build
 
 FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime

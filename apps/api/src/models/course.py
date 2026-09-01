@@ -83,6 +83,14 @@ class Course(Base, TimestampMixin):
         Boolean, nullable=False, server_default=text("false")
     )
     hero_colour: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 0040 — the course-level tier of the tenant->course->per-upload video
+    # settings chain: {rungs: [...], allow_bypass: bool}. Absent keys
+    # inherit the tenant default (services/media/video_settings.py),
+    # exactly the same "course default, per-item overrides" shape
+    # completion_rules already established above.
+    video_settings: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'")
+    )
 
 
 class Module(Base, TimestampMixin):

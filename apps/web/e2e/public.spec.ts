@@ -27,6 +27,18 @@ const PUBLIC_PAGES = [
   // here the same way `/catalogue/[courseId]` isn't — this table is for
   // pages that render meaningfully with no seeded data.
   { path: "/paths", name: "learning paths" },
+  // Legal pages (checklist item, Phase 1): static content, no seeded
+  // data required, so they belong in this table like any other public
+  // page rather than needing their own spec.
+  { path: "/privacy", name: "privacy policy" },
+  { path: "/terms", name: "terms of use" },
+  // Remaining static public pages (checklist item, Phase 3 a11y-coverage
+  // sweep) — no seeded data required, same reasoning as everything above.
+  { path: "/guest-access", name: "guest access" },
+  { path: "/cultivate-with-intent", name: "cultivate with intent" },
+  { path: "/lead-with-intent", name: "lead with intent" },
+  { path: "/for-organisations", name: "for organisations" },
+  { path: "/faq", name: "faq" },
 ];
 
 for (const page_ of PUBLIC_PAGES) {

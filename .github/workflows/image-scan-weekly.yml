@@ -1,0 +1,84 @@
+name: weekly-image-rescan
+
+# Detects drift the push-triggered scan in ci.yml can't see: a CVE
+# disclosed *after* today's build, against a digest-pinned base image
+# that hasn't changed at all. apps/api/Dockerfile and apps/web/Dockerfile
+# both say "re-resolve deliberately, not on a schedule" for *upgrading*
+# the pin — that stays true here. This workflow only detects and reports;
+# it never bumps a digest or opens a PR on its own. A human decides
+# whether/how to respond, the same "report M7" pattern already visible
+# in this repo's own history (a manual remediation pass after Trivy
+# findings), just running on a timer instead of relying on someone
+# thinking to check.
+on:
+  schedule:
+    # 04:00 UTC every Monday — arbitrary but deliberately not "on every
+    # push," since nothing about the code changed to justify that.
+    - cron: "0 4 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  rescan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build images exactly as shipped (no cache — today's Trivy DB, current pinned digests)
+        run: |
+          docker build --no-cache -t ttli-api:rescan -f apps/api/Dockerfile apps/api
+          docker build --no-cache -t ttli-web:rescan -f apps/web/Dockerfile .
+
+      - name: Install Trivy
+        run: |
+          wget -qO - https://get.trivy.dev/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://get.trivy.dev/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -qq
+          sudo apt-get install -y trivy
+
+      - name: Scan (report-only — see the job header for why)
+        id: scan
+        run: |
+          set +e
+          FAILED=0
+          for img in ttli-api:rescan ttli-web:rescan; do
+            echo "::group::Trivy: $img"
+            trivy image --severity CRITICAL,HIGH --ignorefile .trivyignore \
+              --format table "$img" | tee "trivy-$img-report.txt" | sed 's#:#-#g' > /dev/null
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore "$img"
+            [ $? -ne 0 ] && FAILED=1
+            echo "::endgroup::"
+          done
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+
+      - name: File an issue if anything new turned up
+        if: steps.scan.outputs.failed == '1'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const apiReport = fs.existsSync('trivy-ttli-api-rescan.txt') ? fs.readFileSync('trivy-ttli-api-rescan.txt', 'utf8') : '(no api report file)';
+            const webReport = fs.existsSync('trivy-ttli-web-rescan.txt') ? fs.readFileSync('trivy-ttli-web-rescan.txt', 'utf8') : '(no web report file)';
+            const body = [
+              'The weekly image re-scan found a CRITICAL/HIGH finding not covered by `.trivyignore`,',
+              'against the *currently pinned* base images — nothing in this repo changed to cause this.',
+              '',
+              'This means a CVE was disclosed after the current digest pin was last resolved. See',
+              '`apps/api/Dockerfile`/`apps/web/Dockerfile`\'s own comments for how to re-resolve a pin',
+              '(`docker buildx imagetools inspect <image>:<tag>`), then decide: bump the pin, add a',
+              '`.trivyignore` entry with a stated reason if it\'s a false positive/not exploitable here,',
+              'or accept and track if there\'s no fix upstream yet.',
+              '',
+              '<details><summary>API image report</summary>\n\n```\n' + apiReport.slice(0, 6000) + '\n```\n</details>',
+              '<details><summary>Web image report</summary>\n\n```\n' + webReport.slice(0, 6000) + '\n```\n</details>',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Weekly image scan: new CRITICAL/HIGH finding (${new Date().toISOString().slice(0,10)})`,
+              body,
+              labels: ['security', 'dependencies'],
+            });

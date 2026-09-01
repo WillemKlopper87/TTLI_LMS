@@ -524,7 +524,8 @@ jobs:
             e2e/learner-assessment.spec.ts \
             e2e/checkout.spec.ts \
             e2e/admin-finance.spec.ts \
-            e2e/organisations.spec.ts
+            e2e/organisations.spec.ts \
+            e2e/lead-forms.spec.ts
           do
             python -c "import redis; redis.Redis.from_url('redis://localhost:6399/0').flushdb()"
             npx playwright test "$spec" --workers=1

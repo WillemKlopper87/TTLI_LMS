@@ -50,7 +50,9 @@ from src.schemas.analytics import (
     PredictedRevenueResponse,
     ProviderBreakdownRow,
     TopCtaEpisode,
+    TopPagePath,
 )
+from src.services.events import EventName
 from src.services.ledger import EntryType
 from src.services.podcasts import PodcastEventName
 
@@ -82,6 +84,8 @@ ORGANISATION_ROW_CAP = 20
 # ORGANISATION_ROW_CAP, just with no "Other" row since the ask (docs/
 # BACKLOG.md R2) is specifically the *top* CTA-converting episodes.
 TOP_CTA_EPISODE_LIMIT = 5
+# Same "top N, not every path" reasoning for site traffic.
+TOP_PATH_LIMIT = 10
 
 PACKAGE_ONE_TIME = "One-time purchase"
 PACKAGE_GUEST = "Guest access"
@@ -540,6 +544,39 @@ async def top_cta_episodes(
     ]
 
 
+async def page_view_counts(
+    session: AsyncSession, *, tenant_id: uuid.UUID, period: Period
+) -> tuple[int, list[TopPagePath]]:
+    """Site-traffic pageviews on public marketing pages (checklist item
+    20 follow-up; 01_PRD.md §5.11's first-party-analytics decision, kept
+    deliberately instead of a third-party tracker). `page.viewed` is
+    written by the client-side beacon in routers/events.py for public
+    marketing routes only — admin/account/auth/checkout/learn never fire
+    it (components/page-view-tracker.tsx), the same "what counts as the
+    public site" boundary robots.ts already draws."""
+    path_col = Event.event_properties["path"].astext.label("path")
+    base_filters = (
+        Event.tenant_id == tenant_id,
+        Event.event_name == EventName.PAGE_VIEWED,
+        Event.created_at >= period.start,
+        Event.created_at < period.end,
+    )
+    total = int((await session.execute(select(func.count()).where(*base_filters))).scalar_one())
+    top_stmt = (
+        select(path_col, func.count())
+        .where(*base_filters)
+        .group_by(path_col)
+        .order_by(func.count().desc())
+        .limit(TOP_PATH_LIMIT)
+    )
+    top_paths = [
+        TopPagePath(path=path, views=int(count))
+        for path, count in (await session.execute(top_stmt)).all()
+        if path
+    ]
+    return total, top_paths
+
+
 __all__ = [
     "AWAITING_STATUSES",
     "DEFAULT_PRESET",
@@ -552,9 +589,11 @@ __all__ = [
     "PAID_STATUSES",
     "PIPELINE_STATUSES",
     "TOP_CTA_EPISODE_LIMIT",
+    "TOP_PATH_LIMIT",
     "Period",
     "PodcastEventCounts",
     "actual_revenue",
+    "page_view_counts",
     "paid_vs_waiting",
     "payment_method_breakdown",
     "podcast_event_counts",

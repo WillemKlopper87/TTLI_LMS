@@ -26,6 +26,21 @@ SEGMENT_SECONDS = 6
 # maxrate/bufsize give each rung a declared VBV so output is
 # rate-constrained rather than an unconstrained VBR overshoot.
 LADDER: dict[str, dict[str, int | str]] = {
+    # Opt-in only (0040) — genuinely slow connections. Never in
+    # DEFAULT_RUNGS, so a tenant/course that hasn't touched video
+    # settings sees no change. Same maxrate/bufsize ratio as 480p
+    # (1.10x / 2.00x video_kbps); baseline profile for maximum
+    # compatibility on the weakest devices likely to pick this rung.
+    "360p": {
+        "width": 640,
+        "height": 360,
+        "video_kbps": 600,
+        "maxrate_kbps": 660,
+        "bufsize_kbps": 1200,
+        "audio_kbps": 64,
+        "profile": "baseline",
+        "level": "3.0",
+    },
     "480p": {
         "width": 854,
         "height": 480,

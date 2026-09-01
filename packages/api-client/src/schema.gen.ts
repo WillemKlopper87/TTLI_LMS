@@ -286,6 +286,33 @@ export interface paths {
         patch: operations["update_manager_visibility_setting_api_v1_tenant_settings_manager_visibility_patch"];
         trace?: never;
     };
+    "/api/v1/tenant/settings/video-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 0040's tenant-level tier of the video-settings chain, current value */
+        get: operations["get_video_defaults_api_v1_tenant_settings_video_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 0040's tenant-level tier of the video-settings chain
+         * @description The tenant-level tier of the video-settings chain
+         *     (services/media/video_settings.py). Merges into the existing
+         *     `settings` jsonb, same shape as update_manager_visibility_setting
+         *     above — and audited the same way, unlike the course-level tier
+         *     (routers/courses.py::update_video_settings), matching this
+         *     codebase's existing precedent that tenant-wide settings changes are
+         *     audited and course-level ones are not.
+         */
+        patch: operations["update_video_defaults_api_v1_tenant_settings_video_defaults_patch"];
+        trace?: never;
+    };
     "/api/v1/leads": {
         parameters: {
             query?: never;
@@ -1018,6 +1045,30 @@ export interface paths {
         head?: never;
         /** Update Manager Visibility */
         patch: operations["update_manager_visibility_api_v1_courses__course_id__manager_visibility_patch"];
+        trace?: never;
+    };
+    "/api/v1/courses/{course_id}/video-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Video Settings
+         * @description The course-level tier of the tenant->course->per-upload video
+         *     settings chain (0040, services/media/video_settings.py). No audit
+         *     call — matches update_manager_visibility's existing precedent that
+         *     course-level settings aren't audited in this codebase, unlike the
+         *     tenant-level video-defaults endpoint (routers/tenant.py).
+         */
+        patch: operations["update_video_settings_api_v1_courses__course_id__video_settings_patch"];
         trace?: never;
     };
     "/api/v1/courses/{course_id}/publish": {
@@ -2307,8 +2358,34 @@ export interface paths {
         /** List uploaded video assets */
         get: operations["list_video_assets_api_v1_video_assets_get"];
         put?: never;
-        /** Upload a source video for transcoding */
+        /**
+         * Upload a source video, awaiting a transcode/as-is decision (0040)
+         * @description Phase 1 of the two-phase upload (0040): scan, store, probe, and
+         *     estimate — then stop and let the admin decide, rather than
+         *     immediately enqueueing a transcode with a hardcoded rung selection.
+         *     `course_id` is advisory only (the admin UI already knows which
+         *     course/lesson it's uploading into); it lets the decision panel
+         *     pre-fill from that course's video settings before anything has been
+         *     decided, and is re-checked at finalize time for the same reason.
+         */
         post: operations["upload_video_asset_api_v1_video_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/video-assets/{video_asset_id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide how a draft video asset is delivered (0040) */
+        post: operations["finalize_video_asset_api_v1_video_assets__video_asset_id__finalize_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2375,6 +2452,23 @@ export interface paths {
         };
         /** Mint a short-lived signed playlist URL (03 §6.7) */
         get: operations["get_playback_api_v1_media__video_asset_id__playback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/{video_asset_id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve the original file, as-is delivery (0040) */
+        get: operations["get_original_file_api_v1_media__video_asset_id__original_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3519,6 +3613,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/events/pageview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log a pageview on a public marketing page, no auth required */
+        post: operations["log_pageview_api_v1_public_events_pageview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/push/vapid-public-key": {
         parameters: {
             query?: never;
@@ -3638,6 +3749,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/traffic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pageviews on public marketing pages for a period, with the top pages */
+        get: operations["traffic_api_v1_analytics_traffic_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/revenue-summary/export.csv": {
         parameters: {
             query?: never;
@@ -3685,6 +3813,23 @@ export interface paths {
          *     twin of each" report — this one didn't have one yet.
          */
         get: operations["podcast_engagement_csv_api_v1_analytics_podcast_engagement_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/traffic/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CSV of the traffic report, same rows as the JSON report */
+        get: operations["traffic_csv_api_v1_analytics_traffic_export_csv_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4134,6 +4279,57 @@ export interface paths {
         post?: never;
         /** Remove the identity-provider configuration */
         delete: operations["delete_sso_config_api_v1_tenant_sso_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/feature-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feature Flags */
+        get: operations["list_feature_flags_api_v1_platform_feature_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/feature-flags/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Feature Flag */
+        patch: operations["set_feature_flag_api_v1_platform_feature_flags__key__patch"];
+        trace?: never;
+    };
+    "/api/v1/platform/system-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** System Health */
+        get: operations["system_health_api_v1_platform_system_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4675,6 +4871,8 @@ export interface components {
         Body_upload_video_asset_api_v1_video_assets_post: {
             /** File */
             file: string;
+            /** Course Id */
+            course_id?: string | null;
         };
         /** BookOpenSlotRequest */
         BookOpenSlotRequest: {
@@ -5031,6 +5229,10 @@ export interface components {
             includes_workshop: boolean;
             /** Hero Colour */
             hero_colour?: string | null;
+            /** Video Settings */
+            video_settings?: {
+                [key: string]: unknown;
+            };
         };
         /** CourseSummaryResponse */
         CourseSummaryResponse: {
@@ -5456,6 +5658,22 @@ export interface components {
         FacilitatorsPage: {
             /** Items */
             items: components["schemas"]["FacilitatorResponse"][];
+        };
+        /** FeatureFlagInfo */
+        FeatureFlagInfo: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** FeatureFlagsResponse */
+        FeatureFlagsResponse: {
+            /** Flags */
+            flags: components["schemas"]["FeatureFlagInfo"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6308,6 +6526,19 @@ export interface components {
             user_count: number;
         };
         /**
+         * PageViewRequest
+         * @description A pageview on a public marketing page (01_PRD.md §5.11: first-
+         *     party analytics, no third-party tracker). `path` is validated as
+         *     app-relative so this endpoint can't become an arbitrary-string
+         *     sink for whatever a caller sends.
+         */
+        PageViewRequest: {
+            /** Path */
+            path: string;
+            /** Referrer */
+            referrer?: string | null;
+        };
+        /**
          * PaidVsWaitingResponse
          * @description Buyers in the period, bucketed by their most recent order's status:
          *     `fulfilled` -> paid; any pending/awaiting state -> awaiting_payment;
@@ -6555,6 +6786,12 @@ export interface components {
              */
             expires_at: string;
             watermark: components["schemas"]["WatermarkPayload"];
+            /**
+             * Delivery Mode
+             * @default hls
+             * @enum {string}
+             */
+            delivery_mode: "hls" | "progressive";
         };
         /** PoCheckoutResponse */
         PoCheckoutResponse: {
@@ -7772,6 +8009,15 @@ export interface components {
             /** Excluded No Consent */
             excluded_no_consent: number;
         };
+        /** ServiceStatus */
+        ServiceStatus: {
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail?: string | null;
+        };
         /** SessionResponse */
         SessionResponse: {
             /** Id */
@@ -7803,6 +8049,11 @@ export interface components {
         SessionsPage: {
             /** Items */
             items: components["schemas"]["SessionResponse"][];
+        };
+        /** SetFeatureFlagRequest */
+        SetFeatureFlagRequest: {
+            /** Enabled */
+            enabled: boolean;
         };
         /**
          * SpotifyLookupResponse
@@ -8228,6 +8479,15 @@ export interface components {
             /** Items */
             items: components["schemas"]["SurveyListItem"][];
         };
+        /** SystemHealthResponse */
+        SystemHealthResponse: {
+            /** Api Version */
+            api_version: string;
+            /** Environment */
+            environment: string;
+            /** Services */
+            services: components["schemas"]["ServiceStatus"][];
+        };
         /** TaskResponse */
         TaskResponse: {
             /** Id */
@@ -8358,6 +8618,27 @@ export interface components {
             /** Course Clicks */
             course_clicks: number;
         };
+        /** TopPagePath */
+        TopPagePath: {
+            /** Path */
+            path: string;
+            /** Views */
+            views: number;
+        };
+        /**
+         * TrafficResponse
+         * @description Pageviews on public marketing pages (checklist item 20 follow-up;
+         *     01_PRD.md §5.11's first-party-analytics decision) — `page.viewed`
+         *     events written by routers/events.py::log_pageview, aggregated the
+         *     same way podcast_engagement aggregates `podcast.*` events.
+         */
+        TrafficResponse: {
+            period: components["schemas"]["PeriodResponse"];
+            /** Total Views */
+            total_views: number;
+            /** Top Paths */
+            top_paths: components["schemas"]["TopPagePath"][];
+        };
         /** TranscriptLessonResponse */
         TranscriptLessonResponse: {
             /** Module Title */
@@ -8432,6 +8713,13 @@ export interface components {
         UpdateManagerVisibilityRequest: {
             /** Manager Visibility */
             manager_visibility: string;
+        };
+        /** UpdateVideoSettingsRequest */
+        UpdateVideoSettingsRequest: {
+            /** Rungs */
+            rungs?: string[] | null;
+            /** Allow Bypass */
+            allow_bypass?: boolean | null;
         };
         /**
          * UpdateWorkshopRequest
@@ -8522,11 +8810,69 @@ export interface components {
              * @default false
              */
             has_captions: boolean;
+            /**
+             * Delivery Mode
+             * @default hls
+             */
+            delivery_mode: string;
+            /** Source Filename */
+            source_filename?: string | null;
+            /** Source Size Bytes */
+            source_size_bytes?: number | null;
+            /**
+             * Estimated Sizes
+             * @default {}
+             */
+            estimated_sizes: {
+                [key: string]: number;
+            };
+            /**
+             * Default Rungs
+             * @default []
+             */
+            default_rungs: string[];
+            /**
+             * Allow Bypass
+             * @default true
+             */
+            allow_bypass: boolean;
+            /**
+             * Requested Rungs
+             * @default []
+             */
+            requested_rungs: string[];
         };
         /** VideoAssetsPageResponse */
         VideoAssetsPageResponse: {
             /** Items */
             items: components["schemas"]["VideoAssetResponse"][];
+        };
+        /** VideoDefaultsRequest */
+        VideoDefaultsRequest: {
+            /** Rungs */
+            rungs: string[];
+            /** Allow Bypass */
+            allow_bypass: boolean;
+        };
+        /** VideoDefaultsResponse */
+        VideoDefaultsResponse: {
+            /** Rungs */
+            rungs: string[];
+            /** Allow Bypass */
+            allow_bypass: boolean;
+        };
+        /** VideoFinalizeRequest */
+        VideoFinalizeRequest: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "as_is" | "transcode";
+            /**
+             * Rungs
+             * @default []
+             */
+            rungs: string[];
         };
         /**
          * VisibilityRequest
@@ -9014,6 +9360,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManagerVisibilitySettingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_video_defaults_api_v1_tenant_settings_video_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoDefaultsResponse"];
+                };
+            };
+        };
+    };
+    update_video_defaults_api_v1_tenant_settings_video_defaults_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VideoDefaultsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoDefaultsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10443,6 +10842,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateManagerVisibilityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_video_settings_api_v1_courses__course_id__video_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVideoSettingsRequest"];
             };
         };
         responses: {
@@ -13224,6 +13658,41 @@ export interface operations {
             };
         };
     };
+    finalize_video_asset_api_v1_video_assets__video_asset_id__finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VideoFinalizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoAssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_captions_api_v1_video_assets__video_asset_id__captions_post: {
         parameters: {
             query?: never;
@@ -13337,6 +13806,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_original_file_api_v1_media__video_asset_id__original_get: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path: {
+                video_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -15648,6 +16150,37 @@ export interface operations {
             };
         };
     };
+    log_pageview_api_v1_public_events_pageview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_vapid_public_key_api_v1_push_vapid_public_key_get: {
         parameters: {
             query?: never;
@@ -15874,6 +16407,42 @@ export interface operations {
             };
         };
     };
+    traffic_api_v1_analytics_traffic_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     revenue_summary_csv_api_v1_analytics_revenue_summary_export_csv_get: {
         parameters: {
             query?: {
@@ -15947,6 +16516,42 @@ export interface operations {
         };
     };
     podcast_engagement_csv_api_v1_analytics_podcast_engagement_export_csv_get: {
+        parameters: {
+            query?: {
+                /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
+                preset?: string | null;
+                /** @description Custom range start (UTC day, inclusive) */
+                from?: string | null;
+                /** @description Custom range end (UTC day, inclusive) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    traffic_csv_api_v1_analytics_traffic_export_csv_get: {
         parameters: {
             query?: {
                 /** @description One of: last_24h, last_7d, last_30d, last_3m, last_6m, last_1y. Mutually exclusive with from/to. */
@@ -16821,6 +17426,81 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_feature_flags_api_v1_platform_feature_flags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsResponse"];
+                };
+            };
+        };
+    };
+    set_feature_flag_api_v1_platform_feature_flags__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetFeatureFlagRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureFlagsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_health_api_v1_platform_system_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemHealthResponse"];
+                };
             };
         };
     };

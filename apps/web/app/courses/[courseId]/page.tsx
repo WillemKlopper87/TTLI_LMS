@@ -32,6 +32,17 @@ interface CoursePageProps {
   params: Promise<{ courseId: string }>;
 }
 
+export async function generateMetadata({ params }: CoursePageProps) {
+  const { courseId } = await params;
+  const course = await getPublicCurriculum(courseId);
+  if (!course) return { title: "Course" };
+  return {
+    title: course.title,
+    description: course.summary ?? undefined,
+    alternates: { canonical: `/courses/${courseId}` },
+  };
+}
+
 export default async function CourseDetailPage({ params }: CoursePageProps) {
   const { courseId } = await params;
   const course = await getPublicCurriculum(courseId);

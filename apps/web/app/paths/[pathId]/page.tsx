@@ -18,6 +18,17 @@ interface PathPageProps {
   params: Promise<{ pathId: string }>;
 }
 
+export async function generateMetadata({ params }: PathPageProps) {
+  const { pathId } = await params;
+  const path = await getPublicPathDetail(pathId);
+  if (!path) return { title: "Learning path" };
+  return {
+    title: path.title,
+    description: path.description ?? undefined,
+    alternates: { canonical: `/paths/${pathId}` },
+  };
+}
+
 export default async function PathDetailPage({ params }: PathPageProps) {
   const { pathId } = await params;
   const path = await getPublicPathDetail(pathId);

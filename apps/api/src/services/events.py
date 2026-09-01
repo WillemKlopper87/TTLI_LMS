@@ -32,6 +32,10 @@ class EventName:
     TOKEN_REUSE_DETECTED = "auth.token.reuse_detected"  # noqa: S105 - ditto
     LEAD_CAPTURED = "lead.captured"
     GUEST_ACCESS_GRANTED = "lead.guest_access_granted"
+    # Site-traffic pageviews on public marketing pages (checklist item
+    # 20 follow-up, 01_PRD.md §5.11's first-party-analytics decision) —
+    # written by routers/events.py::log_pageview.
+    PAGE_VIEWED = "page.viewed"
 
 
 async def record(

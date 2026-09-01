@@ -1,0 +1,261 @@
+# Everything on one VM: app containers (from docker-compose.prod.yml) plus
+# the infra containers that file assumes are managed services elsewhere
+# (postgres, redis, garage, clamav — from docker-compose.yml), plus a
+# reverse proxy and an SMTP relay neither file needed. See
+# docs/research/single-vm-deployment.md for the full reasoning — this is
+# the "everything on one box, for now" shape, not the documented Azure
+# Container Apps target. Generated/populated by scripts/deploy-single-vm.sh,
+# not meant to be hand-run with a copied .env.example.
+#
+# Network model: only Caddy publishes ports to the host (80/443). Every
+# other service talks to every other service by its compose service name
+# on the default network — nothing else is reachable from outside the VM,
+# which is also what keeps DATABASE_URL/REDIS_URL passing
+# check_production_safety() (it refuses "localhost"/"127.0.0.1", not a
+# service name).
+name: ttli-single-vm
+
+x-api-env: &api-env
+  ENVIRONMENT: production
+  DATABASE_URL: ${DATABASE_URL:?set in .env.prod}
+  DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:?set in .env.prod}
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set in .env.prod}
+  REDIS_URL: ${REDIS_URL:?set in .env.prod}
+  SECRET_KEY: ${SECRET_KEY:?set in .env.prod}
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set in .env.prod}
+  BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?set in .env.prod}
+  SENTRY_DSN: ${SENTRY_DSN:?check_production_safety refuses to start without it}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:?set in .env.prod}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:?set in .env.prod}
+  STORAGE_BACKEND: s3
+  S3_ENDPOINT_URL: http://garage:3900
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set in .env.prod}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set in .env.prod}
+  S3_REGION: af-south-1
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  # Unauthenticated by design (services/email.py has no SMTP-auth path) —
+  # postfix-relay is what actually authenticates outward. See §5 of the doc.
+  SMTP_HOST: postfix-relay
+  SMTP_PORT: "25"
+  EMAIL_FROM: ${EMAIL_FROM:?set in .env.prod}
+  LOG_LEVEL: INFO
+  # The web BFF is the only caller; a directly-reachable API would let any
+  # caller spoof this header and dodge every per-IP limit (core/net.py) —
+  # safe here specifically because the api service exposes no host port.
+  TRUST_X_FORWARDED_FOR: "true"
+  PAYFAST_MERCHANT_ID: ${PAYFAST_MERCHANT_ID:-}
+  PAYFAST_MERCHANT_KEY: ${PAYFAST_MERCHANT_KEY:-}
+  PAYFAST_PASSPHRASE: ${PAYFAST_PASSPHRASE:-}
+  PAYFAST_SANDBOX: ${PAYFAST_SANDBOX:-true}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:support@example.com}
+
+services:
+  # ---- infrastructure (managed services in the Azure target; containers
+  #      here because there's only one VM) ----
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ttli
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set in .env.prod}
+      POSTGRES_DB: ttli
+    volumes:
+      - ttli-postgres-18:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttli -d ttli"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  # requirepass added versus the dev compose file: Redis here isn't just a
+  # cache, it backs tenant resolution and login rate limiting
+  # (core/tenancy.py, services/rate_limit.py) — worth the one extra
+  # env var even though it's not reachable outside the VM either way.
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning", "--requirepass", "${REDIS_PASSWORD:?set in .env.prod}"]
+    volumes:
+      - ttli-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?set in .env.prod}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  # Single-node Garage standing in for Blob Storage/S3 (06_OPERATIONS.md
+  # §2.1's LocalStorageAdapter target). garage.toml and the default
+  # key/bucket below are generated fresh by scripts/deploy-single-vm.sh —
+  # never the checked-in infra/garage/garage.toml, which is a published
+  # dev-only secret. Backing this up is your actual object storage
+  # backup, not just the database's — see the doc's §7.
+  garage:
+    image: dxflrs/garage:v2.3.0
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY:?set in .env.prod}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_KEY:?set in .env.prod}
+      GARAGE_DEFAULT_BUCKET: ttli-default
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - ttli-garage-meta:/var/lib/garage/meta
+      - ttli-garage-data:/var/lib/garage/data
+    restart: unless-stopped
+
+  # First boot downloads virus definitions (a few minutes) — the long
+  # start_period below is deliberate, not a stuck container. File
+  # uploads (payment proofs, assignment submissions) 423 until this is
+  # healthy; the app has no code path that skips scanning.
+  clamav:
+    image: clamav/clamav-debian:stable
+    volumes:
+      - ttli-clamav:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 5m
+    restart: unless-stopped
+
+  # services/email.py's smtplib call has no auth/TLS path (verified: plain
+  # smtplib.SMTP(host, port).send_message(), no .login()/.starttls()) — it
+  # can only talk to an unauthenticated local relay. This container *is*
+  # that relay: the app connects to it unauthenticated on the compose
+  # network, and it authenticates outward to a real ESP using the
+  # RELAYHOST_* credentials. Without this, magic-link/guest-access/
+  # password-reset emails never leave the VM. See the doc's §5.
+  postfix-relay:
+    image: boky/postfix:latest
+    environment:
+      ALLOW_EMPTY_SENDER_DOMAINS: "true"
+      RELAYHOST: ${SMTP_RELAY_HOST:?set in .env.prod, e.g. [smtp.sendgrid.net]:587}
+      RELAYHOST_USERNAME: ${SMTP_RELAY_USERNAME:?set in .env.prod}
+      RELAYHOST_PASSWORD: ${SMTP_RELAY_PASSWORD:?set in .env.prod}
+    restart: unless-stopped
+
+  # ---- migration (one-shot, same as docker-compose.prod.yml) ----
+
+  migrate:
+    build:
+      context: ../apps/api
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: ttli-api:latest
+    environment: *api-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ---- application (unchanged shape from docker-compose.prod.yml) ----
+
+  # Explicit `image:` (rather than compose's own auto-generated
+  # <project>-<service> name) so scripts/rolling-update.sh can retag a
+  # known-good previous build back onto this exact name for a fast
+  # rollback — depending on compose's naming convention instead would be
+  # one guess too many for something a rollback path relies on.
+  api:
+    build:
+      context: ../apps/api
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: ttli-api:latest
+    environment: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    expose:
+      - "8010"
+    # Liveness only (routers/health.py's /health, not /health/ready) —
+    # the rolling-update script (scripts/rolling-update.sh) polls this
+    # before cutting traffic to a freshly-swapped container. curl is a
+    # real runtime dependency of this image already (Dockerfile).
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../apps/api
+    # Same image as api — literally the same build, differing only in
+    # command (the Dockerfile's own header comment). Sharing the tag
+    # means building api also updates worker; no separate rebuild step.
+    image: ttli-api:latest
+    environment:
+      <<: *api-env
+      # arq's log arrows crash a cp1252 console; irrelevant on Linux, kept
+      # for parity with how the worker is run everywhere else.
+      PYTHONIOENCODING: utf-8
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command: ["arq", "src.workers.main.WorkerSettings"]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: ttli-web:latest
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:8010
+    depends_on:
+      - api
+    expose:
+      - "3010"
+    # No curl/wget in this image (the Dockerfile strips npm/npx but never
+    # had a shell HTTP client to begin with) — node itself is the one
+    # binary guaranteed present, so the probe is a one-line node script
+    # instead of the CMD-SHELL form every other healthcheck here uses.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3010/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---- edge: the one thing neither compose.yml nor compose.prod.yml
+  #      needed, because Container Apps' ingress does this for free ----
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ttli-caddy-data:/data
+      - ttli-caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  ttli-postgres-18:
+  ttli-redis:
+  ttli-garage-meta:
+  ttli-garage-data:
+  ttli-clamav:
+  ttli-caddy-data:
+  ttli-caddy-config:

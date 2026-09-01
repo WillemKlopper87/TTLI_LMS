@@ -38,6 +38,7 @@ from src.schemas.analytics import (
     RevenuePoint,
     RevenueSeriesResponse,
     RevenueSummaryResponse,
+    TrafficResponse,
 )
 from src.services import analytics as analytics_service
 from src.services.analytics import Period
@@ -185,6 +186,30 @@ async def podcast_engagement(
     return await _podcast_engagement(session, principal, period)
 
 
+async def _traffic(
+    session: AsyncSession, principal: PrincipalDep, period: Period
+) -> TrafficResponse:
+    tenant_id = principal.tenant_id
+    total_views, top_paths = await analytics_service.page_view_counts(
+        session, tenant_id=tenant_id, period=period
+    )
+    return TrafficResponse(
+        period=_period_response(period), total_views=total_views, top_paths=top_paths
+    )
+
+
+@router.get(
+    "/traffic",
+    response_model=TrafficResponse,
+    summary="Pageviews on public marketing pages for a period, with the top pages",
+)
+async def traffic(
+    principal: PrincipalDep, session: SessionDep, period: PeriodDep
+) -> TrafficResponse:
+    principal.require(PERMISSION)
+    return await _traffic(session, principal, period)
+
+
 # ---- CSV export --------------------------------------------------------------
 #
 # One long-format table per report: section,label,currency,count,amount.
@@ -308,6 +333,21 @@ async def podcast_engagement_csv(
         for row in data.top_cta_episodes
     ]
     return _csv_response(rows, "podcast-engagement.csv")
+
+
+@router.get(
+    "/traffic/export.csv",
+    summary="CSV of the traffic report, same rows as the JSON report",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+async def traffic_csv(principal: PrincipalDep, session: SessionDep, period: PeriodDep) -> Response:
+    principal.require(PERMISSION)
+    data = await _traffic(session, principal, period)
+    rows: list[tuple[object, ...]] = _period_rows(data.period)
+    rows.append(("traffic", "total_views", "", data.total_views, ""))
+    rows += [("top_paths", row.path, "", row.views, "") for row in data.top_paths]
+    return _csv_response(rows, "traffic.csv")
 
 
 __all__ = ["router"]

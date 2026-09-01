@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings
 from src.core.deps import PrincipalDep, SessionDep, SettingsDep
@@ -38,6 +39,7 @@ from src.schemas.subscriptions import (
     SubscriptionPlanUpdateRequest,
     SubscriptionResponse,
 )
+from src.services import feature_flags as feature_flags_service
 from src.services import orders as orders_service
 from src.services import subscriptions as subscriptions_service
 
@@ -75,8 +77,20 @@ def _subscription_response(subscription: Subscription) -> SubscriptionResponse:
     )
 
 
-def _require_subscriptions_enabled(settings: Settings) -> None:
+async def _require_subscriptions_enabled(
+    settings: Settings, session: AsyncSession, *, tenant_id: uuid.UUID
+) -> None:
+    # Two independent kill switches, both must be on: the deployment-wide
+    # env var (a redeploy-required nuclear option, unchanged) and the
+    # per-tenant flag (services/feature_flags.py — no redeploy, toggled
+    # from /admin/platform by whoever holds settings:manage). Either one
+    # being off is enough to refuse.
     if not settings.subscriptions_enabled:
+        raise AppError("Subscriptions are not currently available.")
+    enabled = await feature_flags_service.is_enabled(
+        session, tenant_id=tenant_id, flag="subscriptions"
+    )
+    if not enabled:
         raise AppError("Subscriptions are not currently available.")
 
 
@@ -187,7 +201,7 @@ async def list_plan_courses(
 async def subscribe(
     body: SubscribeRequest, principal: PrincipalDep, session: SessionDep, settings: SettingsDep
 ) -> SubscriptionOrderResponse:
-    _require_subscriptions_enabled(settings)
+    await _require_subscriptions_enabled(settings, session, tenant_id=principal.tenant_id)
     subscription, plan = await subscriptions_service.prepare_subscribe(
         session,
         tenant_id=principal.tenant_id,
@@ -224,7 +238,7 @@ async def get_own_subscription(
 async def change_plan(
     body: ChangePlanRequest, principal: PrincipalDep, session: SessionDep, settings: SettingsDep
 ) -> SubscriptionOrderResponse:
-    _require_subscriptions_enabled(settings)
+    await _require_subscriptions_enabled(settings, session, tenant_id=principal.tenant_id)
     subscription, plan, is_upgrade = await subscriptions_service.prepare_change_plan(
         session,
         tenant_id=principal.tenant_id,
@@ -270,7 +284,7 @@ async def resume_subscription(principal: PrincipalDep, session: SessionDep) -> S
 async def renew_subscription(
     body: RenewRequest, principal: PrincipalDep, session: SessionDep, settings: SettingsDep
 ) -> SubscriptionOrderResponse:
-    _require_subscriptions_enabled(settings)
+    await _require_subscriptions_enabled(settings, session, tenant_id=principal.tenant_id)
     subscription, plan = await subscriptions_service.prepare_renewal(
         session, tenant_id=principal.tenant_id, user_id=principal.user_id
     )

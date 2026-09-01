@@ -20,7 +20,12 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const person = getFacilitator(slug);
-  return { title: person ? person.name : "Facilitator" };
+  if (!person) return { title: "Facilitator" };
+  return {
+    title: person.name,
+    description: `${person.name}, ${person.role}.`,
+    alternates: { canonical: `/about/${person.slug}` },
+  };
 }
 
 export default async function FacilitatorPage({

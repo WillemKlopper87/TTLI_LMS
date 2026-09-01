@@ -16,6 +16,12 @@ import { getPublicCourses, getPublicProducts } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = {
+  title: "Course catalogue",
+  description: "Browse courses, executive programmes and subscription plans.",
+  alternates: { canonical: "/catalogue" },
+};
+
 interface CataloguePageProps {
   searchParams: Promise<{ topic?: string | string[]; level?: string | string[] }>;
 }

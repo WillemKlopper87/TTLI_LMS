@@ -18,6 +18,7 @@ from src.models.audit import AuditAction
 from src.models.tenant import Tenant
 from src.models.theme import TenantTheme
 from src.services import audit
+from src.services.media.ffmpeg import DEFAULT_RUNGS
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -115,4 +116,73 @@ async def update_manager_visibility_setting(
     )
 
 
-__all__ = ["ManagerVisibilitySettingResponse", "ThemeResponse", "router"]
+class VideoDefaultsRequest(BaseModel):
+    rungs: list[str]
+    allow_bypass: bool
+
+
+class VideoDefaultsResponse(BaseModel):
+    rungs: list[str]
+    allow_bypass: bool
+
+
+@router.get(
+    "/settings/video-defaults",
+    response_model=VideoDefaultsResponse,
+    summary="0040's tenant-level tier of the video-settings chain, current value",
+)
+async def get_video_defaults(principal: PrincipalDep, session: SessionDep) -> VideoDefaultsResponse:
+    principal.require("tenant:manage")
+    tenant = await session.get(Tenant, principal.tenant_id)
+    if tenant is None:  # pragma: no cover - the request already resolved this tenant
+        raise NotFound("No such tenant.")
+    video = tenant.settings.get("video", {})
+    return VideoDefaultsResponse(
+        rungs=list(video.get("rungs") or DEFAULT_RUNGS),
+        allow_bypass=bool(video.get("allow_bypass", True)),
+    )
+
+
+@router.patch(
+    "/settings/video-defaults",
+    response_model=VideoDefaultsResponse,
+    summary="0040's tenant-level tier of the video-settings chain",
+)
+async def update_video_defaults(
+    body: VideoDefaultsRequest, principal: PrincipalDep, session: SessionDep
+) -> VideoDefaultsResponse:
+    """The tenant-level tier of the video-settings chain
+    (services/media/video_settings.py). Merges into the existing
+    `settings` jsonb, same shape as update_manager_visibility_setting
+    above — and audited the same way, unlike the course-level tier
+    (routers/courses.py::update_video_settings), matching this
+    codebase's existing precedent that tenant-wide settings changes are
+    audited and course-level ones are not."""
+    principal.require("tenant:manage")
+    tenant = await session.get(Tenant, principal.tenant_id)
+    if tenant is None:  # pragma: no cover - the request already resolved this tenant
+        raise NotFound("No such tenant.")
+    before = tenant.settings.get("video")
+    after = {"rungs": body.rungs, "allow_bypass": body.allow_bypass}
+    tenant.settings = {**tenant.settings, "video": after}
+    flag_modified(tenant, "settings")
+    await session.flush()
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.TENANT_SETTING_CHANGED,
+        actor_user_id=principal.user_id,
+        entity_type="tenant",
+        entity_id=principal.tenant_id,
+        before={"video": before},
+        after={"video": after},
+    )
+    return VideoDefaultsResponse(**after)
+
+
+__all__ = [
+    "ManagerVisibilitySettingResponse",
+    "ThemeResponse",
+    "VideoDefaultsResponse",
+    "router",
+]

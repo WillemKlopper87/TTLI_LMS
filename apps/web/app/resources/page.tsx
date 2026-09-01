@@ -41,6 +41,8 @@ function isSafeHttpUrl(url: string): boolean {
  */
 export const metadata = {
   title: "Resources",
+  description: "Podcasts, articles and recommendations from TTLI's faculty.",
+  alternates: { canonical: "/resources" },
 };
 
 export default async function ResourcesPage() {
@@ -303,7 +305,11 @@ export default async function ResourcesPage() {
                 Nine leadership principles that drive engagement and commitment — the foundation
                 the Institute&rsquo;s own programmes are built from.
               </p>
-              <Link className="btn btn--ghost btn--block" href="/lead-with-intent">
+              <Link
+                className="btn btn--ghost btn--block"
+                href="/lead-with-intent"
+                aria-label="Read more about Lead with Intent"
+              >
                 Read more
               </Link>
             </div>

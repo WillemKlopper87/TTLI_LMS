@@ -40,6 +40,7 @@ const PUBLIC_NAV: NavItem[] = [
   { label: "Courses", href: "/catalogue" },
   { label: "Executive Programmes", href: "/executive-programmes" },
   { label: "Live Workshops", href: "/workshops" },
+  { label: "Learning Paths", href: "/paths" },
   { label: "Resources", href: "/resources" },
   { label: "For Organisations", href: "/for-organisations" },
   { label: "About", href: "/about" },
@@ -56,6 +57,12 @@ const LEARNER_NAV: NavItem[] = [
   { label: "Learning paths", href: "/paths" },
   { label: "Workshops", href: "/learn/sessions" },
   { label: "Achievements", href: "/learn#completed" },
+  // Neither had any nav entry before this pass — invoices had no link
+  // anywhere in the app, and subscription was reachable only via the
+  // catalogue's own "subscribe" button (Subscriptions component), never
+  // as a place to come back and manage an existing one.
+  { label: "Subscription", href: "/account/subscription" },
+  { label: "Invoices", href: "/account/invoices" },
 ];
 
 // Mirrors lib/post-login-redirect.ts — any of these means the account has
@@ -184,7 +191,7 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
 
   return (
     <header className="site-head">
-      <Link href="/" className="brand-mark" aria-label={`${brandLabel} home`}>
+      <Link href="/" className="brand-mark" aria-label={`${brandLabel} ${strapline} — home`}>
         {firstParty ? (
           <img className="brand-glyph" src="/brand/ttli-mark.png" alt="" width={26} height={26} />
         ) : logoUrl ? (

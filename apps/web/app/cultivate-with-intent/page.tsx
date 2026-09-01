@@ -1,6 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 
+export const metadata = {
+  title: "Cultivate with Intent",
+  description:
+    "A blueprint for leaders to become worldclass cultural architects — by founder Hermann du Plessis.",
+  alternates: { canonical: "/cultivate-with-intent" },
+};
+
 /**
  * A dedicated page for "Cultivate with Intent" — founder Hermann du
  * Plessis's second book, closing the gap `docs/STATUS.md` had flagged

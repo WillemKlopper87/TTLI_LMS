@@ -153,6 +153,13 @@ class Settings(BaseSettings):
     # --- Media pipeline (06 §3, 02 §5.4/5.5) ---
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
+    # 0040's as-is bypass: StorageService.get_object has no byte-range
+    # support in any adapter, so a progressive file is served as one
+    # full-body response, transiting API-process memory per request.
+    # Bounded here rather than adding real Range/206 support (a bigger,
+    # all-three-adapters change, left as a follow-up) — above this size
+    # the admin UI simply doesn't offer the as-is toggle.
+    bypass_max_size_bytes: int = 500_000_000
     # 03 §6.7's signed playback URL — short-lived, bound to user and
     # session, re-minted per playback attempt rather than cached.
     playback_url_expiry_seconds: int = 300

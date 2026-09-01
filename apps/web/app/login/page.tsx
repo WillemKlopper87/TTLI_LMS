@@ -9,6 +9,11 @@ import { AccountTypeSignIn } from "./account-type";
  * `core/tenancy.py` resolves the tenant from whatever hostname arrives. */
 const BASE_HOST = process.env.NEXT_PUBLIC_TENANT_BASE_HOST ?? "localhost:3010";
 
+export const metadata = {
+  title: "Sign in",
+  alternates: { canonical: "/login" },
+};
+
 export default async function LoginPage() {
   const theme = await getTheme();
   return (
@@ -21,7 +26,7 @@ export default async function LoginPage() {
               alt={theme.tenant_name}
               width={220}
               height={116}
-              priority
+              preload
             />
           </div>
         ) : (

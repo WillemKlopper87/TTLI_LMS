@@ -19,7 +19,12 @@ import { AdminContext, type Me } from "./admin-context";
 // "Grading" (frontend-completeness backlog item 3), "Subscriptions"
 // (multi-tier subscription plan authoring, REQ-PAY-12) and "Reports"
 // (Pass A's course analytics) are the ones that do so far.
-const WORKING_SECTIONS = [
+// `permission` (optional) hides a section from the sidebar entirely for
+// anyone who doesn't hold it, rather than showing a link that 403s on
+// click — the distinction the super_admin-only "Platform" section needs
+// (deploy/maintenance/system-health concerns a business admin shouldn't
+// even see exist, not just can't open).
+const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Deals", href: "/admin/deals" },
   { label: "Campaigns", href: "/admin/campaigns" },
@@ -41,6 +46,7 @@ const WORKING_SECTIONS = [
   { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings" },
+  { label: "Platform", href: "/admin/platform", permission: "settings:manage" },
 ];
 // Nothing is inert any more. "Reports" left this list when Pass A gave it
 // a real destination, and "Learners" became "People" when Pass C built
@@ -179,7 +185,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           )}
         </Link>
         <nav className="mt-16 space-y-1 md:mt-0">
-          {WORKING_SECTIONS.map((section) => (
+          {WORKING_SECTIONS.filter(
+            (section) => !section.permission || me.permissions.includes(section.permission),
+          ).map((section) => (
             <Link
               key={section.href}
               href={section.href}

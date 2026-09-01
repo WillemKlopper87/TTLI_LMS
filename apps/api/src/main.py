@@ -35,6 +35,7 @@ from src.routers import (
     courses,
     credentials,
     deals,
+    events,
     guest_access,
     health,
     invoices,
@@ -45,6 +46,7 @@ from src.routers import (
     operations,
     orders,
     organisations,
+    platform,
     podcasts,
     push,
     recommendations,
@@ -148,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(podcasts.router, prefix="/api/v1")
     app.include_router(articles.router, prefix="/api/v1")
     app.include_router(recommendations.router, prefix="/api/v1")
+    app.include_router(events.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
     # Same /analytics prefix, same analytics:view gate — split into its own
@@ -159,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(tenant_users.router, prefix="/api/v1")
     app.include_router(tenant_branding.router, prefix="/api/v1")
     app.include_router(sso.router, prefix="/api/v1")
+    app.include_router(platform.router, prefix="/api/v1")
 
     return app
 

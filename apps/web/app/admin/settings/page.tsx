@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
+import { RUNG_LABEL } from "../courses/types";
 
 import BrandingPanel from "./branding-panel";
 
@@ -12,6 +13,12 @@ interface Course {
   id: string;
   title: string;
   manager_visibility: string;
+  video_settings: { rungs?: string[]; allow_bypass?: boolean };
+}
+
+interface VideoDefaults {
+  rungs: string[];
+  allow_bypass: boolean;
 }
 
 const VISIBILITY_LABEL: Record<string, string> = {
@@ -31,24 +38,27 @@ export default function SettingsScreen() {
   const canManageTenant = me.permissions.includes("tenant:manage");
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [tenantAllows, setTenantAllows] = useState<boolean | null>(null);
+  const [videoDefaults, setVideoDefaultsState] = useState<VideoDefaults | null>(null);
   const [error, setError] = useState<"forbidden" | "unknown" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
-    const [coursesResp, settingResp] = await Promise.all([
+    const [coursesResp, settingResp, videoResp] = await Promise.all([
       authedFetch("/api/bff/courses"),
       authedFetch("/api/bff/tenant/settings/manager-visibility"),
+      authedFetch("/api/bff/tenant/settings/video-defaults"),
     ]);
-    if (coursesResp.status === 403 || settingResp.status === 403) {
+    if (coursesResp.status === 403 || settingResp.status === 403 || videoResp.status === 403) {
       setError("forbidden");
       return;
     }
-    if (!coursesResp.ok || !settingResp.ok) {
+    if (!coursesResp.ok || !settingResp.ok || !videoResp.ok) {
       setError("unknown");
       return;
     }
     setCourses((await coursesResp.json()).items);
     setTenantAllows((await settingResp.json()).allow_manager_individual_results);
+    setVideoDefaultsState(await videoResp.json());
   }
 
   useEffect(() => {
@@ -79,6 +89,45 @@ export default function SettingsScreen() {
     if (resp.ok) await load();
   }
 
+  async function saveVideoDefaults(next: VideoDefaults) {
+    setBusy("video-defaults");
+    const resp = await authedFetch("/api/bff/tenant/settings/video-defaults", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    setBusy(null);
+    if (resp.ok) await load();
+  }
+
+  function toggleTenantRung(rung: string) {
+    if (!videoDefaults) return;
+    const rungs = videoDefaults.rungs.includes(rung)
+      ? videoDefaults.rungs.filter((r) => r !== rung)
+      : [...videoDefaults.rungs, rung];
+    saveVideoDefaults({ ...videoDefaults, rungs });
+  }
+
+  async function saveCourseVideoSettings(
+    courseId: string,
+    updates: { rungs?: string[]; allow_bypass?: boolean | null },
+  ) {
+    setBusy(courseId);
+    const resp = await authedFetch(`/api/bff/courses/${courseId}/video-settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    setBusy(null);
+    if (resp.ok) await load();
+  }
+
+  function toggleCourseRung(course: Course, rung: string) {
+    const current = course.video_settings.rungs ?? [];
+    const rungs = current.includes(rung) ? current.filter((r) => r !== rung) : [...current, rung];
+    saveCourseVideoSettings(course.id, { rungs });
+  }
+
   if (error === "forbidden") {
     return (
       <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
@@ -86,7 +135,7 @@ export default function SettingsScreen() {
       </p>
     );
   }
-  if (error === "unknown" || courses === null || tenantAllows === null) {
+  if (error === "unknown" || courses === null || tenantAllows === null || videoDefaults === null) {
     return (
       <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
         {error === "unknown" ? "Settings could not be loaded." : "Loading…"}
@@ -147,6 +196,94 @@ export default function SettingsScreen() {
                     </option>
                   ))}
                 </select>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card mt-6 p-5">
+        <b style={{ fontSize: "0.9375rem" }}>Video defaults</b>
+        <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+          Pre-fills the resolution picker shown on every new video upload, tenant-wide. A course
+          override below takes precedence; either way, the admin can still change it per video at
+          upload time.
+        </p>
+        <div className="mt-4 flex flex-col gap-1">
+          {Object.entries(RUNG_LABEL).map(([rung, label]) => (
+            <label key={rung} className="flex items-center gap-2" style={{ fontSize: "0.875rem" }}>
+              <input
+                type="checkbox"
+                checked={videoDefaults.rungs.includes(rung)}
+                disabled={busy === "video-defaults"}
+                onChange={() => toggleTenantRung(rung)}
+              />
+              {rung} — {label}
+            </label>
+          ))}
+        </div>
+        <label className="mt-3 flex items-center gap-2" style={{ fontSize: "0.875rem" }}>
+          <input
+            type="checkbox"
+            checked={videoDefaults.allow_bypass}
+            disabled={busy === "video-defaults"}
+            onChange={(e) => saveVideoDefaults({ ...videoDefaults, allow_bypass: e.target.checked })}
+          />
+          Allow uploading a video as-is, without transcoding
+        </label>
+      </section>
+
+      <section className="mt-6">
+        <b style={{ fontSize: "0.9375rem" }}>Per-course video settings</b>
+        <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+          Unchecked resolutions fall back to the tenant default above, not to nothing.
+        </p>
+        {courses.length === 0 ? (
+          <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+            No courses exist yet.
+          </p>
+        ) : (
+          <div className="mt-4 flex flex-col gap-2">
+            {courses.map((course) => (
+              <div key={course.id} className="card p-3">
+                <span style={{ fontSize: "0.875rem" }}>{course.title}</span>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {Object.keys(RUNG_LABEL).map((rung) => (
+                    <label
+                      key={rung}
+                      className="flex items-center gap-2"
+                      style={{ fontSize: "0.8125rem" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={(course.video_settings.rungs ?? []).includes(rung)}
+                        disabled={busy === course.id}
+                        onChange={() => toggleCourseRung(course, rung)}
+                      />
+                      {rung}
+                    </label>
+                  ))}
+                  <select
+                    className="input"
+                    style={{ maxWidth: "14rem" }}
+                    value={
+                      course.video_settings.allow_bypass === undefined
+                        ? "inherit"
+                        : String(course.video_settings.allow_bypass)
+                    }
+                    disabled={busy === course.id}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      saveCourseVideoSettings(course.id, {
+                        allow_bypass: v === "inherit" ? null : v === "true",
+                      });
+                    }}
+                  >
+                    <option value="inherit">As-is upload: inherit tenant default</option>
+                    <option value="true">As-is upload: always allow</option>
+                    <option value="false">As-is upload: never allow</option>
+                  </select>
+                </div>
               </div>
             ))}
           </div>

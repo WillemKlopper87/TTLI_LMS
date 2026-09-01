@@ -11,6 +11,9 @@ import { FACILITATORS } from "@/lib/facilitators";
  */
 export const metadata = {
   title: "About us",
+  description:
+    "We train, consult and coach organisations in the essential skills needed to raise engagement.",
+  alternates: { canonical: "/about" },
 };
 
 export default function AboutPage() {

@@ -79,6 +79,11 @@ PUBLIC_VERIFY = RouteClass("verify", limit=20, window_seconds=3600)
 # reads must not spend a visitor's podcast-play budget or vice versa.
 ARTICLE_EVENTS = RouteClass("article-events", limit=60, window_seconds=60)
 PODCAST_EVENTS = RouteClass("podcast-events", limit=60, window_seconds=60)
+# Fires once per client-side navigation across the whole public site
+# (checklist item 20 follow-up, 01_PRD.md §5.11) — higher than the two
+# above since a visitor browsing normally crosses far more marketing
+# pages per minute than they read articles or start podcast plays.
+PAGE_EVENTS = RouteClass("page-events", limit=120, window_seconds=60)
 
 # Browsing the public catalogue/content surface (list + detail: courses,
 # curricula, lesson previews, learning paths, podcasts, articles,
@@ -149,6 +154,7 @@ __all__ = [
     "LEADS",
     "LOGIN_ACCOUNT",
     "LOGIN_IP",
+    "PAGE_EVENTS",
     "PODCAST_EVENTS",
     "PUBLIC_READ",
     "PUBLIC_VERIFY",

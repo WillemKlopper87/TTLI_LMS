@@ -148,6 +148,22 @@ class PodcastEngagementResponse(BaseModel):
     top_cta_episodes: list[TopCtaEpisode]
 
 
+class TopPagePath(BaseModel):
+    path: str
+    views: int
+
+
+class TrafficResponse(BaseModel):
+    """Pageviews on public marketing pages (checklist item 20 follow-up;
+    01_PRD.md §5.11's first-party-analytics decision) — `page.viewed`
+    events written by routers/events.py::log_pageview, aggregated the
+    same way podcast_engagement aggregates `podcast.*` events."""
+
+    period: PeriodResponse
+    total_views: int
+    top_paths: list[TopPagePath]
+
+
 __all__ = [
     "PRESETS",
     "MoneyByCurrency",

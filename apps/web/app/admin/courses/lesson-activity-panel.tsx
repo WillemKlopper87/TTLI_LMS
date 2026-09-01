@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 
-import type { LessonItem } from "./types";
+import { RUNG_LABEL, type LessonItem } from "./types";
 
 type ActivityKind = "quiz" | "survey" | "assignment" | "video";
-type VideoUploadPhase = "idle" | "uploading" | "polling" | "ready" | "failed";
+// idle -> uploading -> deciding -> polling -> ready | failed. "deciding"
+// (0040) is the new decision panel between upload and transcode: the admin
+// picks a rung selection (or "as-is") before a job is ever enqueued.
+type VideoUploadPhase = "idle" | "uploading" | "deciding" | "polling" | "ready" | "failed";
 
 const QUESTION_TYPES = [
   { value: "single_choice", label: "Single choice" },
@@ -95,6 +98,18 @@ interface VideoAssetListItem {
   state: string;
   duration_seconds: number | null;
   has_captions: boolean;
+  delivery_mode: string;
+  source_filename: string | null;
+  source_size_bytes: number | null;
+  estimated_sizes: Record<string, number>;
+  default_rungs: string[];
+  allow_bypass: boolean;
+  requested_rungs: string[];
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function newOptionRow(): OptionRow {
@@ -187,6 +202,12 @@ export function LessonActivityPanel({
   const [captionsError, setCaptionsError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // --- the "deciding" phase's own state (0040): which rungs are checked,
+  // and whether "upload as-is" is selected instead of a rung selection.
+  const [selectedRungs, setSelectedRungs] = useState<Set<string>>(new Set());
+  const [asIsSelected, setAsIsSelected] = useState(false);
+  const [finalizeBusy, setFinalizeBusy] = useState(false);
+
   // --- add-question form (quiz/survey tabs) ---
   const [qType, setQType] = useState(QUESTION_TYPES[0].value);
   const [qPrompt, setQPrompt] = useState("");
@@ -229,6 +250,8 @@ export function LessonActivityPanel({
       setUploadingAssetId(null);
       setVideoDetail(null);
       setCaptionsError(null);
+      setSelectedRungs(new Set());
+      setAsIsSelected(false);
       loadExisting(tab);
       if (tab === "quiz" || tab === "survey") {
         const response = await authedFetch(`/api/bff/question-bank?assessment_kind=${tab}`);
@@ -292,6 +315,11 @@ export function LessonActivityPanel({
       if (picked?.state === "ready") {
         setVideoDetail(picked);
         setVideoPhase("ready");
+      } else if (picked?.state === "draft") {
+        // The list endpoint doesn't resolve default_rungs/allow_bypass for
+        // a draft (that only happens on the single-asset GET) — refetch.
+        const resp = await authedFetch(`/api/bff/video-assets/${attachExistingId}`);
+        if (resp.ok) openDecisionPanel(await resp.json());
       } else {
         setVideoPhase("polling");
       }
@@ -398,7 +426,50 @@ export function LessonActivityPanel({
     const created: VideoAssetListItem = await resp.json();
     setUploadingAssetId(created.id);
     setWorkingId(created.id);
-    setVideoPhase("polling");
+    openDecisionPanel(created);
+  }
+
+  function openDecisionPanel(asset: VideoAssetListItem) {
+    setVideoDetail(asset);
+    setSelectedRungs(new Set(asset.default_rungs));
+    setAsIsSelected(false);
+    setVideoPhase("deciding");
+  }
+
+  function toggleRung(rung: string) {
+    setSelectedRungs((prev) => {
+      const next = new Set(prev);
+      if (next.has(rung)) next.delete(rung);
+      else next.add(rung);
+      return next;
+    });
+  }
+
+  async function finalizeVideo() {
+    if (!uploadingAssetId) return;
+    setFinalizeBusy(true);
+    setError(null);
+    const body = asIsSelected
+      ? { mode: "as_is" as const }
+      : { mode: "transcode" as const, rungs: Array.from(selectedRungs) };
+    const resp = await authedFetch(`/api/bff/video-assets/${uploadingAssetId}/finalize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setFinalizeBusy(false);
+    if (!resp.ok) {
+      const respBody = await resp.json().catch(() => null);
+      setError(respBody?.error?.message ?? "Could not save that choice.");
+      return;
+    }
+    const updated: VideoAssetListItem = await resp.json();
+    if (updated.state === "ready") {
+      setVideoDetail(updated);
+      setVideoPhase("ready");
+    } else {
+      setVideoPhase("polling");
+    }
   }
 
   async function uploadCaptions(file: File) {
@@ -886,6 +957,72 @@ export function LessonActivityPanel({
                 ? "Uploading…"
                 : "Transcoding — this can take a few minutes…"}
             </p>
+          ) : null}
+
+          {tab === "video" && videoPhase === "deciding" && videoDetail ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                {videoDetail.source_filename} — {formatBytes(videoDetail.source_size_bytes ?? 0)}
+                {videoDetail.duration_seconds != null ? ` — ${videoDetail.duration_seconds}s` : ""}
+              </p>
+
+              {videoDetail.allow_bypass ? (
+                <label className="flex items-center gap-2" style={{ fontSize: "0.8125rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={asIsSelected}
+                    onChange={(e) => setAsIsSelected(e.target.checked)}
+                  />
+                  Use the uploaded file as-is (no transcoding — adaptive quality switching
+                  won&rsquo;t be available for this video)
+                </label>
+              ) : null}
+
+              {!asIsSelected ? (
+                <div className="card p-3" style={{ background: "var(--bg)" }}>
+                  <b style={{ fontSize: "0.75rem" }}>Choose which resolutions to generate</b>
+                  <div className="mt-2 flex flex-col gap-1">
+                    {Object.entries(RUNG_LABEL).map(([rung, label]) => (
+                      <label
+                        key={rung}
+                        className="flex items-center justify-between gap-2"
+                        style={{ fontSize: "0.8125rem" }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedRungs.has(rung)}
+                            onChange={() => toggleRung(rung)}
+                          />
+                          {rung} — {label}
+                        </span>
+                        <span className="mono" style={{ color: "var(--muted)" }}>
+                          ~{formatBytes(videoDetail.estimated_sizes[rung] ?? 0)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-2" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                    Estimated total: ~
+                    {formatBytes(
+                      Array.from(selectedRungs).reduce(
+                        (sum, r) => sum + (videoDetail.estimated_sizes[r] ?? 0),
+                        0,
+                      ),
+                    )}
+                  </p>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={finalizeBusy || (!asIsSelected && selectedRungs.size === 0)}
+                onClick={finalizeVideo}
+              >
+                {finalizeBusy ? "Saving…" : "Confirm"}
+              </button>
+            </div>
           ) : null}
 
           {tab === "video" && videoPhase === "ready" && videoDetail ? (

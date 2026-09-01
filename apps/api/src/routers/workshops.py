@@ -53,6 +53,7 @@ from src.schemas.workshops import (
     WorkshopResponse,
     WorkshopsPage,
 )
+from src.services import feature_flags as feature_flags_service
 from src.services import identity, rate_limit
 from src.services import workshops as workshops_service
 from src.services.ics import IcsEvent, build_ics
@@ -68,6 +69,14 @@ def _parse_uuid(value: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError as exc:
         raise NotFound("No such resource.") from exc
+
+
+async def _require_workshops_enabled(session: SessionDep, *, tenant_id: uuid.UUID) -> None:
+    """New bookings only — an existing booking, once made, is unaffected
+    by this flag (matches subscriptions.py's identical "existing X keeps
+    running" reasoning, routers/subscriptions.py's own kill switch)."""
+    if not await feature_flags_service.is_enabled(session, tenant_id=tenant_id, flag="workshops"):
+        raise AppError("Workshop bookings are not currently available.")
 
 
 async def _own_facilitator_or_manage(
@@ -331,6 +340,7 @@ async def book_open_slot(
     crypto: CryptoDep,
     settings: SettingsDep,
 ) -> BookingResponse:
+    await _require_workshops_enabled(session, tenant_id=principal.tenant_id)
     booking = await workshops_service.book_open_slot(
         session,
         crypto,
@@ -462,6 +472,7 @@ async def book_session(
     crypto: CryptoDep,
     settings: SettingsDep,
 ) -> BookingResponse:
+    await _require_workshops_enabled(session, tenant_id=principal.tenant_id)
     booking = await workshops_service.book_session(
         session,
         crypto,

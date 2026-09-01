@@ -29,6 +29,7 @@ from src.schemas.podcasts import (
     SpotifyLookupResponse,
 )
 from src.services import events, rate_limit, spotify
+from src.services import feature_flags as feature_flags_service
 from src.services import podcasts as podcasts_service
 from src.services.storage.base import StorageService
 
@@ -232,6 +233,11 @@ async def upload_podcast_audio(
 async def list_public_podcast_episodes(
     session: SessionDep, tenant: TenantDep, storage: StorageDep
 ) -> PodcastEpisodesPageResponse:
+    # Off means "no episodes published" from a visitor's point of view —
+    # an empty list, not an error, the same shape this endpoint already
+    # returns for a tenant with a genuinely empty catalogue.
+    if not await feature_flags_service.is_enabled(session, tenant_id=tenant.id, flag="podcasts"):
+        return PodcastEpisodesPageResponse(items=[])
     episodes = await podcasts_service.list_published_episodes(session, tenant_id=tenant.id)
     return PodcastEpisodesPageResponse(items=[await _response(storage, e) for e in episodes])
 
@@ -245,6 +251,10 @@ async def list_public_podcast_episodes(
 async def get_public_podcast_episode(
     slug: str, session: SessionDep, tenant: TenantDep, storage: StorageDep
 ) -> PodcastEpisodeResponse:
+    # Same "doesn't exist right now" shape an unpublished/deleted episode
+    # already produces — no new error type for the frontend to handle.
+    if not await feature_flags_service.is_enabled(session, tenant_id=tenant.id, flag="podcasts"):
+        raise NotFound("No such episode.")
     episode = await podcasts_service.get_published_episode(session, tenant_id=tenant.id, slug=slug)
     return await _response(storage, episode)
 

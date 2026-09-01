@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -61,6 +61,36 @@ class VideoAsset(Base, TimestampMixin):
         JSONB, nullable=False, server_default=text("'[]'")
     )
     state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="uploaded")
+    # Upload provenance (0040) — captured once at upload time since
+    # `StorageService.get_object` has no way to hand content-type back to
+    # the caller on read; this is what makes serving the original file
+    # as-is possible without guessing a media type from a file extension.
+    source_content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # {rung: bytes}, computed once from the ffprobe duration against
+    # LADDER's bitrates and shown to the admin before they commit to a
+    # rung selection (0040) — never re-derived after upload.
+    estimated_sizes: Mapped[dict[str, int]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'")
+    )
+    # The admin's actual choice at finalize time (0040) — read by
+    # services/media/pipeline.py instead of the hardcoded DEFAULT_RUNGS.
+    # Empty while state="draft" (not yet decided).
+    requested_rungs: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'")
+    )
+    # "hls" (transcoded) or "progressive" (as-is bypass, served by
+    # GET /media/{id}/original) — 0040.
+    delivery_mode: Mapped[str] = mapped_column(String(16), nullable=False, server_default="hls")
+    # Advisory (0040): set from an optional form field at upload time so
+    # the tenant->course video-settings chain can be resolved before the
+    # admin has decided anything, and re-checked at finalize time so the
+    # as-is bypass can't be granted off a client-supplied course id that
+    # drifted from what the decision panel actually showed.
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class VideoProgress(Base, TimestampMixin):

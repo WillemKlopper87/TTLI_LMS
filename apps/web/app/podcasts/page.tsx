@@ -14,6 +14,12 @@ import { getPublicEpisodes } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = {
+  title: "Podcasts",
+  description: "Our own episodes, plus the shows our faculty actually recommend.",
+  alternates: { canonical: "/podcasts" },
+};
+
 export default async function PodcastsPage() {
   const episodes = await getPublicEpisodes();
 

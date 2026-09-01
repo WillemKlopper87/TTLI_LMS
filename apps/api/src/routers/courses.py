@@ -18,6 +18,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
@@ -48,6 +49,7 @@ from src.schemas.courses import (
     TenantAssignmentRow,
     TenantAssignmentsPageResponse,
     UpdateManagerVisibilityRequest,
+    UpdateVideoSettingsRequest,
 )
 from src.services import audit, rate_limit
 from src.services import course_wizard as wizard_service
@@ -83,6 +85,7 @@ def _course_response(course: Course) -> CourseResponse:
         outcomes=list(course.outcomes or []),
         includes_workshop=course.includes_workshop,
         hero_colour=course.hero_colour,
+        video_settings=dict(course.video_settings or {}),
     )
 
 
@@ -188,6 +191,29 @@ async def update_manager_visibility(
     if course is None:
         raise NotFound("No such course.")
     course.manager_visibility = body.manager_visibility
+    await session.flush()
+    return _course_response(course)
+
+
+@router.patch("/courses/{course_id}/video-settings", response_model=CourseResponse)
+async def update_video_settings(
+    course_id: str,
+    body: UpdateVideoSettingsRequest,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> CourseResponse:
+    """The course-level tier of the tenant->course->per-upload video
+    settings chain (0040, services/media/video_settings.py). No audit
+    call — matches update_manager_visibility's existing precedent that
+    course-level settings aren't audited in this codebase, unlike the
+    tenant-level video-defaults endpoint (routers/tenant.py)."""
+    principal.require("course:edit")
+    course = await session.get(Course, _parse_uuid(course_id))
+    if course is None:
+        raise NotFound("No such course.")
+    updates = body.model_dump(exclude_unset=True)
+    course.video_settings = {**course.video_settings, **updates}
+    flag_modified(course, "video_settings")
     await session.flush()
     return _course_response(course)
 

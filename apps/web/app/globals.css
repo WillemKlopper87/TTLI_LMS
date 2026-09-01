@@ -24,6 +24,15 @@
   --surface-3: #e3e3df;
   --ink: #1c1719;
   --ink-2: #453c40;
+  /* A deliberately dark panel (the homepage CTA band and footer) needs a
+     background that stays dark regardless of the visitor's color scheme
+     — --ink itself is scheme-aware (it flips light in dark mode, since
+     its job is "readable text," not "dark surface"), so pairing it with
+     the scheme-invariant --on-brand as background+foreground silently
+     produced light-on-light under prefers-color-scheme: dark (caught by
+     a Lighthouse accessibility pass, performance/checklist item 20).
+     Fixed at light mode's own --ink value and never redefined below. */
+  --panel-dark: #1c1719;
   --muted: #6e6469;
   /* #9a9096 read at 3.1:1 on white — fails WCAG AA's 4.5:1 for normal
      text, which this is used for throughout (timestamps, helper text,
@@ -368,6 +377,36 @@ a {
 .site-nav .on {
   color: var(--brand-ink);
   font-weight: 600;
+}
+
+.site-footer {
+  border-top: 1px solid var(--rule);
+  padding: 1.1rem clamp(1rem, 3vw, 2rem);
+}
+
+.site-footer-inner {
+  max-width: 72rem;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.5rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.site-footer-inner nav {
+  display: flex;
+  gap: 1.1rem;
+}
+
+.site-footer-inner a {
+  color: inherit;
+}
+
+.site-footer-inner a:hover {
+  color: var(--ink);
 }
 
 /* The prototype simply hides the nav under 760px. A real site still has to
@@ -806,7 +845,7 @@ a {
   gap: 1.25rem;
   align-items: center;
   justify-content: space-between;
-  background: var(--ink);
+  background: var(--panel-dark);
   color: var(--on-brand);
   padding: clamp(1.5rem, 3vw, 2rem) clamp(1.75rem, 4vw, 3rem);
 }

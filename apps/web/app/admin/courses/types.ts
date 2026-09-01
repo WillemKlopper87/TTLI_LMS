@@ -220,10 +220,23 @@ export const STATE_TAG: Record<string, string> = {
 
 /** `video_state` is the transcoder's own state machine (media pipeline). */
 export const VIDEO_STATE_TAG: Record<string, string> = {
+  draft: "tag--mute",
   uploaded: "tag--live",
   transcoding: "tag--live",
   ready: "tag--done",
   failed: "tag--stop",
 };
 
+// "draft" is deliberately excluded — it blocks on an explicit admin
+// decision (the finalize call), not backend processing, so it shouldn't
+// trigger the outline-level background poll the way uploaded/transcoding do.
 export const IN_FLIGHT_VIDEO_STATES = new Set(["uploaded", "transcoding"]);
+
+// Ordered slowest connection first — the order the decision panel and
+// video-settings checkboxes render in (0040).
+export const RUNG_LABEL: Record<string, string> = {
+  "360p": "Slow connections",
+  "480p": "Medium",
+  "720p": "Fast",
+  "1080p": "Fastest / highest quality",
+};

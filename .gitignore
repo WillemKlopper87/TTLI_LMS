@@ -3,6 +3,12 @@
 .env.*
 !.env.example
 
+# --- Single-VM deploy: generated on the target VM by
+# scripts/deploy-single-vm.sh, holds real secrets/domain — never the
+# checked-in infra/garage/garage.toml or infra/Caddyfile.template.
+infra/garage.toml
+infra/Caddyfile
+
 # --- Python ---
 __pycache__/
 *.py[cod]

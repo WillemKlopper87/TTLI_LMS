@@ -16,6 +16,8 @@ import { BookButton } from "./book-button";
  */
 export const metadata = {
   title: "Live workshops",
+  description: "Facilitated group and one-on-one sessions, booked around real upcoming dates.",
+  alternates: { canonical: "/workshops" },
 };
 
 const SESSION_TYPE_LABEL: Record<string, string> = {

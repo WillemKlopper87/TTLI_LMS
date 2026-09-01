@@ -93,6 +93,28 @@ CVE-2026-66041 exp:2026-11-26
 CVE-2026-70628 exp:2026-11-26
 CVE-2026-70632 exp:2026-11-26
 
+# --- ffmpeg/libav*: four more disclosed since the pass above
+# (2026-08-28) -- found by re-running `trivy image` against a freshly
+# built ttli-api on 2026-09-01. Checked security-tracker.debian.org
+# directly for all three Debian tiers (bookworm, trixie, sid/unstable at
+# 7:8.1.2-2): every one is still "vulnerable", waiting on the fix to
+# land in ffmpeg's own 7.1.x branch first -- there is no newer Debian
+# package to bump to, on any release. Also confirmed not reachable
+# through this app's own use of ffmpeg regardless (services/media/
+# pipeline.py, ffmpeg.py): source input is always a plain local path
+# with no URL scheme (never rist://, never a DASH manifest fetch), and
+# output is always `-f hls` fmp4 via libx264/aac (never MPEG-PS muxing,
+# never VC-2/Dirac RTP) -- the four vulnerable code paths below are
+# simply never invoked by build_ladder_args/run_transcode.
+# CVE-2026-75142: stack buffer overflow, MPEG-PS muxer (mpegenc.c) -- not used, output is HLS/fMP4 only.
+CVE-2026-75142 exp:2026-11-26
+# CVE-2026-75143: heap buffer overflow, RIST protocol reader (librist.c) -- not used, input is never a rist:// URL.
+CVE-2026-75143 exp:2026-11-26
+# CVE-2026-75144: heap buffer overflow, VC-2/Dirac RTP packetizer (rtpenc_vc2hq.c) -- not used, no RTP output, no Dirac codec.
+CVE-2026-75144 exp:2026-11-26
+# CVE-2026-75146: OOB read, DASH demuxer on manifest refresh -- not used, input is a one-shot local file, never a live DASH manifest.
+CVE-2026-75146 exp:2026-11-26
+
 # --- Debian trixie libmbedcrypto16: affected, no patched package yet
 # (ttli-api).
 CVE-2026-25835 exp:2026-11-26

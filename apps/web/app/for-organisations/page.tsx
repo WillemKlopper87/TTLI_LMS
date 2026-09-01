@@ -14,6 +14,8 @@ import { getPublicCourses } from "@/lib/server-api";
  */
 export const metadata = {
   title: "For organisations",
+  description: "Buy seat pools, invite your people, and track their progress from one dashboard.",
+  alternates: { canonical: "/for-organisations" },
 };
 
 const STEPS = [

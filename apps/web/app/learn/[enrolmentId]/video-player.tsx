@@ -15,6 +15,7 @@ interface PlaybackResponse {
   captions_url: string | null;
   expires_at: string;
   watermark: Watermark;
+  delivery_mode: "hls" | "progressive";
 }
 
 /**
@@ -49,7 +50,11 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
       const video = videoRef.current;
       if (!video) return;
 
-      if (Hls.isSupported()) {
+      if (playback.delivery_mode === "progressive") {
+        // 0040's as-is bypass: no manifest, no adaptive rungs — just the
+        // original file, served whole by GET /media/{id}/original.
+        video.src = src;
+      } else if (Hls.isSupported()) {
         hls = new Hls();
         hls.loadSource(src);
         hls.attachMedia(video);

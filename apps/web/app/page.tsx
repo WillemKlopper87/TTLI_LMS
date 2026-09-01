@@ -6,6 +6,15 @@ import { FACILITATORS } from "@/lib/facilitators";
 import { formatClock } from "@/lib/format";
 import { getPublicCourses, getPublicEpisodes, getTheme } from "@/lib/server-api";
 
+// The live ttli.co.za homepage's own meta description (docs/brand/ttli-
+// brand-identity.md), not invented — the same "real extracted copy"
+// standard the rest of this page's marketing content follows.
+export const metadata = {
+  description:
+    "We consult and coach leaders and their organisations in the essentials skills needed to raise engagement.",
+  alternates: { canonical: "/" },
+};
+
 /**
  * The public marketing landing page (Phase 2, REQ-STORE-01/02/06) —
  * prototype screen 1.
@@ -104,7 +113,8 @@ export default async function LandingPage() {
           src="/brand/hero-texture.jpg"
           alt=""
           fill
-          priority
+          preload
+          fetchPriority="high"
           sizes="100vw"
           className="hero-band__bg"
           style={{ objectFit: "cover" }}
@@ -146,9 +156,14 @@ export default async function LandingPage() {
 
             <div className="hero-card">
               <p className="eyebrow">{latest ? "Latest episode" : "Podcast"}</p>
-              <h3 className="serif" style={{ fontSize: "1.1875rem" }}>
+              {/* h2, not h3: nothing between this and the page's own h1
+                  gives it a level to nest under (axe: heading-order) —
+                  same reasoning as the "Three pillars" trio below. Tag
+                  level only, no visual change: h1-h4 share one reset
+                  (globals.css), font-size comes from className/style. */}
+              <h2 className="serif" style={{ fontSize: "1.1875rem" }}>
                 {latest ? latest.title : "Conversations on leadership, free to everyone"}
-              </h3>
+              </h2>
               <div className="wave" aria-hidden="true">
                 {WAVE.map((height, index) => (
                   <i key={index} style={{ height: `${height}%` }} />
@@ -176,21 +191,21 @@ export default async function LandingPage() {
         <div className="pad">
           <div className="cols-3">
             <div className="cell">
-              <h3>Completion you can audit</h3>
+              <h2>Completion you can audit</h2>
               <p>
                 Watch time, assessment scores and attendance are validated on the server. Clicking
                 Next eleven times does not finish a course.
               </p>
             </div>
             <div className="cell">
-              <h3>Certificates that verify</h3>
+              <h2>Certificates that verify</h2>
               <p>
                 Every certificate carries a QR code and a public verification page showing valid,
                 expired or revoked.
               </p>
             </div>
             <div className="cell">
-              <h3>Reporting that respects staff</h3>
+              <h2>Reporting that respects staff</h2>
               <p>
                 Managers see team progress in aggregate. Individual scores stay private unless an
                 administrator opens them per course.
@@ -290,7 +305,12 @@ export default async function LandingPage() {
                 <p style={{ fontSize: "0.875rem", color: "var(--ink-2)", marginTop: "0.6rem" }}>
                   {book.blurb}
                 </p>
-                <Link href={book.href} className="btn btn--ghost" style={{ marginTop: "0.85rem" }}>
+                <Link
+                  href={book.href}
+                  className="btn btn--ghost"
+                  style={{ marginTop: "0.85rem" }}
+                  aria-label={`Read more about ${book.title}`}
+                >
                   Read more
                 </Link>
               </div>
@@ -359,7 +379,7 @@ export default async function LandingPage() {
         <Link
           href="/organisations"
           className="btn"
-          style={{ background: "var(--on-brand)", color: "var(--ink)", flex: "none" }}
+          style={{ background: "var(--on-brand)", color: "var(--panel-dark)", flex: "none" }}
         >
           Talk to us
         </Link>
@@ -420,8 +440,13 @@ export default async function LandingPage() {
         </p>
       </div>
 
-      {/* ---- Footer / contact ---- */}
-      <footer className="pad-lg" style={{ background: "var(--ink)", color: "var(--on-brand)" }}>
+      {/* ---- Get in touch ----
+          Not a <footer> any more: the site-wide SiteFooter (mounted in
+          layout.tsx) is the page's real footer landmark now, carrying
+          Terms/Privacy/FAQ so they're reachable from every page, not
+          just this one. This band stays home-page-specific marketing
+          copy — the closing pitch, not site utility links. */}
+      <div className="pad-lg" style={{ background: "var(--panel-dark)", color: "var(--on-brand)" }}>
         <div style={{ maxWidth: "40rem", marginInline: "auto", textAlign: "center" }}>
           <p className="eyebrow" style={{ color: "var(--on-brand)", opacity: 0.7 }}>
             Get in touch
@@ -439,11 +464,8 @@ export default async function LandingPage() {
           >
             Send us a message
           </Link>
-          <p style={{ fontSize: "0.75rem", opacity: 0.55, marginTop: "1.5rem" }}>
-            Terms of usage &amp; privacy &middot; Copyright &copy; {name} 2026
-          </p>
         </div>
-      </footer>
+      </div>
     </main>
   );
 }

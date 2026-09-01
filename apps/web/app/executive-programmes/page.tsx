@@ -16,6 +16,8 @@ import { CourseCard } from "../catalogue/course-card";
  */
 export const metadata = {
   title: "Executive programmes",
+  description: "Programmes built for senior leaders, with certification and cohort workshops.",
+  alternates: { canonical: "/executive-programmes" },
 };
 
 export default async function ExecutiveProgrammesPage() {

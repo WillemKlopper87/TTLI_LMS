@@ -18,6 +18,14 @@ class UpdateManagerVisibilityRequest(BaseModel):
     manager_visibility: str = Field(pattern="^(" + "|".join(MANAGER_VISIBILITY_VALUES) + ")$")
 
 
+class UpdateVideoSettingsRequest(BaseModel):
+    # Partial/nullable (0040): omitting a field leaves it untouched;
+    # sending it as null clears that key back to "inherit the tenant
+    # default" (services/media/video_settings.py's fallback chain).
+    rungs: list[str] | None = None
+    allow_bypass: bool | None = None
+
+
 class CourseCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     slug: str | None = None
@@ -68,6 +76,7 @@ class CourseResponse(BaseModel):
     outcomes: list[str] = Field(default_factory=list)
     includes_workshop: bool = False
     hero_colour: str | None = None
+    video_settings: dict[str, object] = Field(default_factory=dict)
 
 
 class CoursesPageResponse(BaseModel):
@@ -279,4 +288,5 @@ __all__ = [
     "TenantAssignmentRow",
     "TenantAssignmentsPageResponse",
     "UpdateManagerVisibilityRequest",
+    "UpdateVideoSettingsRequest",
 ]

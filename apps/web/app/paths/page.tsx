@@ -12,6 +12,12 @@ import { getPublicPaths } from "@/lib/server-api";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = {
+  title: "Learning paths",
+  description: "Bundled programmes, completed in order, with one certificate at the end.",
+  alternates: { canonical: "/paths" },
+};
+
 export default async function PathsPage() {
   const paths = await getPublicPaths();
 

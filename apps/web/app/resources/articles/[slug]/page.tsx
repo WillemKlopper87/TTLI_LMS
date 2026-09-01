@@ -24,7 +24,12 @@ import ArticleViewTracker from "./view-tracker";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const article = await getPublicArticle(slug);
-  return { title: article ? article.title : "Article" };
+  if (!article) return { title: "Article" };
+  return {
+    title: article.title,
+    description: article.dek ?? undefined,
+    alternates: { canonical: `/resources/articles/${article.slug}` },
+  };
 }
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {

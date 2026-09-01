@@ -1,6 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 
+export const metadata = {
+  title: "Lead with Intent",
+  description:
+    "Nine leadership principles and practices that drive engagement and commitment in the workplace — by founder Hermann du Plessis.",
+  alternates: { canonical: "/lead-with-intent" },
+};
+
 /**
  * A dedicated page for "Lead with Intent" (Phase 2 close-out) — the real
  * site's top-level nav item and founder Hermann du Plessis's book. Content
