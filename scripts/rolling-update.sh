@@ -93,13 +93,26 @@ wait_healthy() {
 }
 
 wait_running() {
-  local svc="$1" waited=0
+  # arq has no HTTP healthcheck, so "running" is polled the same way
+  # wait_healthy polls a real health endpoint — over the full timeout
+  # window, not a single flat sleep — and a restart-count bump (Docker's
+  # own crash-loop signal) fails it even if the container happens to be
+  # "running" again at the instant we check.
+  local svc="$1" waited=0 cid restarts_before restarts_now status
+  cid="$(DC ps -q "$svc")"
+  restarts_before="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
   printf '  waiting for %s to stay running' "$svc"
-  sleep 5  # arq has no HTTP healthcheck; give it a moment to crash-loop if it's going to
-  status="$(DC ps -q "$svc" | xargs -r docker inspect -f '{{.State.Status}}' 2>/dev/null || echo missing)"
-  if [ "$status" = "running" ]; then echo " ok"; return 0; fi
-  echo " NOT RUNNING (state: $status)"
-  return 1
+  while [ "$waited" -lt "$HEALTH_TIMEOUT" ]; do
+    status="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo missing)"
+    restarts_now="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
+    if [ "$status" != "running" ] || [ "$restarts_now" -gt "$restarts_before" ]; then
+      echo " NOT RUNNING (state: $status, restarts: $restarts_now)"
+      return 1
+    fi
+    printf '.'; sleep 3; waited=$((waited + 3))
+  done
+  echo " ok"
+  return 0
 }
 
 log "Swapping api"
@@ -115,15 +128,18 @@ fi
 log "Swapping worker (same image as api)"
 DC up -d --no-deps worker
 if ! wait_running worker; then
-  warn "New worker container did not stay running — rolling back to the previous image."
+  # api and worker run the same image and share its migration/schema
+  # assumptions — treating this as anything less than a full release
+  # failure would leave api on the new version and worker on the old one,
+  # an unversioned-skew combination nobody tested. Roll BOTH back to the
+  # previous image, matching the same "one compatibility unit" the build
+  # step already treats them as.
+  warn "New worker container did not stay running — rolling back api and worker together."
   [ -n "$PREV_API" ] && docker tag "$PREV_API" ttli-api:latest
-  DC up -d --no-deps --force-recreate worker
+  DC up -d --no-deps --force-recreate api worker
+  wait_healthy api || warn "Rollback of api did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs api"
   wait_running worker || warn "Rollback of worker did not stay running either — check logs by hand: docker compose -f $COMPOSE_FILE logs worker"
-  warn "worker rollout failed and was rolled back — api is already on the new version; investigate before retrying worker"
-  # Not a hard exit: api is genuinely fine and serving on the new version.
-  # A broken worker delays background jobs (email, transcode) but doesn't
-  # take the site down — surfacing it loudly is more useful than aborting
-  # a rollout that's otherwise already succeeded.
+  die "worker rollout failed — api and worker were both rolled back together; web was never touched"
 fi
 
 log "Swapping web"
@@ -137,3 +153,9 @@ if ! wait_healthy web; then
 fi
 
 log "Done — api, worker and web are on the new version. Postgres/Redis/Garage/ClamAV/mail relay were never touched."
+log "Running image IDs (compare against \`git log\` / your CI build record, not just the tag):"
+for svc in api worker web; do
+  cid="$(DC ps -q "$svc")"
+  image_id="$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || echo unknown)"
+  printf '  %-8s %s\n' "$svc" "$image_id"
+done

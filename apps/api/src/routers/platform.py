@@ -19,6 +19,7 @@ from sqlalchemy import text
 
 from src.core.deps import PrincipalDep, SessionDep, SettingsDep
 from src.core.redis import get_redis
+from src.models.audit import AuditAction
 from src.schemas.platform import (
     FeatureFlagInfo,
     FeatureFlagsResponse,
@@ -26,6 +27,7 @@ from src.schemas.platform import (
     SetFeatureFlagRequest,
     SystemHealthResponse,
 )
+from src.services import audit
 from src.services import feature_flags as feature_flags_service
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -55,8 +57,23 @@ async def set_feature_flag(
     key: str, body: SetFeatureFlagRequest, principal: PrincipalDep, session: SessionDep
 ) -> FeatureFlagsResponse:
     principal.require(PERMISSION)
+    before = await feature_flags_service.get_flags(session, tenant_id=principal.tenant_id)
     current = await feature_flags_service.set_flag(
         session, tenant_id=principal.tenant_id, flag=key, enabled=body.enabled
+    )
+    # A kill switch changing tenant production behavior needs the same
+    # attributed, dated record REQ-TEN-03's manager-visibility toggle
+    # already gets (routers/tenant.py) — flagged by the 2026-09-02 audit
+    # as a real gap, since this endpoint had no audit call at all.
+    await audit.record(
+        session,
+        tenant_id=principal.tenant_id,
+        action=AuditAction.TENANT_SETTING_CHANGED,
+        actor_user_id=principal.user_id,
+        entity_type="tenant",
+        entity_id=principal.tenant_id,
+        before={key: before.get(key)},
+        after={key: current[key]},
     )
     return _response(current)
 

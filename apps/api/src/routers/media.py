@@ -25,7 +25,7 @@ from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
 from src.core.object_keys import build_object_key
 from src.core.queue import get_queue
-from src.models.course import Course, Lesson
+from src.models.course import Course, Lesson, Module
 from src.models.media import VideoAsset
 from src.models.tenant import Tenant
 from src.models.user import User
@@ -309,6 +309,45 @@ async def attach_video_to_lesson(
     asset = await session.get(VideoAsset, _parse_uuid(video_asset_id))
     if asset is None:
         raise NotFound("No such video asset.")
+
+    # 0040's course_id on VideoAsset was only ever advisory input to the
+    # decision panel and the finalize-time bypass check — it was never
+    # re-checked against the lesson actually being attached to here. That
+    # let an asset finalised as progressive under one (permissive) course's
+    # policy land in a completely different course whose policy forbids
+    # bypass, and let a non-ready asset get attached at all. Both are
+    # closed here, at the one place the destination course is actually
+    # known.
+    if asset.state != "ready":
+        raise AppError("This video is not ready to attach yet.")
+
+    module = await session.get(Module, lesson.module_id)
+    if module is None:  # pragma: no cover - a lesson always has a module
+        raise NotFound("No such lesson.")
+    destination_course_id = module.course_id
+
+    if asset.course_id is None:
+        # Never bound to a course at upload (e.g. attached via "attach
+        # existing" without a course hint) — bind it now so future policy
+        # checks (and this one, below) are grounded in where it actually
+        # ended up, not left permanently ungoverned.
+        asset.course_id = destination_course_id
+    elif asset.course_id != destination_course_id:
+        raise AppError(
+            "This video was finalised for a different course and can't be attached here."
+        )
+
+    if asset.delivery_mode == "progressive":
+        course = await session.get(Course, destination_course_id)
+        tenant = await session.get(Tenant, principal.tenant_id)
+        if tenant is None:  # pragma: no cover - the request already resolved this tenant
+            raise NotFound("No such tenant.")
+        if not video_settings_service.resolve_allow_bypass(course, tenant):
+            raise AppError(
+                "This course requires transcoding — this video was uploaded as-is and can't "
+                "be attached here."
+            )
+
     lesson.video_asset_id = asset.id
     lesson.activity_type = "video"
     await session.flush()

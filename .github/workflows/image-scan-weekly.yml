@@ -45,24 +45,48 @@ jobs:
           set +e
           FAILED=0
           for img in ttli-api:rescan ttli-web:rescan; do
+            # Filesystem-safe name computed once and reused for both the
+            # write here and the read in the issue step below — the
+            # previous version wrote to a colon-containing name but piped
+            # a *copy* of the output through sed into /dev/null instead of
+            # renaming the file, then the issue step read a third, still
+            # different name. All three now agree.
+            safe_name="trivy-${img//:/-}-report.txt"
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH --ignorefile .trivyignore \
-              --format table "$img" | tee "trivy-$img-report.txt" | sed 's#:#-#g' > /dev/null
+              --format table "$img" > "$safe_name"
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore "$img"
             [ $? -ne 0 ] && FAILED=1
             echo "::endgroup::"
           done
           echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
 
-      - name: File an issue if anything new turned up
+      # Uploaded regardless of outcome, not just on a new finding — the
+      # evidence should exist even when nothing failed, and even if the
+      # issue-filing step below itself has a problem.
+      - name: Upload scan reports as an artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-weekly-reports
+          path: trivy-*-report.txt
+          if-no-files-found: warn
+
+      - name: File or update an issue if anything new turned up
         if: steps.scan.outputs.failed == '1'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const fs = require('fs');
-            const apiReport = fs.existsSync('trivy-ttli-api-rescan.txt') ? fs.readFileSync('trivy-ttli-api-rescan.txt', 'utf8') : '(no api report file)';
-            const webReport = fs.existsSync('trivy-ttli-web-rescan.txt') ? fs.readFileSync('trivy-ttli-web-rescan.txt', 'utf8') : '(no web report file)';
+            const apiReport = fs.existsSync('trivy-ttli-api-rescan-report.txt') ? fs.readFileSync('trivy-ttli-api-rescan-report.txt', 'utf8') : '(no api report file)';
+            const webReport = fs.existsSync('trivy-ttli-web-rescan-report.txt') ? fs.readFileSync('trivy-ttli-web-rescan-report.txt', 'utf8') : '(no web report file)';
+            // A stable marker, not the dated title, is what identifies
+            // "the same unresolved finding" across weekly runs — without
+            // it, every Monday opens a new issue for a CVE nobody has
+            // triaged yet instead of bumping the existing one.
+            const marker = '<!-- weekly-image-scan-marker: do not remove -->';
             const body = [
+              marker,
               'The weekly image re-scan found a CRITICAL/HIGH finding not covered by `.trivyignore`,',
               'against the *currently pinned* base images — nothing in this repo changed to cause this.',
               '',
@@ -75,10 +99,28 @@ jobs:
               '<details><summary>API image report</summary>\n\n```\n' + apiReport.slice(0, 6000) + '\n```\n</details>',
               '<details><summary>Web image report</summary>\n\n```\n' + webReport.slice(0, 6000) + '\n```\n</details>',
             ].join('\n');
-            await github.rest.issues.create({
+
+            const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Weekly image scan: new CRITICAL/HIGH finding (${new Date().toISOString().slice(0,10)})`,
-              body,
-              labels: ['security', 'dependencies'],
+              state: 'open',
+              labels: 'security,dependencies',
             });
+            const open = existing.data.find((issue) => issue.body && issue.body.includes(marker));
+
+            if (open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                body: `Still failing as of ${new Date().toISOString().slice(0, 10)}:\n\n${body}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Weekly image scan: new CRITICAL/HIGH finding (${new Date().toISOString().slice(0,10)})`,
+                body,
+                labels: ['security', 'dependencies'],
+              });
+            }

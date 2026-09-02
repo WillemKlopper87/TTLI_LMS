@@ -201,6 +201,35 @@ async def _seeded_lesson_id(tenant_session_factory, tenant_id, *, position: int)
         )
 
 
+async def _create_course_lesson(client, author_token: str, *, title: str) -> tuple[str, str]:
+    """A fresh course/module/lesson via the real authoring API, isolated
+    from the shared seeded 'executive-leadership-certificate' course —
+    the H1 regression tests below change a course's video-settings, which
+    must not leak into other tests relying on the seeded course's own
+    lesson positions."""
+    course = await client.post(
+        "/api/v1/courses",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": title},
+    )
+    assert course.status_code == 201, course.text
+    course_id = course.json()["id"]
+    module = await client.post(
+        f"/api/v1/courses/{course_id}/modules",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Module 1"},
+    )
+    assert module.status_code == 201, module.text
+    module_id = module.json()["id"]
+    lesson = await client.post(
+        f"/api/v1/modules/{module_id}/lessons",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Lesson 1"},
+    )
+    assert lesson.status_code == 201, lesson.text
+    return course_id, lesson.json()["id"]
+
+
 async def _upload_and_wait_ready(
     client, author_token: str, sample_video: Path, tenant_session_factory
 ) -> str:  # type: ignore[no-untyped-def]
@@ -234,6 +263,56 @@ async def _upload_and_wait_ready(
     )
     assert check.json()["state"] == "ready", check.json()
     return video_asset_id
+
+
+async def _upload_draft(
+    client, author_token: str, sample_video: Path, *, course_id: str | None = None
+) -> str:  # type: ignore[no-untyped-def]
+    """Phase 1 only (0040) — leaves the asset in state="draft", exercising
+    the real course_id-resolution path the H1 regression tests need,
+    unlike _upload_and_wait_ready which never touches finalize at all."""
+    video_bytes = await asyncio.to_thread(sample_video.read_bytes)
+    resp = await client.post(
+        "/api/v1/video-assets",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={"file": ("lesson.mp4", video_bytes, "video/mp4")},
+        data={"course_id": course_id} if course_id else {},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+async def _finalize_transcode(client, author_token: str, video_asset_id: str) -> None:
+    resp = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/finalize",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"mode": "transcode", "rungs": ["480p"]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    from src.core.config import Settings
+    from src.core.db import get_sessionmaker
+
+    settings = Settings()
+    factory = get_sessionmaker()
+    storage = get_storage_adapter(settings)
+    async with factory() as session:
+        await transcode_video_asset(
+            session, storage, settings, video_asset_id=uuid.UUID(video_asset_id)
+        )
+    check = await client.get(
+        f"/api/v1/video-assets/{video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert check.json()["state"] == "ready", check.json()
+
+
+async def _finalize_as_is(client, author_token: str, video_asset_id: str):  # type: ignore[no-untyped-def]
+    return await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/finalize",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"mode": "as_is"},
+    )
 
 
 async def test_real_transcode_produces_a_playable_ladder(
@@ -685,3 +764,117 @@ async def test_heartbeat_reports_the_rule_the_player_is_being_measured_against(
     # 0011 seeds only minimum_time_seconds on this lesson, so there is no
     # watch-percentage rule to report.
     assert body["required_percentage"] is None
+
+
+# ============================================================ H1 regression
+# The 2026-09-02 audit found that `attach_video_to_lesson` never resolved
+# the lesson's actual course, never required the asset to be ready, and
+# never re-checked progressive-delivery policy against where the video
+# was actually landing — `course_id` and `allow_bypass` were real at
+# upload/finalize time but purely advisory by the time a video reached a
+# lesson. These four tests pin the fix in routers/media.py directly.
+
+
+async def test_attach_rejects_a_video_that_is_not_ready(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    _, lesson_id = await _create_course_lesson(client, author_token, title="H1 not-ready course")
+    video_asset_id = await _upload_draft(client, author_token, sample_video)
+
+    resp = await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert resp.status_code == 400, resp.text
+
+
+async def test_attach_binds_an_unbound_asset_to_its_destination_course(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    course_id, lesson_id = await _create_course_lesson(client, author_token, title="H1 bind course")
+    # No course_id hint at upload — attach is the first place this asset's
+    # course is ever established.
+    video_asset_id = await _upload_draft(client, author_token, sample_video)
+    await _finalize_transcode(client, author_token, video_asset_id)
+
+    resp = await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert resp.status_code == 204, resp.text
+
+    async with tenant_session_factory(None) as s:
+        bound_course_id = (
+            await s.execute(
+                sa.text("SELECT course_id FROM video_assets WHERE id = :id"),
+                {"id": video_asset_id},
+            )
+        ).scalar_one()
+    assert str(bound_course_id) == course_id
+
+
+async def test_attach_rejects_reusing_an_asset_bound_to_a_different_course(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    course_a, lesson_a = await _create_course_lesson(client, author_token, title="H1 course A")
+    _course_b, lesson_b = await _create_course_lesson(client, author_token, title="H1 course B")
+
+    video_asset_id = await _upload_draft(client, author_token, sample_video, course_id=course_a)
+    await _finalize_transcode(client, author_token, video_asset_id)
+
+    first_attach = await client.post(
+        f"/api/v1/lessons/{lesson_a}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert first_attach.status_code == 204, first_attach.text
+
+    cross_course_attach = await client.post(
+        f"/api/v1/lessons/{lesson_b}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert cross_course_attach.status_code == 400, cross_course_attach.text
+
+
+async def test_attach_rejects_progressive_video_after_the_destination_courses_policy_tightens(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """The exact H1 scenario: bypass was allowed when the asset was
+    finalised, then the destination course's own policy tightened before
+    the video was ever attached anywhere."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    course_id, lesson_id = await _create_course_lesson(
+        client, author_token, title="H1 policy-tightens course"
+    )
+
+    video_asset_id = await _upload_draft(client, author_token, sample_video, course_id=course_id)
+    as_is = await _finalize_as_is(client, author_token, video_asset_id)
+    assert as_is.status_code == 200, as_is.text
+    assert as_is.json()["delivery_mode"] == "progressive"
+
+    tighten = await client.patch(
+        f"/api/v1/courses/{course_id}/video-settings",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"allow_bypass": False},
+    )
+    assert tighten.status_code == 200, tighten.text
+
+    resp = await client.post(
+        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert resp.status_code == 400, resp.text
