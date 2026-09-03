@@ -89,7 +89,28 @@ async def process_refund(
     recorded received, so there is nothing to refund); refunding here
     would double up on that already-correct refusal path rather than
     replace it.
+
+    fable5.1_review.md H-3: like `services/orders.py::_fulfil_order`'s
+    H-2 fix, the caller (`routers/orders.py::refund_order`) loads `order`
+    with a plain `session.get` and no lock. Two concurrent refund
+    requests for the same order (two `Idempotency-Key`s, or a retried
+    request racing the first) could both pass an unlocked `order.status
+    != "fulfilled"` check before either commits, and both would then
+    issue a credit note, record a refund and revoke entitlements a
+    second time — `credit_notes`/`refunds` are append-only (module
+    docstring), so a duplicate can't be cleaned up after the fact the way
+    a mistaken row elsewhere could be. This locked re-check, mirroring
+    `_fulfil_order`'s `with_for_update()` idiom, is the actual guard; the
+    router's own check is just an optimistic fast path.
     """
+    order = (
+        await session.execute(
+            select(Order)
+            .where(Order.id == order.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
     if order.status != "fulfilled":
         raise RefundError(f"Order is {order.status!r}, not fulfilled — nothing to refund.")
 

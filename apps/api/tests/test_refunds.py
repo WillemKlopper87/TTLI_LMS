@@ -353,6 +353,80 @@ async def test_refund_credits_invoice_revokes_access_and_writes_ledger(  # type:
     assert "expired" in blocked.json()["error"]["message"].lower()
 
 
+async def test_concurrent_refunds_of_the_same_order_produce_exactly_one_refund(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """fable5.1_review.md H-3: the same unlocked-check-then-act race as
+    H-2, on the refund path — `process_refund`'s `order.status !=
+    "fulfilled"` check ran with no lock, so two concurrent refund
+    requests for the same order could both pass it and both issue a
+    credit note and a refund. `credit_notes`/`refunds` are append-only
+    (`services/refunds.py`'s own module docstring), so a duplicate here
+    can't be cleaned up after the fact the way a mistaken row elsewhere
+    could be. Different `Idempotency-Key`s per request, same reasoning
+    as the H-2 regression test: the lock has to be what serialises this,
+    not the idempotency middleware's own replay handling.
+    """
+    import asyncio
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    buyer_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    _, _, price_id = await _sellable_course_and_price(client, admin_token)
+    order_id = await _buy_and_fulfil(
+        client, price_id=price_id, buyer_token=buyer_token, finance_token=finance_token
+    )
+
+    first, second = await asyncio.gather(
+        client.post(
+            f"/api/v1/orders/{order_id}/refund",
+            json={"reason": "first"},
+            headers={"Authorization": f"Bearer {finance_token}", **_idem()},
+        ),
+        client.post(
+            f"/api/v1/orders/{order_id}/refund",
+            json={"reason": "second"},
+            headers={"Authorization": f"Bearer {finance_token}", **_idem()},
+        ),
+    )
+
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [200, 400], (first.text, second.text)
+    loser = first if first.status_code == 400 else second
+    assert "not fulfilled" in loser.json()["error"]["message"].lower()
+
+    async with tenant_session_factory(tenant_id) as s:
+        refund_count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM refunds WHERE order_id = :o"), {"o": order_id}
+            )
+        ).scalar_one()
+        assert refund_count == 1
+
+        credit_note_count = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(*) FROM credit_notes WHERE invoice_id = "
+                    "(SELECT id FROM invoices WHERE order_id = :o)"
+                ),
+                {"o": order_id},
+            )
+        ).scalar_one()
+        assert credit_note_count == 1
+
+        order_status = (
+            await s.execute(sa.text("SELECT status FROM orders WHERE id = :o"), {"o": order_id})
+        ).scalar_one()
+        assert order_status == "refunded"
+
+
 async def test_refunding_an_already_refunded_order_is_refused(  # type: ignore[no-untyped-def]
     client, tenant_session_factory, crypto
 ) -> None:

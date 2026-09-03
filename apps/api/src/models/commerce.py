@@ -343,6 +343,11 @@ class Invoice(Base, TimestampMixin):
     __table_args__ = (
         Index("uq_invoices_tenant_series_sequence", "tenant_id", "series", "sequence", unique=True),
         Index("uq_invoices_tenant_number", "tenant_id", "number", unique=True),
+        # fable5.1_review.md H-2: one invoice per order, full stop — the
+        # backstop under `services/orders.py::_fulfil_order`'s locked
+        # status recheck. Replaces the plain `order_id` index (a unique
+        # index already serves every lookup a non-unique one would).
+        Index("uq_invoices_order_id", "order_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -356,7 +361,6 @@ class Invoice(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("orders.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     number: Mapped[str] = mapped_column(String(64), nullable=False)
     series: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -394,6 +398,11 @@ class CreditNote(Base, TimestampMixin):
             "uq_credit_notes_tenant_series_sequence", "tenant_id", "series", "sequence", unique=True
         ),
         Index("uq_credit_notes_tenant_number", "tenant_id", "number", unique=True),
+        # fable5.1_review.md H-3: full-refund-only (module docstring on
+        # `services/refunds.py`) means at most one credit note per
+        # invoice — the backstop under `process_refund`'s locked status
+        # recheck. Replaces the plain `invoice_id` index.
+        Index("uq_credit_notes_invoice_id", "invoice_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -407,7 +416,6 @@ class CreditNote(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("invoices.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     number: Mapped[str] = mapped_column(String(64), nullable=False)
     series: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -435,6 +443,12 @@ class Refund(Base, TimestampMixin):
     """
 
     __tablename__ = "refunds"
+    __table_args__ = (
+        # fable5.1_review.md H-3: full-refund-only means at most one
+        # refund per order — the backstop under `process_refund`'s locked
+        # status recheck. Replaces the plain `order_id` index.
+        Index("uq_refunds_order_id", "order_id", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -447,7 +461,6 @@ class Refund(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("orders.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     payment_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),

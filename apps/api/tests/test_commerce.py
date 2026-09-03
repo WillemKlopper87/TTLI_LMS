@@ -251,6 +251,107 @@ async def test_full_eft_happy_path_issues_invoice_grants_entitlement_and_ledger(
         assert "invoice_issued" in entry_types
 
 
+async def test_concurrent_eft_approvals_fulfil_exactly_once(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """fable5.1_review.md H-2: `routers/orders.py::approve_payment` loads
+    `Order`/`Payment` with a plain `session.get`, no lock — two finance
+    users (or one, racing itself) approving the same payment at once
+    used to both pass that unlocked status check and both call
+    `_fulfil_order`, each issuing its own invoice and its own
+    `INVOICE_ISSUED`/`PAYMENT_RECEIVED` ledger pair. The two requests
+    below carry different `Idempotency-Key`s deliberately, so it's
+    `_fulfil_order`'s `SELECT ... FOR UPDATE` recheck — not the
+    idempotency middleware's own replay handling
+    (`tests/test_idempotency.py`) — that has to be what serialises them.
+    """
+    import asyncio
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    buyer_token, _buyer_id = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _finance_id = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+
+    order = await _create_order(client, buyer_token, price_id)
+    order_id = order["id"]
+
+    checkout = await client.post(
+        f"/api/v1/orders/{order_id}/checkout/eft",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert checkout.status_code == 200
+    payment_id = checkout.json()["payment_id"]
+
+    proof = await client.post(
+        f"/api/v1/orders/{order_id}/payment-proof",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("proof.pdf", b"%PDF-fake-proof-of-payment", "application/pdf")},
+    )
+    assert proof.status_code == 204
+
+    first, second = await asyncio.gather(
+        client.post(
+            f"/api/v1/payments/{payment_id}/approve",
+            headers={
+                "Authorization": f"Bearer {finance_token}",
+                "Idempotency-Key": uuid.uuid4().hex,
+            },
+        ),
+        client.post(
+            f"/api/v1/payments/{payment_id}/approve",
+            headers={
+                "Authorization": f"Bearer {finance_token}",
+                "Idempotency-Key": uuid.uuid4().hex,
+            },
+        ),
+    )
+
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [200, 400], (first.text, second.text)
+    loser = first if first.status_code == 400 else second
+    assert loser.json()["error"]["code"] == "ORDER_ERROR"
+
+    async with tenant_session_factory(tenant_id) as s:
+        invoice_count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM invoices WHERE order_id = :o"), {"o": order_id}
+            )
+        ).scalar_one()
+        assert invoice_count == 1
+
+        order_status = (
+            await s.execute(sa.text("SELECT status FROM orders WHERE id = :o"), {"o": order_id})
+        ).scalar_one()
+        assert order_status == "fulfilled"
+
+        payment_ledger_count = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(*) FROM ledger_entries WHERE entity_type = 'payment' "
+                    "AND entity_id = :p AND entry_type = 'payment_received'"
+                ),
+                {"p": payment_id},
+            )
+        ).scalar_one()
+        assert payment_ledger_count == 1
+
+        invoice_ledger_count = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(*) FROM ledger_entries WHERE entity_type = 'invoice' "
+                    "AND entry_type = 'invoice_issued' AND entity_id = "
+                    "(SELECT id FROM invoices WHERE order_id = :o)"
+                ),
+                {"o": order_id},
+            )
+        ).scalar_one()
+        assert invoice_ledger_count == 1
+
+
 async def test_eft_reject_then_resubmit_then_approve(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]

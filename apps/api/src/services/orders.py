@@ -449,6 +449,7 @@ async def _fulfil_order(
     approved_by_user_id: uuid.UUID | None,
     payment_status: str,
     supplier_vat_number: str | None,
+    expected_order_status: str,
 ) -> Invoice:
     """Shared by `approve_eft`, `approve_po` and `fulfil_card_payment` —
     invoice issuance, entitlement/enrolment granting and the ledger
@@ -468,7 +469,40 @@ async def _fulfil_order(
     is the organisation admin who placed the order, not necessarily a
     learner. Seats are assigned to specific employees afterward via
     `services/organisations.py::assign_seat`, drawing from the pool this
-    creates."""
+    creates.
+
+    fable5.1_review.md H-2: every caller already checks `order.status`
+    before calling this — but unlocked, against a row loaded earlier in
+    the request (`routers/orders.py::approve_payment` uses a plain
+    `session.get`). Two concurrent approvals of the same order (two
+    finance users, or one with two `Idempotency-Key`s) can both pass
+    that check before either commits, and both would then issue an
+    invoice, grant entitlements and write a ledger pair — double
+    revenue, double access. This locked re-check is the actual guard;
+    the callers' own checks are just an optimistic fast path that saves
+    a lock wait in the overwhelmingly common non-racing case. Mirrors
+    `services/workshops/booking.py::_consume_workshop_credit`'s
+    `with_for_update()` idiom, including its reason for an explicit
+    `select()` over `session.get(..., with_for_update=True)`: `order`
+    is already in the identity map (every caller loaded it earlier in
+    this same request), so `session.get` would return the cached copy
+    with no SQL — and no lock — at all; `populate_existing` refreshes
+    it from the locked read instead.
+    """
+    order = (
+        await session.execute(
+            select(Order)
+            .where(Order.id == order.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if order.status != expected_order_status:
+        raise OrderError(
+            f"Order is {order.status!r}, not ready for fulfilment — "
+            "it was already processed by a concurrent request."
+        )
+
     payment.status = payment_status
     payment.approved_by_user_id = approved_by_user_id
     payment.approved_at = datetime.now(UTC)
@@ -678,6 +712,7 @@ async def approve_eft(
         approved_by_user_id=approved_by_user_id,
         payment_status="manually_approved",
         supplier_vat_number=supplier_vat_number,
+        expected_order_status="eft_pending_approval",
     )
 
 
@@ -700,6 +735,7 @@ async def approve_po(
         approved_by_user_id=approved_by_user_id,
         payment_status="manually_approved",
         supplier_vat_number=supplier_vat_number,
+        expected_order_status="po_pending_approval",
     )
 
 
@@ -728,6 +764,7 @@ async def fulfil_card_payment(
         approved_by_user_id=None,
         payment_status="complete",
         supplier_vat_number=supplier_vat_number,
+        expected_order_status="pending_payment",
     )
 
 
