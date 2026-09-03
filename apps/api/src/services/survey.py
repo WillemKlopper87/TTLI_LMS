@@ -21,6 +21,11 @@ from src.core.ids import uuid7
 from src.models.assessment import Survey, SurveyQuestion, SurveyResponse
 from src.models.audit import AuditAction
 from src.services import audit
+from src.services.courses import (
+    assert_any_course_authorable,
+    course_ids_for_survey,
+    filter_authorable,
+)
 
 
 def _anonymous_reference(
@@ -108,16 +113,24 @@ async def submit_response(
     return response
 
 
-async def list_surveys(session: AsyncSession) -> list[tuple[Survey, int]]:
-    """(survey, question_count) pairs, ordered by title — same global-content
-    shape as `courses_service.list_courses`, no tenant filter."""
+async def list_surveys(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[tuple[Survey, int]]:
+    """(survey, question_count) pairs, ordered by title. Same H-12 boundary
+    as `quiz_service.list_quizzes` — a survey is global content, reachable
+    only through whichever lesson block(s) attach it."""
     stmt = (
         select(Survey, func.count(SurveyQuestion.id))
         .outerjoin(SurveyQuestion, SurveyQuestion.survey_id == Survey.id)
         .group_by(Survey.id)
         .order_by(Survey.title)
     )
-    return [(s, count) for s, count in (await session.execute(stmt)).all()]
+    rows = [(s, count) for s, count in (await session.execute(stmt)).all()]
+    course_ids_by_survey = {
+        s.id: await course_ids_for_survey(session, survey_id=s.id) for s, _ in rows
+    }
+    visible = await filter_authorable(
+        session, tenant_id=tenant_id, course_ids_by_item=course_ids_by_survey
+    )
+    return [(s, count) for s, count in rows if s.id in visible]
 
 
 async def create_survey(
@@ -236,6 +249,8 @@ async def aggregate_results(
     survey = await session.get(Survey, survey_id)
     if survey is None:
         raise NotFound("No such survey.")
+    course_ids = await course_ids_for_survey(session, survey_id=survey_id)
+    await assert_any_course_authorable(session, course_ids=course_ids, tenant_id=tenant_id)
 
     responses = (
         (

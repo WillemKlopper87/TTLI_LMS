@@ -18,6 +18,7 @@ import uuid
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
@@ -33,7 +34,7 @@ from src.models.assessment import (
     Survey,
     SurveyQuestion,
 )
-from src.models.course import Lesson
+from src.models.course import Lesson, LessonBlock
 from src.schemas.assessment import (
     AssignmentCreateRequest,
     AssignmentDetailResponse,
@@ -82,6 +83,7 @@ from src.schemas.assessment import (
 )
 from src.services import antivirus
 from src.services import assignment as assignment_service
+from src.services import courses as courses_service
 from src.services import enrolment as enrolment_service
 from src.services import question_bank as question_bank_service
 from src.services import quiz as quiz_service
@@ -97,6 +99,17 @@ def _parse_uuid(value: str) -> uuid.UUID:
         return uuid.UUID(value)
     except ValueError as exc:
         raise NotFound("No such resource.") from exc
+
+
+async def _assert_lesson_authorable(
+    session: AsyncSession, *, lesson: Lesson, tenant_id: uuid.UUID
+) -> None:
+    course_id = await courses_service.resolve_course_id_for_module(
+        session, module_id=lesson.module_id
+    )
+    await courses_service.assert_course_authorable(
+        session, course_id=course_id, tenant_id=tenant_id
+    )
 
 
 def _question_bank_view(item: QuestionBankItem) -> QuestionBankItemView:
@@ -160,7 +173,7 @@ async def delete_question_bank_item(
 @router.get("/quizzes", response_model=QuizzesPageResponse)
 async def list_quizzes(principal: PrincipalDep, session: SessionDep) -> QuizzesPageResponse:
     principal.require("course:edit")
-    rows = await quiz_service.list_quizzes(session)
+    rows = await quiz_service.list_quizzes(session, tenant_id=principal.tenant_id)
     return QuizzesPageResponse(
         items=[
             QuizListItem(
@@ -183,7 +196,9 @@ async def get_quiz(
     # course:edit, not course:view — questions include `correct`, and the
     # seeded learner role holds course:view, so this must stay narrower.
     principal.require("course:edit")
-    quiz, questions = await quiz_service.get_quiz_detail(session, quiz_id=_parse_uuid(quiz_id))
+    quiz, questions = await quiz_service.get_quiz_detail(
+        session, quiz_id=_parse_uuid(quiz_id), tenant_id=principal.tenant_id
+    )
     return QuizDetailResponse(
         id=str(quiz.id),
         title=quiz.title,
@@ -227,7 +242,9 @@ async def preview_quiz(
         )
     ):
         raise Forbidden("This quiz is not available for preview.")
-    quiz, questions = await quiz_service.get_quiz_detail(session, quiz_id=quiz_uuid)
+    quiz, questions = await quiz_service.get_quiz_detail(
+        session, quiz_id=quiz_uuid, tenant_id=principal.tenant_id
+    )
     return QuizPreviewResponse(
         id=str(quiz.id),
         title=quiz.title,
@@ -269,6 +286,10 @@ async def add_quiz_question(
     quiz = await session.get(Quiz, _parse_uuid(quiz_id))
     if quiz is None:
         raise NotFound("No such quiz.")
+    quiz_course_ids = await courses_service.course_ids_for_quiz(session, quiz_id=quiz.id)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=quiz_course_ids, tenant_id=principal.tenant_id
+    )
     session.add(
         QuizQuestion(
             id=uuid7(),
@@ -296,30 +317,51 @@ async def add_quiz_question_from_bank(
     session: SessionDep,
 ) -> None:
     principal.require("course:edit")
+    quiz_uuid = _parse_uuid(quiz_id)
+    quiz_course_ids = await courses_service.course_ids_for_quiz(session, quiz_id=quiz_uuid)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=quiz_course_ids, tenant_id=principal.tenant_id
+    )
     await question_bank_service.apply_to_quiz(
         session,
         tenant_id=principal.tenant_id,
         item_id=_parse_uuid(item_id),
-        quiz_id=_parse_uuid(quiz_id),
+        quiz_id=quiz_uuid,
         position=body.position,
     )
 
 
 @router.post(
-    "/lessons/{lesson_id}/quiz", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+    "/lessons/{lesson_id}/blocks/{block_id}/quiz",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
-async def attach_quiz_to_lesson(
-    lesson_id: str, quiz_id: str, principal: PrincipalDep, session: SessionDep
+async def attach_quiz_to_block(
+    lesson_id: str, block_id: str, quiz_id: str, principal: PrincipalDep, session: SessionDep
 ) -> None:
     principal.require("course:edit")
     lesson = await session.get(Lesson, _parse_uuid(lesson_id))
     if lesson is None:
         raise NotFound("No such lesson.")
+    await _assert_lesson_authorable(session, lesson=lesson, tenant_id=principal.tenant_id)
+    block = await session.get(LessonBlock, _parse_uuid(block_id))
+    if block is None or block.lesson_id != lesson.id:
+        raise NotFound("No such block.")
+    if block.block_type != "quiz":
+        raise AppError("This block is not a quiz block.")
     quiz = await session.get(Quiz, _parse_uuid(quiz_id))
     if quiz is None:
         raise NotFound("No such quiz.")
-    lesson.quiz_id = quiz.id
-    lesson.activity_type = "quiz"
+    # A quiz already claimed by another tenant's course must not become
+    # attachable here — without this, pointing a *new* block at someone
+    # else's private quiz_id would make `GET /quizzes/{id}` (course_ids_
+    # for_quiz -> "any referencing course" rule) treat it as shared with
+    # this tenant too, laundering read access to its answer key (H-12).
+    existing_course_ids = await courses_service.course_ids_for_quiz(session, quiz_id=quiz.id)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=existing_course_ids, tenant_id=principal.tenant_id
+    )
+    block.quiz_id = quiz.id
     await session.flush()
 
 
@@ -450,7 +492,7 @@ async def list_ungraded_quiz_answers(
 @router.get("/surveys", response_model=SurveysPageResponse)
 async def list_surveys(principal: PrincipalDep, session: SessionDep) -> SurveysPageResponse:
     principal.require("course:edit")
-    rows = await survey_service.list_surveys(session)
+    rows = await survey_service.list_surveys(session, tenant_id=principal.tenant_id)
     return SurveysPageResponse(
         items=[
             SurveyListItem(
@@ -499,6 +541,10 @@ async def add_survey_question(
     survey = await session.get(Survey, _parse_uuid(survey_id))
     if survey is None:
         raise NotFound("No such survey.")
+    survey_course_ids = await courses_service.course_ids_for_survey(session, survey_id=survey.id)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=survey_course_ids, tenant_id=principal.tenant_id
+    )
     session.add(
         SurveyQuestion(
             id=uuid7(),
@@ -525,30 +571,46 @@ async def add_survey_question_from_bank(
     session: SessionDep,
 ) -> None:
     principal.require("course:edit")
+    survey_uuid = _parse_uuid(survey_id)
+    survey_course_ids = await courses_service.course_ids_for_survey(session, survey_id=survey_uuid)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=survey_course_ids, tenant_id=principal.tenant_id
+    )
     await question_bank_service.apply_to_survey(
         session,
         tenant_id=principal.tenant_id,
         item_id=_parse_uuid(item_id),
-        survey_id=_parse_uuid(survey_id),
+        survey_id=survey_uuid,
         position=body.position,
     )
 
 
 @router.post(
-    "/lessons/{lesson_id}/survey", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+    "/lessons/{lesson_id}/blocks/{block_id}/survey",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
-async def attach_survey_to_lesson(
-    lesson_id: str, survey_id: str, principal: PrincipalDep, session: SessionDep
+async def attach_survey_to_block(
+    lesson_id: str, block_id: str, survey_id: str, principal: PrincipalDep, session: SessionDep
 ) -> None:
     principal.require("course:edit")
     lesson = await session.get(Lesson, _parse_uuid(lesson_id))
     if lesson is None:
         raise NotFound("No such lesson.")
+    await _assert_lesson_authorable(session, lesson=lesson, tenant_id=principal.tenant_id)
+    block = await session.get(LessonBlock, _parse_uuid(block_id))
+    if block is None or block.lesson_id != lesson.id:
+        raise NotFound("No such block.")
+    if block.block_type != "survey":
+        raise AppError("This block is not a survey block.")
     survey = await session.get(Survey, _parse_uuid(survey_id))
     if survey is None:
         raise NotFound("No such survey.")
-    lesson.survey_id = survey.id
-    lesson.activity_type = "survey"
+    existing_course_ids = await courses_service.course_ids_for_survey(session, survey_id=survey.id)
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=existing_course_ids, tenant_id=principal.tenant_id
+    )
+    block.survey_id = survey.id
     await session.flush()
 
 
@@ -571,11 +633,15 @@ async def get_survey(survey_id: str, principal: PrincipalDep, session: SessionDe
     # has_view_access_to_survey, not resolve_enrolment_for_survey: this is
     # the one place a free-preview lesson's survey must also be readable
     # without a real enrolment (services/enrolment.py's own docstring).
-    if (
-        "course:edit" not in principal.permissions
-        and not await enrolment_service.has_view_access_to_survey(
-            session, tenant_id=principal.tenant_id, user_id=principal.user_id, survey_id=survey_uuid
+    if "course:edit" in principal.permissions:
+        survey_course_ids = await courses_service.course_ids_for_survey(
+            session, survey_id=survey_uuid
         )
+        await courses_service.assert_any_course_authorable(
+            session, course_ids=survey_course_ids, tenant_id=principal.tenant_id
+        )
+    elif not await enrolment_service.has_view_access_to_survey(
+        session, tenant_id=principal.tenant_id, user_id=principal.user_id, survey_id=survey_uuid
     ):
         raise Forbidden("You are not enrolled in this course.")
     survey = await session.get(Survey, survey_uuid)
@@ -755,7 +821,7 @@ async def get_survey_results_csv(
 @router.get("/assignments", response_model=AssignmentsPageResponse)
 async def list_assignments(principal: PrincipalDep, session: SessionDep) -> AssignmentsPageResponse:
     principal.require("course:edit")
-    assignments = await assignment_service.list_assignments(session)
+    assignments = await assignment_service.list_assignments(session, tenant_id=principal.tenant_id)
     return AssignmentsPageResponse(
         items=[
             AssignmentListItem(
@@ -775,7 +841,7 @@ async def get_assignment(
 ) -> AssignmentDetailResponse:
     principal.require("course:edit")
     assignment = await assignment_service.get_assignment(
-        session, assignment_id=_parse_uuid(assignment_id)
+        session, assignment_id=_parse_uuid(assignment_id), tenant_id=principal.tenant_id
     )
     return AssignmentDetailResponse(
         id=str(assignment.id),
@@ -809,7 +875,9 @@ async def preview_assignment(
         )
     ):
         raise Forbidden("This assignment is not available for preview.")
-    assignment = await assignment_service.get_assignment(session, assignment_id=assignment_uuid)
+    assignment = await assignment_service.get_assignment(
+        session, assignment_id=assignment_uuid, tenant_id=principal.tenant_id
+    )
     return AssignmentDetailResponse(
         id=str(assignment.id),
         title=assignment.title,
@@ -837,20 +905,33 @@ async def create_assignment(
 
 
 @router.post(
-    "/lessons/{lesson_id}/assignment", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+    "/lessons/{lesson_id}/blocks/{block_id}/assignment",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
-async def attach_assignment_to_lesson(
-    lesson_id: str, assignment_id: str, principal: PrincipalDep, session: SessionDep
+async def attach_assignment_to_block(
+    lesson_id: str, block_id: str, assignment_id: str, principal: PrincipalDep, session: SessionDep
 ) -> None:
     principal.require("course:edit")
     lesson = await session.get(Lesson, _parse_uuid(lesson_id))
     if lesson is None:
         raise NotFound("No such lesson.")
+    await _assert_lesson_authorable(session, lesson=lesson, tenant_id=principal.tenant_id)
+    block = await session.get(LessonBlock, _parse_uuid(block_id))
+    if block is None or block.lesson_id != lesson.id:
+        raise NotFound("No such block.")
+    if block.block_type != "assignment":
+        raise AppError("This block is not an assignment block.")
     assignment = await session.get(Assignment, _parse_uuid(assignment_id))
     if assignment is None:
         raise NotFound("No such assignment.")
-    lesson.assignment_id = assignment.id
-    lesson.activity_type = "assignment"
+    existing_course_ids = await courses_service.course_ids_for_assignment(
+        session, assignment_id=assignment.id
+    )
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=existing_course_ids, tenant_id=principal.tenant_id
+    )
+    block.assignment_id = assignment.id
     await session.flush()
 
 

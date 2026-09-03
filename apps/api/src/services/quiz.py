@@ -30,6 +30,11 @@ from src.models.audit import AuditAction
 from src.models.learning import Enrolment
 from src.models.user import User
 from src.services import audit
+from src.services.courses import (
+    assert_any_course_authorable,
+    course_ids_for_quiz,
+    filter_authorable,
+)
 
 AUTO_GRADED_TYPES = frozenset({"single_choice", "multiple_choice", "true_false"})
 TEXT_TYPES = frozenset({"short_text", "long_text"})
@@ -83,24 +88,35 @@ async def _question_bank(session: AsyncSession, quiz_id: uuid.UUID) -> list[Quiz
     return list((await session.execute(stmt)).scalars())
 
 
-async def list_quizzes(session: AsyncSession) -> list[tuple[Quiz, int]]:
-    """(quiz, question_count) pairs, ordered by title — same global-content
-    shape as `courses_service.list_courses`, no tenant filter."""
+async def list_quizzes(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[tuple[Quiz, int]]:
+    """(quiz, question_count) pairs, ordered by title. A quiz carries no
+    `tenant_id` of its own (global-content shape, same as `Course`) — it
+    is reachable only through whichever lesson block(s) attach it, so
+    the boundary is the same "unclaimed, or claimed by a course this
+    tenant can see" rule `filter_authorable` applies everywhere else
+    (H-12)."""
     stmt = (
         select(Quiz, func.count(QuizQuestion.id))
         .outerjoin(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
         .group_by(Quiz.id)
         .order_by(Quiz.title)
     )
-    return [(q, count) for q, count in (await session.execute(stmt)).all()]
+    rows = [(q, count) for q, count in (await session.execute(stmt)).all()]
+    course_ids_by_quiz = {q.id: await course_ids_for_quiz(session, quiz_id=q.id) for q, _ in rows}
+    visible = await filter_authorable(
+        session, tenant_id=tenant_id, course_ids_by_item=course_ids_by_quiz
+    )
+    return [(q, count) for q, count in rows if q.id in visible]
 
 
 async def get_quiz_detail(
-    session: AsyncSession, *, quiz_id: uuid.UUID
+    session: AsyncSession, *, quiz_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> tuple[Quiz, list[QuizQuestion]]:
     quiz = await session.get(Quiz, quiz_id)
     if quiz is None:
         raise NotFound("No such quiz.")
+    course_ids = await course_ids_for_quiz(session, quiz_id=quiz_id)
+    await assert_any_course_authorable(session, course_ids=course_ids, tenant_id=tenant_id)
     return quiz, await _question_bank(session, quiz_id)
 
 

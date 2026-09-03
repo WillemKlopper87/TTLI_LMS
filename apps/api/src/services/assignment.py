@@ -23,6 +23,11 @@ from src.models.audit import AuditAction
 from src.models.learning import Enrolment
 from src.models.user import User
 from src.services import audit
+from src.services.courses import (
+    assert_any_course_authorable,
+    course_ids_for_assignment,
+    filter_authorable,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,17 +167,29 @@ async def list_pending_submissions(
     ]
 
 
-async def list_assignments(session: AsyncSession) -> list[Assignment]:
-    """Ordered by title — same global-content shape as
-    `courses_service.list_courses`, no tenant filter."""
+async def list_assignments(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[Assignment]:
+    """Ordered by title. Same H-12 boundary as `quiz_service.list_quizzes`
+    — an assignment is global content, reachable only through whichever
+    lesson block(s) attach it."""
     stmt = select(Assignment).order_by(Assignment.title)
-    return list((await session.execute(stmt)).scalars().all())
+    assignments = list((await session.execute(stmt)).scalars().all())
+    course_ids_by_assignment = {
+        a.id: await course_ids_for_assignment(session, assignment_id=a.id) for a in assignments
+    }
+    visible = await filter_authorable(
+        session, tenant_id=tenant_id, course_ids_by_item=course_ids_by_assignment
+    )
+    return [a for a in assignments if a.id in visible]
 
 
-async def get_assignment(session: AsyncSession, *, assignment_id: uuid.UUID) -> Assignment:
+async def get_assignment(
+    session: AsyncSession, *, assignment_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Assignment:
     assignment = await session.get(Assignment, assignment_id)
     if assignment is None:
         raise NotFound("No such assignment.")
+    course_ids = await course_ids_for_assignment(session, assignment_id=assignment_id)
+    await assert_any_course_authorable(session, course_ids=course_ids, tenant_id=tenant_id)
     return assignment
 
 
