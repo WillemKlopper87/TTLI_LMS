@@ -1376,7 +1376,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lessons/{lesson_id}/activity": {
+    "/api/v1/lessons/{lesson_id}/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Block */
+        post: operations["create_block_api_v1_lessons__lesson_id__blocks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1386,12 +1403,26 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Detach Lesson Activity
-         * @description Revert a lesson to a plain document — the reverse of the four
-         *     attach endpoints. The activity itself is kept.
-         */
-        delete: operations["detach_lesson_activity_api_v1_lessons__lesson_id__activity_delete"];
+        /** Delete Block */
+        delete: operations["delete_block_api_v1_lessons__lesson_id__blocks__block_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Block */
+        patch: operations["update_block_api_v1_lessons__lesson_id__blocks__block_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/blocks/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Blocks */
+        post: operations["reorder_blocks_api_v1_lessons__lesson_id__blocks_reorder_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2426,7 +2457,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lessons/{lesson_id}/video": {
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}/video": {
         parameters: {
             query?: never;
             header?: never;
@@ -2435,8 +2466,65 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Attach an uploaded video asset to a lesson */
-        post: operations["attach_video_to_lesson_api_v1_lessons__lesson_id__video_post"];
+        /** Attach an uploaded video asset to a video block (0041) */
+        post: operations["attach_video_to_block_api_v1_lessons__lesson_id__blocks__block_id__video_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload and store an audio file, ready to attach (0041)
+         * @description Single-phase, unlike video's upload/finalize split — audio has no
+         *     rung decision to defer (no transcode ladder at all, see `AudioAsset`'s
+         *     own docstring), so scan, store and probe happen here and the asset is
+         *     immediately `state="ready"`.
+         */
+        post: operations["upload_audio_asset_api_v1_audio_assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audio-assets/{audio_asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check an audio asset */
+        get: operations["get_audio_asset_api_v1_audio_assets__audio_asset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach an uploaded audio asset to an audio block (0041) */
+        post: operations["attach_audio_to_block_api_v1_lessons__lesson_id__blocks__block_id__audio_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2486,6 +2574,40 @@ export interface paths {
         };
         /** Serve one HLS manifest or segment */
         get: operations["get_hls_file_api_v1_media__video_asset_id__hls__filename__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/audio/{audio_asset_id}/playback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mint a short-lived signed audio URL (0041) */
+        get: operations["get_audio_playback_api_v1_media_audio__audio_asset_id__playback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media/audio/{audio_asset_id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Serve the stored audio file (0041) */
+        get: operations["get_audio_original_file_api_v1_media_audio__audio_asset_id__original_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2621,7 +2743,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lessons/{lesson_id}/quiz": {
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}/quiz": {
         parameters: {
             query?: never;
             header?: never;
@@ -2630,8 +2752,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Attach Quiz To Lesson */
-        post: operations["attach_quiz_to_lesson_api_v1_lessons__lesson_id__quiz_post"];
+        /** Attach Quiz To Block */
+        post: operations["attach_quiz_to_block_api_v1_lessons__lesson_id__blocks__block_id__quiz_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2758,7 +2880,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lessons/{lesson_id}/survey": {
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}/survey": {
         parameters: {
             query?: never;
             header?: never;
@@ -2767,8 +2889,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Attach Survey To Lesson */
-        post: operations["attach_survey_to_lesson_api_v1_lessons__lesson_id__survey_post"];
+        /** Attach Survey To Block */
+        post: operations["attach_survey_to_block_api_v1_lessons__lesson_id__blocks__block_id__survey_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2929,7 +3051,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/lessons/{lesson_id}/assignment": {
+    "/api/v1/lessons/{lesson_id}/blocks/{block_id}/assignment": {
         parameters: {
             query?: never;
             header?: never;
@@ -2938,8 +3060,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Attach Assignment To Lesson */
-        post: operations["attach_assignment_to_lesson_api_v1_lessons__lesson_id__assignment_post"];
+        /** Attach Assignment To Block */
+        post: operations["attach_assignment_to_block_api_v1_lessons__lesson_id__blocks__block_id__assignment_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4712,6 +4834,39 @@ export interface components {
             failed_at: string | null;
         };
         /**
+         * AudioAssetResponse
+         * @description No rungs/renditions/delivery_mode (0041) — an audio asset is
+         *     always stored-and-served exactly as uploaded, never transcoded.
+         */
+        AudioAssetResponse: {
+            /** Id */
+            id: string;
+            /** State */
+            state: string;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Source Filename */
+            source_filename?: string | null;
+            /** Source Size Bytes */
+            source_size_bytes?: number | null;
+        };
+        /**
+         * AudioPlaybackResponse
+         * @description No watermark/delivery_mode (0041) — an audio asset has exactly one
+         *     delivery shape (store-and-serve), unlike video's hls/progressive
+         *     split, and nothing burns a watermark into an audio stream the way
+         *     the transcode pipeline does for video.
+         */
+        AudioPlaybackResponse: {
+            /** Audio Url */
+            audio_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
          * AuditActionsResponse
          * @description The action values actually present for this tenant, so the filter
          *     dropdown offers what exists rather than a hardcoded list that drifts
@@ -4830,6 +4985,20 @@ export interface components {
             /** Items */
             items: components["schemas"]["BadgeTemplateResponse"][];
         };
+        /** BlockOutlineRow */
+        BlockOutlineRow: {
+            block: components["schemas"]["LessonBlockResponse"];
+            /** Media State */
+            media_state: string | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Video Has Captions */
+            video_has_captions: boolean;
+            /** Question Count */
+            question_count: number | null;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+        };
         /** Body_checkout_po_api_v1_orders__order_id__checkout_po_post */
         Body_checkout_po_api_v1_orders__order_id__checkout_po_post: {
             /** Po Number */
@@ -4846,6 +5015,13 @@ export interface components {
         Body_submit_assignment_api_v1_assignments__assignment_id__submissions_post: {
             /** File */
             file: string;
+        };
+        /** Body_upload_audio_asset_api_v1_audio_assets_post */
+        Body_upload_audio_asset_api_v1_audio_assets_post: {
+            /** File */
+            file: string;
+            /** Course Id */
+            course_id?: string | null;
         };
         /** Body_upload_captions_api_v1_video_assets__video_asset_id__captions_post */
         Body_upload_captions_api_v1_video_assets__video_asset_id__captions_post: {
@@ -5684,9 +5860,12 @@ export interface components {
          * HeartbeatRequest
          * @description 03 §6.3. No timestamp field on purpose — REQ-BYPASS-02 means the
          *     server assigns it, so there is nothing here for a client to lie
-         *     about.
+         *     about. `block_id` (0041) identifies which of the lesson's (possibly
+         *     several) video blocks this heartbeat is for.
          */
         HeartbeatRequest: {
+            /** Block Id */
+            block_id: string;
             /** Position Seconds */
             position_seconds: number | string;
             /**
@@ -5963,6 +6142,83 @@ export interface components {
             /** Items */
             items: components["schemas"]["LearningPathResponse"][];
         };
+        /** LessonBlockCreateRequest */
+        LessonBlockCreateRequest: {
+            /** Block Type */
+            block_type: string;
+            /** Completion Rules */
+            completion_rules?: {
+                [key: string]: unknown;
+            };
+        };
+        /** LessonBlockProgressResponse */
+        LessonBlockProgressResponse: {
+            /** Block Id */
+            block_id: string;
+            /** Position */
+            position: number;
+            /** Block Type */
+            block_type: string;
+            /** Body */
+            body: string | null;
+            /** Video Asset Id */
+            video_asset_id: string | null;
+            /** Audio Asset Id */
+            audio_asset_id: string | null;
+            /** Quiz Id */
+            quiz_id: string | null;
+            /** Survey Id */
+            survey_id: string | null;
+            /** Assignment Id */
+            assignment_id: string | null;
+        };
+        /** LessonBlockResponse */
+        LessonBlockResponse: {
+            /** Id */
+            id: string;
+            /** Lesson Id */
+            lesson_id: string;
+            /** Position */
+            position: number;
+            /** Block Type */
+            block_type: string;
+            /** Body */
+            body: string | null;
+            /** Video Asset Id */
+            video_asset_id: string | null;
+            /** Audio Asset Id */
+            audio_asset_id: string | null;
+            /** Quiz Id */
+            quiz_id: string | null;
+            /** Survey Id */
+            survey_id: string | null;
+            /** Assignment Id */
+            assignment_id: string | null;
+            /** Completion Rules */
+            completion_rules: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * LessonBlockUpdateRequest
+         * @description `body` (text blocks) and `completion_rules` only — attaching a
+         *     video/audio/quiz/survey/assignment resource stays owned by that
+         *     subsystem's own attach endpoint, same split `LessonUpdateRequest`
+         *     already documents at the lesson level.
+         */
+        LessonBlockUpdateRequest: {
+            /** Body */
+            body?: string | null;
+            /** Completion Rules */
+            completion_rules?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** LessonBlocksPageResponse */
+        LessonBlocksPageResponse: {
+            /** Items */
+            items: components["schemas"]["LessonBlockResponse"][];
+        };
         /**
          * LessonCheckResponse
          * @description One completion rule, met or not. `unmet_requirements` stays the
@@ -5999,8 +6255,6 @@ export interface components {
              * @default paid
              */
             access_level: string;
-            /** Body */
-            body?: string | null;
             /** Completion Rules */
             completion_rules?: {
                 [key: string]: unknown;
@@ -6029,14 +6283,8 @@ export interface components {
         /** LessonOutlineRow */
         LessonOutlineRow: {
             lesson: components["schemas"]["LessonResponse"];
-            /** Video State */
-            video_state: string | null;
-            /** Video Duration Seconds */
-            video_duration_seconds: number | null;
-            /** Video Has Captions */
-            video_has_captions: boolean;
-            /** Question Count */
-            question_count: number | null;
+            /** Blocks */
+            blocks: components["schemas"]["BlockOutlineRow"][];
             /** Estimated Minutes */
             estimated_minutes: number;
         };
@@ -6054,18 +6302,10 @@ export interface components {
             title: string;
             /** Position */
             position: number;
-            /** Activity Type */
-            activity_type: string;
             /** Estimated Minutes */
             estimated_minutes: number;
-            /** Video Asset Id */
-            video_asset_id: string | null;
-            /** Quiz Id */
-            quiz_id: string | null;
-            /** Survey Id */
-            survey_id: string | null;
-            /** Assignment Id */
-            assignment_id: string | null;
+            /** Blocks */
+            blocks?: components["schemas"]["LessonBlockProgressResponse"][];
             /** State */
             state: string;
             /** Unmet Requirements */
@@ -6083,38 +6323,27 @@ export interface components {
             title: string;
             /** Position */
             position: number;
-            /** Activity Type */
-            activity_type: string;
             /** Access Level */
             access_level: string;
-            /** Body */
-            body: string | null;
             /** Completion Rules */
             completion_rules: {
                 [key: string]: unknown;
             };
-            /** Video Asset Id */
-            video_asset_id: string | null;
-            /** Quiz Id */
-            quiz_id: string | null;
-            /** Survey Id */
-            survey_id: string | null;
-            /** Assignment Id */
-            assignment_id: string | null;
+            /** Blocks */
+            blocks?: components["schemas"]["LessonBlockResponse"][];
         };
         /**
          * LessonUpdateRequest
-         * @description No `activity_type`/`quiz_id`/`survey_id`/`assignment_id`/
-         *     `video_asset_id` field on purpose — those stay owned by
-         *     `POST /lessons/{id}/quiz|survey|assignment|video`.
+         * @description No content fields here (0041) — a lesson's content is its ordered
+         *     blocks, owned by `POST/PATCH/DELETE /lessons/{id}/blocks[/{block_id}]`
+         *     and each block type's own attach endpoint
+         *     (`POST /lessons/{id}/blocks/{block_id}/quiz|survey|assignment|video|audio`).
          */
         LessonUpdateRequest: {
             /** Title */
             title?: string | null;
             /** Access Level */
             access_level?: string | null;
-            /** Body */
-            body?: string | null;
             /** Completion Rules */
             completion_rules?: {
                 [key: string]: unknown;
@@ -7065,6 +7294,41 @@ export interface components {
             /** Amount */
             amount: components["schemas"]["MoneyByCurrency"][];
         };
+        /** PublicBlockPreviewResponse */
+        PublicBlockPreviewResponse: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            /** Block Type */
+            block_type: string;
+            /** Body */
+            body: string | null;
+            /** Video Asset Id */
+            video_asset_id: string | null;
+            /** Audio Asset Id */
+            audio_asset_id: string | null;
+            /** Quiz Id */
+            quiz_id: string | null;
+            /** Survey Id */
+            survey_id: string | null;
+            /** Assignment Id */
+            assignment_id: string | null;
+        };
+        /**
+         * PublicBlockRow
+         * @description No `body`/quiz/survey/assignment/video/audio FKs — an anonymous
+         *     curriculum view shows shape, not content
+         *     (services/courses.py::get_public_curriculum).
+         */
+        PublicBlockRow: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            /** Block Type */
+            block_type: string;
+        };
         /**
          * PublicCourseCard
          * @description One row of `GET /public/courses` — the catalogue/landing grid.
@@ -7163,24 +7427,10 @@ export interface components {
             id: string;
             /** Title */
             title: string;
-            /** Activity Type */
-            activity_type: string;
-            /** Body */
-            body: string | null;
-            /** Video Asset Id */
-            video_asset_id: string | null;
-            /** Quiz Id */
-            quiz_id: string | null;
-            /** Survey Id */
-            survey_id: string | null;
-            /** Assignment Id */
-            assignment_id: string | null;
+            /** Blocks */
+            blocks?: components["schemas"]["PublicBlockPreviewResponse"][];
         };
-        /**
-         * PublicLessonRow
-         * @description No `body`/quiz/survey/assignment/video FKs — an anonymous curriculum
-         *     view shows shape, not content (services/courses.py::get_public_curriculum).
-         */
+        /** PublicLessonRow */
         PublicLessonRow: {
             /** Id */
             id: string;
@@ -7188,10 +7438,10 @@ export interface components {
             title: string;
             /** Position */
             position: number;
-            /** Activity Type */
-            activity_type: string;
             /** Access Level */
             access_level: string;
+            /** Blocks */
+            blocks?: components["schemas"]["PublicBlockRow"][];
             /**
              * Estimated Minutes
              * @default 0
@@ -11592,7 +11842,7 @@ export interface operations {
             };
         };
     };
-    detach_lesson_activity_api_v1_lessons__lesson_id__activity_delete: {
+    create_block_api_v1_lessons__lesson_id__blocks_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -11601,7 +11851,77 @@ export interface operations {
             };
             cookie?: never;
         };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonBlockCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonBlockResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_block_api_v1_lessons__lesson_id__blocks__block_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+                block_id: string;
+            };
+            cookie?: never;
+        };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_block_api_v1_lessons__lesson_id__blocks__block_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonBlockUpdateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -11609,7 +11929,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LessonResponse"];
+                    "application/json": components["schemas"]["LessonBlockResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_blocks_api_v1_lessons__lesson_id__blocks_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonBlocksPageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -13757,7 +14112,7 @@ export interface operations {
             };
         };
     };
-    attach_video_to_lesson_api_v1_lessons__lesson_id__video_post: {
+    attach_video_to_block_api_v1_lessons__lesson_id__blocks__block_id__video_post: {
         parameters: {
             query: {
                 video_asset_id: string;
@@ -13765,6 +14120,103 @@ export interface operations {
             header?: never;
             path: {
                 lesson_id: string;
+                block_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_audio_asset_api_v1_audio_assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_audio_asset_api_v1_audio_assets_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioAssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audio_asset_api_v1_audio_assets__audio_asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                audio_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioAssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_audio_to_block_api_v1_lessons__lesson_id__blocks__block_id__audio_post: {
+        parameters: {
+            query: {
+                audio_asset_id: string;
+            };
+            header?: never;
+            path: {
+                lesson_id: string;
+                block_id: string;
             };
             cookie?: never;
         };
@@ -13861,6 +14313,70 @@ export interface operations {
             path: {
                 video_asset_id: string;
                 filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audio_playback_api_v1_media_audio__audio_asset_id__playback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                audio_asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioPlaybackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_audio_original_file_api_v1_media_audio__audio_asset_id__original_get: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path: {
+                audio_asset_id: string;
             };
             cookie?: never;
         };
@@ -14161,7 +14677,7 @@ export interface operations {
             };
         };
     };
-    attach_quiz_to_lesson_api_v1_lessons__lesson_id__quiz_post: {
+    attach_quiz_to_block_api_v1_lessons__lesson_id__blocks__block_id__quiz_post: {
         parameters: {
             query: {
                 quiz_id: string;
@@ -14169,6 +14685,7 @@ export interface operations {
             header?: never;
             path: {
                 lesson_id: string;
+                block_id: string;
             };
             cookie?: never;
         };
@@ -14431,7 +14948,7 @@ export interface operations {
             };
         };
     };
-    attach_survey_to_lesson_api_v1_lessons__lesson_id__survey_post: {
+    attach_survey_to_block_api_v1_lessons__lesson_id__blocks__block_id__survey_post: {
         parameters: {
             query: {
                 survey_id: string;
@@ -14439,6 +14956,7 @@ export interface operations {
             header?: never;
             path: {
                 lesson_id: string;
+                block_id: string;
             };
             cookie?: never;
         };
@@ -14734,7 +15252,7 @@ export interface operations {
             };
         };
     };
-    attach_assignment_to_lesson_api_v1_lessons__lesson_id__assignment_post: {
+    attach_assignment_to_block_api_v1_lessons__lesson_id__blocks__block_id__assignment_post: {
         parameters: {
             query: {
                 assignment_id: string;
@@ -14742,6 +15260,7 @@ export interface operations {
             header?: never;
             path: {
                 lesson_id: string;
+                block_id: string;
             };
             cookie?: never;
         };
