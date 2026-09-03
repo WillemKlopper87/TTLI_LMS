@@ -454,6 +454,121 @@ async def test_replayed_notification_does_not_reprocess(  # type: ignore[no-unty
     assert ledger_count == 1
 
 
+async def test_second_itn_for_an_already_fulfilled_order_is_persisted_and_flagged(  # type: ignore[no-untyped-def]
+    app_and_client, tenant_session_factory, crypto
+) -> None:
+    """fable5.1_review.md H-4: `checkout_card` makes a fresh `Payment`
+    per attempt (its own docstring — order.status stays `pending_payment`
+    across attempts specifically so a second one is possible), so a
+    buyer who pays twice (two tabs, a retried checkout) ends up with two
+    real, gateway-confirmed charges for one order. The first ITN below
+    fulfils the order; the second, for the second `Payment` row, used to
+    make `fulfil_card_payment` raise with the exception propagating out
+    of `tenant_session` *before* the `PaymentWebhook` row was ever
+    written — no 200, no audit trail, and Payfast retrying an ITN that
+    can never resolve differently. It must now be a recorded, handled
+    outcome instead: 200, the webhook row persisted, and the duplicate
+    payment flagged rather than lost.
+    """
+    app, client = app_and_client
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    _, _, price_id = await _sellable_course_and_price(client, admin_token)
+    order_id = await _create_pending_order(client, buyer_token, price_id)
+
+    provider = _ScriptedProvider(confirmed=True)
+    app.dependency_overrides[get_payment_provider] = lambda: provider
+
+    # Two tabs / a retried checkout, both before either ITN lands —
+    # checkout_card leaves order.status at pending_payment across
+    # attempts specifically to allow this, so this is a second,
+    # independent Payment row for the same order, not a re-fetch of the
+    # first.
+    first_payment_id = await _card_checkout(
+        tenant_session_factory, crypto, tenant_id=tenant_id, order_id=order_id, provider=provider
+    )
+    second_payment_id = await _card_checkout(
+        tenant_session_factory, crypto, tenant_id=tenant_id, order_id=order_id, provider=provider
+    )
+
+    first_signed = _sign(
+        {
+            "m_payment_id": str(first_payment_id),
+            "pf_payment_id": f"first-{uuid.uuid4().hex[:10]}",
+            "payment_status": "COMPLETE",
+            "amount_gross": "575.00",
+        }
+    )
+    first_resp = await client.post("/api/v1/webhooks/payfast", data=first_signed)
+    assert first_resp.status_code == 200, first_resp.text
+
+    async with tenant_session_factory(tenant_id) as s:
+        order_status = (
+            await s.execute(sa.text("SELECT status FROM orders WHERE id = :o"), {"o": order_id})
+        ).scalar_one()
+        assert order_status == "fulfilled"
+
+    second_event_id = f"second-{uuid.uuid4().hex[:10]}"
+    second_signed = _sign(
+        {
+            "m_payment_id": str(second_payment_id),
+            "pf_payment_id": second_event_id,
+            "payment_status": "COMPLETE",
+            "amount_gross": "575.00",
+        }
+    )
+    second_resp = await client.post("/api/v1/webhooks/payfast", data=second_signed)
+    assert second_resp.status_code == 200, second_resp.text
+
+    async with tenant_session_factory(tenant_id) as s:
+        webhook_row = (
+            await s.execute(
+                sa.text(
+                    "SELECT id FROM payment_webhooks WHERE provider = 'payfast' "
+                    "AND provider_event_id = :e"
+                ),
+                {"e": second_event_id},
+            )
+        ).first()
+        assert webhook_row is not None
+
+        payment_row = (
+            await s.execute(
+                sa.text("SELECT status FROM payments WHERE id = :p"), {"p": str(second_payment_id)}
+            )
+        ).first()
+        assert payment_row is not None
+        assert payment_row.status == "duplicate_charge"
+
+        # The first payment's own outcome is untouched by the second's
+        # failure — this is specifically about not losing the *second*
+        # charge, not about disturbing the one that actually fulfilled
+        # the order.
+        first_payment_row = (
+            await s.execute(
+                sa.text("SELECT status FROM payments WHERE id = :p"), {"p": str(first_payment_id)}
+            )
+        ).first()
+        assert first_payment_row is not None
+        assert first_payment_row.status == "complete"
+
+        audit_row = (
+            await s.execute(
+                sa.text(
+                    "SELECT id FROM audit_events WHERE entity_id = :p "
+                    "AND action = 'payment.webhook.duplicate_charge'"
+                ),
+                {"p": str(second_payment_id)},
+            )
+        ).first()
+        assert audit_row is not None
+
+
 async def test_amount_mismatch_is_not_fulfilled(  # type: ignore[no-untyped-def]
     app_and_client, tenant_session_factory, crypto
 ) -> None:

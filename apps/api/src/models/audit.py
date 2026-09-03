@@ -77,6 +77,12 @@ class AuditAction:
     ASSIGNMENT_REVIEWED = "assignment.reviewed"
     # 03 §5.7: "an invalid signature is 401 and an audit event."
     PAYMENT_WEBHOOK_REJECTED = "payment.webhook.rejected"
+    # fable5.1_review.md H-4: a genuine, provider-confirmed charge that
+    # arrived for an order this system had already fulfilled through a
+    # different `Payment` row (checkout_card makes a fresh one per
+    # attempt) — recorded so the duplicate charge surfaces for manual
+    # reconciliation instead of vanishing into an unhandled exception.
+    PAYMENT_WEBHOOK_DUPLICATE_CHARGE = "payment.webhook.duplicate_charge"
     # Money and credentials moving on a human's say-so. Added with the
     # audit read path (Pass B): the log existed, but the actions a
     # compliance reviewer opens it for were the ones not being written.

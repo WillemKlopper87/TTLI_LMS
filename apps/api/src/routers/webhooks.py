@@ -36,6 +36,7 @@ from src.models.audit import AuditAction
 from src.models.commerce import Order, Payment, PaymentWebhook
 from src.services import audit
 from src.services import orders as orders_service
+from src.services.orders import OrderError
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -133,13 +134,61 @@ async def payfast_webhook(
         amount_matches = event.amount == payment.amount
 
         if event.succeeded and amount_matches:
-            await orders_service.fulfil_card_payment(
-                session,
-                tenant_id=tenant_id,
-                order=order,
-                payment=payment,
-                supplier_vat_number=settings.supplier_vat_number or None,
-            )
+            try:
+                await orders_service.fulfil_card_payment(
+                    session,
+                    tenant_id=tenant_id,
+                    order=order,
+                    payment=payment,
+                    supplier_vat_number=settings.supplier_vat_number or None,
+                )
+            except OrderError:
+                # fable5.1_review.md H-4: `checkout_card` (orders.py) makes
+                # a fresh `Payment` per checkout attempt, so a buyer who
+                # pays twice (two tabs, a retried checkout) has two
+                # genuinely-charged `Payment` rows for the same order. The
+                # first ITN fulfils it; this second, later-arriving one is
+                # a real confirmed charge for an order that is no longer
+                # `pending_payment` — `fulfil_card_payment` raises for
+                # exactly that (its own status guard, or `_fulfil_order`'s
+                # locked recheck under true concurrency). Left unhandled,
+                # that exception used to propagate out of `tenant_session`
+                # before the `PaymentWebhook` row below was ever written —
+                # no audit trail, no 200, Payfast retries the same ITN
+                # forever. Persisted and flagged instead: this order's
+                # `pending_payment` -> `fulfilled` transition already
+                # happened via the correct payment; this row records the
+                # duplicate charge that still needs a human to reconcile
+                # (via `list_pending_payments`'-style tooling, or the raw
+                # `payments` table) rather than losing it silently.
+                # `order.status` reflects the fresh, lock-refreshed read
+                # `_fulfil_order` did before raising — checked instead of
+                # blindly trusting every `OrderError` here is this
+                # specific "someone else already got there first" case,
+                # so a genuine fulfilment bug (a missing product link, a
+                # deleted buyer) still surfaces instead of being silently
+                # relabelled a duplicate.
+                if order.status == "pending_payment":
+                    raise
+                payment.status = "duplicate_charge"
+                log.error(
+                    "payfast_webhook_order_already_fulfilled",
+                    payment_id=str(payment.id),
+                    order_id=str(order.id),
+                    order_status=order.status,
+                )
+                await audit.record(
+                    session,
+                    tenant_id=tenant_id,
+                    action=AuditAction.PAYMENT_WEBHOOK_DUPLICATE_CHARGE,
+                    entity_type="payment",
+                    entity_id=payment.id,
+                    after={
+                        "order_id": str(order.id),
+                        "order_status": order.status,
+                        "provider": provider.name,
+                    },
+                )
         else:
             payment.status = "failed" if not event.succeeded else "amount_mismatch"
             if not amount_matches:
