@@ -15,11 +15,12 @@ lessons with no row are computed on read, never eagerly materialised.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -29,7 +30,7 @@ from src.core.errors import Forbidden, LessonLocked, NotFound
 from src.core.ids import uuid7
 from src.models.assessment import Assignment, AssignmentSubmission, QuizAttempt, Survey
 from src.models.audit import AuditAction
-from src.models.course import Course, Lesson, LessonBlock, Module
+from src.models.course import Course, CourseTenantAssignment, Lesson, LessonBlock, Module
 from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.learning_path import LearningPath
@@ -178,6 +179,36 @@ async def _get_lesson_and_course(
     return row[0], row[1]
 
 
+async def _publicly_previewable_course_ids(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    rows: Sequence[Row[tuple[uuid.UUID, str, str]]],
+) -> set[uuid.UUID]:
+    """H-9: a `public`-access lesson is a free preview only of a course
+    this caller's tenant can actually reach as a catalogue item —
+    `Course.state == "published"` and a real `CourseTenantAssignment`,
+    exactly the visibility `services/courses.py::get_public_lesson_preview`
+    and `_visible_course` already require for the unauthenticated
+    curriculum/preview surface. Without this, `access_level="public"`
+    alone let any signed-in caller of any tenant mint a playback URL or
+    view a quiz/survey/assignment for a draft course, or one bespoke to
+    a tenant other than the caller's, as long as some lesson referencing
+    it happened to be marked public."""
+    public_course_ids = {
+        course_id
+        for course_id, state, access_level in rows
+        if access_level == "public" and state == "published"
+    }
+    if not public_course_ids:
+        return set()
+    assigned_stmt = select(CourseTenantAssignment.course_id).where(
+        CourseTenantAssignment.tenant_id == tenant_id,
+        CourseTenantAssignment.course_id.in_(public_course_ids),
+    )
+    return set((await session.execute(assigned_stmt)).scalars().all())
+
+
 async def _has_access_to_media(
     session: AsyncSession,
     *,
@@ -191,15 +222,16 @@ async def _has_access_to_media(
     whose course the caller must hold a real, still-valid entitlement for
     (never just an Enrolment row's existence — a lapsed subscription must
     actually cut off access, services/entitlements.py::
-    has_valid_course_entitlement), unless the lesson itself is a free
-    preview (`access_level="public"`). `column` (a `LessonBlock` column,
-    0041) is walked to every lesson block that references it (there is
-    no uniqueness constraint stopping more than one), not just the first
-    — any one of them being public, or any one of their courses being
-    validly accessible, is enough."""
+    has_valid_course_entitlement), unless the lesson itself is a free,
+    actually-published, actually-assigned-to-this-tenant preview (H-9;
+    see `_publicly_previewable_course_ids`). `column` (a `LessonBlock`
+    column, 0041) is walked to every lesson block that references it
+    (there is no uniqueness constraint stopping more than one), not just
+    the first — any one of them being a real public preview, or any one
+    of their courses being validly accessible, is enough."""
     rows = (
         await session.execute(
-            select(Course.id, Lesson.access_level)
+            select(Course.id, Course.state, Lesson.access_level)
             .join(Module, Module.course_id == Course.id)
             .join(Lesson, Lesson.module_id == Module.id)
             .join(LessonBlock, LessonBlock.lesson_id == Lesson.id)
@@ -208,10 +240,10 @@ async def _has_access_to_media(
     ).all()
     if not rows:
         return False
-    if any(access_level == "public" for _course_id, access_level in rows):
+    if await _publicly_previewable_course_ids(session, tenant_id=tenant_id, rows=rows):
         return True
 
-    course_ids = [course_id for course_id, _access_level in rows]
+    course_ids = [course_id for course_id, _state, _access_level in rows]
     enrolled_stmt = select(Enrolment.course_id).where(
         Enrolment.tenant_id == tenant_id,
         Enrolment.user_id == user_id,
@@ -278,37 +310,42 @@ async def _has_view_access_via_lesson_fk(
     column: InstrumentedAttribute[uuid.UUID | None],
     value: uuid.UUID,
 ) -> bool:
-    """View-only access for a quiz/survey/assignment reached through a
-    single referencing lesson block — public if the lesson is a free
-    preview, otherwise the same real-enrolment-plus-valid-entitlement
-    check `has_access_to_video` uses. Never creates an Enrolment or
-    touches completion.py — preview is view-only (module docstring).
-    `column` is a `LessonBlock` column (0041)."""
-    row = (
+    """View-only access for a quiz/survey/assignment reached through one
+    or more referencing lesson blocks — public if a real, published,
+    tenant-assigned preview lesson references it (H-9; see
+    `_publicly_previewable_course_ids` — a lesson's `access_level` alone
+    is never enough, the same boundary `has_access_to_video` enforces),
+    otherwise the same real-enrolment-plus-valid-entitlement check on any
+    one of the referencing courses. Never creates an Enrolment or touches
+    completion.py — preview is view-only (module docstring). `column` is
+    a `LessonBlock` column (0041)."""
+    rows = (
         await session.execute(
-            select(Course.id, Lesson.access_level)
+            select(Course.id, Course.state, Lesson.access_level)
             .join(Module, Module.course_id == Course.id)
             .join(Lesson, Lesson.module_id == Module.id)
             .join(LessonBlock, LessonBlock.lesson_id == Lesson.id)
             .where(column == value)
         )
-    ).first()
-    if row is None:
+    ).all()
+    if not rows:
         return False
-    course_id, access_level = row
-    if access_level == "public":
+    if await _publicly_previewable_course_ids(session, tenant_id=tenant_id, rows=rows):
         return True
 
-    enrolment_stmt = select(Enrolment.id).where(
+    course_ids = [course_id for course_id, _state, _access_level in rows]
+    enrolled_stmt = select(Enrolment.course_id).where(
         Enrolment.tenant_id == tenant_id,
         Enrolment.user_id == user_id,
-        Enrolment.course_id == course_id,
+        Enrolment.course_id.in_(course_ids),
     )
-    if (await session.execute(enrolment_stmt)).first() is None:
-        return False
-    return await entitlements.has_valid_course_entitlement(
-        session, tenant_id=tenant_id, user_id=user_id, course_id=course_id
-    )
+    enrolled_course_ids = (await session.execute(enrolled_stmt)).scalars().all()
+    for course_id in enrolled_course_ids:
+        if await entitlements.has_valid_course_entitlement(
+            session, tenant_id=tenant_id, user_id=user_id, course_id=course_id
+        ):
+            return True
+    return False
 
 
 async def has_view_access_to_quiz(
