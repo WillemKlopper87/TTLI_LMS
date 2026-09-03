@@ -857,7 +857,7 @@ async def get_progress(
     if course is None:  # pragma: no cover - FK guarantees this
         raise NotFound("No such course.")
 
-    outline = await course_wizard.get_outline(session, course_id=course.id)
+    outline = await course_wizard.get_outline(session, course_id=course.id, tenant_id=tenant_id)
     completions_stmt = select(LessonCompletion).where(LessonCompletion.enrolment_id == enrolment.id)
     completions = {c.lesson_id: c for c in (await session.execute(completions_stmt)).scalars()}
     now = datetime.now(UTC)

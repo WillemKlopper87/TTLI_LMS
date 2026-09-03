@@ -323,7 +323,9 @@ async def _fulfil_path_purchase(
     lapsed) must not violate `path_enrolments`' one-row-per-user-per-path
     unique index, same reasoning `enrolment_service.get_or_create_
     enrolment`'s own docstring gives for a course."""
-    members = await paths_service.list_path_courses(session, learning_path_id=learning_path_id)
+    members = await paths_service.list_path_courses(
+        session, learning_path_id=learning_path_id, tenant_id=tenant_id
+    )
     for _member, course in members:
         course_entitlement = await entitlements.grant(
             session,
