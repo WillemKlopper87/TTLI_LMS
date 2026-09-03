@@ -117,6 +117,17 @@ else
   EMAIL_FROM="${EMAIL_FROM:-no-reply@$DOMAIN}"
 
   echo
+  echo "Container registry (CI builds, scans, signs and pushes images to GHCR --"
+  echo "TTLI_Audit_Report_2026-09-02.md M3 -- this VM only ever pulls by digest,"
+  echo "never builds, on releases shipped via scripts/rolling-update.sh)."
+  read -rp "  GHCR namespace [ghcr.io/willemklopper87/ttli_lms]: " REGISTRY
+  REGISTRY="${REGISTRY:-ghcr.io/willemklopper87/ttli_lms}"
+  read -rp "  GitHub username the pull token belongs to: " GHCR_USERNAME
+  [ -n "$GHCR_USERNAME" ] || die "GHCR_USERNAME is required -- rolling-update.sh authenticates to GHCR with it"
+  read -rsp "  Fine-grained PAT, packages:read only, scoped to this repo: " GHCR_PAT; echo
+  [ -n "$GHCR_PAT" ] || die "GHCR_PAT is required -- create one at https://github.com/settings/personal-access-tokens/new"
+
+  echo
   echo "Off-VM backup destination (rclone remote, e.g. an rclone-configured"
   echo "Azure Blob/S3/B2 bucket — run 'rclone config' separately if you"
   echo "haven't already). Leave blank to skip backups for now (not recommended)."
@@ -175,6 +186,10 @@ S3_ACCESS_KEY=$S3_ACCESS_KEY
 S3_SECRET_KEY=$S3_SECRET_KEY
 GARAGE_RPC_SECRET=$GARAGE_RPC_SECRET
 GARAGE_ADMIN_TOKEN=$GARAGE_ADMIN_TOKEN
+
+REGISTRY=$REGISTRY
+GHCR_USERNAME=$GHCR_USERNAME
+GHCR_PAT=$GHCR_PAT
 
 SENTRY_DSN=$SENTRY_DSN
 
@@ -253,11 +268,42 @@ log "Writing infra/Caddyfile for $DOMAIN"
 sed "s/{DOMAIN}/$DOMAIN/g" infra/Caddyfile.template > infra/Caddyfile
 
 # --------------------------------------------------------------------
-# 8. Build and start.
+# 8. Pull the release and start.
+#
+# No `build:` in $COMPOSE_FILE any more (TTLI_Audit_Report_2026-09-02.md
+# M3 — the same "run what CI scanned and signed, not a fresh host build"
+# reasoning as scripts/rolling-update.sh, which this block deliberately
+# mirrors). A first-time bootstrap needs the exact same pull-then-tag
+# step rolling-update.sh does on every later release, since without it
+# `up -d` would try to resolve the bare `ttli-api:latest`/`ttli-web:latest`
+# image names compose.yml references against Docker Hub instead of GHCR.
 # --------------------------------------------------------------------
-log "Building and starting the stack (this takes a few minutes on first run)"
-export GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
+log "Pulling the release (this takes a few minutes on first run)"
+export GIT_SHA="${RELEASE:-$(git rev-parse HEAD)}"
+API_IMAGE="$REGISTRY/ttli-api:sha-$GIT_SHA"
+WEB_IMAGE="$REGISTRY/ttli-web:sha-$GIT_SHA"
+echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+docker pull "$API_IMAGE"
+docker pull "$WEB_IMAGE"
+# Mandatory, not best-effort (fable5.1_review.md C-3): a host with no
+# cosign has no way to tell a real release from an unsigned or tampered
+# image, so first-boot must refuse rather than warn and continue —
+# skipping the check here would leave every subsequent
+# scripts/rolling-update.sh redeploy on this host looking "verified" for
+# a machine that was never actually capable of verifying anything. See
+# that script's own comment on this same check for the full reasoning.
+command -v cosign >/dev/null 2>&1 \
+  || die "cosign is not installed on this host — refusing to deploy an unverified image. Install it first: https://docs.sigstore.dev/cosign/system_config/installation/"
+cosign verify \
+  --certificate-identity "https://github.com/WillemKlopper87/TTLI_LMS/.github/workflows/ci.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "$API_IMAGE" "$WEB_IMAGE" >/dev/null \
+  || die "signature verification failed — refusing to deploy an unsigned or tampered image"
+docker tag "$API_IMAGE" ttli-api:latest
+docker tag "$WEB_IMAGE" ttli-web:latest
+
+log "Starting the stack"
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
 log "Waiting for core services to report healthy"
 for svc in postgres redis clamav; do

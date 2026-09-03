@@ -30,6 +30,8 @@ warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ -f "$ENV_FILE" ] || die "$ENV_FILE not found — this isn't a deployed instance (run scripts/deploy-single-vm.sh first)"
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
 
 cd "$APP_DIR"
 DC() { docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"; }
@@ -50,13 +52,53 @@ PREV_API="$(prev_image ttli-api:latest)"
 PREV_WEB="$(prev_image ttli-web:latest)"
 
 # --------------------------------------------------------------------
-# Build first, while the old containers are still serving traffic —
-# the only part of this that takes real time, and it costs zero downtime
-# because nothing is swapped yet.
+# Pull the already-built, already-scanned, already-signed release
+# instead of building on the production host (TTLI_Audit_Report_2026-09-02.md
+# M3) — the image running here must be the exact bytes CI's Trivy pass
+# scanned and cosign signed, not a fresh build that could quietly drift
+# from what was reviewed (a newer base-layer patch landing between build
+# and deploy, a cache miss). RELEASE lets an operator pin to a specific
+# known-good commit — e.g. to redeploy an older release after a bad
+# rollout emptied the local `ttli-api:latest`/`ttli-web:latest` tags this
+# script's own rollback below depends on — and defaults to whatever
+# `git pull --ff-only` above just landed on.
 # --------------------------------------------------------------------
-log "Building images"
-export GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-DC build api web
+: "${REGISTRY:?REGISTRY not set in $ENV_FILE -- e.g. ghcr.io/willemklopper87/ttli_lms (see scripts/deploy-single-vm.sh)}"
+: "${GHCR_USERNAME:?GHCR_USERNAME not set in $ENV_FILE}"
+: "${GHCR_PAT:?GHCR_PAT not set in $ENV_FILE -- a packages:read fine-grained PAT}"
+export GIT_SHA="${RELEASE:-$(git rev-parse HEAD)}"
+
+API_IMAGE="$REGISTRY/ttli-api:sha-$GIT_SHA"
+WEB_IMAGE="$REGISTRY/ttli-web:sha-$GIT_SHA"
+
+log "Logging in to GHCR"
+echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+log "Pulling $API_IMAGE and $WEB_IMAGE"
+docker pull "$API_IMAGE"
+docker pull "$WEB_IMAGE"
+
+# Keyless-signed in CI (OIDC via id-token: write — no stored signing key
+# to rotate or leak). Verifying against this exact workflow's identity
+# means a signature alone isn't enough; it must have come from this
+# repo's ci.yml running on refs/heads/main, which a forked PR could never
+# produce even if it tried. Mandatory, not best-effort (fable5.1_review.md
+# C-3): a host with no cosign has no way to tell a real release from an
+# unsigned or tampered image, so it must refuse to deploy rather than
+# warn and continue — the whole point of signing in CI is defeated if the
+# one place that verifies it can be skipped by simply not installing the
+# verifier.
+command -v cosign >/dev/null 2>&1 \
+  || die "cosign is not installed on this host — refusing to deploy an unverified image. Install it first: https://docs.sigstore.dev/cosign/system_config/installation/"
+log "Verifying image signatures"
+cosign verify \
+  --certificate-identity "https://github.com/WillemKlopper87/TTLI_LMS/.github/workflows/ci.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "$API_IMAGE" "$WEB_IMAGE" >/dev/null \
+  || die "signature verification failed — refusing to deploy an unsigned or tampered image"
+
+docker tag "$API_IMAGE" ttli-api:latest
+docker tag "$WEB_IMAGE" ttli-web:latest
 
 # --------------------------------------------------------------------
 # Migrations run before anything that would use the new schema — and
