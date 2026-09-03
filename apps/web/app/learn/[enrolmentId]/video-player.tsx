@@ -23,7 +23,15 @@ interface PlaybackResponse {
  * (REQ-BYPASS-02/03/04). The watermark is a player overlay rendered here,
  * client-side — never a burned-in re-encode (06 §3.5).
  */
-export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; videoAssetId: string }) {
+export function VideoPlayer({
+  lessonId,
+  blockId,
+  videoAssetId,
+}: {
+  lessonId: string;
+  blockId: string;
+  videoAssetId: string;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sessionIdRef = useRef<string>(crypto.randomUUID());
   const [watermark, setWatermark] = useState<Watermark | null>(null);
@@ -72,6 +80,7 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            block_id: blockId,
             position_seconds: video.currentTime,
             playback_rate: video.playbackRate || 1.0,
             session_id: sessionIdRef.current,
@@ -87,7 +96,7 @@ export function VideoPlayer({ lessonId, videoAssetId }: { lessonId: string; vide
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (hls) hls.destroy();
     };
-  }, [lessonId, videoAssetId]);
+  }, [lessonId, blockId, videoAssetId]);
 
   if (error) {
     return <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>{error}</p>;

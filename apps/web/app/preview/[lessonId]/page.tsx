@@ -9,15 +9,26 @@ import { useSession } from "@/lib/session-context";
 
 import { VideoPlayer } from "../../learn/[enrolmentId]/video-player";
 
-interface LessonPreview {
+/** Shared by the public preview response
+ * (`schemas/courses.py::PublicBlockPreviewResponse`) and the author-side
+ * fallback (`LessonBlockResponse`, which is a strict superset) — both
+ * carry these same fields. */
+interface PreviewBlock {
   id: string;
-  title: string;
-  activity_type: string;
+  position: number;
+  block_type: string;
   body: string | null;
   video_asset_id: string | null;
+  audio_asset_id: string | null;
   quiz_id: string | null;
   survey_id: string | null;
   assignment_id: string | null;
+}
+
+interface LessonPreview {
+  id: string;
+  title: string;
+  blocks: PreviewBlock[];
 }
 
 interface QuizQuestionView {
@@ -204,21 +215,43 @@ export default function PreviewPage() {
             {lesson.title}
           </h1>
 
-          {lesson.activity_type === "document" ? (
-            <p className="mt-4" style={{ fontSize: "0.9375rem", whiteSpace: "pre-wrap" }}>
-              {lesson.body}
-            </p>
-          ) : !signedIn ? (
-            <SignInGate />
-          ) : lesson.activity_type === "video" && lesson.video_asset_id ? (
-            <VideoPlayer lessonId={lesson.id} videoAssetId={lesson.video_asset_id} />
-          ) : lesson.activity_type === "quiz" && lesson.quiz_id ? (
-            <QuizPreview quizId={lesson.quiz_id} />
-          ) : lesson.activity_type === "survey" && lesson.survey_id ? (
-            <SurveyPreview surveyId={lesson.survey_id} />
-          ) : lesson.activity_type === "assignment" && lesson.assignment_id ? (
-            <AssignmentPreview assignmentId={lesson.assignment_id} />
-          ) : null}
+          {lesson.blocks.map((block) => {
+            if (block.block_type === "text") {
+              return block.body ? (
+                <p
+                  key={block.id}
+                  className="mt-4"
+                  style={{ fontSize: "0.9375rem", whiteSpace: "pre-wrap" }}
+                >
+                  {block.body}
+                </p>
+              ) : null;
+            }
+            // Every non-text block needs a signed-in visitor — the gate
+            // itself renders once, below, rather than once per block.
+            if (!signedIn) return null;
+            if (block.block_type === "video" && block.video_asset_id) {
+              return (
+                <VideoPlayer
+                  key={block.id}
+                  lessonId={lesson.id}
+                  blockId={block.id}
+                  videoAssetId={block.video_asset_id}
+                />
+              );
+            }
+            if (block.block_type === "quiz" && block.quiz_id) {
+              return <QuizPreview key={block.id} quizId={block.quiz_id} />;
+            }
+            if (block.block_type === "survey" && block.survey_id) {
+              return <SurveyPreview key={block.id} surveyId={block.survey_id} />;
+            }
+            if (block.block_type === "assignment" && block.assignment_id) {
+              return <AssignmentPreview key={block.id} assignmentId={block.assignment_id} />;
+            }
+            return null;
+          })}
+          {!signedIn && lesson.blocks.some((b) => b.block_type !== "text") ? <SignInGate /> : null}
         </>
       )}
     </main>

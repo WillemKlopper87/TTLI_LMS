@@ -162,6 +162,11 @@ export default function LearnEnrolmentPage() {
   }
 
   const playable = current.state === "in_progress" || current.state === "requirements_met";
+  // The first video block, if any, gets the hero slot above the title —
+  // same placement the old single-activity-per-lesson layout gave a
+  // video lesson. Every other block (any number, any type, in order)
+  // renders below inside `underplayer`.
+  const heroVideo = current.blocks.find((b) => b.block_type === "video" && b.video_asset_id) ?? null;
   const moduleNumber =
     lessons.filter((l, i) => i <= index && l.module_title !== lessons[i - 1]?.module_title).length ||
     1;
@@ -180,8 +185,12 @@ export default function LearnEnrolmentPage() {
         />
 
         <div className="stagearea">
-          {current.activity_type === "video" && current.video_asset_id && playable ? (
-            <VideoPlayer lessonId={current.lesson_id} videoAssetId={current.video_asset_id} />
+          {heroVideo && playable ? (
+            <VideoPlayer
+              lessonId={current.lesson_id}
+              blockId={heroVideo.block_id}
+              videoAssetId={heroVideo.video_asset_id as string}
+            />
           ) : null}
 
           <div className="underplayer">
@@ -199,28 +208,51 @@ export default function LearnEnrolmentPage() {
               </span>
             </div>
 
-            {current.activity_type === "document" && current.body ? (
-              <div className="prose">
-                {current.body.split(/\n{2,}/).map((para, i) => (
-                  <p key={i}>{para}</p>
-                ))}
-              </div>
-            ) : null}
-
-            {current.activity_type === "quiz" && current.quiz_id && playable ? (
-              <QuizPlayer
-                quizId={current.quiz_id}
-                courseTitle={progress.course_title}
-                moduleTitle={current.module_title}
-                onGraded={load}
-              />
-            ) : null}
-            {current.activity_type === "survey" && current.survey_id && playable ? (
-              <SurveyForm surveyId={current.survey_id} onSubmitted={load} />
-            ) : null}
-            {current.activity_type === "assignment" && current.assignment_id && playable ? (
-              <AssignmentUpload assignmentId={current.assignment_id} />
-            ) : null}
+            {current.blocks
+              .filter((block) => block.block_id !== heroVideo?.block_id)
+              .map((block) => {
+                if (block.block_type === "text" && block.body) {
+                  return (
+                    <div className="prose" key={block.block_id}>
+                      {block.body.split(/\n{2,}/).map((para, i) => (
+                        <p key={i}>{para}</p>
+                      ))}
+                    </div>
+                  );
+                }
+                if (block.block_type === "video" && block.video_asset_id && playable) {
+                  // Not the hero (first) video block — a lesson can hold
+                  // more than one — still rendered, just further down.
+                  return (
+                    <VideoPlayer
+                      key={block.block_id}
+                      lessonId={current.lesson_id}
+                      blockId={block.block_id}
+                      videoAssetId={block.video_asset_id}
+                    />
+                  );
+                }
+                if (block.block_type === "quiz" && block.quiz_id && playable) {
+                  return (
+                    <QuizPlayer
+                      key={block.block_id}
+                      quizId={block.quiz_id}
+                      courseTitle={progress.course_title}
+                      moduleTitle={current.module_title}
+                      onGraded={load}
+                    />
+                  );
+                }
+                if (block.block_type === "survey" && block.survey_id && playable) {
+                  return (
+                    <SurveyForm key={block.block_id} surveyId={block.survey_id} onSubmitted={load} />
+                  );
+                }
+                if (block.block_type === "assignment" && block.assignment_id && playable) {
+                  return <AssignmentUpload key={block.block_id} assignmentId={block.assignment_id} />;
+                }
+                return null;
+              })}
 
             <RequirementsPanel
               checks={current.checks}

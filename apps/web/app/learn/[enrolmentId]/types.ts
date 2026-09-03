@@ -13,6 +13,23 @@ export interface CompletionCheck {
   required: string | null;
 }
 
+/** One block of a lesson's content (0041) — a lesson holds an ordered
+ * list of these instead of the single activity_type/video_asset_id/...
+ * fields it used to. `block_id` names the block that owns this content,
+ * needed wherever a request has to say *which* block (e.g. the video
+ * heartbeat, `POST /lessons/{id}/heartbeat`). */
+export interface LessonBlock {
+  block_id: string;
+  position: number;
+  block_type: string;
+  body: string | null;
+  video_asset_id: string | null;
+  audio_asset_id: string | null;
+  quiz_id: string | null;
+  survey_id: string | null;
+  assignment_id: string | null;
+}
+
 export interface LessonProgress {
   lesson_id: string;
   module_id?: string | null;
@@ -20,16 +37,11 @@ export interface LessonProgress {
   module_position?: number | null;
   title: string;
   position: number;
-  activity_type: string;
-  video_asset_id: string | null;
-  quiz_id: string | null;
-  survey_id: string | null;
-  assignment_id: string | null;
+  blocks: LessonBlock[];
   state: string;
   unmet_requirements: string[];
   checks?: CompletionCheck[];
   estimated_minutes?: number | null;
-  body?: string | null;
 }
 
 export interface EnrolmentProgress {
