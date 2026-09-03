@@ -48,6 +48,7 @@ from src.schemas.credentials import (
     VisibilityRequest,
 )
 from src.services import audit, rate_limit
+from src.services import courses as courses_service
 from src.services import credentials as credentials_service
 from src.services.storage import Container
 
@@ -336,7 +337,12 @@ async def get_linkedin_share(
 # same reuse of the one content-authoring permission `routers/courses.py`
 # and `routers/assessment.py` already apply across course/quiz/survey/
 # assignment content. Templates are global, not tenant-scoped (same as
-# `Course` itself), so there is no tenant filter on any of these.
+# `Course` itself): unattached to any course, a template is unclaimed and
+# open the same way a freshly created course is. `Course.certificate_
+# template_id`/`badge_template_id` is the only thing that ever links one to
+# a course, so H-12's boundary applies here exactly as it does for a
+# quiz/survey/assignment reached through a lesson block — visible/editable
+# if unattached, or if this tenant can see *any* course that uses it.
 
 
 def _certificate_template_response(template: CertificateTemplate) -> CertificateTemplateResponse:
@@ -395,8 +401,15 @@ async def list_certificate_templates(
     principal.require("course:view")
     stmt = select(CertificateTemplate).order_by(CertificateTemplate.title)
     templates = (await session.execute(stmt)).scalars().all()
+    course_ids_by_template = {
+        t.id: await courses_service.course_ids_for_certificate_template(session, template_id=t.id)
+        for t in templates
+    }
+    visible = await courses_service.filter_authorable(
+        session, tenant_id=principal.tenant_id, course_ids_by_item=course_ids_by_template
+    )
     return CertificateTemplatesPageResponse(
-        items=[_certificate_template_response(t) for t in templates]
+        items=[_certificate_template_response(t) for t in templates if t.id in visible]
     )
 
 
@@ -411,6 +424,12 @@ async def update_certificate_template(
     template = await session.get(CertificateTemplate, _parse_uuid(template_id))
     if template is None:
         raise NotFound("No such certificate template.")
+    course_ids = await courses_service.course_ids_for_certificate_template(
+        session, template_id=template.id
+    )
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=course_ids, tenant_id=principal.tenant_id
+    )
     if body.title is not None:
         template.title = body.title
     if body.issuer_name is not None:
@@ -457,7 +476,16 @@ async def list_badge_templates(
     principal.require("course:view")
     stmt = select(BadgeTemplate).order_by(BadgeTemplate.title)
     templates = (await session.execute(stmt)).scalars().all()
-    return BadgeTemplatesPageResponse(items=[_badge_template_response(t) for t in templates])
+    course_ids_by_template = {
+        t.id: await courses_service.course_ids_for_badge_template(session, template_id=t.id)
+        for t in templates
+    }
+    visible = await courses_service.filter_authorable(
+        session, tenant_id=principal.tenant_id, course_ids_by_item=course_ids_by_template
+    )
+    return BadgeTemplatesPageResponse(
+        items=[_badge_template_response(t) for t in templates if t.id in visible]
+    )
 
 
 @router.patch("/badge-templates/{template_id}", response_model=BadgeTemplateResponse)
@@ -471,6 +499,12 @@ async def update_badge_template(
     template = await session.get(BadgeTemplate, _parse_uuid(template_id))
     if template is None:
         raise NotFound("No such badge template.")
+    course_ids = await courses_service.course_ids_for_badge_template(
+        session, template_id=template.id
+    )
+    await courses_service.assert_any_course_authorable(
+        session, course_ids=course_ids, tenant_id=principal.tenant_id
+    )
     if body.title is not None:
         template.title = body.title
     if body.criteria is not None:
