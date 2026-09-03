@@ -29,7 +29,7 @@ from src.core.errors import Forbidden, LessonLocked, NotFound
 from src.core.ids import uuid7
 from src.models.assessment import Assignment, AssignmentSubmission, QuizAttempt, Survey
 from src.models.audit import AuditAction
-from src.models.course import Course, Lesson, Module
+from src.models.course import Course, Lesson, LessonBlock, Module
 from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.learning_path import LearningPath
@@ -37,6 +37,7 @@ from src.models.media import VideoAsset
 from src.models.user import User
 from src.services import audit, course_wizard, entitlements, identity
 from src.services import credentials as credentials_service
+from src.services import lesson_blocks as lesson_blocks_service
 from src.services import survey as survey_service
 from src.services import video_progress as video_progress_service
 from src.services.completion import CompletionRules, evaluate, merge_rules
@@ -74,6 +75,25 @@ class LessonCheckRow:
 
 
 @dataclass(frozen=True, slots=True)
+class LessonBlockProgressRow:
+    """One block as the learner view renders it (0041) — enough to pick
+    the right player/viewer component and fetch its content, not the
+    full authoring shape (no completion_rules; a learner never sees a
+    block's own rule override, only the lesson-level merged verdict in
+    `checks`/`unmet_requirements` below)."""
+
+    block_id: uuid.UUID
+    position: int
+    block_type: str
+    body: str | None
+    video_asset_id: uuid.UUID | None
+    audio_asset_id: uuid.UUID | None
+    quiz_id: uuid.UUID | None
+    survey_id: uuid.UUID | None
+    assignment_id: uuid.UUID | None
+
+
+@dataclass(frozen=True, slots=True)
 class LessonProgressRow:
     lesson_id: uuid.UUID
     module_id: uuid.UUID
@@ -81,12 +101,8 @@ class LessonProgressRow:
     module_position: int
     title: str
     position: int
-    activity_type: str
     estimated_minutes: int
-    video_asset_id: uuid.UUID | None
-    quiz_id: uuid.UUID | None
-    survey_id: uuid.UUID | None
-    assignment_id: uuid.UUID | None
+    blocks: list[LessonBlockProgressRow]
     state: str
     unmet_requirements: list[str]
     checks: list[LessonCheckRow]
@@ -162,25 +178,32 @@ async def _get_lesson_and_course(
     return row[0], row[1]
 
 
-async def has_access_to_video(
-    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, video_asset_id: uuid.UUID
+async def _has_access_to_media(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    column: InstrumentedAttribute[uuid.UUID | None],
+    asset_id: uuid.UUID,
 ) -> bool:
     """03 §6.7's entitlement check, run before a playback URL is ever
-    minted — a video is reachable only through a lesson, whose course the
-    caller must hold a real, still-valid entitlement for (never just an
-    Enrolment row's existence — a lapsed subscription must actually cut
-    off access, services/entitlements.py::has_valid_course_entitlement),
-    unless the lesson itself is a free preview (`access_level="public"`).
-    A video_asset_id is walked to every lesson that references it (there is
-    no uniqueness constraint stopping more than one), not just the first —
-    any one of them being public, or any one of their courses being
+    minted — a video or audio asset is reachable only through a lesson,
+    whose course the caller must hold a real, still-valid entitlement for
+    (never just an Enrolment row's existence — a lapsed subscription must
+    actually cut off access, services/entitlements.py::
+    has_valid_course_entitlement), unless the lesson itself is a free
+    preview (`access_level="public"`). `column` (a `LessonBlock` column,
+    0041) is walked to every lesson block that references it (there is
+    no uniqueness constraint stopping more than one), not just the first
+    — any one of them being public, or any one of their courses being
     validly accessible, is enough."""
     rows = (
         await session.execute(
             select(Course.id, Lesson.access_level)
             .join(Module, Module.course_id == Course.id)
             .join(Lesson, Lesson.module_id == Module.id)
-            .where(Lesson.video_asset_id == video_asset_id)
+            .join(LessonBlock, LessonBlock.lesson_id == Lesson.id)
+            .where(column == asset_id)
         )
     ).all()
     if not rows:
@@ -203,16 +226,42 @@ async def has_access_to_video(
     return False
 
 
+async def has_access_to_video(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, video_asset_id: uuid.UUID
+) -> bool:
+    return await _has_access_to_media(
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        column=LessonBlock.video_asset_id,
+        asset_id=video_asset_id,
+    )
+
+
+async def has_access_to_audio(
+    session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, audio_asset_id: uuid.UUID
+) -> bool:
+    return await _has_access_to_media(
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        column=LessonBlock.audio_asset_id,
+        asset_id=audio_asset_id,
+    )
+
+
 async def _course_for_lesson_fk(
     session: AsyncSession, column: InstrumentedAttribute[uuid.UUID | None], value: uuid.UUID
 ) -> Course:
     """Shared by the quiz/survey/assignment enrolment resolvers below —
-    each activity is reachable only through the one lesson that
-    references it, same as `has_access_to_video`'s video_asset_id walk."""
+    each activity is reachable only through the one lesson block that
+    references it, same as `has_access_to_video`'s video_asset_id walk.
+    `column` is a `LessonBlock` column (0041)."""
     stmt = (
         select(Course)
         .join(Module, Module.course_id == Course.id)
         .join(Lesson, Lesson.module_id == Module.id)
+        .join(LessonBlock, LessonBlock.lesson_id == Lesson.id)
         .where(column == value)
     )
     course = (await session.execute(stmt)).scalars().first()
@@ -230,15 +279,17 @@ async def _has_view_access_via_lesson_fk(
     value: uuid.UUID,
 ) -> bool:
     """View-only access for a quiz/survey/assignment reached through a
-    single referencing lesson — public if the lesson is a free preview,
-    otherwise the same real-enrolment-plus-valid-entitlement check
-    `has_access_to_video` uses. Never creates an Enrolment or touches
-    completion.py — preview is view-only (module docstring)."""
+    single referencing lesson block — public if the lesson is a free
+    preview, otherwise the same real-enrolment-plus-valid-entitlement
+    check `has_access_to_video` uses. Never creates an Enrolment or
+    touches completion.py — preview is view-only (module docstring).
+    `column` is a `LessonBlock` column (0041)."""
     row = (
         await session.execute(
             select(Course.id, Lesson.access_level)
             .join(Module, Module.course_id == Course.id)
             .join(Lesson, Lesson.module_id == Module.id)
+            .join(LessonBlock, LessonBlock.lesson_id == Lesson.id)
             .where(column == value)
         )
     ).first()
@@ -264,7 +315,7 @@ async def has_view_access_to_quiz(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, quiz_id: uuid.UUID
 ) -> bool:
     return await _has_view_access_via_lesson_fk(
-        session, tenant_id=tenant_id, user_id=user_id, column=Lesson.quiz_id, value=quiz_id
+        session, tenant_id=tenant_id, user_id=user_id, column=LessonBlock.quiz_id, value=quiz_id
     )
 
 
@@ -272,7 +323,11 @@ async def has_view_access_to_survey(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, survey_id: uuid.UUID
 ) -> bool:
     return await _has_view_access_via_lesson_fk(
-        session, tenant_id=tenant_id, user_id=user_id, column=Lesson.survey_id, value=survey_id
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        column=LessonBlock.survey_id,
+        value=survey_id,
     )
 
 
@@ -283,7 +338,7 @@ async def has_view_access_to_assignment(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
-        column=Lesson.assignment_id,
+        column=LessonBlock.assignment_id,
         value=assignment_id,
     )
 
@@ -291,7 +346,7 @@ async def has_view_access_to_assignment(
 async def resolve_enrolment_for_quiz(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, quiz_id: uuid.UUID
 ) -> Enrolment:
-    course = await _course_for_lesson_fk(session, Lesson.quiz_id, quiz_id)
+    course = await _course_for_lesson_fk(session, LessonBlock.quiz_id, quiz_id)
     return await get_own_enrolment(
         session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
     )
@@ -300,7 +355,7 @@ async def resolve_enrolment_for_quiz(
 async def resolve_enrolment_for_survey(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, survey_id: uuid.UUID
 ) -> Enrolment:
-    course = await _course_for_lesson_fk(session, Lesson.survey_id, survey_id)
+    course = await _course_for_lesson_fk(session, LessonBlock.survey_id, survey_id)
     return await get_own_enrolment(
         session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
     )
@@ -309,7 +364,7 @@ async def resolve_enrolment_for_survey(
 async def resolve_enrolment_for_assignment(
     session: AsyncSession, *, tenant_id: uuid.UUID, user_id: uuid.UUID, assignment_id: uuid.UUID
 ) -> Enrolment:
-    course = await _course_for_lesson_fk(session, Lesson.assignment_id, assignment_id)
+    course = await _course_for_lesson_fk(session, LessonBlock.assignment_id, assignment_id)
     return await get_own_enrolment(
         session, tenant_id=tenant_id, user_id=user_id, course_id=course.id
     )
@@ -433,32 +488,104 @@ async def _next_lesson(
     return None
 
 
-async def _video_watch_percentage(
-    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
-) -> float | None:
-    if lesson.video_asset_id is None:
-        return None
-    video_asset = await session.get(VideoAsset, lesson.video_asset_id)
-    if video_asset is None or video_asset.duration_seconds is None:
-        return None
-    return await video_progress_service.watch_percentage(
-        session,
-        enrolment_id=enrolment_id,
-        lesson_id=lesson.id,
-        duration_seconds=video_asset.duration_seconds,
+async def _completed_lesson_ids(
+    session: AsyncSession, *, enrolment_id: uuid.UUID, lesson_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    if not lesson_ids:
+        return set()
+    stmt = select(LessonCompletion.lesson_id).where(
+        LessonCompletion.enrolment_id == enrolment_id,
+        LessonCompletion.lesson_id.in_(lesson_ids),
+        LessonCompletion.state == "completed",
     )
+    return set((await session.execute(stmt)).scalars().all())
 
 
-async def _latest_quiz_attempt(
-    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
+async def _all_prior_lessons_completed(
+    session: AsyncSession, *, course_id: uuid.UUID, lesson_id: uuid.UUID, enrolment_id: uuid.UUID
+) -> bool:
+    """C-2 — the strict-linear chain this module's own docstring already
+    claims (02 §13's cohort/drip-release modes aren't built yet), enforced
+    server-side rather than merely computed for display
+    (`get_progress`'s `previous_completed`). A lesson with no prior
+    lessons (the first one) always passes."""
+    ordered = await _ordered_lessons(session, course_id)
+    ids = [item.lesson.id for item in ordered]
+    idx = ids.index(lesson_id)
+    prior_ids = ids[:idx]
+    if not prior_ids:
+        return True
+    completed = await _completed_lesson_ids(
+        session, enrolment_id=enrolment_id, lesson_ids=prior_ids
+    )
+    return len(completed) >= len(prior_ids)
+
+
+async def _all_lessons_completed(
+    session: AsyncSession, *, course_id: uuid.UUID, enrolment_id: uuid.UUID
+) -> bool:
+    """C-2 — the real "is the course actually done" predicate a course
+    completion (and everything downstream of `Enrolment.completed_at`,
+    including `services/learning_paths.py::all_member_courses_completed`)
+    must be gated on, instead of "the positionally-last lesson has a
+    completion row" (`next_lesson is None`) — sound only under the
+    strict-linear chain `_all_prior_lessons_completed` now enforces at
+    every `start_lesson` call, so this is a second, independent check on
+    the one moment a certificate gets issued, not a trust of that
+    invariant holding by construction alone."""
+    ordered = await _ordered_lessons(session, course_id)
+    ids = [item.lesson.id for item in ordered]
+    if not ids:
+        return False
+    completed = await _completed_lesson_ids(session, enrolment_id=enrolment_id, lesson_ids=ids)
+    return len(completed) >= len(ids)
+
+
+async def _blocks_of_type(
+    session: AsyncSession, *, lesson_id: uuid.UUID, block_type: str
+) -> list[LessonBlock]:
+    return [
+        block
+        for block in await lesson_blocks_service.list_blocks(session, lesson_id=lesson_id)
+        if block.block_type == block_type
+    ]
+
+
+async def _video_watch_percentage(
+    session: AsyncSession, *, lesson_id: uuid.UUID, enrolment_id: uuid.UUID
+) -> float | None:
+    """The minimum watched percentage across every video block in the
+    lesson (0041 — a lesson can hold more than one). `evaluate()`'s
+    single threshold check (watched >= required) is true for every block
+    iff it's true for the worst one, so this lets the rule engine itself
+    stay a single scalar comparison while still ANDing the rule across N
+    blocks. None only when there is nothing to check — no video block,
+    or none with a usable asset/duration."""
+    percentages: list[float] = []
+    for block in await _blocks_of_type(session, lesson_id=lesson_id, block_type="video"):
+        if block.video_asset_id is None:
+            continue
+        video_asset = await session.get(VideoAsset, block.video_asset_id)
+        if video_asset is None or video_asset.duration_seconds is None:
+            continue
+        pct = await video_progress_service.watch_percentage(
+            session,
+            enrolment_id=enrolment_id,
+            lesson_block_id=block.id,
+            duration_seconds=video_asset.duration_seconds,
+        )
+        percentages.append(pct or 0.0)
+    return min(percentages) if percentages else None
+
+
+async def _latest_quiz_attempt_for(
+    session: AsyncSession, *, quiz_id: uuid.UUID, enrolment_id: uuid.UUID
 ) -> QuizAttempt | None:
-    if lesson.quiz_id is None:
-        return None
     stmt = (
         select(QuizAttempt)
         .where(
             QuizAttempt.enrolment_id == enrolment_id,
-            QuizAttempt.quiz_id == lesson.quiz_id,
+            QuizAttempt.quiz_id == quiz_id,
             QuizAttempt.invalidated_at.is_(None),
             QuizAttempt.submitted_at.isnot(None),
         )
@@ -467,44 +594,88 @@ async def _latest_quiz_attempt(
     return (await session.execute(stmt)).scalars().first()
 
 
+async def _quiz_passed(
+    session: AsyncSession, *, lesson_id: uuid.UUID, enrolment_id: uuid.UUID
+) -> tuple[bool | None, Decimal | None]:
+    """True only if every quiz block in the lesson has a passed attempt;
+    None otherwise — never a hard False, matching the single-quiz
+    behaviour this generalises (an ungraded or unattempted quiz reads as
+    "awaiting", not "failed"). The reported score is the minimum across
+    blocks, same reasoning as the video watch-percentage aggregate."""
+    blocks = await _blocks_of_type(session, lesson_id=lesson_id, block_type="quiz")
+    if not blocks:
+        return None, None
+    all_passed = True
+    scores: list[Decimal] = []
+    for block in blocks:
+        if block.quiz_id is None:
+            all_passed = False
+            continue
+        attempt = await _latest_quiz_attempt_for(
+            session, quiz_id=block.quiz_id, enrolment_id=enrolment_id
+        )
+        if attempt is None or attempt.passed is not True:
+            all_passed = False
+        if attempt is not None and attempt.score is not None:
+            scores.append(attempt.score)
+    return (True, min(scores) if scores else None) if all_passed else (None, None)
+
+
 async def _survey_responded(
     session: AsyncSession,
     crypto: CryptoBox,
     *,
-    lesson: Lesson,
+    lesson_id: uuid.UUID,
     user_id: uuid.UUID,
     enrolment_id: uuid.UUID,
 ) -> bool:
-    if lesson.survey_id is None:
+    """True only once every survey block in the lesson has been
+    responded to."""
+    blocks = await _blocks_of_type(session, lesson_id=lesson_id, block_type="survey")
+    if not blocks:
         return False
-    survey = await session.get(Survey, lesson.survey_id)
-    if survey is None:  # pragma: no cover - FK guarantees this
-        return False
-    return await survey_service.has_responded(
-        session, crypto, survey=survey, user_id=user_id, enrolment_id=enrolment_id
-    )
+    for block in blocks:
+        if block.survey_id is None:
+            return False
+        survey = await session.get(Survey, block.survey_id)
+        if survey is None:  # pragma: no cover - FK guarantees this
+            return False
+        if not await survey_service.has_responded(
+            session, crypto, survey=survey, user_id=user_id, enrolment_id=enrolment_id
+        ):
+            return False
+    return True
 
 
 async def _assignment_approved(
-    session: AsyncSession, *, lesson: Lesson, enrolment_id: uuid.UUID
+    session: AsyncSession, *, lesson_id: uuid.UUID, enrolment_id: uuid.UUID
 ) -> bool:
-    if lesson.assignment_id is None:
+    """True only once every assignment block in the lesson is approved
+    (or, for one that doesn't require approval, submitted at all)."""
+    blocks = await _blocks_of_type(session, lesson_id=lesson_id, block_type="assignment")
+    if not blocks:
         return False
-    assignment = await session.get(Assignment, lesson.assignment_id)
-    if assignment is None:  # pragma: no cover - FK guarantees this
-        return False
-    stmt = (
-        select(AssignmentSubmission)
-        .where(
-            AssignmentSubmission.enrolment_id == enrolment_id,
-            AssignmentSubmission.assignment_id == lesson.assignment_id,
+    for block in blocks:
+        if block.assignment_id is None:
+            return False
+        assignment = await session.get(Assignment, block.assignment_id)
+        if assignment is None:  # pragma: no cover - FK guarantees this
+            return False
+        stmt = (
+            select(AssignmentSubmission)
+            .where(
+                AssignmentSubmission.enrolment_id == enrolment_id,
+                AssignmentSubmission.assignment_id == block.assignment_id,
+            )
+            .order_by(AssignmentSubmission.version.desc())
         )
-        .order_by(AssignmentSubmission.version.desc())
-    )
-    latest = (await session.execute(stmt)).scalars().first()
-    if latest is None:
-        return False
-    return latest.approved_at is not None if assignment.approval_required else True
+        latest = (await session.execute(stmt)).scalars().first()
+        if latest is None:
+            return False
+        approved = latest.approved_at is not None if assignment.approval_required else True
+        if not approved:
+            return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,22 +691,24 @@ async def _completion_context(
     session: AsyncSession,
     crypto: CryptoBox,
     *,
-    lesson: Lesson,
+    lesson_id: uuid.UUID,
     user_id: uuid.UUID,
     enrolment_id: uuid.UUID,
 ) -> _CompletionContext:
-    attempt = await _latest_quiz_attempt(session, lesson=lesson, enrolment_id=enrolment_id)
+    quiz_passed, quiz_score = await _quiz_passed(
+        session, lesson_id=lesson_id, enrolment_id=enrolment_id
+    )
     return _CompletionContext(
         video_watched_percentage=await _video_watch_percentage(
-            session, lesson=lesson, enrolment_id=enrolment_id
+            session, lesson_id=lesson_id, enrolment_id=enrolment_id
         ),
-        quiz_passed=attempt.passed if attempt is not None else None,
-        quiz_score=attempt.score if attempt is not None else None,
+        quiz_passed=quiz_passed,
+        quiz_score=quiz_score,
         survey_responded=await _survey_responded(
-            session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment_id
+            session, crypto, lesson_id=lesson_id, user_id=user_id, enrolment_id=enrolment_id
         ),
         assignment_approved=await _assignment_approved(
-            session, lesson=lesson, enrolment_id=enrolment_id
+            session, lesson_id=lesson_id, enrolment_id=enrolment_id
         ),
     )
 
@@ -588,26 +761,39 @@ def _check_values(
 
 
 async def video_context(
-    session: AsyncSession, *, lesson: Lesson, course: Course, enrolment_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    block: LessonBlock,
+    lesson: Lesson,
+    course: Course,
+    enrolment_id: uuid.UUID,
 ) -> VideoContext:
     """What `POST /lessons/{id}/heartbeat` answers with beside the raw
     counters — the same merged rule set and the same
     `video_progress.watch_percentage` the completion engine reads, so the
-    player's progress ring can never disagree with the server's verdict."""
+    player's progress ring can never disagree with the server's verdict.
+    Block-scoped (0041): a lesson can hold more than one video block,
+    each tracked independently."""
     duration_seconds: int | None = None
     watched: int | None = None
-    if lesson.video_asset_id is not None:
-        asset = await session.get(VideoAsset, lesson.video_asset_id)
+    if block.video_asset_id is not None:
+        asset = await session.get(VideoAsset, block.video_asset_id)
         if asset is not None:
             duration_seconds = asset.duration_seconds
             if duration_seconds:
                 percentage = await video_progress_service.watch_percentage(
                     session,
                     enrolment_id=enrolment_id,
-                    lesson_id=lesson.id,
+                    lesson_block_id=block.id,
                     duration_seconds=duration_seconds,
                 )
                 watched = int(percentage) if percentage is not None else None
+    # Course -> lesson only, two tiers, not three (0041): completion is
+    # still evaluated once per lesson, aggregated across that lesson's
+    # blocks (see _video_watch_percentage etc.) rather than once per
+    # block — so a block's own completion_rules has nothing meaningful
+    # to be merged into here yet. It stays on the model for a future
+    # per-block evaluation pass, not consulted by v1.
     rules = merge_rules(course.completion_rules, lesson.completion_rules)
     return VideoContext(
         watched_percentage=watched,
@@ -643,6 +829,16 @@ async def start_lesson(
     completion = await _existing_completion(session, enrolment_id=enrolment.id, lesson_id=lesson.id)
     if completion is not None:
         return completion
+
+    # C-2: prerequisite locking used to be computed for display only
+    # (get_progress's `previous_completed`) and never actually enforced
+    # here — a learner could POST straight to the last lesson's /start
+    # and, from there, /complete it into a certificate. This is the
+    # server-side half of the same strict-linear chain.
+    if not await _all_prior_lessons_completed(
+        session, course_id=course.id, lesson_id=lesson.id, enrolment_id=enrolment.id
+    ):
+        raise LessonLocked("Complete the prior lessons in this course before starting this one.")
 
     completion = LessonCompletion(
         id=uuid7(),
@@ -717,7 +913,7 @@ async def complete_lesson(
 
     rules = merge_rules(course.completion_rules, lesson.completion_rules)
     ctx = await _completion_context(
-        session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment.id
+        session, crypto, lesson_id=lesson.id, user_id=user_id, enrolment_id=enrolment.id
     )
     result = evaluate(
         rules,
@@ -758,7 +954,17 @@ async def complete_lesson(
     )
 
     next_lesson = await _next_lesson(session, course_id=course.id, current_lesson_id=lesson.id)
-    if next_lesson is None:
+    # C-2: "no next lesson by position" used to be trusted as "the course
+    # is done" on its own — sound only if every prior lesson was actually
+    # completed to reach here, which `start_lesson`'s prerequisite check
+    # now guarantees, but `enrolment.completed_at` (and everything that
+    # reads it, learning-path certification included) is too consequential
+    # to rest on that invariant holding by construction alone. Checked
+    # independently here instead.
+    course_is_complete = next_lesson is None and await _all_lessons_completed(
+        session, course_id=course.id, enrolment_id=enrolment.id
+    )
+    if course_is_complete:
         enrolment.completed_at = datetime.now(UTC)
         await session.flush()
         # REQ-CRED-01: issued only here, at the exact moment the rule
@@ -881,7 +1087,7 @@ async def get_progress(
             rules = merge_rules(course.completion_rules, lesson.completion_rules)
             ctx = (
                 await _completion_context(
-                    session, crypto, lesson=lesson, user_id=user_id, enrolment_id=enrolment.id
+                    session, crypto, lesson_id=lesson.id, user_id=user_id, enrolment_id=enrolment.id
                 )
                 if _rules_need_context(rules)
                 else _EMPTY_CONTEXT
@@ -926,12 +1132,21 @@ async def get_progress(
                     module_position=module_outline.module.position,
                     title=lesson.title,
                     position=lesson.position,
-                    activity_type=lesson.activity_type,
                     estimated_minutes=item.estimated_minutes,
-                    video_asset_id=lesson.video_asset_id,
-                    quiz_id=lesson.quiz_id,
-                    survey_id=lesson.survey_id,
-                    assignment_id=lesson.assignment_id,
+                    blocks=[
+                        LessonBlockProgressRow(
+                            block_id=b.block.id,
+                            position=b.block.position,
+                            block_type=b.block.block_type,
+                            body=b.block.body,
+                            video_asset_id=b.block.video_asset_id,
+                            audio_asset_id=b.block.audio_asset_id,
+                            quiz_id=b.block.quiz_id,
+                            survey_id=b.block.survey_id,
+                            assignment_id=b.block.assignment_id,
+                        )
+                        for b in item.blocks
+                    ],
                     state=state,
                     unmet_requirements=unmet,
                     checks=checks,
@@ -1003,6 +1218,7 @@ async def get_transcript(
 
 __all__ = [
     "EnrolmentProgress",
+    "LessonBlockProgressRow",
     "LessonCheckRow",
     "LessonProgressRow",
     "OwnEnrolmentRow",
@@ -1014,6 +1230,7 @@ __all__ = [
     "get_own_enrolment",
     "get_progress",
     "get_transcript",
+    "has_access_to_audio",
     "has_access_to_video",
     "list_own_enrolments",
     "persist_certificate_pdf",

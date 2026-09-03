@@ -1297,3 +1297,183 @@ async def test_completing_every_member_course_issues_one_path_certificate(  # ty
     assert body["found"] is True
     assert body["is_learning_path"] is True
     assert body["course_title"] == "Completable Path"
+
+
+async def _published_course_with_two_lessons(client, auth: dict[str, str]) -> str:  # type: ignore[no-untyped-def]
+    """Same shape as `_published_course`, but with a second lesson — the
+    minimum needed to exercise a real prerequisite chain (a one-lesson
+    course has no "prior lesson" to skip)."""
+    course = await client.post(
+        "/api/v1/courses",
+        json={"title": f"Path Member Course {uuid.uuid4().hex[:8]}"},
+        headers=auth,
+    )
+    assert course.status_code == 201, course.text
+    course_id = course.json()["id"]
+    module = await client.post(
+        f"/api/v1/courses/{course_id}/modules", json={"title": "Module 1"}, headers=auth
+    )
+    module_id = module.json()["id"]
+    for title in ("Lesson 1", "Lesson 2"):
+        lesson = await client.post(
+            f"/api/v1/modules/{module_id}/lessons", json={"title": title}, headers=auth
+        )
+        assert lesson.status_code == 201, lesson.text
+    published = await client.post(f"/api/v1/courses/{course_id}/publish", headers=auth)
+    assert published.status_code == 200, published.text
+    return str(course_id)
+
+
+async def test_learning_path_certificate_cannot_be_triggered_by_skipping_a_course_prerequisite(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """C-2's downstream half: `all_member_courses_completed`/
+    `find_path_enrolments_for_course_completion` only ever read
+    `Enrolment.completed_at`, so once that column can no longer be set
+    by completing merely the positionally-last lesson of a course
+    (services/enrolment.py::complete_lesson's own C-2 fix), the
+    learning-path certificate shortcut fable5.1_review.md's C-2 finding
+    describes closes automatically — this proves it end-to-end rather
+    than trusting that inference. `course_a` carries two lessons; the
+    exploit here is "start straight at lesson 2, skipping lesson 1" —
+    refused at the API (regression-tested on its own, at the course
+    level, by test_learning.py::
+    test_last_lesson_cannot_be_started_before_prerequisites) — so
+    `course_a` never actually completes, `course_b` does (legitimately,
+    its one lesson), and the path — needing *both* — must not."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    admin_auth = {"Authorization": f"Bearer {admin_token}"}
+
+    course_a = await _published_course_with_two_lessons(client, admin_auth)
+    course_b = await _published_course(client, admin_auth)
+
+    path = (
+        await client.post(
+            "/api/v1/learning-paths", json={"title": "Unskippable Path"}, headers=admin_auth
+        )
+    ).json()
+    path_id = path["id"]
+    for course_id in (course_a, course_b):
+        await client.post(
+            f"/api/v1/learning-paths/{path_id}/courses",
+            json={"course_id": course_id},
+            headers=admin_auth,
+        )
+    await client.post(f"/api/v1/learning-paths/{path_id}/publish", headers=admin_auth)
+    await client.post(
+        f"/api/v1/learning-paths/{path_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers=admin_auth,
+    )
+
+    product = (
+        await client.post(
+            "/api/v1/catalogue/products",
+            json={
+                "slug": f"unskippable-path-{uuid.uuid4().hex[:8]}",
+                "name": "Unskippable Path Product",
+                "learning_path_id": path_id,
+            },
+            headers=admin_auth,
+        )
+    ).json()
+    price = (
+        await client.post(
+            f"/api/v1/catalogue/products/{product['id']}/prices",
+            json={"currency": "ZAR", "unit_amount": "1000.00"},
+            headers=admin_auth,
+        )
+    ).json()
+    await client.patch(
+        f"/api/v1/catalogue/products/{product['id']}", json={"is_active": True}, headers=admin_auth
+    )
+
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    buyer_auth = {"Authorization": f"Bearer {buyer_token}"}
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "individual",
+            "lines": [{"price_id": price["id"], "quantity": 1}],
+        },
+        headers={**buyer_auth, "Idempotency-Key": uuid.uuid4().hex},
+    )
+    order_id = order.json()["id"]
+    checkout = await client.post(f"/api/v1/orders/{order_id}/checkout/eft", headers=buyer_auth)
+    payment_id = checkout.json()["payment_id"]
+    await client.post(
+        f"/api/v1/orders/{order_id}/payment-proof",
+        files={"file": ("proof.txt", b"a real bank transfer receipt", "text/plain")},
+        headers=buyer_auth,
+    )
+    finance = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    approved = await client.post(
+        f"/api/v1/payments/{payment_id}/approve",
+        headers={"Authorization": f"Bearer {finance}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approved.status_code == 200, approved.text
+
+    own_paths = await client.get("/api/v1/path-enrolments", headers=buyer_auth)
+    path_enrolment_id = next(
+        r["path_enrolment_id"] for r in own_paths.json() if r["learning_path_id"] == path_id
+    )
+
+    # course_b: completed legitimately (its only lesson).
+    for lesson_id in await _lessons_for_course(tenant_session_factory, tenant_id, course_b):
+        start = await client.post(f"/api/v1/lessons/{lesson_id}/start", headers=buyer_auth)
+        assert start.status_code == 204, start.text
+        complete = await client.post(f"/api/v1/lessons/{lesson_id}/complete", headers=buyer_auth)
+        assert complete.status_code == 200, complete.text
+
+    # course_a: the exploit attempt -- straight to lesson 2, skipping 1.
+    course_a_lessons = await _lessons_for_course(tenant_session_factory, tenant_id, course_a)
+    assert len(course_a_lessons) == 2
+    skip_start = await client.post(
+        f"/api/v1/lessons/{course_a_lessons[1]}/start", headers=buyer_auth
+    )
+    assert skip_start.status_code == 423, skip_start.text
+    assert skip_start.json()["error"]["code"] == "LESSON_LOCKED"
+
+    progress = await client.get(
+        f"/api/v1/path-enrolments/{path_enrolment_id}/progress", headers=buyer_auth
+    )
+    assert progress.status_code == 200, progress.text
+    body = progress.json()
+    # course_b alone at 100% and course_a untouched must land well short
+    # of the path being "done" -- not the 0-or-100 the old bug produced.
+    assert body["progress_percent"] < 100
+    assert body["completed_at"] is None
+
+    async with tenant_session_factory(tenant_id) as s:
+        path_completed_at = (
+            await s.execute(
+                sa.text("SELECT completed_at FROM path_enrolments WHERE id = :p"),
+                {"p": path_enrolment_id},
+            )
+        ).scalar_one()
+        course_a_completed_at = (
+            await s.execute(
+                sa.text(
+                    "SELECT completed_at FROM enrolments WHERE user_id = "
+                    "(SELECT user_id FROM path_enrolments WHERE id = :p) AND course_id = :c"
+                ),
+                {"p": path_enrolment_id, "c": course_a},
+            )
+        ).scalar_one()
+        certificate_count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM certificates WHERE path_enrolment_id = :p"),
+                {"p": path_enrolment_id},
+            )
+        ).scalar_one()
+    assert path_completed_at is None, "the shortcut must not complete the path enrolment"
+    assert course_a_completed_at is None, "course_a must not read as completed either"
+    assert certificate_count == 0, "no path certificate may be issued off the back of this"

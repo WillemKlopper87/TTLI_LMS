@@ -222,6 +222,103 @@ async def test_complete_before_minimum_time_is_locked_with_reason(
     assert any(c["rule"] == "minimum_time_seconds" and not c["met"] for c in checks)
 
 
+async def test_last_lesson_cannot_be_started_before_prerequisites(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """C-2: prerequisite locking used to be computed for display only
+    (`get_progress`'s `locked` flag) and never actually enforced — a
+    learner could POST straight to the last lesson's /start, wait out
+    its own minimum_time_seconds, /complete it, and walk away with a
+    course certificate having never touched lesson 1. `start_lesson`
+    must refuse this outright."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    last_lesson_id = lessons[-1][0]
+
+    resp = await client.post(
+        f"/api/v1/lessons/{last_lesson_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 423, resp.text
+    assert resp.json()["error"]["code"] == "LESSON_LOCKED"
+
+    async with tenant_session_factory(tenant_id) as s:
+        row = (
+            await s.execute(
+                sa.text(
+                    "SELECT 1 FROM lesson_completions lc "
+                    "JOIN enrolments e ON e.id = lc.enrolment_id "
+                    "WHERE e.user_id = :u AND lc.lesson_id = :l"
+                ),
+                {"u": buyer_id, "l": last_lesson_id},
+            )
+        ).first()
+    assert row is None, "the refused start must not have created a completion row"
+
+
+async def test_course_never_completes_with_incomplete_required_lessons(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """C-2's second half: `enrolment.completed_at` used to be set
+    whenever `_next_lesson()` returned `None` — "this lesson is
+    positionally last" — rather than "every lesson is actually
+    complete". `start_lesson`'s own prerequisite check (regression-
+    tested separately, above) closes the API path to this state, but
+    `complete_lesson` must not rely on that invariant holding by
+    construction alone — it re-checks independently. Simulated here by
+    writing the pre-fix exploit's *precondition* straight into the
+    database (an in-progress completion on the last lesson, with the
+    first lesson never started), bypassing `start_lesson` on purpose to
+    isolate this second, independent guard."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    lessons = await _seeded_lessons(tenant_session_factory, tenant_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    last_lesson_id = lessons[-1][0]
+    enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO lesson_completions "
+                "(id, tenant_id, enrolment_id, lesson_id, state, first_seen_at) "
+                "VALUES (gen_random_uuid(), :t, :e, :l, 'in_progress', "
+                "now() - interval '1 hour')"
+            ),
+            {"t": str(tenant_id), "e": enrolment_id, "l": last_lesson_id},
+        )
+        await s.commit()
+
+    # The last lesson's own rule (minimum_time_seconds only) is satisfied
+    # by the backdated first_seen_at, so completing *it* succeeds — what
+    # must not happen is the course, or a certificate, completing off
+    # the back of that alone while lesson 1 was never started.
+    complete = await client.post(
+        f"/api/v1/lessons/{last_lesson_id}/complete", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert complete.status_code == 200, complete.text
+
+    async with tenant_session_factory(tenant_id) as s:
+        completed_at = (
+            await s.execute(
+                sa.text("SELECT completed_at FROM enrolments WHERE id = :e"), {"e": enrolment_id}
+            )
+        ).scalar_one()
+        certificate_count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM certificates WHERE enrolment_id = :e"),
+                {"e": enrolment_id},
+            )
+        ).scalar_one()
+    assert completed_at is None, "the course must not complete while lesson 1 was never done"
+    assert certificate_count == 0, "no certificate may be issued off the back of this"
+
+
 async def test_start_is_idempotent(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
@@ -610,13 +707,16 @@ async def test_dashboard_is_unauthenticated_without_a_token(client) -> None:  # 
 async def test_dashboard_lists_an_open_quiz_as_an_upcoming_assessment(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
-    """A quiz lesson the learner can sit right now is "upcoming" work,
+    """A quiz block the learner can sit right now is "upcoming" work,
     with the attempts the server would actually allow — the same count
     `services/quiz.py::start_attempt` enforces, not a client guess.
 
-    The seeded course is global and shared with every other test file, so
-    the lesson's activity wiring is snapshotted and restored, the same
-    discipline test_credentials.py uses for the course's template links.
+    The seeded course is global and shared with every other test file
+    (0041: a lesson's content is now a sequence of blocks), so this test
+    adds a new quiz block for the duration of the test and deletes it
+    afterward, rather than mutating the lesson's existing block(s) —
+    the same "don't permanently pollute shared seed data" discipline
+    test_credentials.py uses for the course's template links.
     """
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
@@ -626,18 +726,6 @@ async def test_dashboard_lists_an_open_quiz_as_an_upcoming_assessment(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
     )
 
-    async with tenant_session_factory(tenant_id) as s:
-        before = (
-            await s.execute(
-                sa.text(
-                    "SELECT activity_type, quiz_id, survey_id, assignment_id, video_asset_id "
-                    "FROM lessons WHERE id = :l"
-                ),
-                {"l": lesson_id},
-            )
-        ).first()
-    assert before is not None
-
     quiz = await client.post(
         "/api/v1/quizzes",
         headers={"Authorization": f"Bearer {author_token}"},
@@ -646,9 +734,17 @@ async def test_dashboard_lists_an_open_quiz_as_an_upcoming_assessment(
     assert quiz.status_code == 201, quiz.text
     quiz_id = quiz.json()["id"]
 
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"block_type": "quiz"},
+    )
+    assert block.status_code == 201, block.text
+    block_id = block.json()["id"]
+
     try:
         attach = await client.post(
-            f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
+            f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/quiz?quiz_id={quiz_id}",
             headers={"Authorization": f"Bearer {author_token}"},
         )
         assert attach.status_code == 204, attach.text
@@ -674,18 +770,7 @@ async def test_dashboard_lists_an_open_quiz_as_an_upcoming_assessment(
         assert item["starts_at"] is None
         assert item["join_url"] is None
     finally:
-        async with tenant_session_factory(tenant_id) as s:
-            await s.execute(
-                sa.text(
-                    "UPDATE lessons SET activity_type = :a, quiz_id = :q, survey_id = :s, "
-                    "assignment_id = :n, video_asset_id = :v WHERE id = :l"
-                ),
-                {
-                    "a": before[0],
-                    "q": before[1],
-                    "s": before[2],
-                    "n": before[3],
-                    "v": before[4],
-                    "l": lesson_id,
-                },
-            )
+        await client.delete(
+            f"/api/v1/lessons/{lesson_id}/blocks/{block_id}",
+            headers={"Authorization": f"Bearer {author_token}"},
+        )
