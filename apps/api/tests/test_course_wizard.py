@@ -198,9 +198,12 @@ async def test_delete_module_cascades_lessons(client, tenant_session_factory, cr
     assert [(m["id"], m["position"]) for m in left.json()["items"]] == [(m1, 0)]
 
 
-async def test_detach_activity_reverts_lesson_to_document(
+async def test_delete_block_removes_it_without_touching_the_rest_of_the_lesson(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
+    """0041: the reverse of an attach is deleting the one block in
+    question — there is no lesson-level "detach to document" any more,
+    since a lesson can hold any number of blocks."""
     _, token, _ = await _author(client, tenant_session_factory, crypto)
     course_id = await _make_course(client, token)
     module_id = await _make_module(client, token, course_id)
@@ -209,17 +212,24 @@ async def test_detach_activity_reverts_lesson_to_document(
         "/api/v1/quizzes", json={"title": "Q", "pass_score": 70}, headers=_auth(token)
     )
     assert quiz.status_code == 201, quiz.text
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks", json={"block_type": "quiz"}, headers=_auth(token)
+    )
+    assert block.status_code == 201, block.text
+    block_id = block.json()["id"]
     attached = await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz",
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/quiz",
         params={"quiz_id": quiz.json()["id"]},
         headers=_auth(token),
     )
     assert attached.status_code == 204, attached.text
 
-    resp = await client.delete(f"/api/v1/lessons/{lesson_id}/activity", headers=_auth(token))
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["activity_type"] == "document"
-    assert resp.json()["quiz_id"] is None
+    resp = await client.delete(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}", headers=_auth(token)
+    )
+    assert resp.status_code == 204, resp.text
+    lesson = await client.get(f"/api/v1/lessons/{lesson_id}", headers=_auth(token))
+    assert lesson.json()["blocks"] == []
     # The quiz itself survives — it may be attached elsewhere.
     still = await client.get(f"/api/v1/quizzes/{quiz.json()['id']}", headers=_auth(token))
     assert still.status_code == 200
@@ -306,8 +316,15 @@ async def test_outline_and_duplicate_share_video_but_deep_copy_quiz(
     course_id = await _make_course(client, token, title="Original")
     m1 = await _make_module(client, token, course_id, title="M1")
     doc = await _make_lesson(client, token, m1, title="Doc")
+    doc_block = await client.post(
+        f"/api/v1/lessons/{doc}/blocks", json={"block_type": "text"}, headers=_auth(token)
+    )
+    assert doc_block.status_code == 201, doc_block.text
+    doc_block_id = doc_block.json()["id"]
     await client.patch(
-        f"/api/v1/lessons/{doc}", json={"body": " ".join(["word"] * 400)}, headers=_auth(token)
+        f"/api/v1/lessons/{doc}/blocks/{doc_block_id}",
+        json={"body": " ".join(["word"] * 400)},
+        headers=_auth(token),
     )
     quiz_lesson = await _make_lesson(client, token, m1, title="Quiz lesson")
     quiz = await client.post(
@@ -329,8 +346,15 @@ async def test_outline_and_duplicate_share_video_but_deep_copy_quiz(
         headers=_auth(token),
     )
     assert q.status_code == 204, q.text
+    quiz_block = await client.post(
+        f"/api/v1/lessons/{quiz_lesson}/blocks", json={"block_type": "quiz"}, headers=_auth(token)
+    )
+    assert quiz_block.status_code == 201, quiz_block.text
+    quiz_block_id = quiz_block.json()["id"]
     await client.post(
-        f"/api/v1/lessons/{quiz_lesson}/quiz", params={"quiz_id": quiz_id}, headers=_auth(token)
+        f"/api/v1/lessons/{quiz_lesson}/blocks/{quiz_block_id}/quiz",
+        params={"quiz_id": quiz_id},
+        headers=_auth(token),
     )
 
     outline = await client.get(f"/api/v1/courses/{course_id}/outline", headers=_auth(token))
@@ -339,7 +363,7 @@ async def test_outline_and_duplicate_share_video_but_deep_copy_quiz(
     assert o["lesson_count"] == 2
     rows = {r["lesson"]["title"]: r for r in o["modules"][0]["lessons"]}
     assert rows["Doc"]["estimated_minutes"] == 2  # 400 words / 200 wpm
-    assert rows["Quiz lesson"]["question_count"] == 1
+    assert rows["Quiz lesson"]["blocks"][0]["question_count"] == 1
     assert o["estimated_minutes"] == 3
 
     dup = await client.post(f"/api/v1/courses/{course_id}/duplicate", json={}, headers=_auth(token))
@@ -354,9 +378,9 @@ async def test_outline_and_duplicate_share_video_but_deep_copy_quiz(
     copy_rows = {r["lesson"]["title"]: r for r in copy_outline["modules"][0]["lessons"]}
     assert set(copy_rows) == {"Doc", "Quiz lesson"}
     # The quiz was deep-copied: a different id, same question count.
-    assert copy_rows["Quiz lesson"]["lesson"]["quiz_id"] not in (None, quiz_id)
-    assert copy_rows["Quiz lesson"]["question_count"] == 1
-    assert copy_rows["Doc"]["lesson"]["body"].startswith("word word")
+    assert copy_rows["Quiz lesson"]["blocks"][0]["block"]["quiz_id"] not in (None, quiz_id)
+    assert copy_rows["Quiz lesson"]["blocks"][0]["question_count"] == 1
+    assert copy_rows["Doc"]["blocks"][0]["block"]["body"].startswith("word word")
 
 
 async def test_wizard_endpoints_require_course_edit(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
@@ -371,7 +395,7 @@ async def test_wizard_endpoints_require_course_edit(client, tenant_session_facto
         ("post", f"/api/v1/courses/{fake}/duplicate", {}),
         ("post", f"/api/v1/courses/{fake}/modules/reorder", {"ordered_ids": [fake]}),
         ("delete", f"/api/v1/lessons/{fake}", None),
-        ("delete", f"/api/v1/lessons/{fake}/activity", None),
+        ("delete", f"/api/v1/lessons/{fake}/blocks/{fake}", None),
         ("get", f"/api/v1/lessons/{fake}", None),
     ]:
         resp = await getattr(client, method)(

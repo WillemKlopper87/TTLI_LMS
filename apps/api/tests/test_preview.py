@@ -98,6 +98,30 @@ async def _login(
     return str(resp.json()["access_token"]), user_id
 
 
+async def _add_block(client, token: str, lesson_id: str, block_type: str) -> str:
+    """Create a block of `block_type` on `lesson_id` (0041 — content
+    attaches to a lesson's blocks, not the lesson itself) and return its
+    id."""
+    created = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        json={"block_type": block_type},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["id"]
+
+
+async def _add_document_block(client, token: str, lesson_id: str, body: str) -> str:
+    block_id = await _add_block(client, token, lesson_id, "text")
+    updated = await client.patch(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}",
+        json={"body": body},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert updated.status_code == 200, updated.text
+    return block_id
+
+
 async def _make_course_with_lessons(
     client, token: str, *, public_body: str = "Free preview content."
 ) -> tuple[str, str, str]:
@@ -121,17 +145,19 @@ async def _make_course_with_lessons(
 
     public_lesson = await client.post(
         f"/api/v1/modules/{module_id}/lessons",
-        json={"title": "Free Preview", "access_level": "public", "body": public_body},
+        json={"title": "Free Preview", "access_level": "public"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert public_lesson.status_code == 201, public_lesson.text
+    await _add_document_block(client, token, public_lesson.json()["id"], public_body)
 
     paid_lesson = await client.post(
         f"/api/v1/modules/{module_id}/lessons",
-        json={"title": "Paid Lesson", "body": "Members only."},
+        json={"title": "Paid Lesson"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert paid_lesson.status_code == 201, paid_lesson.text
+    await _add_document_block(client, token, paid_lesson.json()["id"], "Members only.")
 
     published = await client.post(
         f"/api/v1/courses/{course_id}/publish", headers={"Authorization": f"Bearer {token}"}
@@ -210,7 +236,7 @@ async def test_public_lesson_preview_returns_body_for_document_lesson(
 
     resp = await client.get(f"/api/v1/public/lessons/{public_lesson_id}/preview")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["body"] == "Come see the full course!"
+    assert resp.json()["blocks"][0]["body"] == "Come see the full course!"
 
 
 async def test_start_lesson_still_requires_enrolment_even_for_public_lesson(
@@ -263,10 +289,12 @@ async def test_quiz_preview_omits_correct_answers_and_creates_no_attempt(
             "points": 1,
         },
     )
-    await client.post(
-        f"/api/v1/lessons/{public_lesson_id}/quiz?quiz_id={quiz_id}",
+    block_id = await _add_block(client, author_token, public_lesson_id, "quiz")
+    attach = await client.post(
+        f"/api/v1/lessons/{public_lesson_id}/blocks/{block_id}/quiz?quiz_id={quiz_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
+    assert attach.status_code == 204, attach.text
 
     stranger_token, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
@@ -301,10 +329,12 @@ async def test_survey_view_allows_public_lesson_without_enrolment(
         json={"title": "Preview Survey", "response_mode": "identified", "minimum_group_size": 1},
     )
     survey_id = survey.json()["id"]
-    await client.post(
-        f"/api/v1/lessons/{public_lesson_id}/survey?survey_id={survey_id}",
+    block_id = await _add_block(client, author_token, public_lesson_id, "survey")
+    attach = await client.post(
+        f"/api/v1/lessons/{public_lesson_id}/blocks/{block_id}/survey?survey_id={survey_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
+    assert attach.status_code == 204, attach.text
 
     stranger_token, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
@@ -334,10 +364,12 @@ async def test_assignment_preview_allows_public_lesson_without_enrolment(
         },
     )
     assignment_id = assignment.json()["id"]
-    await client.post(
-        f"/api/v1/lessons/{public_lesson_id}/assignment?assignment_id={assignment_id}",
+    block_id = await _add_block(client, author_token, public_lesson_id, "assignment")
+    attach = await client.post(
+        f"/api/v1/lessons/{public_lesson_id}/blocks/{block_id}/assignment?assignment_id={assignment_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
+    assert attach.status_code == 204, attach.text
 
     stranger_token, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
@@ -420,8 +452,9 @@ async def test_video_playback_succeeds_for_public_lesson_without_enrolment(
 
     # Attached only to the paid lesson first — a stranger with no
     # entitlement must not be able to play it.
+    paid_block_id = await _add_block(client, author_token, paid_lesson_id, "video")
     attach_paid = await client.post(
-        f"/api/v1/lessons/{paid_lesson_id}/video?video_asset_id={asset_id}",
+        f"/api/v1/lessons/{paid_lesson_id}/blocks/{paid_block_id}/video?video_asset_id={asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert attach_paid.status_code == 204, attach_paid.text
@@ -433,8 +466,9 @@ async def test_video_playback_succeeds_for_public_lesson_without_enrolment(
     # The same asset also attached to the public preview lesson — now it
     # must play, since has_access_to_video treats "any matching lesson is
     # public" as sufficient (services/enrolment.py's own docstring).
+    public_block_id = await _add_block(client, author_token, public_lesson_id, "video")
     attach_public = await client.post(
-        f"/api/v1/lessons/{public_lesson_id}/video?video_asset_id={asset_id}",
+        f"/api/v1/lessons/{public_lesson_id}/blocks/{public_block_id}/video?video_asset_id={asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert attach_public.status_code == 204, attach_public.text
