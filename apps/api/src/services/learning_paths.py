@@ -38,7 +38,12 @@ from src.models.learning_path import (
 )
 from src.services import credentials as credentials_service
 from src.services import enrolment as enrolment_service
-from src.services.courses import PublicPriceRow
+from src.services.courses import (
+    PublicPriceRow,
+    assert_any_course_authorable,
+    assert_course_authorable,
+    course_ids_for_certificate_template,
+)
 from src.services.storage import StorageService
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -76,29 +81,108 @@ async def _unique_slug(session: AsyncSession, title: str) -> str:
     return slug
 
 
+# --- Cross-tenant authoring boundary (H-12) -------------------------------
+# The exact `CourseTenantAssignment` rule `services/courses.py` applies,
+# mirrored onto `LearningPathTenantAssignment` -- see that module's own
+# docstring on the boundary for the full reasoning.
+
+
+async def path_authorable(
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
+) -> bool:
+    """`learning_path_tenant_assignments` carries FORCE ROW LEVEL SECURITY
+    (0035): a query against it from tenant B's request transaction cannot
+    see tenant A's row at all, so "no assignment row visible to me" is
+    true for both a genuinely unclaimed path and one bespoke to someone
+    else — the one distinction that must not collapse. It also can't
+    just fall back to "draft state = unclaimed": the ordinary create ->
+    publish -> assign lifecycle leaves a real published-but-unassigned
+    window even for the authoring tenant itself. `LearningPath.
+    created_by_tenant_id` (0042, no RLS) is the fix — set once at
+    creation, readable by every tenant's session, answered without ever
+    needing to see another tenant's row (mirrors `services/courses.py::
+    course_authorable` exactly; see that function's docstring for the
+    full reasoning, including why a pre-0042 NULL-creator row still
+    falls back to "draft = unclaimed")."""
+    path = await session.get(LearningPath, learning_path_id)
+    if path is None:
+        return False
+    if path.created_by_tenant_id is not None:
+        if path.created_by_tenant_id == tenant_id:
+            return True
+    elif path.state == "draft":
+        return True
+    row = (
+        await session.execute(
+            select(LearningPathTenantAssignment.id).where(
+                LearningPathTenantAssignment.learning_path_id == learning_path_id,
+                LearningPathTenantAssignment.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    return row is not None
+
+
+async def assert_path_authorable(
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
+) -> None:
+    if not await path_authorable(session, learning_path_id=learning_path_id, tenant_id=tenant_id):
+        raise NotFound("No such learning path.")
+
+
 async def create_learning_path(
-    session: AsyncSession, *, title: str, slug: str | None, description: str | None
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    title: str,
+    slug: str | None,
+    description: str | None,
 ) -> LearningPath:
     path = LearningPath(
         id=uuid7(),
         slug=slug or await _unique_slug(session, title),
         title=title,
         description=description,
+        # 0042 (H-12) — see `path_authorable`.
+        created_by_tenant_id=tenant_id,
     )
     session.add(path)
     await session.flush()
     return path
 
 
-async def get_learning_path(session: AsyncSession, *, learning_path_id: uuid.UUID) -> LearningPath:
+async def get_learning_path(
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
+) -> LearningPath:
     path = await session.get(LearningPath, learning_path_id)
     if path is None:
         raise NotFound("No such learning path.")
+    await assert_path_authorable(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     return path
 
 
-async def list_learning_paths(session: AsyncSession) -> list[LearningPath]:
-    stmt = select(LearningPath).order_by(LearningPath.title)
+async def list_learning_paths(session: AsyncSession, *, tenant_id: uuid.UUID) -> list[LearningPath]:
+    """The list twin of `path_authorable`'s boundary (H-12); see that
+    function's docstring for why "created by me" (or a legacy
+    NULL-creator draft) plus "assigned to me" is what unclaimed has to
+    mean once `learning_path_tenant_assignments`' RLS is accounted for."""
+    has_my_assignment = (
+        select(LearningPathTenantAssignment.id)
+        .where(
+            LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+            LearningPathTenantAssignment.tenant_id == tenant_id,
+        )
+        .exists()
+    )
+    stmt = (
+        select(LearningPath)
+        .where(
+            (LearningPath.created_by_tenant_id == tenant_id)
+            | ((LearningPath.created_by_tenant_id.is_(None)) & (LearningPath.state == "draft"))
+            | has_my_assignment
+        )
+        .order_by(LearningPath.title)
+    )
     return list((await session.execute(stmt)).scalars().all())
 
 
@@ -106,11 +190,12 @@ async def update_learning_path(
     session: AsyncSession,
     *,
     learning_path_id: uuid.UUID,
+    tenant_id: uuid.UUID,
     title: str | None = None,
     description: str | None = None,
     certificate_template_id: uuid.UUID | None = None,
 ) -> LearningPath:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     if title is not None:
         path.title = title
     if description is not None:
@@ -118,13 +203,21 @@ async def update_learning_path(
     if certificate_template_id is not None:
         if await session.get(CertificateTemplate, certificate_template_id) is None:
             raise NotFound("No such certificate template.")
+        # Same reference-laundering guard `services/courses.py::
+        # update_course` applies to a course's own template fields.
+        existing_course_ids = await course_ids_for_certificate_template(
+            session, template_id=certificate_template_id
+        )
+        await assert_any_course_authorable(
+            session, course_ids=existing_course_ids, tenant_id=tenant_id
+        )
         path.certificate_template_id = certificate_template_id
     await session.flush()
     return path
 
 
 async def clear_certificate_template(
-    session: AsyncSession, *, learning_path_id: uuid.UUID
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> LearningPath:
     """`update_learning_path`'s `None = leave unchanged` PATCH semantics
     have no way to express "set this to null" — a course wizard's own
@@ -133,15 +226,16 @@ async def clear_certificate_template(
     (F6, docs/research/p5-review-findings.md; a path has only the one
     nullable FK to manage, not a course's certificate-and-badge pair,
     so this needs no request body at all)."""
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     path.certificate_template_id = None
     await session.flush()
     return path
 
 
 async def list_path_courses(
-    session: AsyncSession, *, learning_path_id: uuid.UUID
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> list[tuple[LearningPathCourse, Course]]:
+    await assert_path_authorable(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     stmt = (
         select(LearningPathCourse, Course)
         .join(Course, Course.id == LearningPathCourse.course_id)
@@ -152,9 +246,18 @@ async def list_path_courses(
 
 
 async def add_course_to_path(
-    session: AsyncSession, *, learning_path_id: uuid.UUID, course_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    learning_path_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    course_id: uuid.UUID,
 ) -> LearningPathCourse:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
+    # The course being bundled in must be one this tenant can actually
+    # see too -- otherwise a path built to include it would surface
+    # another tenant's bespoke course title/summary on this path's own
+    # public listing (H-12).
+    await assert_course_authorable(session, course_id=course_id, tenant_id=tenant_id)
     if path.state == "published":
         # A learner who already bought this path has no Enrolment for a
         # course added after purchase — get_path_progress would raise
@@ -203,9 +306,13 @@ async def add_course_to_path(
 
 
 async def remove_course_from_path(
-    session: AsyncSession, *, learning_path_id: uuid.UUID, course_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    learning_path_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    course_id: uuid.UUID,
 ) -> None:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     if path.state == "published":
         # Same reasoning as add_course_to_path's guard: removing the
         # only incomplete member of a purchased path leaves no lesson
@@ -238,27 +345,33 @@ def _check_permutation(expected: list[uuid.UUID], given: list[uuid.UUID]) -> Non
 
 
 async def reorder_path_courses(
-    session: AsyncSession, *, learning_path_id: uuid.UUID, ordered_course_ids: list[uuid.UUID]
+    session: AsyncSession,
+    *,
+    learning_path_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    ordered_course_ids: list[uuid.UUID],
 ) -> list[tuple[LearningPathCourse, Course]]:
     """The whole permutation in one transaction — same reasoning
     `course_wizard.py::reorder_modules` gives for not doing this as
     sequential per-item PATCHes: completion order is `position`, not
     insertion order, so a race here is learner-facing correctness, not
     cosmetics."""
-    rows = await list_path_courses(session, learning_path_id=learning_path_id)
+    rows = await list_path_courses(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     _check_permutation([member.course_id for member, _ in rows], ordered_course_ids)
     by_course_id = {member.course_id: member for member, _ in rows}
     for index, course_id in enumerate(ordered_course_ids):
         by_course_id[course_id].position = index
     await session.flush()
-    return await list_path_courses(session, learning_path_id=learning_path_id)
+    return await list_path_courses(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
 
 
 async def publish_learning_path(
-    session: AsyncSession, *, learning_path_id: uuid.UUID
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> LearningPath:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
-    members = await list_path_courses(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
+    members = await list_path_courses(
+        session, learning_path_id=learning_path_id, tenant_id=tenant_id
+    )
     if len(members) < MINIMUM_COURSES_TO_PUBLISH:
         raise LearningPathError(
             f"A learning path needs at least {MINIMUM_COURSES_TO_PUBLISH} courses "
@@ -275,9 +388,9 @@ async def publish_learning_path(
 
 
 async def unpublish_learning_path(
-    session: AsyncSession, *, learning_path_id: uuid.UUID
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> LearningPath:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     path.state = "draft"
     await session.flush()
     return path
@@ -286,7 +399,16 @@ async def unpublish_learning_path(
 async def assign_path_to_tenant(
     session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID, is_bespoke: bool
 ) -> LearningPathTenantAssignment:
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
+    """Same residual-gap note as `services/courses.py::
+    assign_course_to_tenant`: RLS on `learning_path_tenant_assignments`
+    means this function cannot see another tenant's row to refuse
+    self-assignment onto an already-bespoke path, and a check that
+    silently never fires is worse than none — see that function's
+    docstring for the full reasoning and the fix's report for the
+    residual scope."""
+    path = await session.get(LearningPath, learning_path_id)
+    if path is None:
+        raise NotFound("No such learning path.")
     if path.state != "published":
         raise LearningPathError("Only a published learning path may be assigned to a tenant.")
 
@@ -342,7 +464,7 @@ class PathReadiness:
 
 
 async def get_path_readiness(
-    session: AsyncSession, *, learning_path_id: uuid.UUID
+    session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> PathReadiness:
     """The same truth `publish_learning_path` enforces, made visible
     before the button — same relationship `course_wizard.py::
@@ -350,8 +472,10 @@ async def get_path_readiness(
     function, not a generalisation of the course one: a path's checks
     are structurally different (membership and member-state, not
     content/rules)."""
-    path = await get_learning_path(session, learning_path_id=learning_path_id)
-    members = await list_path_courses(session, learning_path_id=learning_path_id)
+    path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
+    members = await list_path_courses(
+        session, learning_path_id=learning_path_id, tenant_id=tenant_id
+    )
     checks: list[PathReadinessCheck] = []
 
     def add(code: str, level: str, ok: bool, message: str) -> None:
@@ -455,7 +579,7 @@ async def get_public_path(
     session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
 ) -> tuple[LearningPath, list[tuple[LearningPathCourse, Course]]]:
     path = await _visible_path(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
-    members = await list_path_courses(session, learning_path_id=path.id)
+    members = await list_path_courses(session, learning_path_id=path.id, tenant_id=tenant_id)
     return path, members
 
 
@@ -661,7 +785,9 @@ async def get_path_progress(
         session, crypto, storage, settings, tenant_id=tenant_id, path_enrolment=path_enrolment
     )
 
-    members = await list_path_courses(session, learning_path_id=path_enrolment.learning_path_id)
+    members = await list_path_courses(
+        session, learning_path_id=path_enrolment.learning_path_id, tenant_id=tenant_id
+    )
     courses: list[PathCourseProgress] = []
     for _member, course in members:
         try:
@@ -751,7 +877,9 @@ async def all_member_courses_completed(
     research/p5-review-findings.md) — every sibling query in this
     module does, and this one is one call away from a completion
     transaction, not a place to be the one exception."""
-    members = await list_path_courses(session, learning_path_id=learning_path_id)
+    members = await list_path_courses(
+        session, learning_path_id=learning_path_id, tenant_id=tenant_id
+    )
     if not members:
         return False
     course_ids = [course.id for _member, course in members]

@@ -83,7 +83,7 @@ async def list_learning_paths(
     principal: PrincipalDep, session: SessionDep
 ) -> LearningPathsPageResponse:
     principal.require("course:view")
-    paths = await paths_service.list_learning_paths(session)
+    paths = await paths_service.list_learning_paths(session, tenant_id=principal.tenant_id)
     return LearningPathsPageResponse(items=[_path_response(p) for p in paths])
 
 
@@ -95,7 +95,11 @@ async def create_learning_path(
 ) -> LearningPathResponse:
     principal.require("course:edit")
     path = await paths_service.create_learning_path(
-        session, title=body.title, slug=body.slug, description=body.description
+        session,
+        tenant_id=principal.tenant_id,
+        title=body.title,
+        slug=body.slug,
+        description=body.description,
     )
     return _path_response(path)
 
@@ -106,7 +110,7 @@ async def get_learning_path(
 ) -> LearningPathResponse:
     principal.require("course:view")
     path = await paths_service.get_learning_path(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     return _path_response(path)
 
@@ -122,6 +126,7 @@ async def update_learning_path(
     path = await paths_service.update_learning_path(
         session,
         learning_path_id=_parse_uuid(learning_path_id),
+        tenant_id=principal.tenant_id,
         title=body.title,
         description=body.description,
         certificate_template_id=(
@@ -140,7 +145,7 @@ async def clear_path_certificate_template(
 ) -> LearningPathResponse:
     principal.require("course:edit")
     path = await paths_service.clear_certificate_template(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     return _path_response(path)
 
@@ -151,7 +156,7 @@ async def list_path_courses(
 ) -> PathCoursesResponse:
     principal.require("course:view")
     rows = await paths_service.list_path_courses(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     return PathCoursesResponse(items=[_course_row(member, course) for member, course in rows])
 
@@ -170,9 +175,14 @@ async def add_path_course(
     principal.require("course:edit")
     path_id = _parse_uuid(learning_path_id)
     await paths_service.add_course_to_path(
-        session, learning_path_id=path_id, course_id=_parse_uuid(body.course_id)
+        session,
+        learning_path_id=path_id,
+        tenant_id=principal.tenant_id,
+        course_id=_parse_uuid(body.course_id),
     )
-    rows = await paths_service.list_path_courses(session, learning_path_id=path_id)
+    rows = await paths_service.list_path_courses(
+        session, learning_path_id=path_id, tenant_id=principal.tenant_id
+    )
     return PathCoursesResponse(items=[_course_row(member, course) for member, course in rows])
 
 
@@ -186,9 +196,14 @@ async def remove_path_course(
     principal.require("course:edit")
     path_id = _parse_uuid(learning_path_id)
     await paths_service.remove_course_from_path(
-        session, learning_path_id=path_id, course_id=_parse_uuid(course_id)
+        session,
+        learning_path_id=path_id,
+        tenant_id=principal.tenant_id,
+        course_id=_parse_uuid(course_id),
     )
-    rows = await paths_service.list_path_courses(session, learning_path_id=path_id)
+    rows = await paths_service.list_path_courses(
+        session, learning_path_id=path_id, tenant_id=principal.tenant_id
+    )
     return PathCoursesResponse(items=[_course_row(member, course) for member, course in rows])
 
 
@@ -205,6 +220,7 @@ async def reorder_path_courses(
     rows = await paths_service.reorder_path_courses(
         session,
         learning_path_id=_parse_uuid(learning_path_id),
+        tenant_id=principal.tenant_id,
         ordered_course_ids=[_parse_uuid(x) for x in body.ordered_course_ids],
     )
     return PathCoursesResponse(items=[_course_row(member, course) for member, course in rows])
@@ -216,7 +232,7 @@ async def get_path_readiness(
 ) -> PathReadinessResponse:
     principal.require("course:edit")
     report = await paths_service.get_path_readiness(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     return PathReadinessResponse(
         learning_path_id=learning_path_id,
@@ -235,7 +251,7 @@ async def publish_learning_path(
 ) -> LearningPathResponse:
     principal.require("course:publish")
     path = await paths_service.publish_learning_path(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     # Publishing changes what a tenant can assign/sell — same reasoning
     # routers/courses.py::publish_course already logs this for.
@@ -257,7 +273,7 @@ async def unpublish_learning_path(
 ) -> LearningPathResponse:
     principal.require("course:publish")
     path = await paths_service.unpublish_learning_path(
-        session, learning_path_id=_parse_uuid(learning_path_id)
+        session, learning_path_id=_parse_uuid(learning_path_id), tenant_id=principal.tenant_id
     )
     await audit.record(
         session,
