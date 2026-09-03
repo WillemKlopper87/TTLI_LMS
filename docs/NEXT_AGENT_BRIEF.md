@@ -39,7 +39,7 @@ file are stale (they still say Phase 3 ~40%, Phase 1 ~95%) — trust the table.
 | 7 Hardening + cloud | ~15% | Containerisation done 2026-08-20 (both Dockerfiles built and run, prod-shaped compose, CI image build + Trivy scan). Still absent: IaC, registry push, cloud provisioning, reverse proxy, staging, load test, restore drill. `docs/research/devsecops-deployment.md` remains the plan for the rest. |
 | Enterprise UI pass (2026-08-17) | built | 11-screen prototype alignment, course-authoring wizard (`/admin/courses/new`), revenue analytics (`/admin/analytics`, migration 0028) |
 
-Scale: 24 routers / ~45 services / 27 models / 41 migrations (`0001`–`0041`) / ~26k LOC API;
+Scale: 24 routers / ~45 services / 27 models / 44 migrations (`0001`–`0044`) / ~26k LOC API;
 50 `page.tsx` + 6 BFF routes / ~20k LOC web; ~318 tests, all HTTP-level through the real
 middleware stack against real Postgres/Redis/Garage/ClamAV/ffmpeg.
 
