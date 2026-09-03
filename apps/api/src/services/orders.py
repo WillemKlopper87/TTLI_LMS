@@ -57,6 +57,80 @@ def _quantize(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedLine:
+    """What `price_order_lines` needs to price one line — already resolved
+    against the DB (`Price`/`TaxRule`), carrying nothing further to look
+    up. `tax_behaviour` is `Price.tax_behaviour` ("inclusive" | "exclusive")."""
+
+    unit_amount: Decimal
+    quantity: int
+    tax_rate: Decimal
+    tax_behaviour: str
+
+
+@dataclass(frozen=True, slots=True)
+class LinePricing:
+    subtotal: Decimal
+    tax: Decimal
+    total: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class OrderPricing:
+    lines: tuple[LinePricing, ...]
+    subtotal: Decimal
+    tax_total: Decimal
+    grand_total: Decimal
+
+
+def price_order_lines(lines: list[ResolvedLine]) -> OrderPricing:
+    """The pure per-line pricing/tax math extracted out of `create_order`'s
+    resolve-and-validate loop (TTLI_Audit_Report_2026-09-02.md M5) — the DB
+    reads that resolve each line's `Price`/`TaxRule` stay exactly where
+    they were; only the arithmetic moved, so it can be unit-tested without
+    a session. Order of `lines` in, order of `.lines` out — callers zip
+    back against their own per-line context (`OrderItem` creation) by
+    position, same as `create_order` already did with `zip(..., strict=True)`.
+
+    `tax_behaviour == "exclusive"`: `unit_amount` excludes tax — tax is
+    added on top (`net * rate`), and the line's total is `net + tax`.
+    `tax_behaviour == "inclusive"`: `unit_amount` is the advertised,
+    all-in price — the customer must never be charged more than that
+    (fable5.1_review.md H-1), so tax is *extracted* from it
+    (`gross * rate / (1 + rate)`), not added a second time, and the
+    line's total stays the advertised gross. `line_subtotal` is the
+    ex-tax net either way (what changes is how it's derived), so
+    `subtotal + tax_total == grand_total` holds uniformly for both
+    behaviours — `create_order`/invoicing rely on exactly that identity.
+    """
+    priced: list[LinePricing] = []
+    subtotal = Decimal("0")
+    tax_total = Decimal("0")
+    for line in lines:
+        if line.tax_behaviour == "inclusive":
+            gross = _quantize(line.unit_amount * line.quantity)
+            line_tax = _quantize(gross * line.tax_rate / (Decimal("1") + line.tax_rate))
+            # Subtraction of two already-quantized 2dp Decimals is exact,
+            # so line_subtotal + line_tax == gross always, regardless of
+            # how line_tax happened to round — the buyer's line total
+            # never drifts from the advertised inclusive price.
+            line_subtotal = gross - line_tax
+        else:
+            line_subtotal = _quantize(line.unit_amount * line.quantity)
+            line_tax = _quantize(line_subtotal * line.tax_rate)
+        line_total = line_subtotal + line_tax
+        priced.append(LinePricing(subtotal=line_subtotal, tax=line_tax, total=line_total))
+        subtotal += line_subtotal
+        tax_total += line_tax
+    return OrderPricing(
+        lines=tuple(priced),
+        subtotal=subtotal,
+        tax_total=tax_total,
+        grand_total=subtotal + tax_total,
+    )
+
+
 async def create_order(
     session: AsyncSession,
     *,
@@ -75,7 +149,7 @@ async def create_order(
     # commits whatever an AppError leaves flushed (deliberately, for auth
     # bookkeeping — core/deps.py), so raising partway through a loop that
     # had already added rows would leave an orphaned empty order behind.
-    resolved: list[tuple[Product, Price, TaxRule, Decimal, Decimal, Decimal]] = []
+    resolved: list[tuple[Product, Price, TaxRule]] = []
     for line in lines:
         if line.quantity < 1:
             raise OrderError("Quantity must be at least 1.")
@@ -106,13 +180,7 @@ async def create_order(
         tax_rule = await tax.resolve(
             session, tenant_id=tenant_id, customer_type=customer_type, product_kind=product.kind
         )
-
-        line_subtotal = _quantize(price.unit_amount * line.quantity)
-        line_tax = _quantize(line_subtotal * tax_rule.rate)
-        line_total = (
-            line_subtotal + line_tax if price.tax_behaviour == "exclusive" else line_subtotal
-        )
-        resolved.append((product, price, tax_rule, line_subtotal, line_tax, line_total))
+        resolved.append((product, price, tax_rule))
 
     order = Order(
         id=uuid7(),
@@ -129,10 +197,19 @@ async def create_order(
     session.add(order)
     await session.flush()
 
-    subtotal = Decimal("0")
-    tax_total = Decimal("0")
-    for line, (product, price, tax_rule, line_subtotal, line_tax, line_total) in zip(
-        lines, resolved, strict=True
+    pricing = price_order_lines(
+        [
+            ResolvedLine(
+                unit_amount=price.unit_amount,
+                quantity=line.quantity,
+                tax_rate=tax_rule.rate,
+                tax_behaviour=price.tax_behaviour,
+            )
+            for line, (_product, price, tax_rule) in zip(lines, resolved, strict=True)
+        ]
+    )
+    for line, (product, price, tax_rule), line_pricing in zip(
+        lines, resolved, pricing.lines, strict=True
     ):
         session.add(
             OrderItem(
@@ -144,16 +221,14 @@ async def create_order(
                 tax_rule_id=tax_rule.id,
                 quantity=line.quantity,
                 unit_amount=price.unit_amount,
-                tax_amount=line_tax,
-                line_total=line_total,
+                tax_amount=line_pricing.tax,
+                line_total=line_pricing.total,
             )
         )
-        subtotal += line_subtotal
-        tax_total += line_tax
 
-    order.subtotal = subtotal
-    order.tax_total = tax_total
-    order.grand_total = subtotal + tax_total
+    order.subtotal = pricing.subtotal
+    order.tax_total = pricing.tax_total
+    order.grand_total = pricing.grand_total
     order.status = "pending_payment"
     await session.flush()
     return order
@@ -768,15 +843,19 @@ async def list_pending_payments(
 
 
 __all__ = [
+    "LinePricing",
     "OrderError",
     "OrderLineRequest",
+    "OrderPricing",
     "PendingPayment",
+    "ResolvedLine",
     "approve_eft",
     "approve_po",
     "checkout_eft",
     "checkout_po",
     "create_order",
     "list_pending_payments",
+    "price_order_lines",
     "reject_eft",
     "reject_po",
     "submit_proof",
