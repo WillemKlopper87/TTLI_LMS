@@ -46,6 +46,26 @@ function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
+/** Create a block on a lesson (0041 — content attaches to a lesson's
+ * blocks, not the lesson itself) and return its id. */
+async function addBlock(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  lessonId: string,
+  blockType: string,
+): Promise<string> {
+  const block = await (
+    await check(
+      await request.post(`/api/bff/lessons/${lessonId}/blocks`, {
+        headers,
+        data: { block_type: blockType },
+      }),
+      `create ${blockType} block on lesson ${lessonId}`,
+    )
+  ).json();
+  return block.id as string;
+}
+
 export interface AuthoredCourse {
   courseId: string;
   documentLessonId: string;
@@ -93,11 +113,19 @@ export async function authorAndSellAssessmentCourse(
     await check(
       await request.post(`/api/bff/modules/${module_.id}/lessons`, {
         headers: adminAuth,
-        data: { title: "Read this first", body: "This is the reading material for the lesson." },
+        data: { title: "Read this first" },
       }),
       "create document lesson",
     )
   ).json();
+  const documentBlockId = await addBlock(request, adminAuth, documentLesson.id, "text");
+  await check(
+    await request.patch(`/api/bff/lessons/${documentLesson.id}/blocks/${documentBlockId}`, {
+      headers: adminAuth,
+      data: { body: "This is the reading material for the lesson." },
+    }),
+    "write document lesson body",
+  );
 
   const quizLesson = await (
     await check(
@@ -134,10 +162,12 @@ export async function authorAndSellAssessmentCourse(
     }),
     "create quiz question",
   );
+  const quizBlockId = await addBlock(request, adminAuth, quizLesson.id, "quiz");
   await check(
-    await request.post(`/api/bff/lessons/${quizLesson.id}/quiz?quiz_id=${quiz.id}`, {
-      headers: adminAuth,
-    }),
+    await request.post(
+      `/api/bff/lessons/${quizLesson.id}/blocks/${quizBlockId}/quiz?quiz_id=${quiz.id}`,
+      { headers: adminAuth },
+    ),
     "attach quiz to lesson",
   );
 
@@ -166,10 +196,12 @@ export async function authorAndSellAssessmentCourse(
     }),
     "create survey question",
   );
+  const surveyBlockId = await addBlock(request, adminAuth, surveyLesson.id, "survey");
   await check(
-    await request.post(`/api/bff/lessons/${surveyLesson.id}/survey?survey_id=${survey.id}`, {
-      headers: adminAuth,
-    }),
+    await request.post(
+      `/api/bff/lessons/${surveyLesson.id}/blocks/${surveyBlockId}/survey?survey_id=${survey.id}`,
+      { headers: adminAuth },
+    ),
     "attach survey to lesson",
   );
 
@@ -191,9 +223,10 @@ export async function authorAndSellAssessmentCourse(
       "create assignment",
     )
   ).json();
+  const assignmentBlockId = await addBlock(request, adminAuth, assignmentLesson.id, "assignment");
   await check(
     await request.post(
-      `/api/bff/lessons/${assignmentLesson.id}/assignment?assignment_id=${assignment.id}`,
+      `/api/bff/lessons/${assignmentLesson.id}/blocks/${assignmentBlockId}/assignment?assignment_id=${assignment.id}`,
       { headers: adminAuth },
     ),
     "attach assignment to lesson",
