@@ -159,6 +159,16 @@ jobs:
       - name: Test
         run: pytest --cov=src --cov-report=term-missing --junitxml=report.xml
 
+      # The fast (non-integration) tier's own coverage floor
+      # (TTLI_Audit_Report_2026-09-02.md M5) — separate from the full-suite
+      # coverage report above, which mixes in everything the integration
+      # tests exercise. 45% is the first real measurement (173 fast tests,
+      # 50% at the point this floor was set) minus a small buffer, not an
+      # invented target — raise it as more pure logic gets extracted into
+      # this tier, never lower it without a comment saying why.
+      - name: Fast-tier coverage floor
+        run: pytest -m "not integration" --cov=src --cov-report=term-missing --cov-fail-under=45
+
       # A skipped integration test is a test that silently stopped protecting
       # anything. The RLS suite is the whole reason tenant isolation is
       # trustworthy, so a skip fails the build.
@@ -254,7 +264,11 @@ jobs:
 
       - name: Container image scan
         run: |
-          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable; do
+          # boky/postfix intentionally not scanned yet -- see the
+          # postfix-relay service comment in
+          # infra/docker-compose.single-vm.yml and docs/BACKLOG.md's
+          # M3-postfix-cve-review item for why.
+          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable caddy:2-alpine; do
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
             echo "::endgroup::"
@@ -290,15 +304,42 @@ jobs:
         run: gitleaks detect --source . --config .gitleaks.toml -v
 
   # The deployment artefacts are code too: a Dockerfile that stopped
-  # building is a broken deploy discovered at deploy time. Builds only —
-  # no registry push, because there is no deployment target yet
-  # (docs/research/devsecops-deployment.md §2.1 picks Azure Container
-  # Apps; nothing is provisioned). Trivy scans what was just built, at
-  # the same blocking-with-reviewed-exceptions policy as the `quality`
-  # job's upstream image scan above and for the same reason — see that
-  # job's comment for the .trivyignore/`exp:` mechanics.
+  # building is a broken deploy discovered at deploy time. Trivy scans
+  # what was just built, at the same blocking-with-reviewed-exceptions
+  # policy as the `quality` job's upstream image scan above and for the
+  # same reason — see that job's comment for the .trivyignore/`exp:`
+  # mechanics.
+  #
+  # On a push to main, the exact bytes just scanned are pushed to GHCR,
+  # signed and SBOM'd (TTLI_Audit_Report_2026-09-02.md M3) — never
+  # rebuilt for the push, because a second build could drift from what
+  # Trivy actually scanned (a newer base-layer patch, a cache miss),
+  # silently defeating the "the image deployed is the image reviewed"
+  # claim this whole step exists to make.
+  #
+  # `needs:` below (fable5.1_review.md C-3) is what actually makes that
+  # claim true: without it this job has no relationship to the other
+  # four, so a push to main whose pytest/mypy/drift/lint failed in
+  # `quality`, or whose `gitleaks`/`web`/`authenticated-e2e` gate failed,
+  # would still build, Trivy-scan, push and cosign-sign — the signature
+  # would attest "built by ci.yml on main", not "passed CI". Now this job
+  # doesn't even start until quality/secrets/web/authenticated-e2e have
+  # all succeeded, on every trigger (all four run unconditionally on
+  # push/PR/workflow_dispatch — none is PR-only or opt-in, so this can't
+  # deadlock a push). The publish tail (push/SBOM/sign) still has its own
+  # narrower gate on event and ref below — a PR runs `needs`, then builds
+  # and Trivy-scans (a Dockerfile that stopped building is a broken
+  # deploy discovered at deploy time), but never reaches the publish
+  # tail — and a forked PR's GITHUB_TOKEN is read-only regardless, so
+  # `packages: write`/`id-token: write` at job level is safe even though
+  # PRs run this same job.
   images:
+    needs: [quality, secrets, web, authenticated-e2e]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     defaults:
       run:
         working-directory: .
@@ -306,11 +347,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Resolve release identifier
+        run: echo "GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Build API image
-        run: docker build -t ttli-api:ci apps/api
+        run: docker build --build-arg GIT_SHA="$GIT_SHA" -t ttli-api:ci apps/api
 
       - name: Build web image
-        run: docker build -f apps/web/Dockerfile -t ttli-web:ci .
+        run: docker build --build-arg GIT_SHA="$GIT_SHA" -f apps/web/Dockerfile -t ttli-web:ci .
 
       - name: Install Trivy
         run: |
@@ -327,6 +371,57 @@ jobs:
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
             echo "::endgroup::"
           done
+
+      # SBOM via the Trivy already installed above — zero new tool. One
+      # per image, attested onto its own digest after the push below.
+      - name: Generate SBOMs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          trivy image --format spdx-json --output ttli-api-sbom.spdx.json ttli-api:ci
+          trivy image --format spdx-json --output ttli-web-sbom.spdx.json ttli-web:ci
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagged by commit SHA only — never `:latest`. Publishing a mutable
+      # tag to the registry would just relocate the exact problem this
+      # step exists to close one layer up; `scripts/rolling-update.sh`
+      # deploys by digest, resolved from this tag, not from a moving
+      # pointer.
+      - name: Push images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: push
+        run: |
+          repo_lc=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          docker tag ttli-api:ci "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA"
+          docker tag ttli-web:ci "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA"
+          docker push "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA"
+          docker push "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA"
+          api_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA")
+          web_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA")
+          echo "api_digest=$api_digest" >> "$GITHUB_OUTPUT"
+          echo "web_digest=$web_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      # Keyless (OIDC via id-token: write) — no stored signing key to
+      # rotate or leak. Verification later checks the signer's identity
+      # is literally "this repo's ci.yml running on refs/heads/main",
+      # which a forked PR could never produce even if it tried.
+      - name: Sign images and attest SBOMs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cosign sign --yes "${{ steps.push.outputs.api_digest }}"
+          cosign sign --yes "${{ steps.push.outputs.web_digest }}"
+          cosign attest --yes --predicate ttli-api-sbom.spdx.json --type spdxjson "${{ steps.push.outputs.api_digest }}"
+          cosign attest --yes --predicate ttli-web-sbom.spdx.json --type spdxjson "${{ steps.push.outputs.web_digest }}"
 
   web:
     runs-on: ubuntu-latest
