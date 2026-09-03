@@ -298,9 +298,16 @@ async def test_individual_visible_once_all_three_conditions_hold(
         await _reset_visibility(client, platform_admin_token, course_id)
 
 
-async def test_plain_member_never_sees_individual_rows_even_with_both_toggles_on(
+async def test_plain_member_cannot_call_the_report_endpoint_even_with_both_toggles_on(
     client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
+    """H-13: the route is gated on the same "manager or admin" relationship
+    `_can_view_individual` already treats as privileged, not on plain
+    `require_membership` — an ordinary seat holder (assign_seat's default
+    relationship="member") gets refused outright, never a 200 with masked
+    fields. Both visibility toggles are on here specifically to prove the
+    route-level gate is what stops them, independent of the report's own
+    score/identity masking."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
     course_id = await _demo_course_id(tenant_session_factory)
@@ -338,7 +345,7 @@ async def test_plain_member_never_sees_individual_rows_even_with_both_toggles_on
         # organisation (assign_seat's default relationship, find-or-create
         # left them password-less — magic-link-only in reality, same as
         # test_organisations.py's own precedent) — log in as them via a
-        # real magic link and view the same report.
+        # real magic link and try the same report.
         async with tenant_session_factory(tenant_id) as s:
             raw = await identity.create_magic_link(
                 s,
@@ -355,18 +362,138 @@ async def test_plain_member_never_sees_individual_rows_even_with_both_toggles_on
             f"/api/v1/organisations/{org_id}/reports/progress?course_id={course_id}",
             headers={"Authorization": f"Bearer {employee_token}"},
         )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["individual_visible"] is False
-        # Both toggles are on, yet a plain member still gets no scores —
-        # the row is present (participation), the score is not.
-        assert len(body["learners"]) == 1
-        assert body["learners"][0]["score_hidden"] is True
-        assert body["learners"][0]["best_quiz_score"] is None
-        assert body["learners"][0]["email"] != employee_email
-        assert body["learners"][0]["email"].startswith(f"{employee_email[0]}•••@")
+        assert resp.status_code == 403, resp.text
     finally:
         await _reset_visibility(client, platform_admin_token, course_id)
+
+
+async def test_manager_relationship_may_call_the_report_endpoint(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """The gate is "manager or admin", not "admin only" — there is no API
+    to promote a seat holder to `manager` yet (only `assign_seat`'s
+    "member" and organisation creation's "admin" are reachable through
+    the API), so this test promotes one directly, the same way other
+    tests in this file age an enrolment directly to reach a state the API
+    can't produce on its own."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    course_id = await _demo_course_id(tenant_session_factory)
+    org_admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    org_id = await _create_organisation(client, org_admin_token, "Manager Promoted Co")
+    await _buy_and_assign_one_seat(
+        client,
+        org_admin_token,
+        finance_token,
+        organisation_id=org_id,
+        price_id=price_id,
+        course_id=course_id,
+    )
+
+    manager_token, manager_user_id = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "INSERT INTO organisation_members "
+                "(id, tenant_id, organisation_id, user_id, relationship) "
+                "VALUES (gen_random_uuid(), :t, :o, :u, 'manager')"
+            ),
+            {"t": str(tenant_id), "o": org_id, "u": str(manager_user_id)},
+        )
+
+    resp = await client.get(
+        f"/api/v1/organisations/{org_id}/reports/progress?course_id={course_id}",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["individual_visible"] is False
+    assert len(resp.json()["learners"]) == 1
+
+
+async def test_display_name_masked_like_email_when_individual_visible_is_false(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-13's core bug: `display_name` used to fall back to the learner's
+    decrypted full name regardless of `individual_visible` — only `email`
+    was masked. A privileged viewer (org admin) is used here on purpose:
+    this proves the masking is driven by `individual_visible`, not by
+    whether the caller is allowed to call the route at all (that's
+    `test_plain_member_cannot_call_the_report_endpoint_even_with_both_toggles_on`)."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    course_id = await _demo_course_id(tenant_session_factory)
+    org_admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    org_id = await _create_organisation(client, org_admin_token, "Named Employee Co")
+
+    # A real decrypted full name on record — assign_seat's find-or-create
+    # path never sets one, so create the user with one up front and let
+    # the seat invite find them by email, exactly as a real employee who
+    # registered before their employer bought seats would look.
+    employee_email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=employee_email, full_name="Thabo Sithole"
+        )
+
+    order = await client.post(
+        "/api/v1/orders",
+        json={
+            "currency": "ZAR",
+            "customer_type": "registered_business",
+            "lines": [{"price_id": price_id, "quantity": 1}],
+            "organisation_id": org_id,
+        },
+        headers={"Authorization": f"Bearer {org_admin_token}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert order.status_code == 201, order.text
+    checkout = await client.post(
+        f"/api/v1/orders/{order.json()['id']}/checkout/po",
+        headers={"Authorization": f"Bearer {org_admin_token}"},
+        data={"po_number": f"PO-{uuid.uuid4().hex[:8].upper()}"},
+        files={"file": ("po.pdf", b"%PDF-fake-purchase-order", "application/pdf")},
+    )
+    assert checkout.status_code == 200, checkout.text
+    approve = await client.post(
+        f"/api/v1/payments/{checkout.json()['payment_id']}/approve",
+        headers={"Authorization": f"Bearer {finance_token}", "Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert approve.status_code == 200, approve.text
+
+    invite = await client.post(
+        f"/api/v1/organisations/{org_id}/seats/invite",
+        json={"course_id": course_id, "emails": [employee_email]},
+        headers={"Authorization": f"Bearer {org_admin_token}"},
+    )
+    assert invite.status_code == 200, invite.text
+    assert invite.json()["items"][0]["ok"] is True
+
+    resp = await client.get(
+        f"/api/v1/organisations/{org_id}/reports/progress?course_id={course_id}",
+        headers={"Authorization": f"Bearer {org_admin_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["individual_visible"] is False
+    assert len(body["learners"]) == 1
+    row = body["learners"][0]
+    # The real name must never leak just because it exists on the user
+    # record — it degrades exactly like the email does.
+    assert row["display_name"] != "Thabo Sithole"
+    assert row["display_name"] == row["email"]
+    assert row["email"] == f"{employee_email[0]}•••@example.com"
+    assert row["email"] != employee_email
 
 
 async def test_missing_tenant_toggle_still_hides_individual_rows(

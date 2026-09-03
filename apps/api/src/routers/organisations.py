@@ -3,8 +3,9 @@
 Creation is self-service (any authenticated user can start one and
 becomes its first admin — there is no signup flow yet, so the realistic
 actor already has an account). Everything else is gated on membership
-or, for seat management, specifically on being that organisation's own
-admin — checked in `services/organisations.py`, not re-implemented here.
+or, for seat management and PII, specifically on being that
+organisation's own admin (`require_admin`) or, for the progress report,
+its admin or manager (REQ-TEN-03) — checked via `services/organisations.py`.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fastapi import APIRouter, File, UploadFile, status
 from sqlalchemy import select
 
 from src.core.deps import CryptoDep, PrincipalDep, SessionDep
-from src.core.errors import AppError, NotFound
+from src.core.errors import AppError, Forbidden, NotFound
 from src.models.organisation import Organisation, OrganisationMember
 from src.schemas.organisations import (
     AssignedSeatResponse,
@@ -166,15 +167,31 @@ async def progress_report(
     crypto: CryptoDep,
 ) -> ProgressReportResponse:
     """REQ-TEN-03's report: response shape is determined by policy, not
-    by query parameters. A caller who fails any of the three conditions
+    by query parameters. A caller who holds the relationship this route
+    requires but fails any of the three individual-visibility conditions
     still gets the participation list — with every score withheld
-    (`score_hidden: true`, `best_quiz_score: null`) and the email masked.
-    See `services/reports.py`'s module docstring for why that line moved
-    from "no rows at all" to "rows without scores"."""
+    (`score_hidden: true`, `best_quiz_score: null`) and both the email
+    and `display_name` masked. See `services/reports.py`'s module
+    docstring for why that line moved from "no rows at all" to "rows
+    without scores".
+
+    The route itself is gated tighter than plain membership, though: this
+    is the same "manager or admin" relationship `_can_view_individual`
+    already treats as privileged for individual visibility, not the
+    ordinary `member` relationship a seat holder gets just by having a
+    seat assigned to them (`services/organisations.py::assign_seat`) —
+    reusing that concept rather than inventing a separate one, same as
+    the assigned-seats endpoint above reserves real PII for `require_admin`.
+    """
     org_id = _parse_uuid(organisation_id)
     await organisations_service.require_membership(
         session, tenant_id=principal.tenant_id, organisation_id=org_id, user_id=principal.user_id
     )
+    relationship = await organisations_service.get_relationship(
+        session, organisation_id=org_id, user_id=principal.user_id
+    )
+    if relationship not in ("manager", "admin"):
+        raise Forbidden("Only an organisation manager or admin can view this report.")
     report = await reports_service.get_progress_report(
         session,
         crypto,

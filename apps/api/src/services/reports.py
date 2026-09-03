@@ -96,14 +96,25 @@ async def _can_view_individual(
     return relationship in ("manager", "admin")
 
 
-async def _best_quiz_score(session: AsyncSession, *, enrolment_id: uuid.UUID) -> Decimal | None:
-    stmt = select(QuizAttempt.score).where(
-        QuizAttempt.enrolment_id == enrolment_id,
-        QuizAttempt.submitted_at.is_not(None),
-        QuizAttempt.score.is_not(None),
+async def _best_quiz_scores_by_enrolment(
+    session: AsyncSession, *, enrolment_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
+    """enrolment_id -> best submitted score. One grouped read rather than
+    one query per learner, same reasoning as `_activity_by_enrolment` —
+    this only runs at all when `individual_visible`, but a privileged
+    viewer's organisation can still have many seats."""
+    if not enrolment_ids:
+        return {}
+    stmt = (
+        select(QuizAttempt.enrolment_id, func.max(QuizAttempt.score))
+        .where(
+            QuizAttempt.enrolment_id.in_(enrolment_ids),
+            QuizAttempt.submitted_at.is_not(None),
+            QuizAttempt.score.is_not(None),
+        )
+        .group_by(QuizAttempt.enrolment_id)
     )
-    scores = [s for s in (await session.execute(stmt)).scalars().all() if s is not None]
-    return max(scores) if scores else None
+    return {row[0]: row[1] for row in (await session.execute(stmt)).all()}
 
 
 def _status(enrolment: Enrolment) -> str:
@@ -197,6 +208,13 @@ async def get_progress_report(
         )
         .join(User, User.id == Entitlement.user_id)
         .where(
+            # Belt-and-braces alongside RLS (`core/db.py`'s `SET LOCAL
+            # app.tenant_id`, which already fails a forgotten predicate
+            # closed rather than open) — explicit here too since this is
+            # exactly the kind of reporting query that comment warns about.
+            Entitlement.tenant_id == tenant_id,
+            Enrolment.tenant_id == tenant_id,
+            User.tenant_id == tenant_id,
             Entitlement.organisation_id == organisation_id,
             Entitlement.target_id == course_id,
             Entitlement.kind == "course",
@@ -219,8 +237,12 @@ async def get_progress_report(
     )
 
     lessons_total = await _lesson_total(session, course_id=course_id)
-    activity = await _activity_by_enrolment(
-        session, enrolment_ids=[enrolment.id for _, enrolment, _ in rows]
+    enrolment_ids = [enrolment.id for _, enrolment, _ in rows]
+    activity = await _activity_by_enrolment(session, enrolment_ids=enrolment_ids)
+    best_scores = (
+        await _best_quiz_scores_by_enrolment(session, enrolment_ids=enrolment_ids)
+        if individual_visible
+        else {}
     )
     now = datetime.now(UTC)
 
@@ -240,25 +262,30 @@ async def get_progress_report(
             at_risk += 1
 
         email = crypto.decrypt(user.email_encrypted)
-        full_name = crypto.decrypt(user.full_name_encrypted) if user.full_name_encrypted else None
+        # Never the real address, and never the real name, in a
+        # score-hidden report — the participation row proves membership,
+        # which the manager already knows (they assigned the seat), not
+        # an identity they could not otherwise resolve. `display_name`
+        # must degrade exactly like `email` does: a decrypted full name
+        # is a *more* identifying leak than the address it would
+        # otherwise fall back to, not a less sensitive one, so it can
+        # never bypass the same `individual_visible` gate.
+        email_display = email if individual_visible else _mask_email(email)
+        full_name = (
+            crypto.decrypt(user.full_name_encrypted)
+            if individual_visible and user.full_name_encrypted
+            else None
+        )
         learner_list.append(
             LearnerRow(
                 user_id=user.id,
-                # Never the real address in a score-hidden report — the
-                # participation row proves membership, which the manager
-                # already knows (they assigned the seat), not an identity
-                # they could not otherwise resolve.
-                email=email if individual_visible else _mask_email(email),
-                display_name=full_name or (email if individual_visible else _mask_email(email)),
+                email=email_display,
+                display_name=full_name or email_display,
                 status=_status(enrolment),
                 progress_percent=progress_percent,
                 last_active_at=last_active_at or enrolment.started_at,
                 completed_at=enrolment.completed_at,
-                best_quiz_score=(
-                    await _best_quiz_score(session, enrolment_id=enrolment.id)
-                    if individual_visible
-                    else None
-                ),
+                best_quiz_score=best_scores.get(enrolment.id) if individual_visible else None,
                 score_hidden=not individual_visible,
             )
         )
