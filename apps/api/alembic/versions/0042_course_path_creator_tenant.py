@@ -59,9 +59,7 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
-    op.create_index(
-        "ix_courses_created_by_tenant_id", "courses", ["created_by_tenant_id"]
-    )
+    op.create_index("ix_courses_created_by_tenant_id", "courses", ["created_by_tenant_id"])
     op.add_column(
         "learning_paths",
         sa.Column(

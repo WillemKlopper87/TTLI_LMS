@@ -285,9 +285,7 @@ async def test_refresh_rotates_and_detects_reuse(client, tenant_session_factory,
     assert also_revoked.status_code == 401
 
 
-async def test_refresh_rejects_a_locked_account(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_refresh_rejects_a_locked_account(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     """`locked_until` (identity.py's failed-login lockout) writes no
     revocation of its own the way suspension now does — `refresh` has to
     check it directly, or a locked-out account's still-live refresh token
@@ -316,9 +314,7 @@ async def test_refresh_rejects_a_locked_account(
     # not just refused while the lock happens to be in effect.
     async with tenant_session_factory(tenant_id) as s:
         await s.execute(
-            sa_text(
-                "UPDATE users SET locked_until = NULL WHERE email_blind_index = :idx"
-            ),
+            sa_text("UPDATE users SET locked_until = NULL WHERE email_blind_index = :idx"),
             {"idx": crypto.blind_index(email)},
         )
     still_dead = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})

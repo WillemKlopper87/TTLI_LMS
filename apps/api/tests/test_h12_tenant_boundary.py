@@ -405,9 +405,7 @@ async def test_module_lesson_write_denied_across_tenant(
     )
     h = _auth(acme_admin, "acme")
 
-    _assert_not_found(
-        await client.get(f"/api/v1/courses/{rig.course_id}/modules", headers=h)
-    )
+    _assert_not_found(await client.get(f"/api/v1/courses/{rig.course_id}/modules", headers=h))
     _assert_not_found(
         await client.post(
             f"/api/v1/courses/{rig.course_id}/modules", json={"title": "Injected"}, headers=h
@@ -418,9 +416,7 @@ async def test_module_lesson_write_denied_across_tenant(
             f"/api/v1/modules/{rig.module_id}", json={"title": "Hijacked module"}, headers=h
         )
     )
-    _assert_not_found(
-        await client.get(f"/api/v1/modules/{rig.module_id}/lessons", headers=h)
-    )
+    _assert_not_found(await client.get(f"/api/v1/modules/{rig.module_id}/lessons", headers=h))
     _assert_not_found(
         await client.post(
             f"/api/v1/modules/{rig.module_id}/lessons", json={"title": "Injected"}, headers=h
@@ -457,12 +453,8 @@ async def test_lesson_block_write_denied_across_tenant(
             headers=h,
         )
     )
-    _assert_not_found(
-        await client.delete(f"/api/v1/modules/{rig.module_id}", headers=h)
-    )
-    _assert_not_found(
-        await client.delete(f"/api/v1/lessons/{rig.lesson_id}", headers=h)
-    )
+    _assert_not_found(await client.delete(f"/api/v1/modules/{rig.module_id}", headers=h))
+    _assert_not_found(await client.delete(f"/api/v1/lessons/{rig.lesson_id}", headers=h))
 
 
 # NOTE on a related but unfixed vector: `POST /courses/{id}/tenant-
@@ -481,9 +473,7 @@ async def test_lesson_block_write_denied_across_tenant(
 # ============================================================== Quiz ===
 
 
-async def test_quiz_answer_key_denied_across_tenant(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_quiz_answer_key_denied_across_tenant(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     """The single sharpest claim in H-12: GET /quizzes/{id} must not hand
     over another tenant's answer key."""
     demo_id = await _tenant_id(tenant_session_factory, "demo")
@@ -584,9 +574,7 @@ async def test_attach_cannot_launder_read_access_to_another_tenants_quiz(
 # ============================================================ Surveys ===
 
 
-async def test_survey_read_denied_across_tenant(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_survey_read_denied_across_tenant(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     demo_id = await _tenant_id(tenant_session_factory, "demo")
     acme_id = await _tenant_id(tenant_session_factory, "acme")
     rig = await _build_bespoke_rig(client, tenant_session_factory, crypto, demo_id=demo_id)
@@ -601,9 +589,7 @@ async def test_survey_read_denied_across_tenant(
 # ========================================================= Assignments ===
 
 
-async def test_assignment_read_denied_across_tenant(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_assignment_read_denied_across_tenant(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     demo_id = await _tenant_id(tenant_session_factory, "demo")
     acme_id = await _tenant_id(tenant_session_factory, "acme")
     rig = await _build_bespoke_rig(client, tenant_session_factory, crypto, demo_id=demo_id)
@@ -620,9 +606,7 @@ async def test_assignment_read_denied_across_tenant(
 # ============================================================== Media ===
 
 
-async def test_video_asset_denied_across_tenant(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_video_asset_denied_across_tenant(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     demo_id = await _tenant_id(tenant_session_factory, "demo")
     acme_id = await _tenant_id(tenant_session_factory, "acme")
     rig = await _build_bespoke_rig(client, tenant_session_factory, crypto, demo_id=demo_id)
@@ -678,9 +662,7 @@ async def test_certificate_and_badge_template_denied_across_tenant(
 # ====================================================== Learning paths ===
 
 
-async def test_learning_path_denied_across_tenant(
-    client, tenant_session_factory, crypto
-) -> None:  # type: ignore[no-untyped-def]
+async def test_learning_path_denied_across_tenant(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     demo_id = await _tenant_id(tenant_session_factory, "demo")
     acme_id = await _tenant_id(tenant_session_factory, "acme")
     rig = await _build_bespoke_rig(client, tenant_session_factory, crypto, demo_id=demo_id)
@@ -695,9 +677,7 @@ async def test_learning_path_denied_across_tenant(
             f"/api/v1/learning-paths/{rig.path_id}", json={"title": "Hijacked"}, headers=h
         )
     )
-    _assert_not_found(
-        await client.get(f"/api/v1/learning-paths/{rig.path_id}/courses", headers=h)
-    )
+    _assert_not_found(await client.get(f"/api/v1/learning-paths/{rig.path_id}/courses", headers=h))
 
     listed = await client.get("/api/v1/learning-paths", headers=h)
     assert listed.status_code == 200, listed.text

@@ -284,9 +284,7 @@ async def test_suspending_a_user_kills_their_sessions_immediately(  # type: igno
     dead_access = await client.get("/api/v1/auth/me", headers=learner_headers)
     assert dead_access.status_code == 401
 
-    dead_refresh = await client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    dead_refresh = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert dead_refresh.status_code == 401
 
     # Login itself is refused outright while suspended.
@@ -360,9 +358,7 @@ async def test_role_revocation_is_reflected_on_the_next_refresh(  # type: ignore
             s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
         )
         target_id = target.id
-        s.add(
-            RoleAssignment(tenant_id=tenant_id, user_id=target_id, role_code="content_author")
-        )
+        s.add(RoleAssignment(tenant_id=tenant_id, user_id=target_id, role_code="content_author"))
 
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
