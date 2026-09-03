@@ -640,10 +640,12 @@ async def get_public_curriculum(
     previews via `access_level`), never content that isn't actually
     public (that's `get_public_lesson_preview`'s job, gated per-lesson)."""
     course = await _visible_course(session, tenant_id=tenant_id, course_id=course_id)
-    modules = await list_modules(session, course_id=course_id)
+    modules = await list_modules(session, course_id=course_id, tenant_id=tenant_id)
     result: list[tuple[Module, list[Lesson]]] = []
     for module in modules:
-        result.append((module, await list_lessons(session, module_id=module.id)))
+        result.append(
+            (module, await list_lessons(session, module_id=module.id, tenant_id=tenant_id))
+        )
     return course, result
 
 

@@ -210,6 +210,64 @@ async def test_public_curriculum_hides_unpublished_courses(
     assert resp.status_code == 404
 
 
+async def test_public_curriculum_for_a_course_assigned_but_not_authored_by_the_tenant(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Regression: `get_public_curriculum` (`services/courses.py`) calls
+    `list_modules`/`list_lessons`, which the H-12 fix made require
+    `tenant_id` so they can assert the caller's tenant can author the
+    course (creator OR a `CourseTenantAssignment` row) — a real caller
+    was missed, so this 500ed (`TypeError: missing tenant_id`) for every
+    published, tenant-assigned course. Confirms both halves: the caller
+    is fixed (no crash), and the boundary is the right one (an assigned-
+    but-not-authoring tenant, `acme`, still sees the curriculum of a
+    course `demo` created and self-assigned to it non-bespoke — that is
+    exactly the shared-course case H-12's own docstring on
+    `assign_course_to_tenant` describes as legitimate, not a hole)."""
+    acme_host = "meridian.localhost"
+    demo_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(None) as s:
+        row = (await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'acme'"))).first()
+    assert row is not None, "tenant 'acme' is not seeded"
+    acme_id = uuid.UUID(str(row[0]))
+
+    demo_author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=demo_id, role="content_author"
+    )
+    course_id, public_lesson_id, _paid_lesson_id = await _make_course_with_lessons(
+        client, demo_author_token
+    )
+
+    acme_email = _unique_email()
+    async with tenant_session_factory(acme_id) as s:
+        acme_user = await identity.create_user(
+            s, crypto, tenant_id=acme_id, email=acme_email, password=PASSWORD
+        )
+        s.add(RoleAssignment(tenant_id=acme_id, user_id=acme_user.id, role_code="admin"))
+    acme_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": acme_email, "password": PASSWORD},
+        headers={"X-Tenant-Host": acme_host},
+    )
+    assert acme_login.status_code == 200, acme_login.text
+    acme_token = acme_login.json()["access_token"]
+
+    assigned = await client.post(
+        f"/api/v1/courses/{course_id}/tenant-assignments",
+        json={"is_bespoke": False},
+        headers={"Authorization": f"Bearer {acme_token}", "X-Tenant-Host": acme_host},
+    )
+    assert assigned.status_code == 201, assigned.text
+
+    resp = await client.get(
+        f"/api/v1/public/courses/{course_id}/curriculum",
+        headers={"X-Tenant-Host": acme_host},
+    )
+    assert resp.status_code == 200, resp.text
+    lessons = {lesson["id"]: lesson for m in resp.json()["modules"] for lesson in m["lessons"]}
+    assert public_lesson_id in lessons
+
+
 async def test_public_lesson_preview_403s_for_non_public_lesson(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
