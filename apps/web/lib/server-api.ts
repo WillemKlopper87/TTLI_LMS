@@ -96,11 +96,19 @@ export interface PublicCourse {
   price: PublicPrice | null;
 }
 
+/** `schemas/courses.py::PublicBlockRow` — shape only, no content (an
+ * anonymous curriculum view). */
+export interface PublicBlock {
+  id: string;
+  position: number;
+  block_type: string;
+}
+
 export interface PublicLesson {
   id: string;
   title: string;
   position: number;
-  activity_type: string | null;
+  blocks: PublicBlock[];
   access_level: string;
   estimated_minutes: number | null;
   is_preview: boolean;

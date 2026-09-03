@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 
-import { RUNG_LABEL, type LessonItem } from "./types";
+import { primaryActivityType, RUNG_LABEL, type LessonItem } from "./types";
 
 type ActivityKind = "quiz" | "survey" | "assignment" | "video";
 // idle -> uploading -> deciding -> polling -> ready | failed. "deciding"
@@ -143,12 +143,13 @@ export function LessonActivityPanel({
   canEdit: boolean;
   onChanged: () => void;
 }) {
+  const primaryType = primaryActivityType(lesson);
   const initialTab: ActivityKind =
-    lesson.activity_type === "survey"
+    primaryType === "survey"
       ? "survey"
-      : lesson.activity_type === "assignment"
+      : primaryType === "assignment"
         ? "assignment"
-        : lesson.activity_type === "video"
+        : primaryType === "video"
           ? "video"
           : "quiz";
   const [tab, setTab] = useState<ActivityKind>(initialTab);
@@ -505,10 +506,28 @@ export function LessonActivityPanel({
     if (!workingId) return;
     setAttachBusy(true);
     setError(null);
+    // Content attaches to a block, not the lesson itself (0041) — reuse
+    // this lesson's existing block of the right type, or create one.
+    let blockId = lesson.blocks.find((b) => b.block_type === tab)?.id ?? null;
+    if (!blockId) {
+      const created = await authedFetch(`/api/bff/lessons/${lesson.id}/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ block_type: tab }),
+      });
+      if (!created.ok) {
+        setAttachBusy(false);
+        const body = await created.json().catch(() => null);
+        setError(body?.error?.message ?? `Could not create a ${tab} block on this lesson.`);
+        return;
+      }
+      blockId = (await created.json()).id;
+    }
     const param = tab === "video" ? "video_asset_id" : `${tab}_id`;
-    const resp = await authedFetch(`/api/bff/lessons/${lesson.id}/${tab}?${param}=${workingId}`, {
-      method: "POST",
-    });
+    const resp = await authedFetch(
+      `/api/bff/lessons/${lesson.id}/blocks/${blockId}/${tab}?${param}=${workingId}`,
+      { method: "POST" },
+    );
     setAttachBusy(false);
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
@@ -608,8 +627,8 @@ export function LessonActivityPanel({
     <div className="card mt-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <b style={{ fontSize: "0.875rem" }}>Manage content for &ldquo;{lesson.title}&rdquo;</b>
-        {lesson.activity_type !== "document" ? (
-          <span className="tag tag--done">Currently: {lesson.activity_type}</span>
+        {primaryType !== "document" ? (
+          <span className="tag tag--done">Currently: {primaryType}</span>
         ) : null}
       </div>
 

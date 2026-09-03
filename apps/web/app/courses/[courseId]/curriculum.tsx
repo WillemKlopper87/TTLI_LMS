@@ -47,7 +47,7 @@ function ModuleBlock({ module, index }: { module: PublicModule; index: number })
         {module.lessons.map((lesson) => (
           <li key={lesson.id}>
             <span className="ic" aria-hidden="true">
-              {ACTIVITY_ICONS[lesson.activity_type ?? ""] ?? "●"}
+              {ACTIVITY_ICONS[lesson.blocks[0]?.block_type ?? "document"] ?? "●"}
             </span>
             <span>{lesson.title}</span>
             {lesson.is_preview ? (

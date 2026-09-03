@@ -21,6 +21,8 @@ import {
   type CourseOutline,
   type LessonOutlineRow,
   type ModuleOutlineRow,
+  primaryActivityType,
+  primaryMediaState,
   VIDEO_STATE_TAG,
 } from "./types";
 import { authedFetch, readError, sendJson } from "./wizard-api";
@@ -342,7 +344,7 @@ export function CurriculumOutline({
                       ⋮⋮
                     </span>
                   ) : null}
-                  <span className="ic">{activityIcon(l.lesson.activity_type)}</span>
+                  <span className="ic">{activityIcon(primaryActivityType(l.lesson))}</span>
                   {canEdit ? (
                     <input
                       className="input"
@@ -355,9 +357,11 @@ export function CurriculumOutline({
                     <span>{l.lesson.title}</span>
                   )}
                   <span className="tag tag--mute">{l.lesson.access_level}</span>
-                  {l.video_state ? (
-                    <span className={`tag ${VIDEO_STATE_TAG[l.video_state] ?? "tag--mute"}`}>
-                      {l.video_state}
+                  {primaryMediaState(l) ? (
+                    <span
+                      className={`tag ${VIDEO_STATE_TAG[primaryMediaState(l) as string] ?? "tag--mute"}`}
+                    >
+                      {primaryMediaState(l)}
                     </span>
                   ) : null}
                   <span className="dur">{l.estimated_minutes}m</span>
@@ -479,12 +483,14 @@ export function LessonPicker({
                     }
                   }}
                 >
-                  <span className="ic">{activityIcon(l.lesson.activity_type)}</span>
+                  <span className="ic">{activityIcon(primaryActivityType(l.lesson))}</span>
                   <span style={{ fontWeight: selected ? 600 : 400 }}>{l.lesson.title}</span>
-                  <span className="tag tag--mute">{l.lesson.activity_type}</span>
-                  {l.video_state ? (
-                    <span className={`tag ${VIDEO_STATE_TAG[l.video_state] ?? "tag--mute"}`}>
-                      {l.video_state}
+                  <span className="tag tag--mute">{primaryActivityType(l.lesson)}</span>
+                  {primaryMediaState(l) ? (
+                    <span
+                      className={`tag ${VIDEO_STATE_TAG[primaryMediaState(l) as string] ?? "tag--mute"}`}
+                    >
+                      {primaryMediaState(l)}
                     </span>
                   ) : null}
                   <span className="dur">{l.estimated_minutes}m</span>

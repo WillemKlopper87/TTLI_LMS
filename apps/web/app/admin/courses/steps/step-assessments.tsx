@@ -13,7 +13,7 @@
 import { useState } from "react";
 
 import { CompletionRulesBuilder, describeRules, summariseRules } from "../completion-rules-builder";
-import type { CompletionRules } from "../types";
+import { type CompletionRules, primaryActivityType } from "../types";
 import { readError, sendJson } from "../wizard-api";
 import { type StepProps, WizardShell } from "../wizard-shell";
 
@@ -142,7 +142,7 @@ export function StepAssessments({ ctx, stepStates, onStep, savedAt, error, notic
                         ) : null}
                       </td>
                       <td>
-                        <span className="tag tag--mute">{row.lesson.activity_type}</span>
+                        <span className="tag tag--mute">{primaryActivityType(row.lesson)}</span>
                       </td>
                       <td className="mono" style={{ fontSize: "0.6875rem" }}>
                         {summariseRules(row.lesson.completion_rules)}

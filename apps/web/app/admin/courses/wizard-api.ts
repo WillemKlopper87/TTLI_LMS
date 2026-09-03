@@ -13,12 +13,13 @@
 
 import { authedFetch } from "@/lib/authed-fetch";
 
-import type {
-  CourseItem,
-  CourseOutline,
-  Readiness,
-  SkipKey,
-  StepState,
+import {
+  type CourseItem,
+  type CourseOutline,
+  lessonHasContent,
+  type Readiness,
+  type SkipKey,
+  type StepState,
 } from "./types";
 
 export { authedFetch };
@@ -106,11 +107,7 @@ export function deriveStepStates(
     !!outline &&
     outline.modules.length > 0 &&
     outline.modules.every((m) => m.lessons.length > 0);
-  const content =
-    lessons.length > 0 &&
-    lessons.every(
-      (l) => l.lesson.activity_type !== "document" || (l.lesson.body ?? "").trim().length > 0,
-    );
+  const content = lessons.length > 0 && lessons.every((l) => lessonHasContent(l.lesson));
   const rules =
     skips.rules || Object.keys(course?.completion_rules ?? {}).length > 0;
   const certification =

@@ -34,19 +34,51 @@ export interface ModuleItem {
   position: number;
 }
 
+/** One of a lesson's ordered content blocks (0041) — mirrors the API's
+ * `LessonBlockResponse`. Replaced the lesson-level
+ * activity_type/video_asset_id/quiz_id/survey_id/assignment_id/body
+ * fields, which are now per-block since a lesson can hold any number of
+ * them. */
+export interface BlockItem {
+  id: string;
+  lesson_id: string;
+  position: number;
+  block_type: string;
+  body: string | null;
+  video_asset_id: string | null;
+  audio_asset_id: string | null;
+  quiz_id: string | null;
+  survey_id: string | null;
+  assignment_id: string | null;
+  completion_rules: CompletionRules;
+}
+
 export interface LessonItem {
   id: string;
   module_id: string;
   title: string;
   position: number;
-  activity_type: string;
   access_level: string;
-  body: string | null;
   completion_rules: CompletionRules;
-  video_asset_id: string | null;
-  quiz_id: string | null;
-  survey_id: string | null;
-  assignment_id: string | null;
+  blocks: BlockItem[];
+}
+
+/** The wizard's authoring screens (steps 3/4) still present a lesson as
+ * holding "an" activity, same as before 0041 — this derives that same
+ * concept from the real (list) shape: the first non-text block's type,
+ * or "document" when the lesson has none or only a text block. A future
+ * multi-activity editor can drop this; nothing downstream should grow a
+ * second, independent notion of "the" activity type. */
+export function primaryActivityType(lesson: LessonItem): string {
+  return lesson.blocks.find((b) => b.block_type !== "text")?.block_type ?? "document";
+}
+
+/** Step 3's own definition of "this lesson has something in it": a
+ * non-text block (whatever it turns out to hold), or a text block with a
+ * non-empty body. Mirrors the old `activity_type !== "document" ||
+ * body.trim()` check the single-activity model made possible directly. */
+export function lessonHasContent(lesson: LessonItem): boolean {
+  return lesson.blocks.some((b) => b.block_type !== "text" || (b.body ?? "").trim().length > 0);
 }
 
 /** `services/completion.py::CompletionRules` — every field optional; an
@@ -62,13 +94,33 @@ export interface CompletionRules {
   minimum_interval_seconds?: number | null;
 }
 
-export interface LessonOutlineRow {
-  lesson: LessonItem;
-  video_state: string | null;
-  video_duration_seconds: number | null;
+/** Per-block outline metadata (0041) — `services/course_wizard.py`'s
+ * media/question enrichment, now keyed to the block it describes rather
+ * than assumed singular per lesson. */
+export interface BlockOutlineRow {
+  block: BlockItem;
+  media_state: string | null;
+  duration_seconds: number | null;
   video_has_captions: boolean;
   question_count: number | null;
   estimated_minutes: number;
+}
+
+export interface LessonOutlineRow {
+  lesson: LessonItem;
+  blocks: BlockOutlineRow[];
+  estimated_minutes: number;
+}
+
+/** The outline row for whichever block `primaryActivityType` would call
+ * "the" activity (first non-text block), so the content step can still
+ * show one media-state tag / duration / question count per lesson. */
+export function primaryOutlineBlock(row: LessonOutlineRow): BlockOutlineRow | null {
+  return row.blocks.find((b) => b.block.block_type !== "text") ?? null;
+}
+
+export function primaryMediaState(row: LessonOutlineRow): string | null {
+  return primaryOutlineBlock(row)?.media_state ?? null;
 }
 
 export interface ModuleOutlineRow {

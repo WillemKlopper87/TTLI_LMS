@@ -16,9 +16,21 @@ import { useEffect, useMemo, useState } from "react";
 
 import { LessonPicker } from "../curriculum-outline";
 import { LessonActivityPanel } from "../lesson-activity-panel";
-import { ACCESS_LEVELS, IN_FLIGHT_VIDEO_STATES, type LessonItem } from "../types";
+import {
+  ACCESS_LEVELS,
+  IN_FLIGHT_VIDEO_STATES,
+  type LessonItem,
+  primaryActivityType,
+  primaryOutlineBlock,
+} from "../types";
 import { authedFetch, readError, sendJson } from "../wizard-api";
 import { type StepProps, WizardShell } from "../wizard-shell";
+
+/** A lesson's document text lives on its own "text" block (0041), not
+ * the lesson itself. */
+function textBlockBody(lesson: LessonItem): string {
+  return lesson.blocks.find((b) => b.block_type === "text")?.body ?? "";
+}
 
 export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }: StepProps) {
   const outline = ctx.outline;
@@ -31,6 +43,10 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
     [outline],
   );
   const selected = rows.find((r) => r.lesson.id === selectedId) ?? null;
+  // "The" activity block for the selected lesson, i.e. whichever one
+  // primaryActivityType names — null on a document-only (or empty)
+  // lesson.
+  const activityBlockRow = selected ? primaryOutlineBlock(selected) : null;
 
   // Select the first lesson once the outline arrives, and keep the body
   // textarea in step with whichever lesson is open.
@@ -39,14 +55,15 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
       if (rows.length === 0) return;
       if (selectedId === null || !rows.some((r) => r.lesson.id === selectedId)) {
         setSelectedId(rows[0].lesson.id);
-        setBody(rows[0].lesson.body ?? "");
+        setBody(textBlockBody(rows[0].lesson));
       }
     })();
   }, [rows, selectedId]);
 
-  const transcoding = rows.filter(
-    (r) => r.video_state !== null && IN_FLIGHT_VIDEO_STATES.has(r.video_state),
-  );
+  const transcoding = rows.filter((r) => {
+    const state = primaryOutlineBlock(r)?.media_state ?? null;
+    return state !== null && IN_FLIGHT_VIDEO_STATES.has(state);
+  });
 
   useEffect(() => {
     if (transcoding.length === 0) return;
@@ -59,15 +76,35 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
 
   function select(lesson: LessonItem) {
     setSelectedId(lesson.id);
-    setBody(lesson.body ?? "");
+    setBody(textBlockBody(lesson));
   }
 
   async function saveBody() {
     if (!selected || !ctx.canEdit) return;
-    if ((selected.lesson.body ?? "") === body) return;
-    const resp = await sendJson(`/api/bff/lessons/${selected.lesson.id}`, "PATCH", {
-      body: body || null,
-    });
+    const textBlock = selected.lesson.blocks.find((b) => b.block_type === "text") ?? null;
+    if ((textBlock?.body ?? "") === body) return;
+    let resp: Response;
+    if (textBlock) {
+      resp = await sendJson(`/api/bff/lessons/${selected.lesson.id}/blocks/${textBlock.id}`, "PATCH", {
+        body: body || null,
+      });
+    } else if (body.trim().length > 0) {
+      // No text block exists yet on this lesson — create one, then write
+      // the body onto it (LessonBlockCreateRequest has no body field).
+      const created = await sendJson(`/api/bff/lessons/${selected.lesson.id}/blocks`, "POST", {
+        block_type: "text",
+      });
+      if (!created.ok) {
+        ctx.setError(await readError(created, "The lesson body could not be saved."));
+        return;
+      }
+      const blockId = (await created.json()).id as string;
+      resp = await sendJson(`/api/bff/lessons/${selected.lesson.id}/blocks/${blockId}`, "PATCH", {
+        body,
+      });
+    } else {
+      return; // nothing to save: no block, and nothing typed
+    }
     if (!resp.ok) {
       ctx.setError(await readError(resp, "The lesson body could not be saved."));
       return;
@@ -94,15 +131,19 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
 
   async function detachActivity() {
     if (!selected) return;
+    const activityBlock = selected.lesson.blocks.find((b) => b.block_type !== "text") ?? null;
+    if (!activityBlock) return;
     if (
       !window.confirm(
-        `Detach the ${selected.lesson.activity_type} from "${selected.lesson.title}"? The activity itself is kept — the lesson reverts to a document.`,
+        `Detach the ${activityBlock.block_type} from "${selected.lesson.title}"? The activity itself is kept — the lesson reverts to a document.`,
       )
     ) {
       return;
     }
     setBusy(true);
-    const resp = await authedFetch(`/api/bff/lessons/${selected.lesson.id}/activity`, {
+    // 0041: "detach" is deleting the one non-text block the lesson
+    // carries — there is no lesson-level activity to detach any more.
+    const resp = await authedFetch(`/api/bff/lessons/${selected.lesson.id}/blocks/${activityBlock.id}`, {
       method: "DELETE",
     });
     setBusy(false);
@@ -168,9 +209,9 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
                     </h3>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="tag tag--mute">{selected.lesson.activity_type}</span>
-                    {selected.video_state ? (
-                      <span className="tag tag--live">{selected.video_state}</span>
+                    <span className="tag tag--mute">{primaryActivityType(selected.lesson)}</span>
+                    {activityBlockRow?.media_state ? (
+                      <span className="tag tag--live">{activityBlockRow.media_state}</span>
                     ) : null}
                     <a
                       className="btn btn--ghost"
@@ -203,14 +244,14 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
                     <b>Estimated duration</b>
                     <span style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
                       {selected.estimated_minutes}m
-                      {selected.video_duration_seconds != null
-                        ? ` · video ${selected.video_duration_seconds}s`
+                      {activityBlockRow?.duration_seconds != null
+                        ? ` · video ${activityBlockRow.duration_seconds}s`
                         : ""}
-                      {selected.video_state === "ready" && !selected.video_has_captions
+                      {activityBlockRow?.media_state === "ready" && !activityBlockRow.video_has_captions
                         ? " · no captions"
                         : ""}
-                      {selected.question_count != null
-                        ? ` · ${selected.question_count} questions`
+                      {activityBlockRow?.question_count != null
+                        ? ` · ${activityBlockRow.question_count} questions`
                         : ""}
                     </span>
                   </label>
@@ -229,7 +270,7 @@ export function StepContent({ ctx, stepStates, onStep, savedAt, error, notice }:
                   />
                 </label>
 
-                {selected.lesson.activity_type !== "document" && ctx.canEdit ? (
+                {primaryActivityType(selected.lesson) !== "document" && ctx.canEdit ? (
                   <button
                     type="button"
                     className="btn btn--ghost mt-3"
