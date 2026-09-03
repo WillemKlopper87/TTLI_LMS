@@ -431,6 +431,17 @@ async def refresh(
     if user is None:
         raise Unauthenticated("That refresh token is no longer valid.")
 
+    # Defense in depth, not the primary mechanism: suspending/locking/
+    # deleting an account already revokes every refresh-token family at the
+    # moment it happens (services/tenant_users.py set_status), so tokens.
+    # rotate() above would normally have failed before this point ever runs.
+    # This closes the race where a status change lands mid-rotation, and
+    # covers locked_until, which — unlike suspension — carries no revocation
+    # of its own (fable5.1_review.md H-11).
+    if user.deleted_at is not None or user.status != "active" or identity.is_locked(user):
+        await tokens.revoke_all_for_user(session, user_id=user_id)
+        raise Unauthenticated("That refresh token is no longer valid.")
+
     await audit.record(
         session,
         tenant_id=tenant.id,

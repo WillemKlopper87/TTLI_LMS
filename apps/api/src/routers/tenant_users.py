@@ -30,6 +30,7 @@ from src.core.deps import (
     AuditedSessionDep,
     CryptoDep,
     PrincipalDep,
+    RedisDep,
     SessionDep,
     SettingsDep,
     TenantDep,
@@ -245,6 +246,8 @@ async def change_status(
     body: StatusChangeRequest,
     principal: PrincipalDep,
     session: AuditedSessionDep,
+    redis: RedisDep,
+    settings: SettingsDep,
 ) -> None:
     principal.require(SUSPEND)
     _guard_not_self(principal, user_id)
@@ -253,7 +256,13 @@ async def change_status(
     if user is None:
         raise NotFound("No such user.")
     before = user.status
-    await people.set_status(session, user=user, status=body.status)
+    await people.set_status(
+        session,
+        user=user,
+        status=body.status,
+        redis=redis,
+        access_token_ttl_seconds=settings.access_token_minutes * 60,
+    )
     await audit.record(
         session,
         tenant_id=principal.tenant_id,

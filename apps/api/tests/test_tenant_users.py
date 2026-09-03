@@ -242,6 +242,155 @@ async def test_inviting_a_colleague_creates_a_passwordless_account(  # type: ign
     assert duplicate.status_code == 400
 
 
+async def test_suspending_a_user_kills_their_sessions_immediately(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """H-11: `set_status` used to only flip the status column — an
+    already-issued access token kept working until it happened to expire,
+    and the refresh token kept rotating right past the suspension. Both
+    must die the moment status leaves `active`, not on their own schedule.
+    """
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    admin_headers = {"Authorization": f"Bearer {boss}"}
+
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        target = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+        )
+        target_id = target.id
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    access_token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
+    learner_headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Both are live before suspension.
+    assert (await client.get("/api/v1/auth/me", headers=learner_headers)).status_code == 200
+
+    suspend = await client.post(
+        f"/api/v1/tenant/users/{target_id}/status",
+        json={"status": "suspended"},
+        headers=admin_headers,
+    )
+    assert suspend.status_code == 204, suspend.text
+
+    # The access token's signature is still valid and it has not expired —
+    # only the suspension makes it dead now.
+    dead_access = await client.get("/api/v1/auth/me", headers=learner_headers)
+    assert dead_access.status_code == 401
+
+    dead_refresh = await client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+    )
+    assert dead_refresh.status_code == 401
+
+    # Login itself is refused outright while suspended.
+    relogin = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert relogin.status_code == 401
+
+
+async def test_reinstating_a_suspended_user_restores_access(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Flipping status back to active must let a fresh login mint tokens
+    that work — and a token minted after reinstatement must not be caught
+    by the suspension's revocation mark."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    admin_headers = {"Authorization": f"Bearer {boss}"}
+
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        target = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+        )
+        target_id = target.id
+
+    await client.post(
+        f"/api/v1/tenant/users/{target_id}/status",
+        json={"status": "suspended"},
+        headers=admin_headers,
+    )
+    suspended_login = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+    )
+    assert suspended_login.status_code == 401
+
+    reinstate = await client.post(
+        f"/api/v1/tenant/users/{target_id}/status",
+        json={"status": "active"},
+        headers=admin_headers,
+    )
+    assert reinstate.status_code == 204, reinstate.text
+
+    relogin = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert relogin.status_code == 200, relogin.text
+    new_access = relogin.json()["access_token"]
+
+    restored = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {new_access}"}
+    )
+    assert restored.status_code == 200
+
+
+async def test_role_revocation_is_reflected_on_the_next_refresh(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """Permissions are baked into the access token at issuance, not looked
+    up per request. `refresh` re-fetches them from the database on every
+    rotation (`routers/auth.py`), so revoking a role must be visible in the
+    very next refreshed token rather than waiting for the old one's full
+    natural expiry."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    admin_headers = {"Authorization": f"Bearer {boss}"}
+
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        target = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+        )
+        target_id = target.id
+        s.add(
+            RoleAssignment(tenant_id=tenant_id, user_id=target_id, role_code="content_author")
+        )
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    refresh_token = login.json()["refresh_token"]
+
+    before_me = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {login.json()['access_token']}"}
+    )
+    assert before_me.status_code == 200
+    granted_permissions = set(before_me.json()["permissions"])
+    assert granted_permissions, "content_author must carry at least one permission"
+
+    revoke = await client.delete(
+        f"/api/v1/tenant/users/{target_id}/roles/content_author", headers=admin_headers
+    )
+    assert revoke.status_code == 204
+
+    rotated = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert rotated.status_code == 200, rotated.text
+
+    after_me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {rotated.json()['access_token']}"},
+    )
+    assert after_me.status_code == 200
+    assert set(after_me.json()["permissions"]).isdisjoint(granted_permissions)
+
+
 async def test_a_learner_sees_none_of_this(  # type: ignore[no-untyped-def]
     client, tenant_session_factory, crypto
 ) -> None:

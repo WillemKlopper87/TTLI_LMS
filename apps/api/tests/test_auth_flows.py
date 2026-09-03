@@ -285,6 +285,46 @@ async def test_refresh_rotates_and_detects_reuse(client, tenant_session_factory,
     assert also_revoked.status_code == 401
 
 
+async def test_refresh_rejects_a_locked_account(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """`locked_until` (identity.py's failed-login lockout) writes no
+    revocation of its own the way suspension now does — `refresh` has to
+    check it directly, or a locked-out account's still-live refresh token
+    keeps working (fable5.1_review.md H-11)."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=email)
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200
+    refresh_token = login.json()["refresh_token"]
+
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa_text(
+                "UPDATE users SET locked_until = now() + interval '15 minutes' "
+                "WHERE email_blind_index = :idx"
+            ),
+            {"idx": crypto.blind_index(email)},
+        )
+
+    locked = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert locked.status_code == 401
+
+    # The refusal also cleaned up: the refresh token is now dead outright,
+    # not just refused while the lock happens to be in effect.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa_text(
+                "UPDATE users SET locked_until = NULL WHERE email_blind_index = :idx"
+            ),
+            {"idx": crypto.blind_index(email)},
+        )
+    still_dead = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert still_dead.status_code == 401
+
+
 async def test_logout_revokes_only_this_session(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     email = _unique_email()

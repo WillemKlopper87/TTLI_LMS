@@ -34,6 +34,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +43,7 @@ from src.core.errors import AppError, Forbidden
 from src.models.rbac import Role, RoleAssignment, RolePermission
 from src.models.user import User
 from src.schemas.tenant_users import RoleSummary, TenantUserRow
+from src.services import tokens
 
 ACTIVE = "active"
 SUSPENDED = "suspended"
@@ -225,12 +227,37 @@ async def revoke_role(
     return True
 
 
-async def set_status(session: AsyncSession, *, user: User, status: str) -> None:
+async def set_status(
+    session: AsyncSession,
+    *,
+    user: User,
+    status: str,
+    redis: Redis,
+    access_token_ttl_seconds: int,
+) -> None:
+    """Flip the status row, and — moving to anything but active — end every
+    session the account currently holds.
+
+    Without this, suspension was cosmetic: the row said "suspended" but a
+    refresh token kept rotating and an already-issued access token kept
+    working until it happened to expire (fable5.1_review.md H-11). Both
+    halves live here, at the one state transition, rather than left to
+    callers to remember: the refresh-token families in the database
+    (`revoke_all_for_user`), and the access tokens already handed out, which
+    exist only as signed JWTs with no row to flip (`revoke_access_tokens_
+    for_user` marks a cutoff in Redis that `core/deps.get_principal` checks
+    on every request instead).
+    """
     if status not in (ACTIVE, SUSPENDED):
         raise AppError("Status must be active or suspended.", {"status": status})
     user.status = status
     user.updated_at = datetime.now(UTC)
     await session.flush()
+    if status != ACTIVE:
+        await tokens.revoke_all_for_user(session, user_id=user.id)
+        await tokens.revoke_access_tokens_for_user(
+            redis, user_id=user.id, ttl_seconds=access_token_ttl_seconds
+        )
 
 
 __all__ = [

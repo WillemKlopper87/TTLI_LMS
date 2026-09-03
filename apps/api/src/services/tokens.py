@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from redis.asyncio import Redis
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -230,11 +231,47 @@ async def revoke_all_for_user(session: AsyncSession, *, user_id: uuid.UUID) -> i
     return len(revoked)
 
 
+def _access_denylist_key(user_id: uuid.UUID) -> str:
+    return f"denylist:user:{user_id}"
+
+
+async def revoke_access_tokens_for_user(
+    redis: Redis, *, user_id: uuid.UUID, ttl_seconds: int
+) -> None:
+    """Invalidate every access token already issued to this user.
+
+    Unlike logout's single-jti denylist (`routers/auth.py`), the caller here
+    — an administrator suspending someone else's account — never holds the
+    jti to blacklist individually, and the user may be holding several
+    (multiple tabs/devices). This records a cutoff instant instead: `core/
+    deps.get_principal` refuses any bearer whose `iat` is not strictly after
+    it, which catches every access token outstanding at the moment of the
+    call regardless of how many there are.
+
+    `ttl_seconds` should be at least the access-token lifetime — once every
+    token that could have existed before the cutoff has expired on its own,
+    the marker is safe to expire too rather than growing this key forever.
+    """
+    key = _access_denylist_key(user_id)
+    now = int(datetime.now(UTC).timestamp())
+    await redis.set(key, str(now), ex=ttl_seconds)
+
+
+async def access_tokens_revoked_at(redis: Redis, *, user_id: uuid.UUID) -> int | None:
+    """The cutoff instant set by `revoke_access_tokens_for_user`, or None if
+    the user has no active denylist mark (never suspended, or the mark has
+    since expired because every pre-cutoff token is long dead anyway)."""
+    raw = await redis.get(_access_denylist_key(user_id))
+    return int(raw) if raw is not None else None
+
+
 __all__ = [
     "GuestAccessExpired",
     "IssuedRefreshToken",
     "RefreshTokenReused",
+    "access_tokens_revoked_at",
     "issue_family",
+    "revoke_access_tokens_for_user",
     "revoke_all_for_user",
     "revoke_family_for_token",
     "rotate",

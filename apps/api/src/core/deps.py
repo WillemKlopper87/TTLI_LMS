@@ -25,6 +25,7 @@ from src.core.errors import AppError, Forbidden, TenantUnresolved, Unauthenticat
 from src.core.redis import get_redis
 from src.core.security import decode_access_token
 from src.core.tenancy import TenantContext, get_or_resolve_tenant, hostname_from_request
+from src.services import tokens
 from src.services.payments.base import PaymentProvider
 from src.services.payments.payfast import PayfastProvider
 from src.services.storage import StorageService, get_storage_adapter
@@ -190,6 +191,20 @@ async def get_principal(
     if jti and await redis.exists(f"denylist:jti:{jti}"):
         raise Unauthenticated("Authentication required.")
 
+    user_id = uuid.UUID(claims["sub"])
+    # Suspending/locking/deleting an account (services/tenant_users.py
+    # set_status) marks a cutoff instant instead of hunting down every jti
+    # the user might be holding across tabs/devices. A bearer minted before
+    # that instant stops working here immediately, not merely on its own
+    # expiry — without this, suspension only took effect once every
+    # outstanding access token aged out on its own. Strictly-less-than, not
+    # `<=`: `iat` is whole seconds (core/security.py), so a token minted in
+    # the same second as a *later* reinstatement's fresh login must not be
+    # caught by an earlier suspension's mark that rounds to that same second.
+    revoked_at = await tokens.access_tokens_revoked_at(redis, user_id=user_id)
+    if revoked_at is not None and int(claims["iat"]) < revoked_at:
+        raise Unauthenticated("Authentication required.")
+
     token_tenant = uuid.UUID(claims["tid"])
     # The tenant is asserted twice — by hostname and by token claim. A single
     # source would make host spoofing a tenancy bypass.
@@ -197,7 +212,7 @@ async def get_principal(
         raise Forbidden("You do not have access to this resource.")
 
     return Principal(
-        user_id=uuid.UUID(claims["sub"]),
+        user_id=user_id,
         tenant_id=token_tenant,
         permissions=frozenset(claims.get("perms", [])),
     )
