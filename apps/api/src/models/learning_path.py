@@ -4,6 +4,11 @@ split `course.py`'s own docstring draws for `courses`/`modules`/
 `lessons`: the global rows all tenants share.
 `LearningPathTenantAssignment` is what makes an authored path visible to
 a given tenant, structurally identical to `CourseTenantAssignment`.
+
+`LearningPath.created_by_tenant_id` (0042) mirrors `Course.created_by_
+tenant_id` exactly — see that column's docstring for why it exists
+(RLS on the assignment table makes it unqueryable across tenants) and
+why it is provenance, not visibility.
 """
 
 from __future__ import annotations
@@ -32,6 +37,12 @@ class LearningPath(Base, TimestampMixin):
         PGUUID(as_uuid=True),
         ForeignKey("certificate_templates.id", ondelete="RESTRICT"),
         nullable=True,
+    )
+    created_by_tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
 

@@ -7,6 +7,14 @@ one tenant — never a duplicated course row. `Product` (services/commerce)
 is the sellable wrapper; a course is the learnable thing it grants access
 to via `Product.course_id` — one course can sit behind several tenant-
 specific bundles at different prices.
+
+`Course.created_by_tenant_id` (0042) is provenance, not scoping — it
+records who authored the row so `services/courses.py`'s cross-tenant
+authoring boundary can recognise a course as "still mine" without
+depending on `CourseTenantAssignment`'s row-level security, which
+literally cannot be queried across tenants (see that module's own
+docstring). It plays no part in visibility to learners; only
+`CourseTenantAssignment` does that.
 """
 
 from __future__ import annotations
@@ -44,6 +52,19 @@ class Course(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     state: Mapped[str] = mapped_column(ContentState, nullable=False, server_default="draft")
+    # 0042 (H-12) — the tenant that created this row, used by the
+    # cross-tenant authoring boundary (services/courses.py::
+    # course_authorable) as the "still mine to work on, regardless of
+    # publish/assignment state" signal `course_tenant_assignments`'
+    # FORCE RLS can't provide. NULL on every pre-0042 row (nothing
+    # recorded this before the column existed); those rows fall back to
+    # the assignment-only check, unchanged from before.
+    created_by_tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # REQ-TEN-03: aggregate-only by default — a course cannot be authored
     # into individual-score visibility, that also needs the tenant-level
     # setting and an explicit permission (04 §2.3), neither of which exist
@@ -120,25 +141,65 @@ class Lesson(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    # REQ-LMS-01: video, document, quiz, survey, assignment, workshop
-    # requirement. Only "document" is servable this sprint (no video/quiz/
-    # survey/assignment subsystem exists yet — Phase 4 sprints 2/3); a
-    # plain string, not an enum, because this set grows with each of those
-    # sprints and an ALTER TYPE ... ADD VALUE migration per sprint is more
-    # ceremony than the closed-set rationale (02 §3) is worth here.
-    activity_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default="document"
-    )
     access_level: Mapped[str] = mapped_column(AccessLevel, nullable=False, server_default="paid")
-    # Document-activity body. Nullable — a video/quiz/survey/assignment
-    # lesson carries its content in that subsystem's own table instead.
+    # Lesson-level override of the course default (02 §5.2) — absent
+    # fields fall through to the course's completion_rules, never a null
+    # that silently disables the course-level rule. A lesson's own blocks
+    # each carry a further override on top of this one (0041) — three
+    # tiers total, same "more specific wins per-field" merge each time.
+    # This tier still matters even for a multi-block lesson: rules like
+    # minimum_time_seconds apply once per lesson regardless of block count.
+    completion_rules: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'")
+    )
+    # A lesson's content is now an ordered sequence of blocks (0041), not
+    # a single activity_type — see LessonBlock below. Fetched via
+    # services.lesson_blocks.list_blocks(session, lesson_id=...), the
+    # same explicit-query-function shape list_lessons/list_modules
+    # already use — this codebase never uses ORM relationship attributes.
+
+
+BLOCK_TYPE_VALUES = ("text", "video", "audio", "quiz", "survey", "assignment")
+
+
+class LessonBlock(Base, TimestampMixin):
+    """One item in a lesson's ordered content sequence (0041 — replaces
+    the old one-activity-per-lesson model: `Lesson.activity_type` plus a
+    single nullable FK per type). A lesson can hold any number of blocks
+    of any type in any order, e.g. text, then video, then a quiz.
+
+    `Quiz`/`Survey`/`Assignment`/`VideoAsset`/`AudioAsset` remain
+    standalone resources with no back-reference to a block or lesson —
+    same "the FK points at the resource, never the reverse" shape
+    `Lesson`'s own FKs already had, now one level down.
+    """
+
+    __tablename__ = "lesson_blocks"
+    __table_args__ = (Index("ix_lesson_blocks_lesson_position", "lesson_id", "position"),)
+
+    id: Mapped[uuid.UUID] = pk()
+    # No index=True — ix_lesson_blocks_lesson_position already covers
+    # lesson_id as its leftmost column.
+    lesson_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    # text, video, audio, quiz, survey, assignment — a plain string, not
+    # an enum, same reasoning Lesson.activity_type used to carry: a UI
+    # vocabulary, not a closed set worth an ALTER TYPE migration to grow.
+    block_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Text-block body. Nullable — a video/audio/quiz/survey/assignment
+    # block carries its content in that subsystem's own table instead.
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # video_assets.id for activity_type="video" lessons (Phase 4 sprint 2).
     video_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("video_assets.id", ondelete="SET NULL"), nullable=True
     )
-    # quizzes/surveys/assignments.id for the matching activity_type
-    # (Phase 4 sprint 3) — same one-nullable-FK-per-subsystem pattern.
+    # audio_assets.id for block_type="audio" blocks (0041) — deliberately
+    # not a VideoAsset variant: no transcode ladder, no renditions, no
+    # delivery_mode, just store-and-serve (see AudioAsset's own docstring).
+    audio_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("audio_assets.id", ondelete="SET NULL"), nullable=True
+    )
     quiz_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("quizzes.id", ondelete="SET NULL"), nullable=True
     )
@@ -148,9 +209,10 @@ class Lesson(Base, TimestampMixin):
     assignment_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("assignments.id", ondelete="SET NULL"), nullable=True
     )
-    # Lesson-level override of the course default (02 §5.2) — absent
-    # fields fall through to the course's completion_rules, never a null
-    # that silently disables the course-level rule.
+    # Block-level override of the lesson's (itself an override of the
+    # course's) completion_rules — the third and most specific tier of
+    # the same merge idiom. Unused by types with no matching rule (text,
+    # audio — see services/completion.py's rule-to-subsystem mapping).
     completion_rules: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'")
     )
@@ -179,12 +241,14 @@ class CourseTenantAssignment(Base, TimestampMixin):
 
 
 __all__ = [
+    "BLOCK_TYPE_VALUES",
     "COURSE_FORMAT_VALUES",
     "COURSE_LEVEL_VALUES",
     "AccessLevel",
     "Course",
     "CourseTenantAssignment",
     "Lesson",
+    "LessonBlock",
     "ManagerVisibility",
     "Module",
 ]
