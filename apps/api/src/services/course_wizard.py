@@ -1,10 +1,9 @@
 """The course-authoring *wizard* primitives (`docs/research/course-
 authoring-wizard.md`): everything the guided create-and-upload flow
 needs that `services/courses.py`'s single-item CRUD couldn't express —
-delete with a progress guard, atomic reorder, detach-to-document,
-clearing a template link, a full course outline in one read, a
-readiness report, a course-wide time estimate, and duplicate-as-
-template.
+delete with a progress guard, atomic reorder, clearing a template link, a
+full course outline in one read (blocks and all, 0041), a readiness
+report, a course-wide time estimate, and duplicate-as-template.
 
 Kept beside rather than inside `services/courses.py` on purpose: that
 module is the per-item authoring surface every subsystem's attach
@@ -30,15 +29,18 @@ from src.core.errors import NotFound
 from src.core.ids import uuid7
 from src.models.assessment import Assignment, Quiz, QuizQuestion, Survey, SurveyQuestion
 from src.models.commerce import Price, Product
-from src.models.course import Course, CourseTenantAssignment, Lesson, Module
+from src.models.course import Course, CourseTenantAssignment, Lesson, LessonBlock, Module
 from src.models.learning import LessonCompletion
-from src.models.media import VideoAsset
+from src.models.media import AudioAsset, VideoAsset
+from src.services import lesson_blocks as lesson_blocks_service
 from src.services.courses import (
     CourseAuthoringError,
     _unique_slug,
+    assert_course_authorable,
     get_course,
     list_lessons,
     list_modules,
+    resolve_course_id_for_module,
 )
 
 # --- Delete (with a progress guard) --------------------------------------
@@ -58,19 +60,27 @@ async def _lessons_with_progress(session: AsyncSession, lesson_ids: list[uuid.UU
     )
 
 
-async def _renumber_modules(session: AsyncSession, course_id: uuid.UUID) -> None:
-    for index, module in enumerate(await list_modules(session, course_id=course_id)):
+async def _renumber_modules(
+    session: AsyncSession, course_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> None:
+    modules = await list_modules(session, course_id=course_id, tenant_id=tenant_id)
+    for index, module in enumerate(modules):
         module.position = index
     await session.flush()
 
 
-async def _renumber_lessons(session: AsyncSession, module_id: uuid.UUID) -> None:
-    for index, lesson in enumerate(await list_lessons(session, module_id=module_id)):
+async def _renumber_lessons(
+    session: AsyncSession, module_id: uuid.UUID, *, tenant_id: uuid.UUID
+) -> None:
+    lessons = await list_lessons(session, module_id=module_id, tenant_id=tenant_id)
+    for index, lesson in enumerate(lessons):
         lesson.position = index
     await session.flush()
 
 
-async def delete_lesson(session: AsyncSession, *, lesson_id: uuid.UUID) -> None:
+async def delete_lesson(
+    session: AsyncSession, *, lesson_id: uuid.UUID, tenant_id: uuid.UUID
+) -> None:
     """Refused once any learner has progress against the lesson —
     `lesson_completions` is the audit trail a certificate was issued
     on, and deleting it from under an issued credential would make
@@ -80,6 +90,8 @@ async def delete_lesson(session: AsyncSession, *, lesson_id: uuid.UUID) -> None:
     lesson = await session.get(Lesson, lesson_id)
     if lesson is None:
         raise NotFound("No such lesson.")
+    course_id = await resolve_course_id_for_module(session, module_id=lesson.module_id)
+    await assert_course_authorable(session, course_id=course_id, tenant_id=tenant_id)
     if await _lessons_with_progress(session, [lesson.id]):
         raise CourseAuthoringError(
             "This lesson has learner progress recorded against it and cannot be deleted. "
@@ -88,14 +100,17 @@ async def delete_lesson(session: AsyncSession, *, lesson_id: uuid.UUID) -> None:
     module_id = lesson.module_id
     await session.delete(lesson)
     await session.flush()
-    await _renumber_lessons(session, module_id)
+    await _renumber_lessons(session, module_id, tenant_id=tenant_id)
 
 
-async def delete_module(session: AsyncSession, *, module_id: uuid.UUID) -> None:
+async def delete_module(
+    session: AsyncSession, *, module_id: uuid.UUID, tenant_id: uuid.UUID
+) -> None:
     module = await session.get(Module, module_id)
     if module is None:
         raise NotFound("No such module.")
-    lessons = await list_lessons(session, module_id=module_id)
+    await assert_course_authorable(session, course_id=module.course_id, tenant_id=tenant_id)
+    lessons = await list_lessons(session, module_id=module_id, tenant_id=tenant_id)
     if await _lessons_with_progress(session, [lesson.id for lesson in lessons]):
         raise CourseAuthoringError(
             "A lesson in this module has learner progress recorded against it; "
@@ -104,7 +119,7 @@ async def delete_module(session: AsyncSession, *, module_id: uuid.UUID) -> None:
     course_id = module.course_id
     await session.delete(module)  # lessons cascade at the DB level (0009)
     await session.flush()
-    await _renumber_modules(session, course_id)
+    await _renumber_modules(session, course_id, tenant_id=tenant_id)
 
 
 # --- Atomic reorder ------------------------------------------------------
@@ -119,25 +134,33 @@ def _check_permutation(expected: list[uuid.UUID], given: list[uuid.UUID], noun: 
 
 
 async def reorder_modules(
-    session: AsyncSession, *, course_id: uuid.UUID, ordered_ids: list[uuid.UUID]
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    ordered_ids: list[uuid.UUID],
 ) -> list[Module]:
     """The whole permutation in one transaction. Sequential per-item
     position PATCHes race and can leave duplicate positions; that
     matters because prerequisite order is `(module.position,
     lesson.position)` — learner-facing correctness, not cosmetics."""
-    modules = await list_modules(session, course_id=course_id)
+    modules = await list_modules(session, course_id=course_id, tenant_id=tenant_id)
     _check_permutation([m.id for m in modules], ordered_ids, "module")
     by_id = {m.id: m for m in modules}
     for index, module_id in enumerate(ordered_ids):
         by_id[module_id].position = index
     await session.flush()
-    return await list_modules(session, course_id=course_id)
+    return await list_modules(session, course_id=course_id, tenant_id=tenant_id)
 
 
 async def reorder_lessons(
-    session: AsyncSession, *, module_id: uuid.UUID, ordered_ids: list[uuid.UUID]
+    session: AsyncSession,
+    *,
+    module_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    ordered_ids: list[uuid.UUID],
 ) -> list[Lesson]:
-    lessons = await list_lessons(session, module_id=module_id)
+    lessons = await list_lessons(session, module_id=module_id, tenant_id=tenant_id)
     if not lessons and await session.get(Module, module_id) is None:
         raise NotFound("No such module.")
     _check_permutation([lesson.id for lesson in lessons], ordered_ids, "lesson")
@@ -145,38 +168,32 @@ async def reorder_lessons(
     for index, lesson_id in enumerate(ordered_ids):
         by_id[lesson_id].position = index
     await session.flush()
-    return await list_lessons(session, module_id=module_id)
+    return await list_lessons(session, module_id=module_id, tenant_id=tenant_id)
 
 
-# --- Detach / clear ------------------------------------------------------
-
-
-async def detach_lesson_activity(session: AsyncSession, *, lesson_id: uuid.UUID) -> Lesson:
-    """The reverse of the four `POST /lessons/{id}/quiz|survey|
-    assignment|video` attach endpoints, which until now were one-way.
-    Clears every activity FK (only one is ever set, but clearing all
-    four means a lesson can never be left claiming `document` with a
-    stale `quiz_id`) and reverts to `document`. The quiz/survey/
-    assignment/video asset itself is *not* deleted — it may be attached
-    elsewhere, and "attach existing" is a first-class path in the panel."""
-    lesson = await session.get(Lesson, lesson_id)
-    if lesson is None:
-        raise NotFound("No such lesson.")
-    lesson.quiz_id = None
-    lesson.survey_id = None
-    lesson.assignment_id = None
-    lesson.video_asset_id = None
-    lesson.activity_type = "document"
-    await session.flush()
-    return lesson
+# --- Clear -----------------------------------------------------------
+#
+# `detach_lesson_activity` (the reverse of the old one-per-lesson
+# quiz|survey|assignment|video attach endpoints) is gone (0041) — with a
+# lesson able to hold any number of blocks, "detach" no longer means
+# anything at the lesson level. Its replacement is simply
+# `services/lesson_blocks.py::delete_block`, which removes the one block
+# in question without touching the rest of the lesson's content, or the
+# underlying quiz/survey/assignment/video/audio resource (still not
+# deleted — it may be attached elsewhere).
 
 
 async def clear_course_templates(
-    session: AsyncSession, *, course_id: uuid.UUID, certificate: bool, badge: bool
+    session: AsyncSession,
+    *,
+    course_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    certificate: bool,
+    badge: bool,
 ) -> Course:
     """`update_course` treats `None` as "unchanged" for every field, so
     "no certificate" was unreachable once one had been attached."""
-    course = await get_course(session, course_id=course_id)
+    course = await get_course(session, course_id=course_id, tenant_id=tenant_id)
     if certificate:
         course.certificate_template_id = None
     if badge:
@@ -189,13 +206,23 @@ async def clear_course_templates(
 
 
 @dataclass
-class LessonOutline:
-    lesson: Lesson
-    video_state: str | None = None
-    video_duration_seconds: int | None = None
+class BlockOutline:
+    block: LessonBlock
+    media_state: str | None = None
+    duration_seconds: int | None = None
     video_has_captions: bool = False
     question_count: int | None = None
     estimated_minutes: int = 0
+
+
+@dataclass
+class LessonOutline:
+    lesson: Lesson
+    blocks: list[BlockOutline] = field(default_factory=list)
+
+    @property
+    def estimated_minutes(self) -> int:
+        return sum(item.estimated_minutes for item in self.blocks)
 
 
 @dataclass
@@ -210,39 +237,50 @@ _MINUTES_PER_SURVEY_QUESTION = 0.5
 _MINUTES_PER_ASSIGNMENT = 30
 
 
-def _estimate_lesson_minutes(item: LessonOutline) -> int:
-    lesson = item.lesson
-    if lesson.activity_type == "video" and item.video_duration_seconds:
-        return max(1, round(item.video_duration_seconds / 60))
-    if lesson.activity_type == "quiz":
+def _estimate_block_minutes(item: BlockOutline) -> int:
+    block = item.block
+    if block.block_type in ("video", "audio") and item.duration_seconds:
+        return max(1, round(item.duration_seconds / 60))
+    if block.block_type == "quiz":
         return max(1, (item.question_count or 0) * _MINUTES_PER_QUIZ_QUESTION)
-    if lesson.activity_type == "survey":
+    if block.block_type == "survey":
         return max(1, round((item.question_count or 0) * _MINUTES_PER_SURVEY_QUESTION))
-    if lesson.activity_type == "assignment":
+    if block.block_type == "assignment":
         return _MINUTES_PER_ASSIGNMENT
-    words = len((lesson.body or "").split())
+    words = len((block.body or "").split())
     return max(1, round(words / _WORDS_PER_MINUTE)) if words else 0
 
 
-async def get_outline(session: AsyncSession, *, course_id: uuid.UUID) -> list[ModuleOutline]:
-    """Modules → lessons plus the per-lesson facts the wizard's tree
-    view and the readiness report both need (video state/captions,
-    question counts, a time estimate) — one call instead of N+1 from
-    the browser."""
-    await get_course(session, course_id=course_id)
-    modules = await list_modules(session, course_id=course_id)
+async def get_outline(
+    session: AsyncSession, *, course_id: uuid.UUID, tenant_id: uuid.UUID
+) -> list[ModuleOutline]:
+    """Modules → lessons → blocks plus the per-block facts the wizard's
+    tree view and the readiness report both need (video/audio state,
+    captions, question counts, a time estimate) — one call instead of
+    N+1 from the browser. Also the outline behind the public catalogue's
+    curriculum card (`routers/courses.py::list_public_courses`), where
+    `tenant_id` is the resolved storefront tenant rather than an
+    authenticated principal's — either way it is the boundary this
+    function itself enforces, not a second, separately-trusted check."""
+    await get_course(session, course_id=course_id, tenant_id=tenant_id)
+    modules = await list_modules(session, course_id=course_id, tenant_id=tenant_id)
     outline: list[ModuleOutline] = []
-    all_lessons: list[Lesson] = []
+    all_blocks: list[LessonBlock] = []
     for module in modules:
-        lessons = await list_lessons(session, module_id=module.id)
-        outline.append(
-            ModuleOutline(module=module, lessons=[LessonOutline(lesson=x) for x in lessons])
-        )
-        all_lessons.extend(lessons)
+        lessons = await list_lessons(session, module_id=module.id, tenant_id=tenant_id)
+        lesson_outlines: list[LessonOutline] = []
+        for lesson in lessons:
+            blocks = await lesson_blocks_service.list_blocks(session, lesson_id=lesson.id)
+            lesson_outlines.append(
+                LessonOutline(lesson=lesson, blocks=[BlockOutline(block=b) for b in blocks])
+            )
+            all_blocks.extend(blocks)
+        outline.append(ModuleOutline(module=module, lessons=lesson_outlines))
 
-    video_ids = {x.video_asset_id for x in all_lessons if x.video_asset_id}
-    quiz_ids = {x.quiz_id for x in all_lessons if x.quiz_id}
-    survey_ids = {x.survey_id for x in all_lessons if x.survey_id}
+    video_ids = {b.video_asset_id for b in all_blocks if b.video_asset_id}
+    audio_ids = {b.audio_asset_id for b in all_blocks if b.audio_asset_id}
+    quiz_ids = {b.quiz_id for b in all_blocks if b.quiz_id}
+    survey_ids = {b.survey_id for b in all_blocks if b.survey_id}
 
     videos: dict[uuid.UUID, VideoAsset] = {}
     if video_ids:
@@ -250,6 +288,12 @@ async def get_outline(session: AsyncSession, *, course_id: uuid.UUID) -> list[Mo
             await session.execute(select(VideoAsset).where(VideoAsset.id.in_(video_ids)))
         ).scalars()
         videos = {v.id: v for v in rows}
+    audios: dict[uuid.UUID, AudioAsset] = {}
+    if audio_ids:
+        rows_audio = (
+            await session.execute(select(AudioAsset).where(AudioAsset.id.in_(audio_ids)))
+        ).scalars()
+        audios = {a.id: a for a in rows_audio}
     quiz_counts: dict[uuid.UUID, int] = {}
     if quiz_ids:
         rows2 = await session.execute(
@@ -268,18 +312,23 @@ async def get_outline(session: AsyncSession, *, course_id: uuid.UUID) -> list[Mo
         survey_counts = {row[0]: int(row[1]) for row in rows3.all()}
 
     for module_outline in outline:
-        for item in module_outline.lessons:
-            lesson = item.lesson
-            if lesson.video_asset_id and lesson.video_asset_id in videos:
-                asset = videos[lesson.video_asset_id]
-                item.video_state = asset.state
-                item.video_duration_seconds = asset.duration_seconds
-                item.video_has_captions = asset.caption_object_key is not None
-            if lesson.quiz_id:
-                item.question_count = quiz_counts.get(lesson.quiz_id, 0)
-            if lesson.survey_id:
-                item.question_count = survey_counts.get(lesson.survey_id, 0)
-            item.estimated_minutes = _estimate_lesson_minutes(item)
+        for lesson_outline in module_outline.lessons:
+            for item in lesson_outline.blocks:
+                block = item.block
+                if block.video_asset_id and block.video_asset_id in videos:
+                    asset = videos[block.video_asset_id]
+                    item.media_state = asset.state
+                    item.duration_seconds = asset.duration_seconds
+                    item.video_has_captions = asset.caption_object_key is not None
+                if block.audio_asset_id and block.audio_asset_id in audios:
+                    audio_asset = audios[block.audio_asset_id]
+                    item.media_state = audio_asset.state
+                    item.duration_seconds = audio_asset.duration_seconds
+                if block.quiz_id:
+                    item.question_count = quiz_counts.get(block.quiz_id, 0)
+                if block.survey_id:
+                    item.question_count = survey_counts.get(block.survey_id, 0)
+                item.estimated_minutes = _estimate_block_minutes(item)
     return outline
 
 
@@ -314,8 +363,8 @@ async def get_readiness(
     wiring that lives outside `course:edit` (tenant assignment,
     pricing) so a content author sees what still needs an admin.
     Publish stays server-enforced elsewhere; this only reports."""
-    course = await get_course(session, course_id=course_id)
-    outline = await get_outline(session, course_id=course_id)
+    course = await get_course(session, course_id=course_id, tenant_id=tenant_id)
+    outline = await get_outline(session, course_id=course_id, tenant_id=tenant_id)
     checks: list[ReadinessCheck] = []
 
     def add(code: str, level: str, ok: bool, message: str) -> None:
@@ -343,48 +392,48 @@ async def get_readiness(
     not_ready = [
         item.lesson.title
         for item in lessons
-        if item.lesson.activity_type == "video" and item.video_state != "ready"
+        if any(b.block.block_type == "video" and b.media_state != "ready" for b in item.blocks)
     ]
     add(
         "videos_ready",
         "blocker",
         not not_ready,
-        "All video lessons have a playable (transcoded) asset"
+        "All video blocks have a playable (transcoded) asset"
         if not not_ready
         else f"Video still uploading/transcoding or failed: {', '.join(not_ready)}.",
     )
     empty_quizzes = [
         item.lesson.title
         for item in lessons
-        if item.lesson.activity_type == "quiz" and not item.question_count
+        if any(b.block.block_type == "quiz" and not b.question_count for b in item.blocks)
     ]
     add(
         "quizzes_have_questions",
         "blocker",
         not empty_quizzes,
-        "Every quiz lesson has at least one question"
+        "Every quiz block has at least one question"
         if not empty_quizzes
-        else f"Quiz lesson(s) with no questions: {', '.join(empty_quizzes)}.",
+        else f"Quiz block(s) with no questions: {', '.join(empty_quizzes)}.",
     )
     empty_surveys = [
         item.lesson.title
         for item in lessons
-        if item.lesson.activity_type == "survey" and not item.question_count
+        if any(b.block.block_type == "survey" and not b.question_count for b in item.blocks)
     ]
     add(
         "surveys_have_questions",
         "blocker",
         not empty_surveys,
-        "Every survey lesson has at least one question"
+        "Every survey block has at least one question"
         if not empty_surveys
-        else f"Survey lesson(s) with no questions: {', '.join(empty_surveys)}.",
+        else f"Survey block(s) with no questions: {', '.join(empty_surveys)}.",
     )
 
     # Completion rules that reference a subsystem no lesson provides —
     # services/completion.py fails loudly rather than skipping, so a
     # learner would hit a wall the author never saw.
     rules: dict[str, Any] = dict(course.completion_rules or {})
-    types = {item.lesson.activity_type for item in lessons}
+    types = {b.block.block_type for item in lessons for b in item.blocks}
     orphaned: list[str] = []
     if rules.get("quiz_pass_score") is not None and "quiz" not in types:
         orphaned.append("quiz_pass_score (no quiz lesson)")
@@ -414,7 +463,7 @@ async def get_readiness(
     uncaptioned = [
         item.lesson.title
         for item in lessons
-        if item.lesson.activity_type == "video" and not item.video_has_captions
+        if any(b.block.block_type == "video" and not b.video_has_captions for b in item.blocks)
     ]
     add(
         "videos_captioned",
@@ -501,7 +550,7 @@ async def get_readiness(
 
 
 async def duplicate_course(
-    session: AsyncSession, *, course_id: uuid.UUID, title: str | None = None
+    session: AsyncSession, *, course_id: uuid.UUID, tenant_id: uuid.UUID, title: str | None = None
 ) -> Course:
     """A `draft` copy: modules and lessons cloned; video assets *shared*
     by FK (assets are global, transcoding is expensive, and the panel's
@@ -510,8 +559,14 @@ async def duplicate_course(
     1:1 in practice, and an author editing the copy's quiz must not
     silently change the original's). No enrolments, completions,
     tenant assignments or products come along — the copy is unsold and
-    unpublished by construction."""
-    source = await get_course(session, course_id=course_id)
+    unpublished by construction.
+
+    Copying reads the *entire* source tree, quiz answer keys included
+    (`_clone_quiz` below), so it needs the same cross-tenant boundary as
+    a plain read (H-12) — `get_course` enforces it for the source, and
+    the copy itself starts unassigned, so ownership of the new row is
+    never in question."""
+    source = await get_course(session, course_id=course_id, tenant_id=tenant_id)
     new_title = title or f"{source.title} (copy)"
     copy = Course(
         id=uuid7(),
@@ -522,35 +577,49 @@ async def duplicate_course(
         certificate_template_id=source.certificate_template_id,
         badge_template_id=source.badge_template_id,
         manager_visibility=source.manager_visibility,
+        created_by_tenant_id=tenant_id,
     )
     session.add(copy)
     await session.flush()
 
-    for module in await list_modules(session, course_id=course_id):
+    for module in await list_modules(session, course_id=course_id, tenant_id=tenant_id):
         new_module = Module(
             id=uuid7(), course_id=copy.id, title=module.title, position=module.position
         )
         session.add(new_module)
         await session.flush()
-        for lesson in await list_lessons(session, module_id=module.id):
+        for lesson in await list_lessons(session, module_id=module.id, tenant_id=tenant_id):
             new_lesson = Lesson(
                 id=uuid7(),
                 module_id=new_module.id,
                 title=lesson.title,
                 position=lesson.position,
-                activity_type=lesson.activity_type,
                 access_level=lesson.access_level,
-                body=lesson.body,
                 completion_rules=dict(lesson.completion_rules or {}),
-                video_asset_id=lesson.video_asset_id,
             )
-            if lesson.quiz_id:
-                new_lesson.quiz_id = await _clone_quiz(session, lesson.quiz_id)
-            if lesson.survey_id:
-                new_lesson.survey_id = await _clone_survey(session, lesson.survey_id)
-            if lesson.assignment_id:
-                new_lesson.assignment_id = await _clone_assignment(session, lesson.assignment_id)
             session.add(new_lesson)
+            await session.flush()
+            for block in await lesson_blocks_service.list_blocks(session, lesson_id=lesson.id):
+                new_block = LessonBlock(
+                    id=uuid7(),
+                    lesson_id=new_lesson.id,
+                    position=block.position,
+                    block_type=block.block_type,
+                    body=block.body,
+                    # Video/audio assets are shared by FK, same reasoning
+                    # as the module docstring above; quiz/survey/
+                    # assignment are deep-copied per block below.
+                    video_asset_id=block.video_asset_id,
+                    audio_asset_id=block.audio_asset_id,
+                    completion_rules=dict(block.completion_rules or {}),
+                )
+                if block.quiz_id:
+                    new_block.quiz_id = await _clone_quiz(session, block.quiz_id)
+                if block.survey_id:
+                    new_block.survey_id = await _clone_survey(session, block.survey_id)
+                if block.assignment_id:
+                    new_block.assignment_id = await _clone_assignment(session, block.assignment_id)
+                session.add(new_block)
         await session.flush()
     return copy
 
@@ -644,6 +713,7 @@ async def _clone_assignment(session: AsyncSession, assignment_id: uuid.UUID) -> 
 
 
 __all__ = [
+    "BlockOutline",
     "LessonOutline",
     "ModuleOutline",
     "Readiness",
@@ -651,7 +721,6 @@ __all__ = [
     "clear_course_templates",
     "delete_lesson",
     "delete_module",
-    "detach_lesson_activity",
     "duplicate_course",
     "get_outline",
     "get_readiness",
