@@ -127,6 +127,51 @@ async def start_attempt(
     if quiz is None:
         raise NotFound("No such quiz.")
 
+    # H-7: the count-then-insert below was check-then-act with no lock —
+    # two parallel starts both count the same `existing` and both pass
+    # the max_attempts check before either commits, exceeding the limit.
+    # There is no existing QuizAttempt row to lock on a learner's very
+    # first attempt, so the always-present parent Enrolment row is
+    # locked instead and every attempt-start for this enrolment
+    # serialises through it — the same "lock the parent to serialise the
+    # child insert" idiom services/workshops/booking.py's
+    # add_session_facilitator uses for a Facilitator row.
+    enrolment = (
+        await session.execute(
+            select(Enrolment).where(Enrolment.id == enrolment_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if enrolment is None:  # pragma: no cover - callers always resolve a real enrolment first
+        raise NotFound("No such enrolment.")
+
+    # H-8: resume an already-open attempt instead of burning a fresh one
+    # every time this endpoint is called — the quiz player POSTs here on
+    # every mount (a reload, navigating away and back, React StrictMode's
+    # double-invoke), and with no resume path each of those consumed a
+    # real attempt against max_attempts before the learner had answered
+    # anything. A timed quiz's attempt is only resumable while still
+    # inside its own time limit (+ SUBMIT_GRACE_SECONDS, the same grace
+    # `submit_attempt` itself allows) — one that has genuinely timed out
+    # without ever being submitted is not returned here, and falls
+    # through to the count-then-insert below exactly as it did before
+    # this fix, so a real timeout still costs a real attempt rather than
+    # trapping the learner on a dead one forever.
+    open_stmt = select(QuizAttempt).where(
+        QuizAttempt.enrolment_id == enrolment_id,
+        QuizAttempt.quiz_id == quiz_id,
+        QuizAttempt.submitted_at.is_(None),
+        QuizAttempt.invalidated_at.is_(None),
+    )
+    open_attempt = (await session.execute(open_stmt)).scalars().first()
+    if open_attempt is not None:
+        expired = (
+            quiz.time_limit_seconds is not None
+            and (datetime.now(UTC) - open_attempt.started_at).total_seconds()
+            > quiz.time_limit_seconds + SUBMIT_GRACE_SECONDS
+        )
+        if not expired:
+            return open_attempt
+
     count_stmt = (
         select(func.count())
         .select_from(QuizAttempt)
@@ -182,9 +227,38 @@ def question_view(question: QuizQuestion, *, randomise_options: bool) -> dict[st
 
 
 async def get_own_attempt(
-    session: AsyncSession, *, tenant_id: uuid.UUID, enrolment_id: uuid.UUID, attempt_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    enrolment_id: uuid.UUID,
+    attempt_id: uuid.UUID,
+    for_update: bool = False,
 ) -> QuizAttempt:
-    attempt = await session.get(QuizAttempt, attempt_id)
+    """`for_update=True` (H-7, used by `submit_attempt`) locks the row so
+    two concurrent submits of the *same* attempt can't both pass the
+    `submitted_at is None` check below before either commits — the second
+    then correctly sees the first's committed submission and refuses,
+    instead of both inserting a full set of `QuizAnswer` rows and
+    double-counting graded points. `populate_existing=True` is required,
+    not cosmetic — routers/assessment.py::submit_quiz_attempt already
+    does a plain `session.get(QuizAttempt, ...)` before calling in here,
+    which populates the identity map; without this, SQLAlchemy would
+    hand back that already-loaded (and, for the second of two racing
+    callers, stale — its `submitted_at` still read as unset) object
+    instead of refreshing it from this locked read, exactly the failure
+    mode services/workshops/booking.py's own `book_session` already
+    documents for the same "already loaded, needs a forced refresh"
+    shape."""
+    if for_update:
+        stmt = (
+            select(QuizAttempt)
+            .where(QuizAttempt.id == attempt_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        attempt = (await session.execute(stmt)).scalar_one_or_none()
+    else:
+        attempt = await session.get(QuizAttempt, attempt_id)
     if attempt is None or attempt.tenant_id != tenant_id:
         raise NotFound("No such attempt.")
     if attempt.enrolment_id != enrolment_id:
@@ -202,7 +276,11 @@ async def submit_attempt(
     answers: list[AnswerSubmission],
 ) -> QuizAttempt:
     attempt = await get_own_attempt(
-        session, tenant_id=tenant_id, enrolment_id=enrolment_id, attempt_id=attempt_id
+        session,
+        tenant_id=tenant_id,
+        enrolment_id=enrolment_id,
+        attempt_id=attempt_id,
+        for_update=True,
     )
     if attempt.submitted_at is not None:
         raise AppError("This attempt was already submitted.")

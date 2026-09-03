@@ -67,6 +67,21 @@ async def submit(
     if assignment is None:
         raise NotFound("No such assignment.")
 
+    # H-7: read-then-insert the next version number was check-then-act
+    # with no lock — two parallel submissions for the same (enrolment,
+    # assignment) could both read the same `previous.version` and both
+    # insert the same next version. Locking the parent Enrolment row
+    # serialises submissions per enrolment, the same "lock the parent to
+    # serialise the child insert" idiom `quiz.py::start_attempt` (H-7)
+    # and services/workshops/booking.py use.
+    enrolment = (
+        await session.execute(
+            select(Enrolment).where(Enrolment.id == enrolment_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if enrolment is None:  # pragma: no cover - callers always resolve a real enrolment first
+        raise NotFound("No such enrolment.")
+
     previous = await latest_submission(
         session, enrolment_id=enrolment_id, assignment_id=assignment_id
     )

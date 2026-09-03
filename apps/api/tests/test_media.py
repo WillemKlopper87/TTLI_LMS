@@ -184,6 +184,54 @@ async def _enrol_via_eft(
     return buyer_token, buyer_id
 
 
+@pytest.fixture(autouse=True)
+async def _cleanup_seeded_lesson_blocks(tenant_session_factory):  # type: ignore[no-untyped-def]
+    """Same cleanup as test_assessment.py's fixture of the same name —
+    see its docstring. Video attach now creates a block (0041) rather
+    than overwriting the lesson's one FK, so the seeded lesson's video
+    blocks would otherwise accumulate across every test in this file
+    that attaches to it."""
+    yield
+    async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "DELETE FROM lesson_blocks WHERE block_type != 'text' AND lesson_id IN ("
+                "  SELECT l.id FROM lessons l "
+                "  JOIN modules m ON m.id = l.module_id "
+                "  JOIN courses c ON c.id = m.course_id "
+                "  WHERE c.slug = 'executive-leadership-certificate'"
+                ")"
+            )
+        )
+        await s.commit()
+
+
+async def _create_video_block(client, author_token: str, lesson_id: str) -> str:
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"block_type": "video"},
+    )
+    assert block.status_code == 201, block.text
+    return str(block.json()["id"])
+
+
+async def _attach_video(client, author_token: str, lesson_id: str, video_asset_id: str) -> str:
+    """0041: attaching now targets a block, not the lesson directly —
+    create the block, then attach. Returns the new block's id. Only for
+    setup call sites that expect the attach itself to succeed — tests of
+    attach's own validation logic create the block via
+    `_create_video_block` and call the attach endpoint directly, so they
+    can assert on its actual (possibly non-204) response."""
+    block_id = await _create_video_block(client, author_token, lesson_id)
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/video?video_asset_id={video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+    return block_id
+
+
 async def _seeded_lesson_id(tenant_session_factory, tenant_id, *, position: int) -> str:  # type: ignore[no-untyped-def]
     async with tenant_session_factory(tenant_id) as s:
         return str(
@@ -416,11 +464,7 @@ async def test_playback_requires_a_real_enrolment(
         client, author_token, sample_video, tenant_session_factory
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    attach = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
-    assert attach.status_code == 204
+    await _attach_video(client, author_token, lesson_id, video_asset_id)
 
     # An account with no entitlement at all — no order, no enrolment.
     stranger_token, _ = await _login(
@@ -465,11 +509,7 @@ async def test_guest_playback_of_a_public_lesson_is_watermarked_as_sample(
     )
     assert lesson.status_code == 201, lesson.text
     lesson_id = lesson.json()["id"]
-    attach = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
-    assert attach.status_code == 204, attach.text
+    await _attach_video(client, author_token, lesson_id, video_asset_id)
 
     guest_email = _unique_email()
     async with tenant_session_factory(tenant_id) as s:
@@ -503,10 +543,7 @@ async def test_enrolled_learner_can_play_and_the_manifest_carries_the_token(
         client, author_token, sample_video, tenant_session_factory
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_video(client, author_token, lesson_id, video_asset_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -548,10 +585,7 @@ async def test_captions_upload_gated_and_served_through_signed_playback_token(
         client, author_token, sample_video, tenant_session_factory
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_video(client, author_token, lesson_id, video_asset_id)
 
     before = await client.get(
         f"/api/v1/video-assets/{video_asset_id}",
@@ -636,29 +670,29 @@ async def test_concurrent_session_cap_evicts_the_oldest(settings) -> None:  # ty
         first = await playback.mint(
             redis,
             user_id=user_id,
-            video_asset_id=video_asset_id,
+            asset_id=video_asset_id,
             expires_in=60,
             max_concurrent_sessions=2,
         )
         await playback.mint(
             redis,
             user_id=user_id,
-            video_asset_id=video_asset_id,
+            asset_id=video_asset_id,
             expires_in=60,
             max_concurrent_sessions=2,
         )
         third = await playback.mint(
             redis,
             user_id=user_id,
-            video_asset_id=video_asset_id,
+            asset_id=video_asset_id,
             expires_in=60,
             max_concurrent_sessions=2,
         )
         # REQ-BYPASS-09: the oldest (first) session is terminated, not the
         # newest — the person in front of the screen right now keeps
         # playing.
-        assert await playback.validate(redis, token=first, video_asset_id=video_asset_id) is None
-        assert await playback.validate(redis, token=third, video_asset_id=video_asset_id) == user_id
+        assert await playback.validate(redis, token=first, asset_id=video_asset_id) is None
+        assert await playback.validate(redis, token=third, asset_id=video_asset_id) == user_id
     finally:
         await redis.flushdb()
         await redis.aclose()
@@ -669,7 +703,13 @@ async def test_heartbeat_records_progress_and_rejects_a_seek_beyond_furthest(
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    # No real video asset needed — heartbeat mechanics only require a
+    # video block to exist and belong to this lesson (0041).
+    block_id = await _create_video_block(client, author_token, lesson_id)
     token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
@@ -680,7 +720,12 @@ async def test_heartbeat_records_progress_and_rejects_a_seek_beyond_furthest(
     first = await client.post(
         f"/api/v1/lessons/{lesson_id}/heartbeat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"position_seconds": 1, "playback_rate": 1.0, "session_id": "s1"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 1,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
     )
     assert first.status_code == 200
     assert Decimal(first.json()["furthest_position_seconds"]) == Decimal("1")
@@ -688,7 +733,12 @@ async def test_heartbeat_records_progress_and_rejects_a_seek_beyond_furthest(
     seek = await client.post(
         f"/api/v1/lessons/{lesson_id}/heartbeat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"position_seconds": 500, "playback_rate": 1.0, "session_id": "s1"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 500,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
     )
     assert seek.status_code == 400
     assert seek.json()["error"]["code"] == "SEEK_NOT_PERMITTED"
@@ -699,7 +749,11 @@ async def test_heartbeat_rejects_playback_rate_above_the_configured_maximum(
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    block_id = await _create_video_block(client, author_token, lesson_id)
     token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
@@ -710,7 +764,12 @@ async def test_heartbeat_rejects_playback_rate_above_the_configured_maximum(
         f"/api/v1/lessons/{lesson_id}/heartbeat",
         headers={"Authorization": f"Bearer {token}"},
         # settings.heartbeat_max_playback_rate defaults to 2.0.
-        json={"position_seconds": 1, "playback_rate": 8.0, "session_id": "s1"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 1,
+            "playback_rate": 8.0,
+            "session_id": "s1",
+        },
     )
     assert resp.status_code == 400
 
@@ -733,11 +792,7 @@ async def test_heartbeat_reports_the_rule_the_player_is_being_measured_against(
         client, author_token, sample_video, tenant_session_factory
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    attach = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
-    assert attach.status_code == 204, attach.text
+    block_id = await _attach_video(client, author_token, lesson_id, video_asset_id)
 
     token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -749,7 +804,12 @@ async def test_heartbeat_reports_the_rule_the_player_is_being_measured_against(
     resp = await client.post(
         f"/api/v1/lessons/{lesson_id}/heartbeat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"position_seconds": 1, "playback_rate": 1.0, "session_id": "s1"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 1,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -764,6 +824,194 @@ async def test_heartbeat_reports_the_rule_the_player_is_being_measured_against(
     # 0011 seeds only minimum_time_seconds on this lesson, so there is no
     # watch-percentage rule to report.
     assert body["required_percentage"] is None
+
+
+async def _enrolment_id_for(tenant_session_factory, tenant_id, user_id) -> str:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(tenant_id) as s:
+        return str(
+            (
+                await s.execute(
+                    sa.text("SELECT id FROM enrolments WHERE user_id = :u"), {"u": user_id}
+                )
+            ).scalar_one()
+        )
+
+
+async def _watched_seconds(tenant_session_factory, tenant_id, *, enrolment_id, block_id) -> Decimal:  # type: ignore[no-untyped-def]
+    async with tenant_session_factory(tenant_id) as s:
+        return (
+            await s.execute(
+                sa.text(
+                    "SELECT watched_seconds FROM video_progress "
+                    "WHERE enrolment_id = :e AND lesson_block_id = :b"
+                ),
+                {"e": enrolment_id, "b": block_id},
+            )
+        ).scalar_one()
+
+
+async def _backdate_last_heartbeat(
+    tenant_session_factory, tenant_id, *, enrolment_id, block_id, seconds_ago: int
+) -> None:  # type: ignore[no-untyped-def]
+    """Rather than sleeping the test past HEARTBEAT_MAX_INTERVAL_SECONDS,
+    push the row's own `last_heartbeat_at` into the past — the same
+    "change the clock's input, not the app's evaluation logic" reasoning
+    test_learning.py's `_backdate_first_seen` already uses."""
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "UPDATE video_progress SET last_heartbeat_at = now() - make_interval(secs => :s) "
+                "WHERE enrolment_id = :e AND lesson_block_id = :b"
+            ),
+            {"s": seconds_ago, "e": enrolment_id, "b": block_id},
+        )
+        await s.commit()
+
+
+async def test_parallel_heartbeats_do_not_multiply_watch_time(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-6: `record_heartbeat` used to read the progress row with no
+    lock and cap only the wall-clock gap per call — N heartbeats landing
+    concurrently each independently computed up to
+    HEARTBEAT_MAX_INTERVAL_SECONDS of "elapsed" off the same stale
+    `last_heartbeat_at`, so `watched_seconds` grew by N times the real
+    gap instead of once. The row is now locked (`FOR UPDATE`) for the
+    duration of the update, so concurrent callers serialise rather than
+    all reading the same starting point."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    block_id = await _create_video_block(client, author_token, lesson_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    baseline = await client.post(
+        f"/api/v1/lessons/{lesson_id}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 0,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
+    )
+    assert baseline.status_code == 200, baseline.text
+
+    enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+    # Simulate a genuine 3-second gap since that heartbeat, without
+    # actually sleeping the test — kept inside SEEK_TOLERANCE_SECONDS of
+    # the baseline position (2s) so the position each parallel caller
+    # reports below still passes the (unrelated, pre-existing) seek
+    # check; the point here is the concurrency race, not the seek limit.
+    await _backdate_last_heartbeat(
+        tenant_session_factory,
+        tenant_id,
+        enrolment_id=enrolment_id,
+        block_id=block_id,
+        seconds_ago=3,
+    )
+
+    async def _beat():  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/lessons/{lesson_id}/heartbeat",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "block_id": block_id,
+                # Every parallel caller reports the same position — five
+                # browser tabs all mid-way through the same 3-second gap.
+                "position_seconds": 2,
+                "playback_rate": 1.0,
+                "session_id": "s1",
+            },
+        )
+
+    responses = await asyncio.gather(*[_beat() for _ in range(5)])
+    for r in responses:
+        assert r.status_code == 200, r.text
+
+    watched = await _watched_seconds(
+        tenant_session_factory, tenant_id, enrolment_id=enrolment_id, block_id=block_id
+    )
+    # Pre-fix, each of the 5 concurrent calls would independently read
+    # the same stale last_heartbeat_at and add ~3s, totalling ~15s. Now
+    # the lock serialises them (every call after the first sees an
+    # already-advanced last_heartbeat_at, so contributes ~0) and the
+    # position-delta bound caps even the first — nowhere near 5 x 3s.
+    assert watched <= Decimal("6"), watched
+
+
+async def test_heartbeat_at_an_unchanged_position_does_not_accrue_watched_time(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-6's other half: a heartbeat reporting the *same* position as
+    last time — paused, or simply called again — used to still add up to
+    HEARTBEAT_MAX_INTERVAL_SECONDS of watched time per call, bounded
+    only by wall-clock elapsed. It is now also bounded by how far
+    position has genuinely moved since the row's own last heartbeat."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    block_id = await _create_video_block(client, author_token, lesson_id)
+    token, buyer_id = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    await client.post(
+        f"/api/v1/lessons/{lesson_id}/start", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    baseline = await client.post(
+        f"/api/v1/lessons/{lesson_id}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "block_id": block_id,
+            # Within SEEK_TOLERANCE_SECONDS (2) of a fresh row's
+            # furthest_position_seconds=0.
+            "position_seconds": 2,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
+    )
+    assert baseline.status_code == 200, baseline.text
+
+    enrolment_id = await _enrolment_id_for(tenant_session_factory, tenant_id, buyer_id)
+    await _backdate_last_heartbeat(
+        tenant_session_factory,
+        tenant_id,
+        enrolment_id=enrolment_id,
+        block_id=block_id,
+        seconds_ago=30,
+    )
+
+    # 30 real seconds have "passed", but position hasn't moved — the
+    # video is paused (or the client just called this again).
+    repeat = await client.post(
+        f"/api/v1/lessons/{lesson_id}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "block_id": block_id,
+            "position_seconds": 2,
+            "playback_rate": 1.0,
+            "session_id": "s1",
+        },
+    )
+    assert repeat.status_code == 200, repeat.text
+
+    watched = await _watched_seconds(
+        tenant_session_factory, tenant_id, enrolment_id=enrolment_id, block_id=block_id
+    )
+    # Only the seek-tolerance slack, never anywhere near the full 30s gap.
+    assert watched <= Decimal("2"), watched
 
 
 # ============================================================ H1 regression
@@ -784,9 +1032,10 @@ async def test_attach_rejects_a_video_that_is_not_ready(
     )
     _, lesson_id = await _create_course_lesson(client, author_token, title="H1 not-ready course")
     video_asset_id = await _upload_draft(client, author_token, sample_video)
+    block_id = await _create_video_block(client, author_token, lesson_id)
 
     resp = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/video?video_asset_id={video_asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert resp.status_code == 400, resp.text
@@ -804,9 +1053,10 @@ async def test_attach_binds_an_unbound_asset_to_its_destination_course(
     # course is ever established.
     video_asset_id = await _upload_draft(client, author_token, sample_video)
     await _finalize_transcode(client, author_token, video_asset_id)
+    block_id = await _create_video_block(client, author_token, lesson_id)
 
     resp = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/video?video_asset_id={video_asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert resp.status_code == 204, resp.text
@@ -834,14 +1084,16 @@ async def test_attach_rejects_reusing_an_asset_bound_to_a_different_course(
     video_asset_id = await _upload_draft(client, author_token, sample_video, course_id=course_a)
     await _finalize_transcode(client, author_token, video_asset_id)
 
+    block_a = await _create_video_block(client, author_token, lesson_a)
     first_attach = await client.post(
-        f"/api/v1/lessons/{lesson_a}/video?video_asset_id={video_asset_id}",
+        f"/api/v1/lessons/{lesson_a}/blocks/{block_a}/video?video_asset_id={video_asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert first_attach.status_code == 204, first_attach.text
 
+    block_b = await _create_video_block(client, author_token, lesson_b)
     cross_course_attach = await client.post(
-        f"/api/v1/lessons/{lesson_b}/video?video_asset_id={video_asset_id}",
+        f"/api/v1/lessons/{lesson_b}/blocks/{block_b}/video?video_asset_id={video_asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert cross_course_attach.status_code == 400, cross_course_attach.text
@@ -873,8 +1125,9 @@ async def test_attach_rejects_progressive_video_after_the_destination_courses_po
     )
     assert tighten.status_code == 200, tighten.text
 
+    block_id = await _create_video_block(client, author_token, lesson_id)
     resp = await client.post(
-        f"/api/v1/lessons/{lesson_id}/video?video_asset_id={video_asset_id}",
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/video?video_asset_id={video_asset_id}",
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert resp.status_code == 400, resp.text

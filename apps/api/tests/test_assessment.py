@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
 import uuid
@@ -97,6 +98,35 @@ async def _demo_price_id(tenant_session_factory, tenant_id) -> str:  # type: ign
     async with tenant_session_factory(tenant_id) as s:
         price_id = (await s.execute(sa.text("SELECT id FROM prices LIMIT 1"))).scalar_one()
     return str(price_id)
+
+
+@pytest.fixture(autouse=True)
+async def _cleanup_seeded_lesson_blocks(tenant_session_factory):  # type: ignore[no-untyped-def]
+    """The seeded course's lessons are global (0011) and shared with
+    every other test file. Under the old one-activity-per-lesson model,
+    re-attaching a quiz/survey/assignment just overwrote the lesson's
+    one FK, so nothing accumulated. Under the block model (0041), every
+    `_attach_quiz`/`_attach_survey`/`_attach_assignment` call in this
+    file creates a brand new block — without cleanup, tests attaching to
+    the same seeded lesson (position=1 or 2) would pile up blocks whose
+    quizzes/surveys/assignments have no attempt for a *different* test's
+    enrolment, which the completion aggregation (services/enrolment.py)
+    correctly reads as "not all blocks satisfied" and locks the lesson.
+    Deleting every non-text block after each test keeps the seeded
+    lessons back at their original (migration-backfilled) shape."""
+    yield
+    async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "DELETE FROM lesson_blocks WHERE block_type != 'text' AND lesson_id IN ("
+                "  SELECT l.id FROM lessons l "
+                "  JOIN modules m ON m.id = l.module_id "
+                "  JOIN courses c ON c.id = m.course_id "
+                "  WHERE c.slug = 'executive-leadership-certificate'"
+                ")"
+            )
+        )
+        await s.commit()
 
 
 async def _seeded_lesson_id(tenant_session_factory, tenant_id, *, position: int) -> str:  # type: ignore[no-untyped-def]
@@ -199,6 +229,56 @@ async def _add_choice_question(client, author_token: str, quiz_id: str, *, posit
     assert resp.status_code == 204, resp.text
 
 
+async def _attach_quiz(client, author_token: str, lesson_id: str, quiz_id: str) -> str:
+    """0041: attaching now targets a block, not the lesson directly —
+    create the block, then attach. Returns the new block's id."""
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"block_type": "quiz"},
+    )
+    assert block.status_code == 201, block.text
+    block_id = block.json()["id"]
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/quiz?quiz_id={quiz_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+    return block_id
+
+
+async def _attach_survey(client, author_token: str, lesson_id: str, survey_id: str) -> str:
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"block_type": "survey"},
+    )
+    assert block.status_code == 201, block.text
+    block_id = block.json()["id"]
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/survey?survey_id={survey_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+    return block_id
+
+
+async def _attach_assignment(client, author_token: str, lesson_id: str, assignment_id: str) -> str:
+    block = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"block_type": "assignment"},
+    )
+    assert block.status_code == 201, block.text
+    block_id = block.json()["id"]
+    attach = await client.post(
+        f"/api/v1/lessons/{lesson_id}/blocks/{block_id}/assignment?assignment_id={assignment_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert attach.status_code == 204, attach.text
+    return block_id
+
+
 # =============================================================== Quizzes ===
 
 
@@ -217,10 +297,7 @@ async def test_quiz_attempt_auto_grades_choice_questions(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     attempt = await client.post(
         f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
@@ -258,10 +335,7 @@ async def test_quiz_submit_allows_grace_period_but_not_beyond_it(
     quiz_id = quiz.json()["id"]
     await _add_choice_question(client, author_token, quiz_id, position=1)
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -308,6 +382,10 @@ async def test_quiz_submit_allows_grace_period_but_not_beyond_it(
 
 
 async def test_quiz_attempt_limit_is_enforced(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    """Starting again while the one allowed attempt is still *open*
+    resumes it (H-8) rather than refusing — that guarantee has its own
+    dedicated test below. The limit itself only bites once that attempt
+    is actually spent (submitted), which is what this test drives to."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
     author_token, _ = await _login(
@@ -325,20 +403,318 @@ async def test_quiz_attempt_limit_is_enforced(client, tenant_session_factory, cr
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     first = await client.post(
         f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
     )
     assert first.status_code == 200
+    question_id = first.json()["questions"][0]["question_id"]
+    submitted = await client.post(
+        f"/api/v1/quiz-attempts/{first.json()['attempt_id']}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "selected_option_ids": ["b"]}]},
+    )
+    assert submitted.status_code == 200, submitted.text
+
     second = await client.post(
         f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
     )
     assert second.status_code == 400
     assert second.json()["error"]["code"] == "ATTEMPT_LIMIT_EXCEEDED"
+
+
+async def test_parallel_quiz_starts_with_none_open_resume_into_one_attempt(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-7 + H-8 together: two parallel *first-ever* starts used to both
+    count 0 existing attempts and both insert `attempt_number=1`,
+    exceeding `max_attempts=1`. The enrolment row is now locked for the
+    duration of the count-then-insert (mirrors `test_workshops.py::
+    test_concurrent_bookings_cannot_oversell_the_last_seat`'s pattern for
+    the same class of race) — and because H-8 also makes a second call
+    resume an already-open attempt rather than refuse outright, the
+    loser of that lock race doesn't see ATTEMPT_LIMIT_EXCEEDED any more;
+    it transparently resumes the winner's attempt instead. Either way,
+    never more than one attempt actually exists."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "One Shot Race", "pass_score": 70, "max_attempts": 1},
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
+
+    async def _start():  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/quizzes/{quiz_id}/attempts",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+
+    first, second = await asyncio.gather(_start(), _start())
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["attempt_id"] == second.json()["attempt_id"]
+
+    async with tenant_session_factory(tenant_id) as s:
+        count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM quiz_attempts WHERE quiz_id = :q"), {"q": quiz_id}
+            )
+        ).scalar_one()
+    assert count == 1, "exactly one attempt must exist, never two, even under a race"
+
+
+async def test_parallel_quiz_starts_cannot_exceed_an_already_exhausted_limit(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-7's original race, once the one allowed attempt is actually
+    spent (submitted, so H-8 has nothing open left to resume): two
+    parallel starts used to both count 1 existing attempt and both pass
+    the `>= max_attempts` check before either committed, exceeding
+    `max_attempts=1`. The enrolment-row lock now serialises them."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "One Shot Race Exhausted", "pass_score": 70, "max_attempts": 1},
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
+
+    spent = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert spent.status_code == 200, spent.text
+    question_id = spent.json()["questions"][0]["question_id"]
+    submitted = await client.post(
+        f"/api/v1/quiz-attempts/{spent.json()['attempt_id']}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "selected_option_ids": ["b"]}]},
+    )
+    assert submitted.status_code == 200, submitted.text
+
+    async def _start():  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/quizzes/{quiz_id}/attempts",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+
+    first, second = await asyncio.gather(_start(), _start())
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [400, 400], (first.text, second.text)
+    assert first.json()["error"]["code"] == "ATTEMPT_LIMIT_EXCEEDED"
+    assert second.json()["error"]["code"] == "ATTEMPT_LIMIT_EXCEEDED"
+
+    async with tenant_session_factory(tenant_id) as s:
+        count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM quiz_attempts WHERE quiz_id = :q"), {"q": quiz_id}
+            )
+        ).scalar_one()
+    assert count == 1, "the exhausted limit must never grow, even under a race"
+
+
+async def test_starting_a_quiz_with_an_open_attempt_resumes_it(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-8: the quiz player POSTs `/quizzes/{id}/attempts` on every mount
+    (a reload, navigating away and back, React StrictMode's double-
+    invoke) — with no resume path, each of those consumed a real attempt
+    against `max_attempts` before the learner had answered anything, so
+    a `max_attempts: 1` quiz could read as "no attempts remaining" from
+    a single reload. Starting again while an attempt is still open
+    (never submitted) must return that same attempt, not a new one."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Resumable", "pass_score": 70, "max_attempts": 1},
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
+
+    first = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+
+    # Simulates the component remounting (reload, tab switch, StrictMode)
+    # before the learner has answered or submitted anything.
+    second = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert second.status_code == 200, second.text
+    second_body = second.json()
+
+    assert second_body["attempt_id"] == first_body["attempt_id"]
+    assert second_body["attempt_number"] == first_body["attempt_number"] == 1
+    assert second_body["attempts_remaining"] == first_body["attempts_remaining"] == 0
+
+    async with tenant_session_factory(tenant_id) as s:
+        count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM quiz_attempts WHERE quiz_id = :q"), {"q": quiz_id}
+            )
+        ).scalar_one()
+    assert count == 1, "resuming must not have created a second attempt row"
+
+    # The attempt is still genuinely usable — max_attempts=1 must not
+    # itself have been silently exhausted by the remount.
+    question_id = second_body["questions"][0]["question_id"]
+    submit = await client.post(
+        f"/api/v1/quiz-attempts/{second_body['attempt_id']}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "selected_option_ids": ["b"]}]},
+    )
+    assert submit.status_code == 200, submit.text
+    assert submit.json()["passed"] is True
+
+
+async def test_starting_a_quiz_after_the_open_attempt_expired_issues_a_fresh_one(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-8's edge case: an open attempt that genuinely timed out without
+    ever being submitted must not trap the learner on a dead row forever
+    — it is not resumable, and a fresh attempt (still counted against
+    max_attempts, exactly as before this fix) is issued instead."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz = await client.post(
+        "/api/v1/quizzes",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={
+            "title": "Resumable Timed",
+            "pass_score": 70,
+            "max_attempts": 2,
+            "time_limit_seconds": 30,
+        },
+    )
+    assert quiz.status_code == 201, quiz.text
+    quiz_id = quiz.json()["id"]
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
+
+    first = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert first.status_code == 200, first.text
+    first_attempt_id = first.json()["attempt_id"]
+
+    # Push it well past its 30s limit + grace period without ever
+    # submitting, the same backdating trick used elsewhere in this file.
+    async with tenant_session_factory(tenant_id) as s:
+        await s.execute(
+            sa.text(
+                "UPDATE quiz_attempts SET started_at = started_at - interval '90 seconds' "
+                "WHERE id = :id"
+            ),
+            {"id": first_attempt_id},
+        )
+        await s.commit()
+
+    second = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["attempt_id"] != first_attempt_id
+    assert second.json()["attempt_number"] == 2
+
+
+async def test_parallel_submits_of_the_same_attempt_do_not_double_count_answers(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """H-7's other race: `submit_attempt`'s `submitted_at is not None`
+    check used to be check-then-act with no lock — two concurrent
+    submits of the *same* attempt could both pass it and both insert a
+    full set of `QuizAnswer` rows, double-counting points in
+    `grade_text_answer`'s re-finalised score. The attempt row is now
+    locked for the duration of the check and the answer writes, and
+    `uq_quiz_answers_attempt_question` (0044) backstops it at the
+    database layer."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    quiz_id = await _create_quiz(client, author_token)
+    await _add_choice_question(client, author_token, quiz_id, position=1)
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    attempt = await client.post(
+        f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    assert attempt.status_code == 200, attempt.text
+    attempt_id = attempt.json()["attempt_id"]
+    question_id = attempt.json()["questions"][0]["question_id"]
+    payload = {"answers": [{"question_id": question_id, "selected_option_ids": ["b"]}]}
+
+    async def _submit():  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/quiz-attempts/{attempt_id}/submit",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json=payload,
+        )
+
+    first, second = await asyncio.gather(_submit(), _submit())
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [200, 400], (first.text, second.text)
+
+    async with tenant_session_factory(tenant_id) as s:
+        answer_count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM quiz_answers WHERE attempt_id = :a"),
+                {"a": attempt_id},
+            )
+        ).scalar_one()
+    assert answer_count == 1, "one answer per question, never doubled by a racing submit"
 
 
 async def test_learner_cannot_submit_another_learners_attempt(
@@ -352,10 +728,7 @@ async def test_learner_cannot_submit_another_learners_attempt(
     quiz_id = await _create_quiz(client, author_token)
     await _add_choice_question(client, author_token, quiz_id, position=1)
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     owner_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -398,10 +771,7 @@ async def test_text_answer_grading_finalises_score_and_passed(
     )
     assert text_q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -466,10 +836,7 @@ async def test_list_ungraded_quiz_answers_then_grading_removes_it(
     )
     assert text_q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -601,10 +968,7 @@ async def test_anonymous_survey_response_never_stores_user_id(
     )
     assert q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_survey(client, author_token, lesson_id, survey_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -669,10 +1033,7 @@ async def test_identified_survey_response_stores_user_id(
     )
     assert q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_survey(client, author_token, lesson_id, survey_id)
 
     buyer_token, buyer_id = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -883,10 +1244,7 @@ async def test_survey_results_gated_until_minimum_group_size(
     )
     assert q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_survey(client, author_token, lesson_id, survey_id)
 
     async def _respond(value: str) -> None:
         buyer_token, _ = await _enrol_via_eft(
@@ -968,10 +1326,7 @@ async def test_survey_results_never_exposes_free_text_answers(
     )
     assert q.status_code == 204
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/survey?survey_id={survey_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_survey(client, author_token, lesson_id, survey_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -1132,10 +1487,7 @@ async def test_infected_assignment_submission_is_refused(
     )
     assignment_id = assignment.json()["id"]
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/assignment?assignment_id={assignment_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_assignment(client, author_token, lesson_id, assignment_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -1169,10 +1521,7 @@ async def test_assignment_submission_approval_flow(
     )
     assignment_id = assignment.json()["id"]
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/assignment?assignment_id={assignment_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_assignment(client, author_token, lesson_id, assignment_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -1195,6 +1544,66 @@ async def test_assignment_submission_approval_flow(
     assert review.json()["approved_at"] is not None
 
 
+async def test_parallel_assignment_submissions_never_share_a_version(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """H-7's assignment-side race: `assignment.py::submit` used to read
+    the latest submission's version then insert `version + 1` with no
+    lock — two parallel submissions for the same (enrolment, assignment)
+    could both read the same latest version and both insert the same
+    next one. The enrolment row is now locked for the duration of the
+    read-then-insert, and `uq_assignment_submissions_enrolment_
+    assignment_version` (0044) backstops it at the database layer."""
+    if not _clamav_reachable(settings.clamav_host, settings.clamav_port):
+        pytest.skip(
+            "no ClamAV on the configured CLAMAV_HOST/PORT — run: "
+            "docker compose -f infra/docker-compose.yml up -d clamav"
+        )
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    assignment = await client.post(
+        "/api/v1/assignments",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Racing Essay", "approval_required": False},
+    )
+    assert assignment.status_code == 201, assignment.text
+    assignment_id = assignment.json()["id"]
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
+    await _attach_assignment(client, author_token, lesson_id, assignment_id)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+
+    async def _submit():  # type: ignore[no-untyped-def]
+        return await client.post(
+            f"/api/v1/assignments/{assignment_id}/submissions",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            files={"file": ("essay.txt", b"a real essay", "text/plain")},
+        )
+
+    first, second = await asyncio.gather(_submit(), _submit())
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    versions = sorted([first.json()["version"], second.json()["version"]])
+    assert versions == [1, 2], "both submissions must land, with two distinct versions"
+
+    async with tenant_session_factory(tenant_id) as s:
+        distinct_versions = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(DISTINCT version) FROM assignment_submissions "
+                    "WHERE assignment_id = :a"
+                ),
+                {"a": assignment_id},
+            )
+        ).scalar_one()
+    assert distinct_versions == 2, "no two submissions may share a version, even under a race"
+
+
 async def test_list_pending_assignment_submissions_then_review_removes_it(
     client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
@@ -1215,10 +1624,7 @@ async def test_list_pending_assignment_submissions_then_review_removes_it(
     )
     assignment_id = assignment.json()["id"]
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/assignment?assignment_id={assignment_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_assignment(client, author_token, lesson_id, assignment_id)
 
     buyer_token, _ = await _enrol_via_eft(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
@@ -1349,10 +1755,7 @@ async def test_completion_rule_engine_gates_on_quiz_survey_and_assignment(
     quiz_id = await _create_quiz(client, author_token)
     await _add_choice_question(client, author_token, quiz_id, position=1)
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
     # Test-setup only: no lesson-authoring endpoint sets completion_rules
     # yet (STATUS.md tracks that gap), so this is the same class of direct
     # fixture setup any test needs for state no API can produce. lessons
@@ -1433,10 +1836,7 @@ async def test_quiz_attempt_payload_states_the_rules_of_the_sitting(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
     )
     lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
-    await client.post(
-        f"/api/v1/lessons/{lesson_id}/quiz?quiz_id={quiz_id}",
-        headers={"Authorization": f"Bearer {author_token}"},
-    )
+    await _attach_quiz(client, author_token, lesson_id, quiz_id)
 
     first = await client.post(
         f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}
@@ -1455,6 +1855,17 @@ async def test_quiz_attempt_payload_states_the_rules_of_the_sitting(
     assert body["quiz_id"] == quiz_id
     assert body["time_limit_seconds"] is None
     assert len(body["questions"]) == 1
+
+    # Submitted (H-8: a still-open attempt would just be *resumed* by the
+    # next /attempts call, not superseded by a genuinely new one) — this
+    # is the real path to a second attempt existing at all.
+    question_id = body["questions"][0]["question_id"]
+    submitted = await client.post(
+        f"/api/v1/quiz-attempts/{body['attempt_id']}/submit",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        json={"answers": [{"question_id": question_id, "selected_option_ids": ["a"]}]},
+    )
+    assert submitted.status_code == 200, submitted.text
 
     second = await client.post(
         f"/api/v1/quizzes/{quiz_id}/attempts", headers={"Authorization": f"Bearer {buyer_token}"}

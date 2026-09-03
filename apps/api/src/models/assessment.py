@@ -79,7 +79,24 @@ class QuizQuestion(Base):
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
-    __table_args__ = (Index("ix_quiz_attempts_enrolment_quiz", "enrolment_id", "quiz_id"),)
+    __table_args__ = (
+        # H-7 (0044): the database-level backstop behind quiz.py::
+        # start_attempt's FOR UPDATE lock on the enrolment row — even an
+        # attempt-creation path that reaches the database some other way
+        # (a future caller that forgets to lock) cannot leave two
+        # attempts with the same attempt_number for one enrolment/quiz,
+        # exceeding max_attempts. Replaces the plain (enrolment_id,
+        # quiz_id) index it was created from (0013) rather than adding
+        # alongside it — a unique index on the superset already serves
+        # every query the plain one would, same as 0043's H-2/H-3 fix.
+        Index(
+            "uq_quiz_attempts_enrolment_quiz_attempt_number",
+            "enrolment_id",
+            "quiz_id",
+            "attempt_number",
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -110,6 +127,16 @@ class QuizAttempt(Base):
 
 class QuizAnswer(Base):
     __tablename__ = "quiz_answers"
+    __table_args__ = (
+        # H-7 (0044): the backstop behind quiz.py::submit_attempt's
+        # FOR UPDATE lock on the attempt row — a race between two
+        # concurrent submits of the same attempt could otherwise insert
+        # two QuizAnswer rows for one question, double-counting its
+        # points in grade_text_answer's re-finalised score. Replaces the
+        # plain attempt_id index it was created from (0013), same
+        # superset reasoning as QuizAttempt's own H-7 constraint above.
+        Index("uq_quiz_answers_attempt_question", "attempt_id", "question_id", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -122,7 +149,6 @@ class QuizAnswer(Base):
         PGUUID(as_uuid=True),
         ForeignKey("quiz_attempts.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("quiz_questions.id", ondelete="RESTRICT"), nullable=False
@@ -271,7 +297,20 @@ class Assignment(Base, TimestampMixin):
 class AssignmentSubmission(Base):
     __tablename__ = "assignment_submissions"
     __table_args__ = (
-        Index("ix_assignment_submissions_enrolment_assignment", "enrolment_id", "assignment_id"),
+        # H-7 (0044): the backstop behind assignment.py::submit's
+        # FOR UPDATE lock on the enrolment row — even a submission path
+        # that reaches the database some other way cannot leave two
+        # submissions with the same version for one enrolment/assignment.
+        # Replaces the plain (enrolment_id, assignment_id) index it was
+        # created from (0013), same superset reasoning as QuizAttempt's
+        # own H-7 constraint above.
+        Index(
+            "uq_assignment_submissions_enrolment_assignment_version",
+            "enrolment_id",
+            "assignment_id",
+            "version",
+            unique=True,
+        ),
     )
 
     id: Mapped[uuid.UUID] = pk()

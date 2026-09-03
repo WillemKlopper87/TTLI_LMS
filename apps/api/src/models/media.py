@@ -93,6 +93,33 @@ class VideoAsset(Base, TimestampMixin):
     )
 
 
+class AudioAsset(Base, TimestampMixin):
+    """Deliberately not a VideoAsset variant (0041) — no transcode ladder,
+    no renditions, no delivery_mode, no TranscodeJob. Audio has no
+    bandwidth-ladder problem worth the ffmpeg pipeline's complexity;
+    every asset is stored-and-served exactly as uploaded, the same shape
+    VideoAsset's delivery_mode="progressive" bypass already proved out
+    (0040), just without an "or transcode instead" branch. `state`
+    defaults straight to "ready" — there is no rung decision to defer, so
+    unlike video there is no separate finalize-time transition."""
+
+    __tablename__ = "audio_assets"
+
+    id: Mapped[uuid.UUID] = pk()
+    source_object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="ready")
+    source_content_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Advisory only, same as VideoAsset.course_id — nothing branches on it
+    # today (no per-course audio policy exists), kept for parity and in
+    # case one is ever needed.
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class VideoProgress(Base, TimestampMixin):
     """furthest_position_seconds only ever increases (REQ-BYPASS-04's seek
     ceiling); watched_seconds accumulates from validated heartbeats, so it
@@ -100,7 +127,7 @@ class VideoProgress(Base, TimestampMixin):
 
     __tablename__ = "video_progress"
     __table_args__ = (
-        Index("uq_video_progress_enrolment_lesson", "enrolment_id", "lesson_id", unique=True),
+        Index("uq_video_progress_enrolment_block", "enrolment_id", "lesson_block_id", unique=True),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -113,8 +140,16 @@ class VideoProgress(Base, TimestampMixin):
     enrolment_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("enrolments.id", ondelete="CASCADE"), nullable=False
     )
+    # Kept alongside lesson_block_id (not dropped) — some queries still
+    # want "every video progress row in this lesson" without a join
+    # through lesson_blocks. Not part of the uniqueness key any more
+    # (0041): a lesson can hold more than one video block, each tracked
+    # independently by lesson_block_id.
     lesson_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("lessons.id", ondelete="RESTRICT"), nullable=False
+    )
+    lesson_block_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("lesson_blocks.id", ondelete="CASCADE"), nullable=False
     )
     furthest_position_seconds: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, server_default=text("0")
@@ -126,6 +161,16 @@ class VideoProgress(Base, TimestampMixin):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # H-6 (0044): the position this row's *previous* heartbeat reported —
+    # distinct from furthest_position_seconds, which only ever grows and
+    # so can't tell "played forward since last time" apart from "replayed
+    # an earlier section". services/video_progress.py::record_heartbeat
+    # bounds the watched_seconds this heartbeat may add by how far
+    # position has genuinely moved since this column's value, so a
+    # heartbeat that reports the same (or an earlier) position — paused,
+    # or called repeatedly without the video actually advancing — cannot
+    # accrue watched time it never earned.
+    last_position_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
 
 
 class VideoHeartbeat(Base):
@@ -134,7 +179,9 @@ class VideoHeartbeat(Base):
     default is the only source."""
 
     __tablename__ = "video_heartbeats"
-    __table_args__ = (Index("ix_video_heartbeats_enrolment_lesson", "enrolment_id", "lesson_id"),)
+    __table_args__ = (
+        Index("ix_video_heartbeats_enrolment_block", "enrolment_id", "lesson_block_id"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -149,6 +196,13 @@ class VideoHeartbeat(Base):
     lesson_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("lessons.id", ondelete="RESTRICT"), nullable=False
     )
+    # Which of the lesson's (possibly several) video blocks this
+    # heartbeat is for (0041) — without it, heartbeats from two different
+    # video blocks in the same lesson would be indistinguishable in this
+    # append-only log.
+    lesson_block_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("lesson_blocks.id", ondelete="CASCADE"), nullable=False
+    )
     position_seconds: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     playback_rate: Mapped[Decimal] = mapped_column(
         Numeric(4, 2), nullable=False, server_default=text("1.0")
@@ -159,4 +213,4 @@ class VideoHeartbeat(Base):
     )
 
 
-__all__ = ["TranscodeJob", "VideoAsset", "VideoHeartbeat", "VideoProgress"]
+__all__ = ["AudioAsset", "TranscodeJob", "VideoAsset", "VideoHeartbeat", "VideoProgress"]
