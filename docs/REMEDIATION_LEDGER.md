@@ -1,17 +1,80 @@
-# Remediation ledger — `fable5.1_review.md` pass (2026-09-03)
+# Remediation ledger
+
+**This is the single, current audit-findings tracker for TTLI.** It replaces
+three documents that used to overlap and disagree about what was still
+open: `TTLI_Audit_Report_2026-09-02.md` and `fable5.1_review.md` (both
+now archived, unchanged, at `docs/archive/` — read them only for the
+original file:line evidence behind a finding, never for current status).
+This file, not either of those, is authoritative on what is DONE, OPEN, or
+DISPROVED. It does **not** replace [`docs/BACKLOG.md`](BACKLOG.md), which
+stays the separate, sole authority for product/feature roadmap items —
+this document is scoped to audit/review *findings* (correctness, security,
+reliability defects), not feature work. Where a finding's remaining work
+is roadmap-shaped rather than a defect, the row below says so and points
+at the `BACKLOG.md` item that owns it (e.g. `O14`).
+
+Two audit passes feed this ledger, in the order they happened:
+
+- **Part A** — `TTLI_Audit_Report_2026-09-02.md` (audited `main` at
+  `40a9d0d`): H1–H2, M1–M9, plus a POPIA-lifecycle section with no
+  numbered findings.
+- **Part B** — `fable5.1_review.md` (audited `main` at `10e759f` plus that
+  session's ~42-file uncommitted working tree, dated 2026-09-03): C-1–C-3,
+  H-1–H-20, plus ~45 Medium and ~60 Low findings not individually tracked
+  here (see "Not attempted" below).
+
+---
+
+## Part A — `TTLI_Audit_Report_2026-09-02.md` findings
+
+| ID | Title | Status | Notes |
+|---|---|---|---|
+| **H1** | Video delivery policy not bound to the destination course | DONE | Fixed and regression-tested in `10e759f` (`routers/media.py`, `tests/test_media.py`). The same change set that fixed this produced Part B's C-1 (lesson-block contract left inconsistent) — also DONE below. |
+| **H2** | Worker deployment failure can leave an unreported mixed release | PARTIAL | `scripts/rolling-update.sh` now rolls API and worker back as one unit. Still open: the rollback check is still a 5-second process check, not an active heartbeat/canary; the final status doesn't record the actual running image digest + Git SHA per component. No BACKLOG item owns this yet — needs one before it's picked up. |
+| **M1** | Weekly image-scan issues omit their evidence (filename mismatch; duplicate issues per finding) | DONE | — |
+| **M2** | New video/platform functionality (feature flags, health endpoint, video settings, progressive delivery, 0040 upload/finalise) lacked targeted tests | MOSTLY DONE | Feature-flag, video-settings and H1 tests existed before this ledger; `tests/test_video_settings.py` (pure-function coverage) and Part B's H-2/H-3/H-4 concurrency tests close most of the remaining gap. Still open: a real browser journey for upload→select→finalise→attach→playback, and HLS-vs-progressive response/range/expiry tests. |
+| **M3** | Production releases built from mutable source and tags (local `docker build` on the host, `latest`/`stable` runtime tags) | MOSTLY DONE | Build-once-in-CI, publish-by-digest, sign and verify: DONE (Part B's C-3). `infra/docker-compose.single-vm.yml`'s `migrate`/`api`/`worker`/`web` no longer carry a `build:` stanza — they only ever run the CI-built, cosign-verified image. `postgres`/`redis`/`garage`/`clamav`/`caddy`/`postfix-relay` are now digest-pinned. Residual, narrower than the original finding: `ci.yml`'s own Trivy scan step still targets some infra images by tag rather than digest. |
+| **M4** | Backup doesn't meet the documented 15-minute RPO; no object-storage backup; no restore rehearsal | OPEN | Unchanged. Tracked below as Part B's **H-20**. |
+| **M5** | Application test coverage overly infrastructure-dependent (fast/pure tier too thin) | DONE | Pure-function extraction landed: `services/subscriptions.py::compute_renewal_period`, plus new direct coverage for the already-pure `services/completion.py::evaluate/merge_rules` and `services/media/video_settings.py`. `pytest -m unit` marker and coverage config added to `apps/api/pyproject.toml`. The one regression this class of work had produced — `tests/test_orders_pricing.py` enshrining the wrong inclusive-VAT number — is fixed (Part B's H-1). |
+| **M6** | Backend domains crossed maintainability thresholds (largest files mix authorization, state, provider calls and reporting) | PARTIAL | `services/workshops.py` (1358 lines) split into `authoring`/`booking`/`attendance`/`reporting` submodules — the concrete, line-verified split this finding proposed, done with zero router or test touch required. `services/enrolment.py`, `routers/assessment.py`, `services/learning_paths.py`, `services/orders.py`, `routers/auth.py` and several frontend files (`admin/workshops/page.tsx`, `lesson-activity-panel.tsx`, `checkout/page.tsx`) remain oversized — tracked as `docs/BACKLOG.md` **O14**. |
+| **M7** | Frontend contracts/tests don't match the breadth of the UI (most screens hand-typed, not generated; component testing effectively absent) | OPEN | Unchanged. Overlaps Part B's **H-17** (session failure handling) and the effect-warning items below. |
+| **M8** | BFF response forwarding narrower than the API contract (safe headers like correlation IDs silently dropped) | MOSTLY DONE | Response header allowlist existed already; `x-request-id` added this pass so support/log correlation survives the BFF. Still open: request-side header forwarding, and BFF-level tests for binary/streamed/rate-limited/range responses — tracked below as Part B's **M-19/M-22** (not individually broken out, see "Not attempted"). |
+| **M9** | Current-state documentation fragmented across `README.md`/`STATUS.md`/`BACKLOG.md`/`NEXT_AGENT_BRIEF.md`/one-off reviews | DONE | `docs/archive/` now holds every superseded one-off review (`latest_critique.md`, `TTLI_Code_report.md`, `what_next.md`, and — as of this consolidation — `TTLI_Audit_Report_2026-09-02.md` and `fable5.1_review.md` themselves); `docs/BACKLOG.md` is the declared sole task-status authority for roadmap items; `docs/check_links.py` mechanically checks that migration-range claims in `README.md`/`NEXT_AGENT_BRIEF.md`/`BACKLOG.md` stay in sync with the actual latest migration; this file is now the sole audit-findings tracker. |
+
+**§5 (POPIA lifecycle) and §6 (product/enterprise gaps) of the 2026-09-02
+audit** are not findings with IDs. POPIA — data-subject access/export,
+correction, erasure with legal/financial exceptions, retention enforcement,
+consent withdrawal, legal holds, key rotation — remains entirely
+unimplemented and is not tracked anywhere current; it needs its own
+BACKLOG item before it can be picked up (none exists today). The product
+gaps (departments/hierarchy, cohorts, gradebook, competency framework,
+notifications, custom certificates, HRIS/xAPI/LTI, i18n, AI governance) are
+already tracked as roadmap items in `docs/BACKLOG.md` (P15–P19, O10–O12,
+R11–R15 and neighbours) — not duplicated here.
+
+The 2026-09-02 audit's own "acceptance criteria for the immediate tranche"
+(§9) are now mostly met — progressive/ready-state binding, feature-flag
+tests, and "all gates + real-service API + browser suites pass without
+skips" (see Part B's gate run below: 601 passed/13 skipped-by-environment/0
+failed, 46 e2e passed/14 skipped-by-environment/0 failed) — with H2's
+canary/digest-recording gap the one item still open against that list.
+
+---
+
+## Part B — `fable5.1_review.md` pass (2026-09-03)
 
 This is the closing record for the remediation pass driven by
-[`fable5.1_review.md`](../fable5.1_review.md) (dated 2026-09-03, reviewed
-`main` at `10e759f` plus that session's uncommitted working tree). Eight
-workstreams ran ahead of this one — C-1, C-3, H-11, H-12, H-13, the money
-findings (H-1–H-4), and learning-integrity (C-2, H-6, H-7, H-9, and H-8 as a
-side effect) — each committing its own fix directly to `main`. This
-workstream is the final verification and ledger: it did not redesign or
-redo any of those fixes, only (1) ran the full gate sweep
-(`scripts/gates.sh`), (2) fixed the integration gaps the sweep surfaced
-between those eight independently-committed workstreams' work (including
-work two of them had left uncommitted in the working tree), and (3) records
-the aggregate state below.
+`fable5.1_review.md` (dated 2026-09-03, reviewed `main` at `10e759f` plus
+that session's uncommitted working tree). Eight workstreams ran ahead of
+this one — C-1, C-3, H-11, H-12, H-13, the money findings (H-1–H-4), and
+learning-integrity (C-2, H-6, H-7, H-9, and H-8 as a side effect) — each
+committing its own fix directly to `main`. This workstream is the final
+verification and ledger: it did not redesign or redo any of those fixes,
+only (1) ran the full gate sweep (`scripts/gates.sh`), (2) fixed the
+integration gaps the sweep surfaced between those eight
+independently-committed workstreams' work (including work two of them had
+left uncommitted in the working tree), and (3) records the aggregate state
+below.
 
 ## Gate status: GREEN
 
@@ -191,33 +254,39 @@ attempted in this pass. The full, file:line-cited list is
 `fable5.1_review.md` §3–§4; nothing here should be treated as re-verified
 just because it isn't repeated in this ledger.
 
-## Uncommitted, out-of-scope work left in the working tree
+## Addendum — the other pass's work, and the document consolidation itself
 
-A separate, earlier remediation pass against `TTLI_Audit_Report_2026-09-02.md`
-(a different, prior audit — its own M2/M3/M5/M6/M8/M9 items, not this
-ledger's C-/H- findings) left real, correct-looking but **uncommitted**
-work sitting in the working tree throughout this run:
-`apps/api/pyproject.toml` (coverage config + a `unit` marker),
-`apps/api/tests/test_completion.py`/`test_video_settings.py`/
-`test_subscriptions_period_math.py` (new pure-function unit tests),
-`apps/api/src/services/subscriptions.py` (a pure-function extraction those
-tests exercise), `apps/api/src/services/workshops/` (the `services/
-workshops.py` → package split, `workshops.py` itself deleted on disk),
-`.trivyignore` and `infra/docker-compose.single-vm.yml` (digest pins + a
-`caddy`/`postfix-relay` CVE review), `apps/web/app/api/bff/[...path]/
-route.ts` (forwarding the `x-request-id` response header), and
-`docs/BACKLOG.md`/`HANDOFF.md`/`STATUS.md`/`check_links.py` plus
-`docs/archive/` (docs consolidation, including the migration-range check
-this pass's `c24dbeb` predecessor already relies on). None of it belongs to
-any of this ledger's named findings, so per this workstream's scope
-boundary ("if you discover you need to change a shared file another
-workstream owns, note it — don't edit it") it was left exactly as found:
-not committed, not reverted, not evaluated for correctness beyond what was
-needed to confirm it doesn't conflict with this pass's own changes (it
-doesn't — no file overlap except `apps/api/src/services/subscriptions.py`,
-which this pass's changes never touch). Whoever owns that pass should
-review and commit or discard it. Also left in place, for the same reason:
-five stray debug-log files at the repo root (`collect.log`, `gates_output
-{,2,3}.log`, `pytest_full1.log`) from that same interrupted session, which
-should have gone to a scratchpad rather than the repo — harmless (untracked,
-`git status` noise only) but worth a manual cleanup.
+The section below used to describe a separate, earlier remediation pass's
+work as **uncommitted and out of scope**. It has since been reviewed and
+committed, and the review-document consolidation this ledger itself now
+represents was carried out at the same time. Recorded here rather than
+rewritten into Part A above so the "what actually happened, in what order"
+trail stays intact.
+
+**The 2026-09-02-audit pass's leftover work** (`apps/api/pyproject.toml`
+coverage/`unit`-marker config; `tests/test_completion.py`,
+`tests/test_video_settings.py`, `tests/test_subscriptions_period_math.py`;
+`services/subscriptions.py::compute_renewal_period`;
+`services/workshops.py` → `services/workshops/{authoring,booking,
+attendance,reporting,errors}.py`; `.trivyignore` +
+`infra/docker-compose.single-vm.yml` digest pins and the `build:` stanza
+removal; the BFF's `x-request-id` header forward; and the
+`docs/BACKLOG.md`/`HANDOFF.md`/`STATUS.md`/`check_links.py`/`docs/archive/`
+docs consolidation) was read in full against current code, exercised
+(`pytest tests/test_workshops.py tests/test_completion.py
+tests/test_video_settings.py tests/test_subscriptions_period_math.py
+tests/test_subscriptions.py` — 71 passed; `ruff check` and `mypy` clean on
+every touched Python file; `docs/check_links.py` clean), and committed in
+eight scoped commits: `1f298b7`, `5bfc1c6`, `d251dda`, `41249d8`,
+`ee5a499`, `2d58cf8`, `5b6f692`, `12333c5`. See Part A's M3/M5/M6/M8/M9 rows
+above for what each closed. The five stray debug-log files at the repo
+root (`collect.log`, `gates_output{,2,3}.log`, `pytest_full1.log`) were
+deleted, not committed — they were never meant to be tracked.
+
+**This document itself.** `TTLI_Audit_Report_2026-09-02.md` and
+`fable5.1_review.md` — the two source reviews behind Parts A and B — are
+now archived verbatim at `docs/archive/`, per Part A's M9 row. Every
+finding either document tracked either has a row above (Part A / Part B's
+Findings table) or is named in "Not attempted" below; nothing was dropped
+silently. Going forward, this file is the one to update when a finding's
+status changes — not the archived source reviews.
