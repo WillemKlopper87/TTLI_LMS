@@ -23,22 +23,22 @@
 # maintainers point to SAQ or Streaq), a real migration, not a version
 # bump — tracked as its own future item, not silently deferred.
 fastapi==0.141.1
-uvicorn[standard]==0.52.1
-sqlalchemy[asyncio]==2.0.51
+uvicorn[standard]==0.52.4
+sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 alembic==1.19.1
 psycopg2-binary==2.9.12
-pydantic[email]==2.13.4
+pydantic[email]==2.13.5
 pydantic-settings==2.15.0
 structlog==26.1.0
 PyJWT==2.13.0
 argon2-cffi==25.1.0
-cryptography==50.0.0
-redis==5.2.1
+cryptography==50.0.1
+redis==5.3.1
 python-multipart==0.0.32
 pyotp==2.10.0
-boto3==1.43.67
-azure-storage-blob==12.30.0
+boto3==1.43.85
+azure-storage-blob==12.30.1
 arq==0.28.0
 # The Payfast ITN "confirm with provider" round-trip (03 §5.7,
 # services/payments/payfast.py) — Payfast's own documented anti-forgery
@@ -49,7 +49,7 @@ httpx==0.28.1
 # Certificate PDF generation + QR codes (Phase 4 sprint 4, REQ-CRED-02).
 # No pure-stdlib equivalent for either — unlike the ClamAV wire protocol,
 # PDF/QR encoding isn't small enough to hand-roll reasonably.
-reportlab==5.0.0
+reportlab==5.0.1
 qrcode[pil]==8.2
 Pillow==12.3.0
 # Web Push (01 §5.9, services/push.py) — VAPID signing + aes128gcm
@@ -57,7 +57,7 @@ Pillow==12.3.0
 # here is blocked on a third-party account: VAPID is a self-generated
 # keypair, not a credential from anyone else, so this ships fully
 # functional, not another empty-default "coded but not configured" gap.
-pywebpush==2.4.0
+pywebpush==2.5.0
 # Error tracking (core/logging.py::init_sentry). `check_production_safety`
 # has required SENTRY_DSN to be set since it was written, but nothing ever
 # imported sentry_sdk to act on it — the guard made the gap look closed
