@@ -155,7 +155,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
       <aside
         id="admin-nav"
-        className={`fixed inset-y-0 left-0 z-40 w-64 -translate-x-full overflow-y-auto p-4 transition-transform duration-200 md:relative md:w-56 md:shrink-0 md:translate-x-0 ${
+        // md:sticky + md:top-0 + md:h-screen (not md:relative): a relatively
+        // positioned sidebar scrolls away with the page's own content, so
+        // scrolling down a long admin page hides it, and the next
+        // navigation's scroll-to-top reset makes it look like the sidebar
+        // "jumped" back — it never left, the page just came back to where
+        // the sidebar always was. Sticky-to-viewport keeps it in place
+        // regardless of how far <main> is scrolled; its own overflow-y-auto
+        // (needed on mobile for the off-canvas panel) now also does real
+        // work here if the nav list itself is ever taller than the screen.
+        className={`fixed inset-y-0 left-0 z-40 w-64 -translate-x-full overflow-y-auto p-4 transition-transform duration-200 md:sticky md:top-0 md:h-screen md:w-56 md:shrink-0 md:translate-x-0 ${
           navOpen ? "translate-x-0" : ""
         }`}
         style={{

@@ -108,7 +108,7 @@ export default async function RootLayout({
             logoUrl={theme?.logo_url ?? null}
           />
           <NotificationOptIn />
-          {children}
+          <div className="page-body">{children}</div>
           <SiteFooter tenantName={theme?.tenant_name ?? null} />
           {skinSwitcherEnabled() ? <SkinSwitcher initial={skin} /> : null}
         </SessionProvider>

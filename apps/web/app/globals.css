@@ -115,6 +115,13 @@
     --stop: #e0837a;
     --stop-wash: #2f1d1b;
     --on-brand: #fdf8f9;
+    /* The light-mode value mixes the brand colour into *white*, which in
+       dark mode left every plain .callout (analytics' "each total lists
+       one amount per currency" note, for one) as a pale pink slab with
+       light-grey --ink-2 text on it — the one wash this block had never
+       re-derived for a dark surface. Same treatment the other washes
+       above get: the brand hue tinted into the dark surface instead. */
+    --brand-wash: color-mix(in srgb, var(--brand-primary) 22%, var(--surface));
   }
 }
 
@@ -265,6 +272,21 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  /* min-h-screen (app/layout.tsx) only guarantees the body is at least
+     one viewport tall -- without this flex column, SiteFooter still just
+     follows whatever content came before it in normal flow, so a short
+     page (e.g. an empty invoices table) shows the footer sitting right
+     under the content with a dead gap below it instead of anchored to
+     the bottom of the viewport. .page-body (the wrapper layout.tsx puts
+     around {children}) is the flexed sibling that grows to push it down. */
+  display: flex;
+  flex-direction: column;
+}
+
+.page-body {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 h1,
@@ -2613,9 +2635,15 @@ img.qr {
 }
 
 /* ---- tables ----
-   `.tablewrap` (prototype) and `.table-wrap` + `table.data` (existing app)
-   share one look. Table element styles are scoped to those wrappers so an
-   unclassed admin table keeps its Tailwind styling. */
+   `.tablewrap` (prototype) and `.table-wrap` (existing app) share one
+   look. A table's spacing/typography now comes from the wrapper alone —
+   `table.data` is kept as an equivalent alias for existing markup that
+   already carries it, not a second requirement on top of the wrapper.
+   9 of the 15 `.table-wrap` call sites had forgotten the `data` class,
+   which meant no padding at all (cells rendered flush against each
+   other) — fixed by making the wrapper class sufficient on its own.
+   Table element styles stay scoped to these classes so an unclassed,
+   unwrapped table keeps its plain Tailwind styling. */
 
 .tablewrap {
   overflow-x: auto;
@@ -2636,6 +2664,7 @@ img.qr {
   border-radius: var(--r-lg);
 }
 
+.table-wrap table,
 table.data {
   border-collapse: collapse;
   width: 100%;
@@ -2643,6 +2672,7 @@ table.data {
 }
 
 .tablewrap thead th,
+.table-wrap thead th,
 table.data thead th {
   text-align: left;
   padding: 0.6rem 1rem;
@@ -2658,6 +2688,7 @@ table.data thead th {
 }
 
 .tablewrap tbody td,
+.table-wrap tbody td,
 table.data tbody td {
   padding: 0.6rem 1rem;
   border-bottom: 1px solid var(--rule);
@@ -2665,6 +2696,7 @@ table.data tbody td {
 }
 
 .tablewrap tbody tr:last-child td,
+.table-wrap tbody tr:last-child td,
 table.data tbody tr:last-child td {
   border-bottom: 0;
 }
