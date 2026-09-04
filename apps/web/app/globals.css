@@ -685,15 +685,22 @@ a {
   z-index: 0;
 }
 
+/* The scrim must stay dark in BOTH colour schemes: the hero's copy is
+   light-on-dark by design. It used to be mixed from var(--ink), which is
+   the *text* colour and therefore flips to near-white under
+   prefers-color-scheme: dark — the whole band washed out pale pink with
+   white headings on it. --hero-scrim-ink is a skin-overridable token that
+   does not participate in the light/dark flip; the fallback is the design
+   handoff's literal value. */
 .hero-band__scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--ink) 92%, transparent) 0%,
-    color-mix(in srgb, var(--ink) 78%, transparent) 46%,
-    color-mix(in srgb, var(--ink) 32%, transparent) 100%
+    color-mix(in srgb, var(--hero-scrim-ink, #16191b) 92%, transparent) 0%,
+    color-mix(in srgb, var(--hero-scrim-ink, #16191b) 78%, transparent) 46%,
+    color-mix(in srgb, var(--hero-scrim-ink, #16191b) 32%, transparent) 100%
   );
 }
 
