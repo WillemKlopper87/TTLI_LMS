@@ -167,3 +167,38 @@ CVE-2026-54369 exp:2026-11-26
 # will_not_fix (their own severity/applicability call, not a gap on our
 # side).
 CVE-2023-45853 exp:2026-11-26
+
+# --- caddy:2-alpine (TTLI_Audit_Report_2026-09-02.md M3 — newly added to
+# the scan loop). Checked Docker Hub directly (2026-09-02): 2-alpine is
+# already an alias for 2.11.4-alpine, pushed ~1 month ago — this is the
+# current official build, not a stale tag we picked; nothing to bump to.
+# CVE-2026-27145/33818/39821/39822/42504/56853/56858/56859/56860/56862
+# and CVE-2026-14456 are already covered by the postgres:18-alpine/
+# openssl entries above (same stale-Go-toolchain/openssl findings,
+# shared because both images bundle a binary built against the same
+# base). c-ares and curl/libcurl are bundled OS packages this image's
+# entrypoint never invokes (Caddy's own binary does its own HTTP/TLS/DNS
+# in pure Go — no shell-out to curl, no cgo resolver) — same "waiting on
+# upstream's next rebuild" situation as every OS-package entry above.
+CVE-2026-33630 exp:2026-11-26
+CVE-2026-5773 exp:2026-11-26
+CVE-2026-6276 exp:2026-11-26
+# The next three are vendored Go modules compiled directly into the
+# caddy binary itself, not OS packages — worth a sharper look than the
+# above precisely because caddy is the one component in this deployment
+# with a host-published port (80/443, Caddyfile in
+# infra/docker-compose.single-vm.yml). None is reachable through this
+# deployment's actual Caddyfile (reverse_proxy + automatic HTTPS only):
+# golang.org/x/crypto/ssh is a transitive dependency Caddy's default
+# build never imports an SSH client/server from (no SSH-proxying module
+# in this image); google.golang.org/grpc backs plugin-only features
+# (e.g. a gRPC-based storage/cluster backend) this Caddyfile doesn't
+# configure. golang.org/x/net/dns/dnsmessage and golang.org/x/text ARE
+# on Caddy's real request/proxy path, but both CVEs need a malicious
+# response Caddy itself requests (a DNS answer to Caddy's own upstream
+# lookup, or text-processing of Caddy-originated data) — not something
+# an inbound HTTP client controls directly.
+CVE-2026-46600 exp:2026-11-26
+CVE-2026-56852 exp:2026-11-26
+CVE-2026-56854 exp:2026-11-26
+CVE-2026-84304 exp:2026-11-26

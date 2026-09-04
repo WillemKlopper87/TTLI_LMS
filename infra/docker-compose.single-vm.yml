@@ -56,8 +56,11 @@ services:
   # ---- infrastructure (managed services in the Azure target; containers
   #      here because there's only one VM) ----
 
+  # Digest-pinned (TTLI_Audit_Report_2026-09-02.md M3, same convention as
+  # apps/api/Dockerfile's base-image pins). Re-resolve deliberately with:
+  #   docker buildx imagetools inspect postgres:18-alpine --format '{{.Manifest.Digest}}'
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
     environment:
       POSTGRES_USER: ttli
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set in .env.prod}
@@ -76,8 +79,10 @@ services:
   # cache, it backs tenant resolution and login rate limiting
   # (core/tenancy.py, services/rate_limit.py) — worth the one extra
   # env var even though it's not reachable outside the VM either way.
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect redis:8-alpine --format '{{.Manifest.Digest}}'
   redis:
-    image: redis:8-alpine
+    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning", "--requirepass", "${REDIS_PASSWORD:?set in .env.prod}"]
     volumes:
       - ttli-redis:/data
@@ -94,8 +99,10 @@ services:
   # never the checked-in infra/garage/garage.toml, which is a published
   # dev-only secret. Backing this up is your actual object storage
   # backup, not just the database's — see the doc's §7.
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect dxflrs/garage:v2.3.0 --format '{{.Manifest.Digest}}'
   garage:
-    image: dxflrs/garage:v2.3.0
+    image: dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
     command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
       GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY:?set in .env.prod}
@@ -111,8 +118,13 @@ services:
   # start_period below is deliberate, not a stuck container. File
   # uploads (payment proofs, assignment submissions) 423 until this is
   # healthy; the app has no code path that skips scanning.
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect clamav/clamav-debian:stable --format '{{.Manifest.Digest}}'
+  # This pin freezes the clamd binary and OS layers, NOT virus signatures —
+  # those update via freshclam against the ttli-clamav volume at runtime,
+  # independent of the image digest, so scanning stays current either way.
   clamav:
-    image: clamav/clamav-debian:stable
+    image: clamav/clamav-debian:stable@sha256:be3cb41d9833ce9ffb98f3d3e1483c35c0d87060c2bda3624d75fd28bbf0b3bd
     volumes:
       - ttli-clamav:/var/lib/clamav
     healthcheck:
@@ -130,8 +142,20 @@ services:
   # network, and it authenticates outward to a real ESP using the
   # RELAYHOST_* credentials. Without this, magic-link/guest-access/
   # password-reset emails never leave the VM. See the doc's §5.
+  # `latest` resolves to the Debian variant (confirmed via Docker Hub,
+  # TTLI_Audit_Report_2026-09-02.md M3 pass) -- an 8-month-stale build
+  # carrying 109 CRITICAL/HIGH CVEs beyond anything already reviewed in
+  # .trivyignore. Same 5.1.0 release, alpine base instead: same env-var
+  # interface (RELAYHOST/RELAYHOST_USERNAME/RELAYHOST_PASSWORD/
+  # ALLOW_EMPTY_SENDER_DOMAINS all confirmed identical across variants),
+  # same age, ~35% fewer CVEs from the smaller package set alone. Still
+  # not clean enough for a same-pass reviewed-exception writeup the way
+  # caddy's was -- docs/BACKLOG.md has the follow-up item; this image
+  # isn't in the ci.yml Trivy loop yet for that reason.
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect boky/postfix:5.1.0-alpine --format '{{.Manifest.Digest}}'
   postfix-relay:
-    image: boky/postfix:latest
+    image: boky/postfix:5.1.0-alpine@sha256:6e761312e833947f77af755072c0e77b67d298d127595470a79e9454008dd594
     environment:
       ALLOW_EMPTY_SENDER_DOMAINS: "true"
       RELAYHOST: ${SMTP_RELAY_HOST:?set in .env.prod, e.g. [smtp.sendgrid.net]:587}
@@ -141,11 +165,12 @@ services:
 
   # ---- migration (one-shot, same as docker-compose.prod.yml) ----
 
+  # No `build:` (TTLI_Audit_Report_2026-09-02.md M3) — the tag this refers
+  # to is populated by `docker tag` in scripts/deploy-single-vm.sh /
+  # scripts/rolling-update.sh, after pulling and cosign-verifying the exact
+  # image CI built, scanned and signed. A stray `docker compose build`
+  # would silently defeat that guarantee, so the option no longer exists.
   migrate:
-    build:
-      context: ../apps/api
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
     image: ttli-api:latest
     environment: *api-env
     command: ["alembic", "upgrade", "head"]
@@ -162,10 +187,6 @@ services:
   # rollback — depending on compose's naming convention instead would be
   # one guess too many for something a rollback path relies on.
   api:
-    build:
-      context: ../apps/api
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
     image: ttli-api:latest
     environment: *api-env
     depends_on:
@@ -190,8 +211,6 @@ services:
     restart: unless-stopped
 
   worker:
-    build:
-      context: ../apps/api
     # Same image as api — literally the same build, differing only in
     # command (the Dockerfile's own header comment). Sharing the tag
     # means building api also updates worker; no separate rebuild step.
@@ -210,11 +229,6 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: ..
-      dockerfile: apps/web/Dockerfile
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
     image: ttli-web:latest
     environment:
       NODE_ENV: production
@@ -238,8 +252,10 @@ services:
   # ---- edge: the one thing neither compose.yml nor compose.prod.yml
   #      needed, because Container Apps' ingress does this for free ----
 
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect caddy:2-alpine --format '{{.Manifest.Digest}}'
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     ports:
       - "80:80"
       - "443:443"
