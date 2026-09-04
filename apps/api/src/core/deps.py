@@ -194,15 +194,15 @@ async def get_principal(
     user_id = uuid.UUID(claims["sub"])
     # Suspending/locking/deleting an account (services/tenant_users.py
     # set_status) marks a cutoff instant instead of hunting down every jti
-    # the user might be holding across tabs/devices. A bearer minted before
-    # that instant stops working here immediately, not merely on its own
-    # expiry — without this, suspension only took effect once every
-    # outstanding access token aged out on its own. Strictly-less-than, not
-    # `<=`: `iat` is whole seconds (core/security.py), so a token minted in
-    # the same second as a *later* reinstatement's fresh login must not be
-    # caught by an earlier suspension's mark that rounds to that same second.
+    # the user might be holding across tabs/devices. A bearer minted at or
+    # before that instant stops working here immediately, not merely on its
+    # own expiry — without this, suspension only took effect once every
+    # outstanding access token aged out on its own. See
+    # `tokens.is_access_token_revoked` for why the comparison is inclusive
+    # (`<=`) and how reinstatement avoids the same-second ambiguity that
+    # would otherwise create.
     revoked_at = await tokens.access_tokens_revoked_at(redis, user_id=user_id)
-    if revoked_at is not None and int(claims["iat"]) < revoked_at:
+    if tokens.is_access_token_revoked(int(claims["iat"]), revoked_at):
         raise Unauthenticated("Authentication required.")
 
     token_tenant = uuid.UUID(claims["tid"])

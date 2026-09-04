@@ -244,9 +244,10 @@ async def revoke_access_tokens_for_user(
     — an administrator suspending someone else's account — never holds the
     jti to blacklist individually, and the user may be holding several
     (multiple tabs/devices). This records a cutoff instant instead: `core/
-    deps.get_principal` refuses any bearer whose `iat` is not strictly after
-    it, which catches every access token outstanding at the moment of the
-    call regardless of how many there are.
+    deps.get_principal` refuses any bearer whose `iat` is not after it (see
+    `is_access_token_revoked` for exactly what "after" means at whole-second
+    resolution), which catches every access token outstanding at the moment
+    of the call regardless of how many there are.
 
     `ttl_seconds` should be at least the access-token lifetime — once every
     token that could have existed before the cutoff has expired on its own,
@@ -257,12 +258,48 @@ async def revoke_access_tokens_for_user(
     await redis.set(key, str(now), ex=ttl_seconds)
 
 
+async def clear_access_token_revocation(redis: Redis, *, user_id: uuid.UUID) -> None:
+    """Undo `revoke_access_tokens_for_user` — called when a suspension is
+    lifted (`services/tenant_users.py::set_status` back to active).
+
+    Without this, the marker set by `revoke_access_tokens_for_user` simply
+    outlives the suspension (it's on its own `ttl_seconds` clock, not tied to
+    the status flip back to active), and a fresh login minted moments after
+    reinstatement can land in the very same whole second the old marker was
+    written in. `is_access_token_revoked` cannot tell that apart from the
+    original "suspend right after login" case it exists to catch — the two
+    look identical at one-second resolution — so the marker has to be
+    deleted outright rather than out-raced by a timestamp comparison.
+    """
+    await redis.delete(_access_denylist_key(user_id))
+
+
 async def access_tokens_revoked_at(redis: Redis, *, user_id: uuid.UUID) -> int | None:
     """The cutoff instant set by `revoke_access_tokens_for_user`, or None if
-    the user has no active denylist mark (never suspended, or the mark has
-    since expired because every pre-cutoff token is long dead anyway)."""
+    the user has no active denylist mark (never suspended, reinstated since
+    — see `clear_access_token_revocation` — or the mark has since expired
+    because every pre-cutoff token is long dead anyway)."""
     raw = await redis.get(_access_denylist_key(user_id))
     return int(raw) if raw is not None else None
+
+
+def is_access_token_revoked(iat: int, revoked_at: int | None) -> bool:
+    """Whether an access token minted at `iat` (whole seconds, RFC 7519) is
+    caught by `revoked_at` (whole seconds).
+
+    `<=`, not `<`: `iat` has only whole-second resolution, so a suspend that
+    lands in the very same second as the login it's meant to kill must not
+    be able to lose that race just because both rounded to the same integer
+    — the whole point of `revoke_access_tokens_for_user` is that the
+    suspension takes effect immediately, not "immediately, unless the
+    server was already warm enough to finish both calls inside one second."
+    This does mean a token minted in the same second as the cutoff is always
+    treated as revoked, with no way to tell "before" from "after" apart at
+    this resolution — which is why reinstatement clears the marker outright
+    (`clear_access_token_revocation`) instead of relying on a fresh login's
+    `iat` to out-race a stale one here.
+    """
+    return revoked_at is not None and iat <= revoked_at
 
 
 __all__ = [
@@ -270,6 +307,8 @@ __all__ = [
     "IssuedRefreshToken",
     "RefreshTokenReused",
     "access_tokens_revoked_at",
+    "clear_access_token_revocation",
+    "is_access_token_revoked",
     "issue_family",
     "revoke_access_tokens_for_user",
     "revoke_all_for_user",

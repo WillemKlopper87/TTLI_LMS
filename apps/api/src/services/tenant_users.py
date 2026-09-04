@@ -258,6 +258,14 @@ async def set_status(
         await tokens.revoke_access_tokens_for_user(
             redis, user_id=user.id, ttl_seconds=access_token_ttl_seconds
         )
+    else:
+        # A reinstatement's own fresh login can land in the same whole
+        # second as a still-live revocation marker from the suspension it's
+        # undoing — indistinguishable from "suspended right after login" at
+        # `is_access_token_revoked`'s one-second resolution. Deleting the
+        # marker outright (rather than leaving it to lose that race) is what
+        # makes tightening that comparison to `<=` safe.
+        await tokens.clear_access_token_revocation(redis, user_id=user.id)
 
 
 __all__ = [

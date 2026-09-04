@@ -20,7 +20,7 @@ from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
 from src.models.rbac import RoleAssignment
-from src.services import identity
+from src.services import identity, tokens
 
 pytestmark = pytest.mark.integration
 
@@ -290,6 +290,44 @@ async def test_suspending_a_user_kills_their_sessions_immediately(  # type: igno
     # Login itself is refused outright while suspended.
     relogin = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert relogin.status_code == 401
+
+
+async def test_a_suspension_landing_in_the_same_second_as_login_still_revokes(
+    settings,
+) -> None:  # type: ignore[no-untyped-def]
+    """H-11 regression: the HTTP-level test above depends on real wall-clock
+    timing to prove suspension wins a race against a login that happened
+    moments earlier — on a warmed-up test process the two calls can complete
+    within the same whole second, which used to make `core/deps.py`'s
+    strictly-less-than comparison treat the token as minted *after* the
+    cutoff (`iat == revoked_at`, not `<`) and let it through. Exercised here
+    directly against the real Redis cutoff `core/deps.get_principal` reads,
+    pinning the exact same-second collision instead of hoping the suite runs
+    slowly enough to avoid it.
+    """
+    if not _redis_reachable(settings.redis_url):
+        pytest.skip("no Redis on the configured REDIS_URL")
+    redis = init_redis(settings)
+    try:
+        user_id = uuid.uuid4()
+        await tokens.revoke_access_tokens_for_user(redis, user_id=user_id, ttl_seconds=60)
+        revoked_at = await tokens.access_tokens_revoked_at(redis, user_id=user_id)
+        assert revoked_at is not None
+        # A token minted in the exact same whole second as the cutoff --
+        # the case a same-second suspend-right-after-login produces.
+        assert tokens.is_access_token_revoked(revoked_at, revoked_at) is True
+        assert tokens.is_access_token_revoked(revoked_at - 1, revoked_at) is True
+        assert tokens.is_access_token_revoked(revoked_at + 1, revoked_at) is False
+        assert tokens.is_access_token_revoked(revoked_at, None) is False
+
+        # Reinstatement must clear the marker outright, not just leave it to
+        # be out-raced -- a fresh post-reinstatement login sharing that same
+        # second must not be caught by it.
+        await tokens.clear_access_token_revocation(redis, user_id=user_id)
+        assert await tokens.access_tokens_revoked_at(redis, user_id=user_id) is None
+        assert tokens.is_access_token_revoked(revoked_at, None) is False
+    finally:
+        await dispose_redis()
 
 
 async def test_reinstating_a_suspended_user_restores_access(  # type: ignore[no-untyped-def]
