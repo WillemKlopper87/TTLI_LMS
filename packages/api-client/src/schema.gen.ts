@@ -3144,7 +3144,23 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Assignment Submission */
+        /**
+         * The submitted file itself, streamed with the caller's bearer
+         * @description Streams the bytes rather than handing back a storage "signed URL"
+         *     for the browser to open itself (the previous shape). That only ever
+         *     worked when the storage backend could mint a URL the *browser* can
+         *     reach: the local backend returns file://, which a page on http:// is
+         *     not allowed to open, so "Download submission" did nothing in every
+         *     dev setup; and on the single-VM deployment Garage is not published
+         *     outside the compose network at all, so a pre-signed S3 URL would have
+         *     failed there too. Same shape as `GET /invoices/{id}/pdf` — one
+         *     authenticated fetch through the API, storage stays private.
+         *
+         *     `attachment`, never `inline`: this is an arbitrary learner upload
+         *     (the submission endpoint accepts any file type), and rendering an
+         *     uploaded HTML/SVG in the grader's origin is exactly the thing not to
+         *     do. The browser saves it under the original filename instead.
+         */
         get: operations["download_assignment_submission_api_v1_assignment_submissions__submission_id__download_get"];
         put?: never;
         post?: never;
@@ -8435,11 +8451,6 @@ export interface components {
         StatusChangeRequest: {
             /** Status */
             status: string;
-        };
-        /** SubmissionDownloadResponse */
-        SubmissionDownloadResponse: {
-            /** Download Url */
-            download_url: string;
         };
         /** SubscribeRequest */
         SubscribeRequest: {
@@ -15409,7 +15420,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmissionDownloadResponse"];
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */

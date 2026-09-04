@@ -138,7 +138,14 @@ async def _seeded_lesson_id(tenant_session_factory, tenant_id, *, position: int)
                         "SELECT l.id FROM lessons l "
                         "JOIN modules m ON m.id = l.module_id "
                         "JOIN courses c ON c.id = m.course_id "
-                        "WHERE c.slug = 'executive-leadership-certificate' AND l.position = :p"
+                        "WHERE c.slug = 'executive-leadership-certificate' AND l.position = :p "
+                        # The seeded lesson is the oldest row at that position: any
+                        # test that appends a lesson to this shared course collides
+                        # on `position` (create_lesson numbers from the row count,
+                        # the seed from 1), and the shared test DB is never reset —
+                        # `scalar_one()` on an unordered query then fails with
+                        # MultipleResultsFound for every test using this helper.
+                        "ORDER BY l.created_at LIMIT 1"
                     ),
                     {"p": position},
                 )
@@ -1657,7 +1664,13 @@ async def test_list_pending_assignment_submissions_then_review_removes_it(
         headers={"Authorization": f"Bearer {author_token}"},
     )
     assert download.status_code == 200, download.text
-    assert download.json()["download_url"]
+    # The file itself, not a storage URL for the browser to chase: the
+    # local backend's "signed URL" is file://, which no page on http://
+    # can open, and Garage isn't reachable from a browser on the single-VM
+    # deployment either — so this endpoint streams the bytes.
+    assert download.content == b"a real essay"
+    assert download.headers["content-type"].startswith("text/plain")
+    assert 'attachment; filename="essay.txt"' in download.headers["content-disposition"]
 
     review = await client.post(
         f"/api/v1/assignment-submissions/{submission_id}/review",

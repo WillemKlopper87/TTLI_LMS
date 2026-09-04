@@ -369,10 +369,6 @@ class PendingSubmissionsResponse(BaseModel):
     items: list[PendingSubmissionItem]
 
 
-class SubmissionDownloadResponse(BaseModel):
-    download_url: str
-
-
 __all__ = [
     "AssignmentCreateRequest",
     "AssignmentDetailResponse",
@@ -403,7 +399,6 @@ __all__ = [
     "QuizResponse",
     "QuizSubmitRequest",
     "QuizzesPageResponse",
-    "SubmissionDownloadResponse",
     "SurveyAnswer",
     "SurveyCreateRequest",
     "SurveyDeltaOption",

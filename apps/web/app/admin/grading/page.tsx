@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
 
 import { useAdmin } from "../admin-context";
@@ -94,15 +95,17 @@ export default function GradingScreen() {
   }
 
   async function downloadSubmission(submission: PendingSubmission) {
-    const resp = await authedFetch(
+    // Streamed through the API with the bearer (lib/authed-download.ts),
+    // the same way the invoice PDF is. The previous shape — ask the API
+    // for a storage "signed URL" and window.open it — only ever worked
+    // when the storage backend could mint a browser-reachable URL: the
+    // local backend returns file://, which a page on http:// cannot open,
+    // so "Download submission" silently did nothing in every dev setup.
+    const ok = await authedDownload(
       `/api/bff/assignment-submissions/${submission.submission_id}/download`,
+      `submission-${submission.submission_id}`,
     );
-    if (!resp.ok) {
-      setError("Could not get a download link for that submission.");
-      return;
-    }
-    const { download_url } = await resp.json();
-    window.open(download_url, "_blank", "noopener,noreferrer");
+    if (!ok) setError("Could not download that submission.");
   }
 
   async function reviewSubmission(submission: PendingSubmission, approve: boolean) {

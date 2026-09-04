@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
+import mimetypes
 import uuid
 
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
@@ -64,7 +65,6 @@ from src.schemas.assessment import (
     QuizResponse,
     QuizSubmitRequest,
     QuizzesPageResponse,
-    SubmissionDownloadResponse,
     SurveyCreateRequest,
     SurveyDeltaOption,
     SurveyDeltaQuestion,
@@ -1050,19 +1050,40 @@ async def list_pending_assignment_submissions(
 
 
 @router.get(
-    "/assignment-submissions/{submission_id}/download", response_model=SubmissionDownloadResponse
+    "/assignment-submissions/{submission_id}/download",
+    summary="The submitted file itself, streamed with the caller's bearer",
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}}},
 )
 async def download_assignment_submission(
     submission_id: str, principal: PrincipalDep, session: SessionDep, storage: StorageDep
-) -> SubmissionDownloadResponse:
+) -> Response:
+    """Streams the bytes rather than handing back a storage "signed URL"
+    for the browser to open itself (the previous shape). That only ever
+    worked when the storage backend could mint a URL the *browser* can
+    reach: the local backend returns file://, which a page on http:// is
+    not allowed to open, so "Download submission" did nothing in every
+    dev setup; and on the single-VM deployment Garage is not published
+    outside the compose network at all, so a pre-signed S3 URL would have
+    failed there too. Same shape as `GET /invoices/{id}/pdf` — one
+    authenticated fetch through the API, storage stays private.
+
+    `attachment`, never `inline`: this is an arbitrary learner upload
+    (the submission endpoint accepts any file type), and rendering an
+    uploaded HTML/SVG in the grader's origin is exactly the thing not to
+    do. The browser saves it under the original filename instead."""
     principal.require("quiz:grade")
     submission = await session.get(AssignmentSubmission, _parse_uuid(submission_id))
     if submission is None or submission.tenant_id != principal.tenant_id:
         raise NotFound("No such submission.")
-    url = await storage.generate_signed_url(
-        Container.USER_UPLOADS, submission.object_key, expires_in=300
+    data = await storage.get_object(Container.USER_UPLOADS, submission.object_key)
+    filename = submission.object_key.rsplit("/", 1)[-1] or "submission"
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-    return SubmissionDownloadResponse(download_url=url)
 
 
 __all__ = ["router"]

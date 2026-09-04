@@ -21,13 +21,21 @@ export async function authedDownload(
   const resp = await authedFetch(url).catch(() => null);
   if (!resp || !resp.ok) return false;
 
+  // Prefer the name the API put on the file (the BFF forwards
+  // Content-Disposition): for an arbitrary learner upload the caller
+  // can't know the original filename or extension, and saving
+  // "submission-<uuid>" with no extension leaves the grader guessing
+  // what will open it. `filename` stays as the fallback.
+  const disposition = resp.headers.get("content-disposition") ?? "";
+  const served = /filename="([^"]+)"/.exec(disposition)?.[1];
+
   const objectUrl = URL.createObjectURL(await resp.blob());
   if (open) {
     window.open(objectUrl, "_blank", "noopener");
   } else {
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
-    anchor.download = filename;
+    anchor.download = served || filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

@@ -530,6 +530,16 @@ async def test_guest_playback_of_a_public_lesson_is_watermarked_as_sample(
     assert resp.status_code == 200, resp.text
     assert resp.json()["watermark"]["text"].startswith("SAMPLE · GUEST ACCESS · ")
 
+    # Remove the lesson again: it was appended to the *shared seeded* course
+    # at the same `position` as the seed's own "Core Concepts" (the seed
+    # numbers from 1, create_lesson from the row count), and the test DB is
+    # never reset — left behind, every `_seeded_lesson_id(position=2)` in
+    # test_assessment.py fails with MultipleResultsFound from then on.
+    removed = await client.delete(
+        f"/api/v1/lessons/{lesson_id}", headers={"Authorization": f"Bearer {author_token}"}
+    )
+    assert removed.status_code == 204, removed.text
+
 
 async def test_enrolled_learner_can_play_and_the_manifest_carries_the_token(
     client, tenant_session_factory, crypto, sample_video
