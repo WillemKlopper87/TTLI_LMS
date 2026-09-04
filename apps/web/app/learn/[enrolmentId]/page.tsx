@@ -25,6 +25,17 @@ const STATE_TAG: Record<string, string> = {
   completed: "tag--done",
 };
 
+/** Stands in for an interactive block on a lesson that is already
+ * finished — the content is accounted for rather than silently absent,
+ * without re-offering an action the server would refuse. */
+function DoneNote({ text }: { text: string }) {
+  return (
+    <p className="card mt-3" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+      {text}
+    </p>
+  );
+}
+
 const STATE_LABEL: Record<string, string> = {
   locked: "Locked",
   available: "Not started",
@@ -161,7 +172,24 @@ export default function LearnEnrolmentPage() {
     );
   }
 
+  // Two different questions, previously conflated into one flag:
+  //
+  // `playable` — may the learner still ACT on this lesson (mark it
+  //   complete, sit the quiz, submit the assignment)? Only while it is
+  //   open, i.e. started but not yet finished.
+  // `revealed` — may the learner SEE this lesson's content at all? True
+  //   for anything that isn't locked or unopened.
+  //
+  // Gating the content on `playable` meant every video, quiz, survey and
+  // assignment silently disappeared the moment the lesson was completed,
+  // leaving only its text blocks — so a learner could never re-watch a
+  // video they had finished, on a programme whose own course page sells
+  // "lifetime access to this cohort's material". The child components
+  // already render their own completed/submitted states (a graded
+  // attempt, "response recorded", the uploaded file), so they only need
+  // to know whether further input is still accepted.
   const playable = current.state === "in_progress" || current.state === "requirements_met";
+  const revealed = current.state !== "locked" && current.state !== "available";
   // The first video block, if any, gets the hero slot above the title —
   // same placement the old single-activity-per-lesson layout gave a
   // video lesson. Every other block (any number, any type, in order)
@@ -185,7 +213,7 @@ export default function LearnEnrolmentPage() {
         />
 
         <div className="stagearea">
-          {heroVideo && playable ? (
+          {heroVideo && revealed ? (
             <VideoPlayer
               lessonId={current.lesson_id}
               blockId={heroVideo.block_id}
@@ -220,7 +248,7 @@ export default function LearnEnrolmentPage() {
                     </div>
                   );
                 }
-                if (block.block_type === "video" && block.video_asset_id && playable) {
+                if (block.block_type === "video" && block.video_asset_id && revealed) {
                   // Not the hero (first) video block — a lesson can hold
                   // more than one — still rendered, just further down.
                   return (
@@ -232,8 +260,15 @@ export default function LearnEnrolmentPage() {
                     />
                   );
                 }
-                if (block.block_type === "quiz" && block.quiz_id && playable) {
-                  return (
+                if (block.block_type === "quiz" && block.quiz_id && revealed) {
+                  // Deliberately NOT mounted once the lesson is done:
+                  // QuizPlayer POSTs a new attempt on mount, so simply
+                  // revealing it would silently burn one of the
+                  // learner's remaining attempts every time they
+                  // reopened a finished lesson. The score itself is
+                  // already shown by RequirementsPanel below whenever
+                  // the course sets a pass-score rule.
+                  return playable ? (
                     <QuizPlayer
                       key={block.block_id}
                       quizId={block.quiz_id}
@@ -241,14 +276,20 @@ export default function LearnEnrolmentPage() {
                       moduleTitle={current.module_title}
                       onGraded={load}
                     />
+                  ) : (
+                    <DoneNote key={block.block_id} text="You have completed this quiz." />
                   );
                 }
-                if (block.block_type === "survey" && block.survey_id && playable) {
-                  return (
+                if (block.block_type === "survey" && block.survey_id && revealed) {
+                  // Same reasoning as the quiz: re-showing the form
+                  // invites a second submission the API would refuse.
+                  return playable ? (
                     <SurveyForm key={block.block_id} surveyId={block.survey_id} onSubmitted={load} />
+                  ) : (
+                    <DoneNote key={block.block_id} text="Your response has been recorded." />
                   );
                 }
-                if (block.block_type === "assignment" && block.assignment_id && playable) {
+                if (block.block_type === "assignment" && block.assignment_id && revealed) {
                   return <AssignmentUpload key={block.block_id} assignmentId={block.assignment_id} />;
                 }
                 return null;
@@ -332,6 +373,28 @@ export default function LearnEnrolmentPage() {
 
             {courseComplete ? (
               <div id="certificate">
+                {/* CredentialsPanel renders nothing at all when the
+                    course issues neither a certificate nor a badge, so
+                    finishing such a programme used to end on the last
+                    lesson's "← Previous lesson" and nothing else — no
+                    acknowledgement, no way onward. This banner is the
+                    part that is always true; the panel adds the
+                    credential to it when there is one. */}
+                <div className="callout callout--done mt-3">
+                  <b>You&rsquo;ve finished {progress.course_title}.</b>
+                  Every lesson is complete. Your transcript records what you did and when.
+                </div>
+                <div style={{ display: "flex", gap: ".6rem", flexWrap: "wrap", marginTop: ".7rem" }}>
+                  <Link className="btn btn--ghost" href={`/learn/${enrolmentId}/transcript`}>
+                    View transcript
+                  </Link>
+                  <Link className="btn btn--ghost" href="/learn">
+                    Back to my learning
+                  </Link>
+                  <Link className="btn btn--ghost" href="/catalogue">
+                    Browse other programmes
+                  </Link>
+                </div>
                 <CredentialsPanel enrolmentId={enrolmentId} />
               </div>
             ) : null}
