@@ -30,14 +30,16 @@ async def mint(
     redis: Redis,
     *,
     user_id: uuid.UUID,
-    video_asset_id: uuid.UUID,
+    asset_id: uuid.UUID,
     expires_in: int,
     max_concurrent_sessions: int,
 ) -> str:
     """Issues a token and enforces the concurrent-session cap
     (REQ-BYPASS-09) by terminating the oldest session beyond it — the
     newest request is the one actually in front of a person right now,
-    so it is the new session that wins, not the old one."""
+    so it is the new session that wins, not the old one. `asset_id` is
+    opaque here — a video or audio asset id alike (0041), never
+    interpreted beyond string equality in `validate` below."""
     token = secrets.token_urlsafe(32)
     sessions_key = f"{_SESSION_SET_PREFIX}{user_id}"
 
@@ -53,17 +55,17 @@ async def mint(
             # value already comes back as str, never bytes.
             await redis.delete(*(f"{_TOKEN_PREFIX}{t}" for t in oldest))
 
-    await redis.set(f"{_TOKEN_PREFIX}{token}", f"{user_id}:{video_asset_id}", ex=expires_in)
+    await redis.set(f"{_TOKEN_PREFIX}{token}", f"{user_id}:{asset_id}", ex=expires_in)
     return token
 
 
-async def validate(redis: Redis, *, token: str, video_asset_id: uuid.UUID) -> uuid.UUID | None:
+async def validate(redis: Redis, *, token: str, asset_id: uuid.UUID) -> uuid.UUID | None:
     """Returns the bound user_id if `token` is valid for this asset, else None."""
     raw = await redis.get(f"{_TOKEN_PREFIX}{token}")
     if raw is None:
         return None
-    user_id_str, _, asset_id_str = raw.partition(":")
-    if asset_id_str != str(video_asset_id):
+    user_id_str, _, bound_asset_id_str = raw.partition(":")
+    if bound_asset_id_str != str(asset_id):
         return None
     try:
         return uuid.UUID(user_id_str)

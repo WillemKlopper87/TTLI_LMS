@@ -28,6 +28,18 @@ class LessonCheckResponse(BaseModel):
     required: str | None = None
 
 
+class LessonBlockProgressResponse(BaseModel):
+    block_id: str
+    position: int
+    block_type: str
+    body: str | None
+    video_asset_id: str | None
+    audio_asset_id: str | None
+    quiz_id: str | None
+    survey_id: str | None
+    assignment_id: str | None
+
+
 class LessonProgressResponse(BaseModel):
     lesson_id: str
     module_id: str
@@ -35,12 +47,8 @@ class LessonProgressResponse(BaseModel):
     module_position: int
     title: str
     position: int
-    activity_type: str
     estimated_minutes: int
-    video_asset_id: str | None
-    quiz_id: str | None
-    survey_id: str | None
-    assignment_id: str | None
+    blocks: list[LessonBlockProgressResponse] = Field(default_factory=list)
     state: str
     unmet_requirements: list[str]
     checks: list[LessonCheckResponse] = Field(default_factory=list)
@@ -84,8 +92,10 @@ class TranscriptResponse(BaseModel):
 class HeartbeatRequest(BaseModel):
     """03 §6.3. No timestamp field on purpose — REQ-BYPASS-02 means the
     server assigns it, so there is nothing here for a client to lie
-    about."""
+    about. `block_id` (0041) identifies which of the lesson's (possibly
+    several) video blocks this heartbeat is for."""
 
+    block_id: str
     position_seconds: Decimal = Field(ge=0)
     playback_rate: Decimal = Field(gt=0, default=Decimal("1.0"))
     session_id: str = Field(min_length=1, max_length=128)
@@ -178,6 +188,7 @@ __all__ = [
     "EnrolmentProgressResponse",
     "HeartbeatRequest",
     "HeartbeatResponse",
+    "LessonBlockProgressResponse",
     "LessonCheckResponse",
     "LessonCompleteResponse",
     "LessonProgressResponse",

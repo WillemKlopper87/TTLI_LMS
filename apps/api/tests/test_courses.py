@@ -3,8 +3,8 @@ the Phase 4 authoring gap `docs/STATUS.md` tracked. HTTP coverage for the
 full authoring flow (course -> module -> lesson -> publish -> assign to
 tenant), the invariants `services/courses.py` enforces (positions,
 publish requiring real content, tenant-assignment requiring a published
-course), and that `activity_type`/quiz/survey/assignment/video linkage
-stays out of client reach through this surface.
+course), and that lesson content (0041's blocks — a lesson has none
+until a block is explicitly created) stays out of this surface's reach.
 """
 
 from __future__ import annotations
@@ -212,7 +212,7 @@ async def test_full_authoring_flow_create_publish_and_assign_to_tenant(
     )
     assert lessons.status_code == 200
     lesson = next(item for item in lessons.json()["items"] if item["id"] == lesson_id)
-    assert lesson["activity_type"] == "document"
+    assert lesson["blocks"] == []
 
 
 async def test_publish_rejects_a_course_with_no_modules(
@@ -302,6 +302,11 @@ async def test_completion_rules_rejects_a_bad_type_but_ignores_an_unknown_key(
 async def test_lesson_update_has_no_way_to_set_activity_type_or_quiz_id(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
+    """0041: a lesson has no `activity_type`/`quiz_id` at all any more —
+    content lives in blocks, created and attached through their own
+    endpoints, never through this PATCH. Extra JSON fields are simply
+    ignored (Pydantic's default, non-strict behaviour), not rejected —
+    this test's job is to prove they have no effect, not that they 400."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token, _, _ = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
@@ -318,8 +323,7 @@ async def test_lesson_update_has_no_way_to_set_activity_type_or_quiz_id(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["title"] == "Renamed"
-    assert body["activity_type"] == "document"
-    assert body["quiz_id"] is None
+    assert body["blocks"] == []
 
 
 async def test_tenant_assignment_requires_a_published_course(

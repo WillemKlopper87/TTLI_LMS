@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.crypto import CryptoBox
 from src.models.assessment import AssignmentSubmission, Quiz, QuizAttempt
 from src.models.commerce import Order
-from src.models.course import Course, CourseTenantAssignment, Lesson, Module
+from src.models.course import Course, CourseTenantAssignment, Lesson, LessonBlock, Module
 from src.models.credential import Certificate
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.media import TranscodeJob, VideoAsset
@@ -198,14 +198,15 @@ async def _failed_transcodes(
     session: AsyncSession, *, tenant_id: uuid.UUID
 ) -> list[AttentionTranscodeRow]:
     """`transcode_jobs` and `video_assets` carry no tenant_id — they hang
-    off a lesson, and a lesson belongs to a course, which reaches a
-    tenant only through `course_tenant_assignments`. Hence the join
-    chain; an unattached asset (uploaded, never wired to a lesson)
+    off a lesson block (0041), and a lesson belongs to a course, which
+    reaches a tenant only through `course_tenant_assignments`. Hence the
+    join chain; an unattached asset (uploaded, never wired to a block)
     belongs to no tenant and correctly appears for none."""
     stmt = (
         select(TranscodeJob, VideoAsset.id, Lesson.title, Course.title)
         .join(VideoAsset, VideoAsset.transcode_job_id == TranscodeJob.id)
-        .join(Lesson, Lesson.video_asset_id == VideoAsset.id)
+        .join(LessonBlock, LessonBlock.video_asset_id == VideoAsset.id)
+        .join(Lesson, Lesson.id == LessonBlock.lesson_id)
         .join(Module, Module.id == Lesson.module_id)
         .join(Course, Course.id == Module.course_id)
         .where(
@@ -532,15 +533,17 @@ async def get_course_analytics(
 async def _quiz_scores(
     session: AsyncSession, *, course_id: uuid.UUID, enrolment_ids: list[uuid.UUID]
 ) -> list[QuizScoreRow]:
-    # The FK points lesson -> quiz (`Lesson.quiz_id`), not quiz -> lesson:
-    # a quiz is an activity a lesson *is*, so the lesson owns the link.
+    # The FK points block -> quiz (`LessonBlock.quiz_id`), not quiz ->
+    # block (0041): a quiz is an activity a block *is*, so the block owns
+    # the link.
     quizzes = (
         await session.execute(
             select(Quiz.id, Lesson.title)
-            .join(Lesson, Lesson.quiz_id == Quiz.id)
+            .join(LessonBlock, LessonBlock.quiz_id == Quiz.id)
+            .join(Lesson, Lesson.id == LessonBlock.lesson_id)
             .join(Module, Module.id == Lesson.module_id)
             .where(Module.course_id == course_id)
-            .order_by(Module.position, Lesson.position)
+            .order_by(Module.position, Lesson.position, LessonBlock.position)
         )
     ).all()
     if not quizzes or not enrolment_ids:

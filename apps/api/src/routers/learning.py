@@ -23,7 +23,8 @@ from src.core.deps import (
     SettingsDep,
     StorageDep,
 )
-from src.core.errors import NotFound
+from src.core.errors import AppError, NotFound
+from src.models.course import LessonBlock
 from src.schemas.learning import (
     DashboardCertificate,
     DashboardEnrolment,
@@ -34,6 +35,7 @@ from src.schemas.learning import (
     EnrolmentProgressResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    LessonBlockProgressResponse,
     LessonCheckResponse,
     LessonCompleteResponse,
     LessonProgressResponse,
@@ -108,12 +110,21 @@ async def get_progress(
                 module_position=row.module_position,
                 title=row.title,
                 position=row.position,
-                activity_type=row.activity_type,
                 estimated_minutes=row.estimated_minutes,
-                video_asset_id=str(row.video_asset_id) if row.video_asset_id else None,
-                quiz_id=str(row.quiz_id) if row.quiz_id else None,
-                survey_id=str(row.survey_id) if row.survey_id else None,
-                assignment_id=str(row.assignment_id) if row.assignment_id else None,
+                blocks=[
+                    LessonBlockProgressResponse(
+                        block_id=str(b.block_id),
+                        position=b.position,
+                        block_type=b.block_type,
+                        body=b.body,
+                        video_asset_id=str(b.video_asset_id) if b.video_asset_id else None,
+                        audio_asset_id=str(b.audio_asset_id) if b.audio_asset_id else None,
+                        quiz_id=str(b.quiz_id) if b.quiz_id else None,
+                        survey_id=str(b.survey_id) if b.survey_id else None,
+                        assignment_id=str(b.assignment_id) if b.assignment_id else None,
+                    )
+                    for b in row.blocks
+                ],
                 state=row.state,
                 unmet_requirements=row.unmet_requirements,
                 checks=[
@@ -300,11 +311,17 @@ async def record_heartbeat(
         user_id=principal.user_id,
         lesson_id=_parse_uuid(lesson_id),
     )
+    block = await session.get(LessonBlock, _parse_uuid(body.block_id))
+    if block is None or block.lesson_id != lesson.id:
+        raise NotFound("No such block.")
+    if block.block_type != "video":
+        raise AppError("This block is not a video block.")
     result = await video_progress_service.record_heartbeat(
         session,
         tenant_id=principal.tenant_id,
         enrolment_id=enrolment.id,
-        lesson_id=_parse_uuid(lesson_id),
+        lesson_id=lesson.id,
+        lesson_block_id=block.id,
         position_seconds=body.position_seconds,
         playback_rate=body.playback_rate,
         session_id=body.session_id,
@@ -313,7 +330,7 @@ async def record_heartbeat(
     # Read back after the write, so the percentage the player renders is
     # the one this heartbeat just produced, not the previous one.
     video = await enrolment_service.video_context(
-        session, lesson=lesson, course=course, enrolment_id=enrolment.id
+        session, block=block, lesson=lesson, course=course, enrolment_id=enrolment.id
     )
     return HeartbeatResponse(
         furthest_position_seconds=result.furthest_position_seconds,

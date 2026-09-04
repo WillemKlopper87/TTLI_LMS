@@ -45,6 +45,7 @@ from src.models.course import (
     Course,
     CourseTenantAssignment,
     Lesson,
+    LessonBlock,
     ManagerVisibility,
     Module,
 )
@@ -81,7 +82,7 @@ from src.models.learning_path import (
     LearningPathTenantAssignment,
     PathEnrolment,
 )
-from src.models.media import TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
+from src.models.media import AudioAsset, TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.podcast import PodcastEpisode
 from src.models.push import PushSubscription
@@ -121,6 +122,7 @@ __all__ = [
     "AssignmentSubmission",
     "AttendanceRecord",
     "AttendanceStatus",
+    "AudioAsset",
     "AuditAction",
     "AuditEvent",
     "Badge",
@@ -160,6 +162,7 @@ __all__ = [
     "LearningPathTenantAssignment",
     "LedgerEntry",
     "Lesson",
+    "LessonBlock",
     "LessonCompletion",
     "LessonState",
     "MagicLink",

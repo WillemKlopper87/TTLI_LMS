@@ -260,24 +260,29 @@ async def get_dashboard(
         )
 
         for lesson_row in progress.lessons:
-            if lesson_row.quiz_id is None or lesson_row.state not in ("available", "in_progress"):
+            if lesson_row.state not in ("available", "in_progress"):
                 continue
-            quiz = await session.get(Quiz, lesson_row.quiz_id)
-            if quiz is None:  # pragma: no cover - FK guarantees this
-                continue
-            assessments.append(
-                UpcomingItem(
-                    kind=KIND_ASSESSMENT,
-                    title=quiz.title,
-                    subtitle=progress.course.title,
-                    enrolment_id=row.enrolment_id,
-                    lesson_id=lesson_row.lesson_id,
-                    quiz_id=quiz.id,
-                    attempts_remaining=await _attempts_remaining(
-                        session, enrolment_id=row.enrolment_id, quiz=quiz
-                    ),
+            # A lesson can hold more than one quiz block (0041) — one
+            # upcoming-assessment item per quiz block, not per lesson.
+            for block in lesson_row.blocks:
+                if block.quiz_id is None:
+                    continue
+                quiz = await session.get(Quiz, block.quiz_id)
+                if quiz is None:  # pragma: no cover - FK guarantees this
+                    continue
+                assessments.append(
+                    UpcomingItem(
+                        kind=KIND_ASSESSMENT,
+                        title=quiz.title,
+                        subtitle=progress.course.title,
+                        enrolment_id=row.enrolment_id,
+                        lesson_id=lesson_row.lesson_id,
+                        quiz_id=quiz.id,
+                        attempts_remaining=await _attempts_remaining(
+                            session, enrolment_id=row.enrolment_id, quiz=quiz
+                        ),
+                    )
                 )
-            )
 
     upcoming = (
         await _upcoming_workshops(session, tenant_id=tenant_id, user_id=user_id, now=now)

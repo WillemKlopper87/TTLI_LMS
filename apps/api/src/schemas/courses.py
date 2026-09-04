@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from src.models.course import (
     ACCESS_LEVEL_VALUES,
+    BLOCK_TYPE_VALUES,
     COURSE_FORMAT_VALUES,
     COURSE_LEVEL_VALUES,
     MANAGER_VISIBILITY_VALUES,
@@ -12,6 +13,7 @@ from src.models.course import (
 _LEVEL_PATTERN = "^(" + "|".join(COURSE_LEVEL_VALUES) + ")$"
 _FORMAT_PATTERN = "^(" + "|".join(COURSE_FORMAT_VALUES) + ")$"
 _HEX_COLOUR_PATTERN = "^#[0-9A-Fa-f]{6}$"
+_BLOCK_TYPE_PATTERN = "^(" + "|".join(BLOCK_TYPE_VALUES) + ")$"
 
 
 class UpdateManagerVisibilityRequest(BaseModel):
@@ -106,22 +108,50 @@ class ModulesPageResponse(BaseModel):
 class LessonCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     access_level: str = Field(default="paid", pattern="^(" + "|".join(ACCESS_LEVEL_VALUES) + ")$")
-    body: str | None = None
     completion_rules: dict[str, object] = Field(default_factory=dict)
 
 
 class LessonUpdateRequest(BaseModel):
-    """No `activity_type`/`quiz_id`/`survey_id`/`assignment_id`/
-    `video_asset_id` field on purpose — those stay owned by
-    `POST /lessons/{id}/quiz|survey|assignment|video`."""
+    """No content fields here (0041) — a lesson's content is its ordered
+    blocks, owned by `POST/PATCH/DELETE /lessons/{id}/blocks[/{block_id}]`
+    and each block type's own attach endpoint
+    (`POST /lessons/{id}/blocks/{block_id}/quiz|survey|assignment|video|audio`)."""
 
     title: str | None = None
     access_level: str | None = Field(
         default=None, pattern="^(" + "|".join(ACCESS_LEVEL_VALUES) + ")$"
     )
-    body: str | None = None
     completion_rules: dict[str, object] | None = None
     position: int | None = Field(default=None, ge=0)
+
+
+class LessonBlockCreateRequest(BaseModel):
+    block_type: str = Field(pattern=_BLOCK_TYPE_PATTERN)
+    completion_rules: dict[str, object] = Field(default_factory=dict)
+
+
+class LessonBlockUpdateRequest(BaseModel):
+    """`body` (text blocks) and `completion_rules` only — attaching a
+    video/audio/quiz/survey/assignment resource stays owned by that
+    subsystem's own attach endpoint, same split `LessonUpdateRequest`
+    already documents at the lesson level."""
+
+    body: str | None = None
+    completion_rules: dict[str, object] | None = None
+
+
+class LessonBlockResponse(BaseModel):
+    id: str
+    lesson_id: str
+    position: int
+    block_type: str
+    body: str | None
+    video_asset_id: str | None
+    audio_asset_id: str | None
+    quiz_id: str | None
+    survey_id: str | None
+    assignment_id: str | None
+    completion_rules: dict[str, object]
 
 
 class LessonResponse(BaseModel):
@@ -129,18 +159,17 @@ class LessonResponse(BaseModel):
     module_id: str
     title: str
     position: int
-    activity_type: str
     access_level: str
-    body: str | None
     completion_rules: dict[str, object]
-    video_asset_id: str | None
-    quiz_id: str | None
-    survey_id: str | None
-    assignment_id: str | None
+    blocks: list[LessonBlockResponse] = Field(default_factory=list)
 
 
 class LessonsPageResponse(BaseModel):
     items: list[LessonResponse]
+
+
+class LessonBlocksPageResponse(BaseModel):
+    items: list[LessonBlockResponse]
 
 
 class TenantAssignmentCreateRequest(BaseModel):
@@ -165,15 +194,22 @@ class TenantAssignmentsPageResponse(BaseModel):
     items: list[TenantAssignmentRow]
 
 
-class PublicLessonRow(BaseModel):
-    """No `body`/quiz/survey/assignment/video FKs — an anonymous curriculum
-    view shows shape, not content (services/courses.py::get_public_curriculum)."""
+class PublicBlockRow(BaseModel):
+    """No `body`/quiz/survey/assignment/video/audio FKs — an anonymous
+    curriculum view shows shape, not content
+    (services/courses.py::get_public_curriculum)."""
 
+    id: str
+    position: int
+    block_type: str
+
+
+class PublicLessonRow(BaseModel):
     id: str
     title: str
     position: int
-    activity_type: str
     access_level: str
+    blocks: list[PublicBlockRow] = Field(default_factory=list)
     estimated_minutes: int = 0
     # access_level == "public" — the lesson a visitor can open before buying.
     is_preview: bool = False
@@ -252,15 +288,22 @@ class PublicCurriculumResponse(BaseModel):
     price: PublicPrice | None = None
 
 
-class PublicLessonPreviewResponse(BaseModel):
+class PublicBlockPreviewResponse(BaseModel):
     id: str
-    title: str
-    activity_type: str
+    position: int
+    block_type: str
     body: str | None
     video_asset_id: str | None
+    audio_asset_id: str | None
     quiz_id: str | None
     survey_id: str | None
     assignment_id: str | None
+
+
+class PublicLessonPreviewResponse(BaseModel):
+    id: str
+    title: str
+    blocks: list[PublicBlockPreviewResponse] = Field(default_factory=list)
 
 
 __all__ = [
@@ -268,6 +311,10 @@ __all__ = [
     "CourseResponse",
     "CourseUpdateRequest",
     "CoursesPageResponse",
+    "LessonBlockCreateRequest",
+    "LessonBlockResponse",
+    "LessonBlockUpdateRequest",
+    "LessonBlocksPageResponse",
     "LessonCreateRequest",
     "LessonResponse",
     "LessonUpdateRequest",
@@ -276,6 +323,8 @@ __all__ = [
     "ModuleResponse",
     "ModuleUpdateRequest",
     "ModulesPageResponse",
+    "PublicBlockPreviewResponse",
+    "PublicBlockRow",
     "PublicCourseCard",
     "PublicCoursesResponse",
     "PublicCurriculumResponse",

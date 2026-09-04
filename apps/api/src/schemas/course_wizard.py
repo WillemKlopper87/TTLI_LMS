@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from src.schemas.courses import LessonResponse, ModuleResponse
+from src.schemas.courses import LessonBlockResponse, LessonResponse, ModuleResponse
 
 
 class ReorderRequest(BaseModel):
@@ -24,12 +24,18 @@ class DuplicateCourseRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-class LessonOutlineRow(BaseModel):
-    lesson: LessonResponse
-    video_state: str | None
-    video_duration_seconds: int | None
+class BlockOutlineRow(BaseModel):
+    block: LessonBlockResponse
+    media_state: str | None
+    duration_seconds: int | None
     video_has_captions: bool
     question_count: int | None
+    estimated_minutes: int
+
+
+class LessonOutlineRow(BaseModel):
+    lesson: LessonResponse
+    blocks: list[BlockOutlineRow]
     estimated_minutes: int
 
 
@@ -63,6 +69,7 @@ class ReadinessResponse(BaseModel):
 
 
 __all__ = [
+    "BlockOutlineRow",
     "ClearTemplatesRequest",
     "CourseOutlineResponse",
     "DuplicateCourseRequest",
