@@ -54,6 +54,23 @@ from src.services import entitlements
 GRACE_DAYS = 3
 
 
+def compute_renewal_period(
+    current_period_end: datetime | None, now: datetime, billing_interval_days: int
+) -> tuple[datetime, datetime, datetime]:
+    """Pure period math extracted out of `fulfil_subscription_order`'s
+    transaction (TTLI_Audit_Report_2026-09-02.md M5) — the transaction
+    itself, and every DB read/write around this calculation, stays exactly
+    where it was; only the arithmetic moved, so it can be unit-tested
+    without a session. Returns (period_start, period_end, access_expires_at).
+    The entitlement outlives the billing period by GRACE_DAYS — access is
+    gated by a live `expires_at > now()` check (entitlements.py), so the
+    grace has to live here, not just in the sweep (module docstring)."""
+    period_start = max(now, current_period_end or now)
+    period_end = period_start + timedelta(days=billing_interval_days)
+    access_expires_at = period_end + timedelta(days=GRACE_DAYS)
+    return period_start, period_end, access_expires_at
+
+
 class SubscriptionError(AppError):
     """A refusal in the subscription flow — an active subscription already
     exists, a plan change is still in cooldown, or a plan doesn't belong
@@ -362,12 +379,9 @@ async def fulfil_subscription_order(
     plan = await get_plan(session, tenant_id=tenant_id, plan_id=product.subscription_plan_id)
 
     now = datetime.now(UTC)
-    period_start = max(now, subscription.current_period_end or now)
-    period_end = period_start + timedelta(days=plan.billing_interval_days)
-    # The entitlement outlives the billing period by GRACE_DAYS — access is
-    # gated by a live `expires_at > now()` check (entitlements.py), so the
-    # grace has to live here, not just in the sweep (module docstring).
-    access_expires_at = period_end + timedelta(days=GRACE_DAYS)
+    period_start, period_end, access_expires_at = compute_renewal_period(
+        subscription.current_period_end, now, plan.billing_interval_days
+    )
 
     for course in await list_plan_courses(session, tenant_id=tenant_id, plan_id=plan.id):
         entitlement = await entitlements.grant(
@@ -399,6 +413,7 @@ __all__ = [
     "SubscriptionError",
     "add_course_to_plan",
     "cancel",
+    "compute_renewal_period",
     "create_plan",
     "fulfil_subscription_order",
     "get_own_subscription",
