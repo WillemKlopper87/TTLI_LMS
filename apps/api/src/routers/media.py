@@ -200,11 +200,15 @@ async def upload_video_asset(
 
     # ffprobe needs a real file on disk, not bytes in memory — reuse the
     # bytes already read above rather than a second storage round-trip.
+    # A NamedTemporaryFile held open while ffprobe reads it works on POSIX
+    # but not Windows (the OS denies a second handle on a file this
+    # process still has open) -- write-then-close, mirroring
+    # pipeline.py's already-correct TemporaryDirectory pattern.
     ffprobe_path = ffmpeg_service.resolve_binary("ffprobe", override=settings.ffprobe_path)
-    with tempfile.NamedTemporaryFile() as tmp:
-        tmp.write(data)
-        tmp.flush()
-        probe = await ffmpeg_service.probe_source(Path(tmp.name), ffprobe_path=ffprobe_path)
+    with tempfile.TemporaryDirectory(prefix="ttli-probe-") as tmp_dir:
+        tmp_path = Path(tmp_dir) / "source"
+        tmp_path.write_bytes(data)
+        probe = await ffmpeg_service.probe_source(tmp_path, ffprobe_path=ffprobe_path)
 
     course_uuid = _parse_uuid(course_id) if course_id else None
     course = await session.get(Course, course_uuid) if course_uuid else None
@@ -464,11 +468,13 @@ async def upload_audio_asset(
         Container.PRIVATE_CONTENT, source_key, data, content_type=file.content_type
     )
 
+    # Same write-then-close reasoning as upload_video_asset above --
+    # NamedTemporaryFile held open while ffprobe reads it fails on Windows.
     ffprobe_path = ffmpeg_service.resolve_binary("ffprobe", override=settings.ffprobe_path)
-    with tempfile.NamedTemporaryFile() as tmp:
-        tmp.write(data)
-        tmp.flush()
-        probe = await ffmpeg_service.probe_source(Path(tmp.name), ffprobe_path=ffprobe_path)
+    with tempfile.TemporaryDirectory(prefix="ttli-probe-") as tmp_dir:
+        tmp_path = Path(tmp_dir) / "source"
+        tmp_path.write_bytes(data)
+        probe = await ffmpeg_service.probe_source(tmp_path, ffprobe_path=ffprobe_path)
 
     asset = AudioAsset(
         id=asset_id,
