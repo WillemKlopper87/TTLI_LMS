@@ -1,5 +1,13 @@
 # STATUS
 
+> **Historical log, not current state.** This file is append-only — newest
+> entries are prepended at the top; older entries (including the "1. Summary"
+> phase table further down, which still shows migration `0021` and 277
+> passing tests) are frozen at whatever was true when they were written and
+> are never updated as reality moves past them. For current status, use
+> [`docs/BACKLOG.md`](BACKLOG.md); for a short current-state handoff, use
+> [`docs/NEXT_AGENT_BRIEF.md`](NEXT_AGENT_BRIEF.md). (`TTLI_Audit_Report_2026-09-02.md` M9.)
+
 **Updated:** 2026-08-27 (second pass, same day) — **P9 Phase 1: survey
 results, the read side.** `docs/BACKLOG.md` P9 (REQ-ASSESS-06). The
 anonymous-survey story was write-only — responses went in, nothing

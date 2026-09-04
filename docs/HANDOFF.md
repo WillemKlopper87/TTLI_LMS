@@ -1,5 +1,11 @@
 # HANDOFF — for the next agent
 
+> **Historical log, not current state.** This file is an append-only record
+> of past sessions' reasoning and decisions — it is not updated as reality
+> moves past it. For current status, use [`docs/BACKLOG.md`](BACKLOG.md); for
+> a short current-state handoff, use [`docs/NEXT_AGENT_BRIEF.md`](NEXT_AGENT_BRIEF.md).
+> (`TTLI_Audit_Report_2026-09-02.md` M9.)
+
 **Written:** 2026-08-08, end of the session that built Sprints 2–4 of Phase 1.
 **Updated:** 2026-08-09, three times. Second pass closed §4's last item
 (work committed, drift gate wired, all eight ranked weaknesses fixed with
