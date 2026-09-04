@@ -577,6 +577,106 @@ async def page_view_counts(
     return total, top_paths
 
 
+def _bucket_floor(stamp: datetime, granularity: str) -> datetime:
+    """Python-side twin of Postgres `date_trunc` for the three granularities
+    `choose_granularity` can pick, so the zero-fill below lands on exactly
+    the instants the grouped query returns (weeks start on Monday, as
+    date_trunc's do)."""
+    day = stamp.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    if granularity == "week":
+        return day - timedelta(days=day.weekday())
+    if granularity == "month":
+        return day.replace(day=1)
+    return day
+
+
+def _bucket_next(stamp: datetime, granularity: str) -> datetime:
+    if granularity == "week":
+        return stamp + timedelta(days=7)
+    if granularity == "month":
+        year, month = (stamp.year + 1, 1) if stamp.month == 12 else (stamp.year, stamp.month + 1)
+        return stamp.replace(year=year, month=month)
+    return stamp + timedelta(days=1)
+
+
+async def traffic_series(
+    session: AsyncSession, *, tenant_id: uuid.UUID, period: Period
+) -> tuple[str, list[tuple[datetime, str, int]], int]:
+    """Pageviews per time bucket, plus the total for the *previous* window
+    of the same length — the two things a glanceable traffic panel needs
+    that `page_view_counts` (a total and a top-N) doesn't give it.
+
+    Same server-side granularity choice as `revenue_series`. Unlike that
+    function, every bucket in the window is emitted, zero-filled: the
+    trend line must not skip quiet days, and a brand-new tenant with no
+    traffic at all still gets a full, flat line rather than nothing.
+    """
+    granularity = choose_granularity(period)
+    bucket = func.date_trunc(granularity, Event.created_at)
+    rows = (
+        await session.execute(
+            select(bucket.label("bucket"), func.count())
+            .where(
+                Event.tenant_id == tenant_id,
+                Event.event_name == EventName.PAGE_VIEWED,
+                Event.created_at >= period.start,
+                Event.created_at < period.end,
+            )
+            .group_by(bucket)
+            .order_by(bucket)
+        )
+    ).all()
+    counts = {stamp.astimezone(UTC): int(n) for stamp, n in rows}
+
+    points: list[tuple[datetime, str, int]] = []
+    cursor = _bucket_floor(period.start, granularity)
+    while cursor < period.end:
+        points.append((cursor, _bucket_label(cursor, granularity), counts.get(cursor, 0)))
+        cursor = _bucket_next(cursor, granularity)
+
+    span = period.end - period.start
+    previous_total = int(
+        (
+            await session.execute(
+                select(func.count()).where(
+                    Event.tenant_id == tenant_id,
+                    Event.event_name == EventName.PAGE_VIEWED,
+                    Event.created_at >= period.start - span,
+                    Event.created_at < period.start,
+                )
+            )
+        ).scalar_one()
+    )
+    return granularity, points, previous_total
+
+
+FIXED_TRAFFIC_WINDOWS = ("last_24h", "last_7d", "last_30d")
+
+
+async def traffic_fixed_totals(
+    session: AsyncSession, *, tenant_id: uuid.UUID, now: datetime | None = None
+) -> tuple[dict[str, int], int]:
+    """Pageview totals for the fixed windows in FIXED_TRAFFIC_WINDOWS plus
+    all time — reference figures shown beside the selected window, so
+    "how is the site doing overall" doesn't depend on which preset happens
+    to be picked. One query: each window is a conditional count over the
+    same scan, and all time is the unconditional count."""
+    anchor = now or datetime.now(UTC)
+    columns = [
+        func.count(case((Event.created_at >= anchor - _PRESET_DELTAS[w], 1))).label(w)
+        for w in FIXED_TRAFFIC_WINDOWS
+    ]
+    row = (
+        await session.execute(
+            select(*columns, func.count().label("all_time")).where(
+                Event.tenant_id == tenant_id, Event.event_name == EventName.PAGE_VIEWED
+            )
+        )
+    ).one()
+    windows = {w: int(getattr(row, w)) for w in FIXED_TRAFFIC_WINDOWS}
+    return windows, int(row.all_time)
+
+
 __all__ = [
     "AWAITING_STATUSES",
     "DEFAULT_PRESET",
@@ -603,6 +703,8 @@ __all__ = [
     "resolve_period",
     "top_cta_episodes",
     "total_registered",
+    "traffic_fixed_totals",
+    "traffic_series",
 ]
 
 

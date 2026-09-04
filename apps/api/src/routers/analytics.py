@@ -38,6 +38,7 @@ from src.schemas.analytics import (
     RevenuePoint,
     RevenueSeriesResponse,
     RevenueSummaryResponse,
+    TrafficPoint,
     TrafficResponse,
 )
 from src.services import analytics as analytics_service
@@ -193,8 +194,23 @@ async def _traffic(
     total_views, top_paths = await analytics_service.page_view_counts(
         session, tenant_id=tenant_id, period=period
     )
+    granularity, points, previous_total = await analytics_service.traffic_series(
+        session, tenant_id=tenant_id, period=period
+    )
+    windows, all_time = await analytics_service.traffic_fixed_totals(session, tenant_id=tenant_id)
     return TrafficResponse(
-        period=_period_response(period), total_views=total_views, top_paths=top_paths
+        period=_period_response(period),
+        total_views=total_views,
+        previous_total_views=previous_total,
+        last_24h_views=windows["last_24h"],
+        last_7d_views=windows["last_7d"],
+        last_30d_views=windows["last_30d"],
+        all_time_views=all_time,
+        granularity=granularity,
+        points=[
+            TrafficPoint(bucket=stamp, label=label, views=views) for stamp, label, views in points
+        ],
+        top_paths=top_paths,
     )
 
 

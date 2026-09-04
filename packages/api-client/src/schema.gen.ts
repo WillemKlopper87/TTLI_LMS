@@ -8905,16 +8905,55 @@ export interface components {
             views: number;
         };
         /**
+         * TrafficPoint
+         * @description One bucket of the pageview trend. Every bucket in the window is
+         *     present, zero-filled — a gap reads as missing data, a zero as a quiet
+         *     day, and only one of those is true.
+         */
+        TrafficPoint: {
+            /**
+             * Bucket
+             * Format: date-time
+             */
+            bucket: string;
+            /** Label */
+            label: string;
+            /** Views */
+            views: number;
+        };
+        /**
          * TrafficResponse
          * @description Pageviews on public marketing pages (checklist item 20 follow-up;
          *     01_PRD.md §5.11's first-party-analytics decision) — `page.viewed`
          *     events written by routers/events.py::log_pageview, aggregated the
          *     same way podcast_engagement aggregates `podcast.*` events.
+         *
+         *     Shaped for a glanceable panel rather than a report: the total with
+         *     the *previous* window of the same length beside it (Stripe's
+         *     "period vs prior period in every tile"), a server-bucketed trend
+         *     (same day/week/month choice as the revenue series), and a top-N list
+         *     that is a leaderboard, not every path. No visitor count: the beacon
+         *     deliberately carries no identifier or cookie, so "unique visitors"
+         *     would be a number this system cannot honestly produce.
          */
         TrafficResponse: {
             period: components["schemas"]["PeriodResponse"];
             /** Total Views */
             total_views: number;
+            /** Previous Total Views */
+            previous_total_views: number;
+            /** Last 24H Views */
+            last_24h_views: number;
+            /** Last 7D Views */
+            last_7d_views: number;
+            /** Last 30D Views */
+            last_30d_views: number;
+            /** All Time Views */
+            all_time_views: number;
+            /** Granularity */
+            granularity: string;
+            /** Points */
+            points: components["schemas"]["TrafficPoint"][];
             /** Top Paths */
             top_paths: components["schemas"]["TopPagePath"][];
         };

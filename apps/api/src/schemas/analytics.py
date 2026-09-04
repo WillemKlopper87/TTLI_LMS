@@ -153,14 +153,41 @@ class TopPagePath(BaseModel):
     views: int
 
 
+class TrafficPoint(BaseModel):
+    """One bucket of the pageview trend. Every bucket in the window is
+    present, zero-filled — a gap reads as missing data, a zero as a quiet
+    day, and only one of those is true."""
+
+    bucket: datetime
+    label: str
+    views: int
+
+
 class TrafficResponse(BaseModel):
     """Pageviews on public marketing pages (checklist item 20 follow-up;
     01_PRD.md §5.11's first-party-analytics decision) — `page.viewed`
     events written by routers/events.py::log_pageview, aggregated the
-    same way podcast_engagement aggregates `podcast.*` events."""
+    same way podcast_engagement aggregates `podcast.*` events.
+
+    Shaped for a glanceable panel rather than a report: the total with
+    the *previous* window of the same length beside it (Stripe's
+    "period vs prior period in every tile"), a server-bucketed trend
+    (same day/week/month choice as the revenue series), and a top-N list
+    that is a leaderboard, not every path. No visitor count: the beacon
+    deliberately carries no identifier or cookie, so "unique visitors"
+    would be a number this system cannot honestly produce.
+    """
 
     period: PeriodResponse
     total_views: int
+    previous_total_views: int
+    # Fixed reference totals, independent of the selected window.
+    last_24h_views: int
+    last_7d_views: int
+    last_30d_views: int
+    all_time_views: int
+    granularity: str
+    points: list[TrafficPoint]
     top_paths: list[TopPagePath]
 
 
@@ -177,4 +204,5 @@ __all__ = [
     "RegistrationsResponse",
     "RevenueSummaryResponse",
     "TopCtaEpisode",
+    "TrafficPoint",
 ]

@@ -6,6 +6,7 @@ import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
 
 import RevenueChart, { type RevenuePoint } from "./revenue-chart";
+import TrafficChart, { type TrafficPoint } from "./traffic-chart";
 
 import { useAdmin } from "../admin-context";
 
@@ -94,7 +95,22 @@ interface TopPagePath {
 interface Traffic {
   period: Period;
   total_views: number;
+  previous_total_views: number;
+  last_24h_views: number;
+  last_7d_views: number;
+  last_30d_views: number;
+  all_time_views: number;
+  granularity: string;
+  points: TrafficPoint[];
   top_paths: TopPagePath[];
+}
+
+/** "+40%", "−12%", "New" (nothing before, something now) or "—" (nothing either side). */
+function trafficDelta(current: number, previous: number): string {
+  if (previous === 0) return current > 0 ? "New" : "—";
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return "±0%";
+  return `${pct > 0 ? "+" : "−"}${Math.abs(pct)}%`;
 }
 
 const PRESETS: { value: string; label: string }[] = [
@@ -535,52 +551,78 @@ export default function AnalyticsScreen() {
 
       {traffic ? (
         <div>
-          <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".7rem" }}>
-            Site traffic · {traffic.total_views.toLocaleString("en-ZA")} pageviews
+          <h2 className="serif" style={{ fontSize: "1.125rem", marginBottom: ".2rem" }}>
+            Site traffic
           </h2>
           <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginBottom: ".7rem" }}>
             First-party pageviews on the public marketing site (01_PRD.md §5.11) — no
-            third-party tracker, no cookie.
+            third-party tracker, no cookie, so no visitor identities either: these are page
+            loads, not people.
           </p>
-          {traffic.top_paths.length > 0 ? (
-            <div className="tablewrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Page</th>
-                    <th scope="col">Views</th>
-                    <th scope="col">Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {traffic.top_paths.map((row) => {
-                    const pct =
-                      traffic.total_views > 0
-                        ? Math.round((row.views / traffic.total_views) * 100)
-                        : 0;
-                    return (
-                      <tr key={row.path}>
-                        <td className="mono">{row.path}</td>
-                        <td className="mono">{row.views.toLocaleString("en-ZA")}</td>
-                        <td>
-                          <span className="bar minibar" style={{ display: "inline-block", width: 90 }}>
-                            <i style={{ width: `${pct}%` }} />
-                          </span>{" "}
-                          <span className="mono" style={{ fontSize: ".6875rem" }}>
-                            {pct}%
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+          {/* Fixed windows, independent of the timeframe selector above,
+              and rendered at every volume — a new tenant sees "0" in the
+              same large type, not a sentence saying there's nothing. */}
+          <dl className="stats">
+            <div className="stat">
+              <dt>Last 24 hours</dt>
+              <dd>{traffic.last_24h_views.toLocaleString("en-ZA")}</dd>
             </div>
-          ) : (
-            <p style={{ fontSize: ".8125rem", color: "var(--muted)" }}>
-              No pageviews recorded in this period yet.
+            <div className="stat">
+              <dt>Last 7 days</dt>
+              <dd>{traffic.last_7d_views.toLocaleString("en-ZA")}</dd>
+            </div>
+            <div className="stat">
+              <dt>Last 30 days</dt>
+              <dd>{traffic.last_30d_views.toLocaleString("en-ZA")}</dd>
+            </div>
+            <div className="stat">
+              <dt>All time</dt>
+              <dd>{traffic.all_time_views.toLocaleString("en-ZA")}</dd>
+            </div>
+          </dl>
+
+          <div style={{ marginTop: "1.25rem" }}>
+            <h3 className="serif" style={{ fontSize: "1rem", marginBottom: ".1rem" }}>
+              {traffic.total_views.toLocaleString("en-ZA")} pageview
+              {traffic.total_views === 1 ? "" : "s"} in the selected timeframe
+            </h3>
+            <p style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: ".6rem" }}>
+              {trafficDelta(traffic.total_views, traffic.previous_total_views)} vs the previous{" "}
+              period ({traffic.previous_total_views.toLocaleString("en-ZA")} before)
             </p>
-          )}
+            <TrafficChart points={traffic.points} granularity={traffic.granularity} />
+          </div>
+
+          <div style={{ marginTop: "1.25rem" }}>
+            <h3 className="serif" style={{ fontSize: "1rem", marginBottom: ".5rem" }}>
+              Top pages
+            </h3>
+            {traffic.top_paths.length > 0 ? (
+              <div className="rowlist">
+                {traffic.top_paths.map((row, index) => (
+                  <div className="rowitem" key={row.path}>
+                    <span className="mono" style={{ color: "var(--faint)", width: "1.5rem" }}>
+                      {index + 1}
+                    </span>
+                    <span className="t mono" style={{ fontWeight: 500 }}>
+                      {row.path}
+                    </span>
+                    <span className="m mono">
+                      {row.views.toLocaleString("en-ZA")}
+                      {traffic.total_views > 0
+                        ? ` · ${Math.round((row.views / traffic.total_views) * 100)}%`
+                        : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontSize: ".8125rem", color: "var(--muted)" }}>
+                No pages viewed in this period yet.
+              </p>
+            )}
+          </div>
         </div>
       ) : null}
     </div>

@@ -510,3 +510,60 @@ async def test_podcast_engagement_csv_requires_analytics_view(  # type: ignore[n
         headers={"Authorization": f"Bearer {learner}"},
     )
     assert resp.status_code == 403
+
+
+# ---- site traffic ----------------------------------------------------------
+
+
+async def test_traffic_reports_a_zero_filled_trend_and_the_previous_period(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """The panel this feeds is glanceable, not a report: every bucket in the
+    window is present (a quiet day is a zero, not a gap), the buckets sum
+    to the headline total, and the previous window of the same length is
+    reported beside it so the tile can say "vs previous period"."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    headers = {"Authorization": f"Bearer {admin}"}
+
+    before = await client.get("/api/v1/analytics/traffic?preset=last_7d", headers=headers)
+    assert before.status_code == 200, before.text
+    baseline = before.json()["total_views"]
+
+    marker = f"/traffic-test-{uuid.uuid4().hex[:8]}"
+    for _ in range(3):
+        beacon = await client.post("/api/v1/public/events/pageview", json={"path": marker})
+        assert beacon.status_code == 204, beacon.text
+
+    resp = await client.get("/api/v1/analytics/traffic?preset=last_7d", headers=headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert body["total_views"] == baseline + 3
+    assert body["granularity"] == "day"
+    # A 7-day window whose start is not on a day boundary spans 8 calendar
+    # days once floored to the bucket grid; never fewer than 7.
+    assert 7 <= len(body["points"]) <= 8
+    buckets = [p["bucket"] for p in body["points"]]
+    assert buckets == sorted(buckets)
+    assert sum(p["views"] for p in body["points"]) == body["total_views"]
+    assert body["points"][-1]["views"] >= 3
+    assert isinstance(body["previous_total_views"], int)
+    # Fixed reference totals are nested windows: 24h ⊆ 7d ⊆ 30d ⊆ all time,
+    # and the three beacons just sent land in every one of them.
+    assert body["last_24h_views"] >= 3
+    assert body["last_24h_views"] <= body["last_7d_views"] <= body["last_30d_views"]
+    assert body["last_30d_views"] <= body["all_time_views"]
+    assert body["last_7d_views"] == body["total_views"]
+    assert any(row["path"] == marker and row["views"] == 3 for row in body["top_paths"])
+
+
+async def test_traffic_requires_analytics_view(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    learner = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    resp = await client.get(
+        "/api/v1/analytics/traffic", headers={"Authorization": f"Bearer {learner}"}
+    )
+    assert resp.status_code == 403
