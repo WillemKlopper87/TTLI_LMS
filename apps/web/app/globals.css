@@ -923,25 +923,70 @@ a {
   outline-offset: 2px;
 }
 
-.ccard-art {
+/* Course art: the card band and the course page's hero share one look,
+   generated per course by lib/course-art.ts (gradient + pattern from the
+   course's colour/id, a translucent monogram from its topic). The inline
+   style carries the gradient and pattern; the CSS below only adds the
+   soft top-left light and positions the monogram/topic. */
+.ccard-art,
+.course-hero {
   display: block;
-  height: 96px;
   position: relative;
   overflow: hidden;
   background: var(--brand);
 }
 
-.ccard-art::after {
+.ccard-art {
+  height: 96px;
+}
+
+.course-hero {
+  height: 176px;
+  border: 1px solid var(--rule);
+  margin-bottom: 1.6rem;
+}
+
+.ccard-art::after,
+.course-hero::after {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    repeating-linear-gradient(
-      115deg,
-      rgba(255, 255, 255, 0.1) 0 1px,
-      transparent 1px 13px
-    ),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.18), transparent 62%);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), transparent 62%);
+}
+
+.ccard-mono {
+  position: absolute;
+  right: 0.55rem;
+  bottom: -0.6rem;
+  z-index: 1;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 5.75rem;
+  line-height: 1;
+  color: var(--on-brand);
+  opacity: 0.14;
+  user-select: none;
+  pointer-events: none;
+}
+
+.course-hero .ccard-mono {
+  right: 1.4rem;
+  bottom: -1.5rem;
+  font-size: 12rem;
+  opacity: 0.12;
+}
+
+.course-hero b {
+  position: absolute;
+  left: 1.1rem;
+  bottom: 0.9rem;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--on-brand);
+  opacity: 0.92;
 }
 
 .ccard-art b {

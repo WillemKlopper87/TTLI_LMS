@@ -15,6 +15,7 @@
 import Link from "next/link";
 
 import { Curriculum } from "@/app/courses/[courseId]/curriculum";
+import { courseArt } from "@/lib/course-art";
 import {
   countLabel,
   formatDuration,
@@ -68,9 +69,21 @@ export default async function CourseDetailPage({ params }: CoursePageProps) {
   ]);
   const outcomes = course.outcomes ?? [];
   const price = course.price;
+  // Same generated art as the catalogue card (lib/course-art.ts), so the
+  // page a learner lands on from a card carries the card's own look.
+  const art = courseArt({
+    id: course.course_id,
+    hero_colour: course.hero_colour,
+    topic: course.topic,
+    title: course.title,
+  });
 
   return (
     <main className="pad-lg">
+      <div className="course-hero" style={art.style} aria-hidden="true">
+        <span className="ccard-mono">{art.monogram}</span>
+        {course.topic ? <b>{course.topic}</b> : null}
+      </div>
       <div className="detail">
         <div style={{ display: "grid", gap: "1.75rem" }}>
           <div>

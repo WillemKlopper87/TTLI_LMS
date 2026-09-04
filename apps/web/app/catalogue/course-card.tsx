@@ -10,23 +10,9 @@
  */
 import Link from "next/link";
 
+import { courseArt } from "@/lib/course-art";
 import { countLabel, formatDuration, formatLevel, formatMoney, joinMeta, vatSuffix } from "@/lib/format";
 import type { PublicCourse } from "@/lib/server-api";
-
-// Stable per-course fallbacks for `hero_colour`, picked from the
-// prototype's own art blocks. Chosen by a hash of the course id so a
-// given course keeps the same colour across renders and across pages.
-const FALLBACK_COLOURS = ["#8E151C", "#3E4A3C", "#4A3A52", "#2F4858", "#6B4A2F"];
-
-/** Only `#rgb` / `#rrggbb` reaches a style attribute: `hero_colour` is
- * operator-entered text, and anything else is dropped for the fallback. */
-function artColour(course: Pick<PublicCourse, "id" | "hero_colour">): string {
-  const raw = course.hero_colour?.trim() ?? "";
-  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
-  let hash = 0;
-  for (let i = 0; i < course.id.length; i += 1) hash = (hash * 31 + course.id.charCodeAt(i)) >>> 0;
-  return FALLBACK_COLOURS[hash % FALLBACK_COLOURS.length];
-}
 
 export function CourseCard({ course }: { course: PublicCourse }) {
   const meta = joinMeta([
@@ -35,10 +21,17 @@ export function CourseCard({ course }: { course: PublicCourse }) {
     formatLevel(course.level),
   ]);
   const price = course.price;
+  // Generated art (lib/course-art.ts): gradient + pattern + monogram from
+  // the course's own colour/id/topic, so every card looks designed with
+  // nothing uploaded — the same treatment the course page's hero uses.
+  const art = courseArt(course);
 
   return (
     <Link className="ccard" href={`/courses/${course.id}`}>
-      <span className="ccard-art" style={{ background: artColour(course) }}>
+      <span className="ccard-art" style={art.style}>
+        <span className="ccard-mono" aria-hidden="true">
+          {art.monogram}
+        </span>
         {course.topic ? <b>{course.topic}</b> : null}
       </span>
       <span className="ccard-body">
