@@ -46,4 +46,23 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
   "integration: requires a live Postgres",
+  # No marker at module scope IS the fast tier (TTLI_Audit_Report_2026-09-02.md
+  # M5) -- this explicit marker exists so `pytest -m unit` can select it
+  # deliberately rather than by the absence of the other one, and so a
+  # module that's fast today stays fast on purpose, not by accident.
+  "unit: pure, no Postgres/Redis -- safe to run with `pytest -m unit`",
 ]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+# The floor covers only the fast (non-integration) tier -- see the
+# "Fast-tier coverage" CI step in ci.yml, which runs
+# `pytest -m "not integration" --cov --cov-fail-under=<floor>`. Set once
+# from a real measurement (TTLI_Audit_Report_2026-09-02.md M5), not
+# invented; raise it as more pure logic gets extracted and covered, never
+# lower it without a comment saying why.
+skip_covered = false
+show_missing = true
