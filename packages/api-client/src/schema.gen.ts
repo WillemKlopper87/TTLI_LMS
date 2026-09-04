@@ -840,7 +840,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Own Subscription */
+        /**
+         * Get Own Subscription
+         * @description `null` when the caller has no subscription, not a 404.
+         *
+         *     Never having subscribed is the ordinary state for most learners, not
+         *     a failed lookup: as a 404 it put a red error line in the browser
+         *     console and an error-shaped row in the logs on every visit to
+         *     /account/subscription by a normal user. The page already treated the
+         *     absence as "nothing to show", so only the wire shape was wrong.
+         */
         get: operations["get_own_subscription_api_v1_subscriptions_me_get"];
         put?: never;
         post?: never;
@@ -10746,7 +10755,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubscriptionResponse"];
+                    "application/json": components["schemas"]["SubscriptionResponse"] | null;
                 };
             };
         };

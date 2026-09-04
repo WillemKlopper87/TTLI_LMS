@@ -222,15 +222,23 @@ async def subscribe(
     )
 
 
-@router.get("/subscriptions/me", response_model=SubscriptionResponse)
+@router.get("/subscriptions/me", response_model=SubscriptionResponse | None)
 async def get_own_subscription(
     principal: PrincipalDep, session: SessionDep
-) -> SubscriptionResponse:
+) -> SubscriptionResponse | None:
+    """`null` when the caller has no subscription, not a 404.
+
+    Never having subscribed is the ordinary state for most learners, not
+    a failed lookup: as a 404 it put a red error line in the browser
+    console and an error-shaped row in the logs on every visit to
+    /account/subscription by a normal user. The page already treated the
+    absence as "nothing to show", so only the wire shape was wrong.
+    """
     subscription = await subscriptions_service.get_own_subscription(
         session, tenant_id=principal.tenant_id, user_id=principal.user_id
     )
     if subscription is None:
-        raise NotFound("No subscription.")
+        return None
     return _subscription_response(subscription)
 
 
