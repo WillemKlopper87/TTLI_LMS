@@ -67,7 +67,6 @@ export default function TrafficChart({
       <svg
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
-        height="auto"
         role="img"
         aria-labelledby={titleId}
         style={{ display: "block", overflow: "visible" }}
