@@ -16,6 +16,11 @@ const RESPONSE_HEADER_ALLOWLIST = [
   "etag",
   "last-modified",
   "retry-after",
+  // main.py sets this on every response (an inbound one echoed, or a fresh
+  // UUID minted) as the correlation ID for support/log correlation — it
+  // was silently stripped here like everything else not on this allowlist
+  // until now (audit M8).
+  "x-request-id",
 ];
 
 async function forward(request: NextRequest, path: string[]): Promise<NextResponse> {
