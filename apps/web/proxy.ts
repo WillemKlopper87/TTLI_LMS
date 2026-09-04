@@ -54,6 +54,16 @@ export function proxy(request: NextRequest) {
     `img-src 'self' data: https://i.scdn.co`,
     `font-src 'self'`,
     `connect-src 'self'`,
+    // hls.js plays a transcoded lesson through Media Source Extensions,
+    // which attaches a `blob:` URL to the <video> element and demuxes in
+    // a worker created from another one. Without these two the browser
+    // refused the blob against `default-src 'self'` and lesson video did
+    // not play at all -- everywhere except Safari, which plays HLS
+    // natively from the ordinary URL and so never hit it. The segments
+    // themselves are still same-origin (`connect-src 'self'`); `blob:`
+    // here only permits media this page already fetched and assembled.
+    `media-src 'self' blob:`,
+    `worker-src 'self' blob:`,
     // Podcasts (REQ-STORE-04): the one iframe this app embeds, Spotify's
     // own episode player — click-to-load only (SpotifyEmbed.tsx), not
     // injected until the visitor asks for it, pending the cookie-consent
