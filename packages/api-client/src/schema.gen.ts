@@ -664,11 +664,21 @@ export interface paths {
         /**
          * Progress Report
          * @description REQ-TEN-03's report: response shape is determined by policy, not
-         *     by query parameters. A caller who fails any of the three conditions
+         *     by query parameters. A caller who holds the relationship this route
+         *     requires but fails any of the three individual-visibility conditions
          *     still gets the participation list — with every score withheld
-         *     (`score_hidden: true`, `best_quiz_score: null`) and the email masked.
-         *     See `services/reports.py`'s module docstring for why that line moved
-         *     from "no rows at all" to "rows without scores".
+         *     (`score_hidden: true`, `best_quiz_score: null`) and both the email
+         *     and `display_name` masked. See `services/reports.py`'s module
+         *     docstring for why that line moved from "no rows at all" to "rows
+         *     without scores".
+         *
+         *     The route itself is gated tighter than plain membership, though: this
+         *     is the same "manager or admin" relationship `_can_view_individual`
+         *     already treats as privileged for individual visibility, not the
+         *     ordinary `member` relationship a seat holder gets just by having a
+         *     seat assigned to them (`services/organisations.py::assign_seat`) —
+         *     reusing that concept rather than inventing a separate one, same as
+         *     the assigned-seats endpoint above reserves real PII for `require_admin`.
          */
         get: operations["progress_report_api_v1_organisations__organisation_id__reports_progress_get"];
         put?: never;
@@ -2386,7 +2396,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List uploaded video assets */
+        /**
+         * List uploaded video assets
+         * @description H-12: unfiltered, this handed every tenant's video library —
+         *     bespoke courses included — to any `course:edit` holder on the
+         *     platform. `course_id` is nullable (advisory-until-attached, same as
+         *     every other block-attached resource), so an unbound asset stays
+         *     visible to any authorised caller; a bound one is gated by its
+         *     course's own boundary.
+         */
         get: operations["list_video_assets_api_v1_video_assets_get"];
         put?: never;
         /**
