@@ -23,6 +23,17 @@ interface PendingPaymentsPage {
   total: number;
 }
 
+/** `GET /invoices?mine=false` — the tenant's issued invoices, gated on
+ * `order:view`. Only the fields the refund picker needs. */
+interface TenantInvoice {
+  id: string;
+  number: string;
+  issued_at: string;
+  currency: string;
+  grand_total: string;
+  order_id: string;
+}
+
 /**
  * The finance approval queue (REQ-PAY-03). There is no automated approval
  * path — every row here needs a human decision, gated on `payment:approve`.
@@ -38,6 +49,12 @@ export default function PaymentsScreen() {
   const [refundBusy, setRefundBusy] = useState(false);
   const [refundResult, setRefundResult] = useState<string | null>(null);
   const [refundError, setRefundError] = useState<string | null>(null);
+  // A fulfilled order leaves the approval queue above, so its id appeared
+  // nowhere in the admin — the refund box asked for one while telling the
+  // operator to go and find it "on the buyer's own order confirmation or
+  // support request". Issued invoices carry the order id and are gated on
+  // `order:view`, the same read this screen already needs.
+  const [invoices, setInvoices] = useState<TenantInvoice[] | null>(null);
 
   async function load() {
     setError(null);
@@ -53,9 +70,17 @@ export default function PaymentsScreen() {
     setPage(await resp.json());
   }
 
+  async function loadInvoices() {
+    const resp = await authedFetch("/api/bff/invoices?mine=false");
+    if (!resp.ok) return;
+    const body = (await resp.json()) as { items: TenantInvoice[] };
+    setInvoices(body.items);
+  }
+
   useEffect(() => {
     void (async () => {
       await load();
+      await loadInvoices();
     })();
   }, []);
 
@@ -231,9 +256,56 @@ export default function PaymentsScreen() {
         </h2>
         <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
           Full refund only — credits the order&rsquo;s invoice in full, revokes the access it
-          granted, and records the refund. Needs the order&rsquo;s id (not the payment id above);
-          find it on the buyer&rsquo;s own order confirmation or support request.
+          granted, and records the refund. Pick the invoice below to fill in its order id, or
+          paste one you already have.
         </p>
+
+        {invoices && invoices.length > 0 ? (
+          <div className="table-wrap mt-3" style={{ maxHeight: "14rem", overflowY: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Invoice</th>
+                  <th scope="col">Issued</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">Order</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((invoice) => (
+                  <tr key={invoice.id}>
+                    <td className="mono" style={{ fontSize: "0.75rem" }}>
+                      {invoice.number}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {new Date(invoice.issued_at).toLocaleDateString("en-ZA", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </td>
+                    <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {invoice.currency === "ZAR" ? "R" : `${invoice.currency} `}
+                      {Number(invoice.grand_total).toLocaleString("en-ZA", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--quiet"
+                        aria-label={`Refund the order behind invoice ${invoice.number}`}
+                        onClick={() => setRefundOrderId(invoice.order_id)}
+                      >
+                        Use this order
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             className="input"
