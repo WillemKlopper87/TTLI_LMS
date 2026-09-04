@@ -28,10 +28,10 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Leads", href: "/admin/leads" },
   { label: "Deals", href: "/admin/deals" },
   { label: "Campaigns", href: "/admin/campaigns" },
-  { label: "Payments", href: "/admin/payments" },
-  { label: "Analytics", href: "/admin/analytics" },
+  { label: "Payments", href: "/admin/payments", permission: "payment:approve" },
+  { label: "Analytics", href: "/admin/analytics", permission: "analytics:view" },
   { label: "Reports", href: "/admin/reports/courses" },
-  { label: "Audit log", href: "/admin/audit" },
+  { label: "Audit log", href: "/admin/audit", permission: "audit:read" },
   { label: "People", href: "/admin/people" },
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
@@ -40,14 +40,25 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Podcasts", href: "/admin/podcasts" },
   { label: "Articles", href: "/admin/articles" },
   { label: "Recommendations", href: "/admin/recommendations" },
-  { label: "Grading", href: "/admin/grading" },
+  { label: "Grading", href: "/admin/grading", permission: "quiz:grade" },
   { label: "Surveys", href: "/admin/surveys" },
   { label: "Question bank", href: "/admin/question-bank" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
   { label: "Templates", href: "/admin/templates" },
-  { label: "Settings", href: "/admin/settings" },
+  { label: "Settings", href: "/admin/settings", permission: "settings:manage" },
   { label: "Platform", href: "/admin/platform", permission: "settings:manage" },
 ];
+
+/* Everything guest/learner hold (migration 0002's ROLES). Holding only
+   these means the caller is a learner, not staff — every staff role
+   carries at least one permission outside this set, so a permission
+   added later counts as staff automatically rather than silently
+   admitting learners. */
+const LEARNER_PERMISSIONS = new Set(["course:view", "lesson:complete"]);
+
+function isStaff(permissions: string[]): boolean {
+  return permissions.some((p) => !LEARNER_PERMISSIONS.has(p));
+}
 // Nothing is inert any more. "Reports" left this list when Pass A gave it
 // a real destination, and "Learners" became "People" when Pass C built
 // staff administration — the organisations half of that screen is still
@@ -71,7 +82,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     authedFetch("/api/bff/auth/me")
       .then(async (resp) => {
         if (!resp.ok) throw new Error("unauthenticated");
-        setMe(await resp.json());
+        // Authorisation, not just authentication: this layout only ever
+        // checked that someone was signed in, so a learner opening
+        // /admin got the whole operations shell -- every section name in
+        // the sidebar, all of them navigable, each page then 403ing from
+        // the API. Nothing leaked, but it is not their screen.
+        const body: Me = await resp.json();
+        if (!isStaff(body.permissions)) {
+          router.replace("/learn");
+          return;
+        }
+        setMe(body);
       })
       .catch(() => router.replace("/login"));
     fetch("/api/bff/tenant/theme")
