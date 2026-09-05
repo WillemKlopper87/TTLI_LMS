@@ -81,7 +81,19 @@ async def run_transcode(
             if len(stderr_tail) > 50:
                 stderr_tail.pop(0)
 
-    await asyncio.gather(_drain_stdout(proc.stdout), _drain_stderr(proc.stderr), proc.wait())
+    try:
+        await asyncio.gather(_drain_stdout(proc.stdout), _drain_stderr(proc.stderr), proc.wait())
+    except asyncio.CancelledError:
+        # The worker's job timeout cancels this coroutine; ffmpeg is a
+        # separate OS process and would otherwise keep transcoding an
+        # asset nobody is waiting for any more, holding a CPU and the
+        # temporary directory the caller is about to delete out from
+        # under it (fable5.1 review H-5). Kill, reap, and let the
+        # cancellation continue on its way — never swallowed.
+        if proc.returncode is None:
+            proc.kill()
+            await asyncio.shield(proc.wait())
+        raise
 
     if proc.returncode != 0:
         tail = b"".join(stderr_tail).decode(errors="replace").strip()

@@ -7,6 +7,7 @@ running worker process.
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import uuid
 from datetime import UTC, datetime
@@ -34,6 +35,14 @@ _CONTENT_TYPES = {
 
 def _content_type_for(filename: str) -> str:
     return _CONTENT_TYPES.get(Path(filename).suffix, "application/octet-stream")
+
+
+# `video_assets.state` has always used "failed"; `transcode_jobs.state` was
+# written as "error" while `services/operations.py` queried it for
+# "failed", so the operations screen's "needs attention" list has never
+# shown a failed transcode. One spelling, and the query accepts the old
+# one so rows already written stay visible.
+FAILED_STATE = "failed"
 
 
 def _object_prefix(video_asset_id: uuid.UUID) -> str:
@@ -115,12 +124,33 @@ async def transcode_video_asset(
             log.info("transcode_ready", video_asset_id=str(video_asset_id))
         except (TranscodeFailed, ffmpeg_service.FfmpegError) as exc:
             asset.state = "failed"
-            job.state = "error"
+            job.state = FAILED_STATE
             job.error = str(exc)
             job.finished_at = datetime.now(UTC)
             log.error("transcode_failed", video_asset_id=str(video_asset_id), error=str(exc))
+        except asyncio.CancelledError:
+            # The worker cancels this on its job timeout, and a shutdown
+            # cancels it too. Without this the asset stayed `transcoding`
+            # for ever: that state was committed before ffmpeg started,
+            # nothing else ever writes it, and the operations screen only
+            # lists *failed* jobs — so the asset was invisible to the one
+            # screen meant to surface it (fable5.1 review H-5).
+            #
+            # `shield` because the commit is itself an await inside a
+            # cancelled task: without it the rollback would be the last
+            # thing that happened and the row would stay stuck anyway.
+            asset.state = "failed"
+            job.state = FAILED_STATE
+            job.error = (
+                "The transcode was cancelled before it finished — most likely the worker's "
+                "job timeout. Re-upload or re-queue the asset to try again."
+            )
+            job.finished_at = datetime.now(UTC)
+            log.error("transcode_cancelled", video_asset_id=str(video_asset_id))
+            await asyncio.shield(session.commit())
+            raise
 
         await session.commit()
 
 
-__all__ = ["transcode_video_asset"]
+__all__ = ["FAILED_STATE", "transcode_video_asset"]

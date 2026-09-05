@@ -101,3 +101,18 @@ def test_development_app_db_password_is_refused() -> None:
 def test_localhost_redis_in_production_is_refused() -> None:
     problems = check_production_safety(_settings(redis_url="redis://localhost:6399/0"))
     assert any("REDIS_URL" in p for p in problems)
+
+
+def test_the_transcode_job_carries_an_explicit_timeout() -> None:
+    """arq's own default is 300 seconds, which silently cancels any
+    transcode longer than five minutes — i.e. most real lecture video
+    (fable5.1 review H-5). The point is that the value is *ours*, chosen
+    and visible, rather than a framework default nobody looked at.
+    """
+    from src.workers.main import WorkerSettings
+
+    transcode = next(
+        f for f in WorkerSettings.functions if getattr(f, "name", "") == "transcode_video_job"
+    )
+    assert transcode.timeout_s == _settings().transcode_job_timeout_seconds
+    assert transcode.timeout_s > 300, "still inside arq's default, which is the bug"

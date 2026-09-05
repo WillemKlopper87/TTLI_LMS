@@ -302,7 +302,17 @@ class WorkerSettings:
         # transcode_jobs in a clean 'failed' state with the real error
         # (pipeline.py's except clause) — a bare retry would just re-run
         # the same doomed ffmpeg invocation.
-        func(transcode_video_job, max_tries=1),
+        #
+        # An explicit timeout because arq's default `job_timeout` is
+        # 300s: a transcode of anything longer than a few minutes was
+        # being cancelled mid-flight, and the cancellation was handled
+        # nowhere. `func()` spells the per-function override `timeout`;
+        # the Worker-level setting of the same idea is `job_timeout`.
+        func(
+            transcode_video_job,
+            max_tries=1,
+            timeout=get_settings().transcode_job_timeout_seconds,
+        ),
         send_workshop_reminders,
         send_eft_ageing_alerts,
     ]

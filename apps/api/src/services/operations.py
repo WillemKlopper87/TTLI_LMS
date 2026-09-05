@@ -211,7 +211,10 @@ async def _failed_transcodes(
         .join(Course, Course.id == Module.course_id)
         .where(
             Course.id.in_(_tenant_courses(tenant_id)),
-            TranscodeJob.state == "failed",
+            # "error" is what this column was written as before the
+            # spelling was unified (services/media/pipeline.py); rows
+            # from then are still worth showing.
+            TranscodeJob.state.in_(("failed", "error")),
         )
         .order_by(TranscodeJob.finished_at.desc().nullslast())
         .limit(ATTENTION_LIMIT)

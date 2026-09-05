@@ -153,6 +153,13 @@ class Settings(BaseSettings):
     # --- Media pipeline (06 §3, 02 §5.4/5.5) ---
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
+    # arq's own default is 300s, which silently cancels any transcode
+    # longer than five minutes — i.e. most real lecture video (fable5.1
+    # review H-5). Six hours is a ceiling for a stuck job, not a target:
+    # a genuine transcode that reaches it is wrong in some other way, and
+    # the cancellation now leaves a failed row saying so rather than an
+    # asset stuck on "transcoding".
+    transcode_job_timeout_seconds: int = 21_600
     # 0040's as-is bypass: StorageService.get_object has no byte-range
     # support in any adapter, so a progressive file is served as one
     # full-body response, transiting API-process memory per request.
