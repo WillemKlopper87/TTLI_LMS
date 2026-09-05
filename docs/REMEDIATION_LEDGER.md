@@ -209,6 +209,9 @@ this run.
 | **H-15** | SSO cannot complete in the browser — `/auth/sso/callback` does not exist and the BFF routes are dead | DONE | `tests/test_sso.py` (deep-link round trip, default, off-site refusal, plus a parametrised `safe_next_path` unit test); `apps/web/e2e/sso.spec.ts` (new, 5 cases incl. axe) | `fe28409` | The server half needed no correctness fix; what was missing was the callback page and the entry button. The parked `next` is now returned as `next_path` and sanitised on both sides (`services/oidc.py::safe_next_path`) — it arrives from an anonymous query parameter and ends up as somewhere the browser is told to go. A full round trip against a **real** IdP is still untested; `tests/test_sso.py`'s fake provider at the HTTP boundary is what covers the protocol. |
 | **H-16** | A tenant logo upload crashes `/login` and the admin shell for that tenant | DONE | `tests/test_tenant_users.py` (served-as-URL, no-logo 404; the existing upload test now asserts the stored key against the database rather than the response) | `cec15f8` | `GET /tenant/branding/logo` streams the object and both theme reads resolve a stored key to it; `lib/theme-assets.ts` maps that to its BFF path and drops anything it cannot vouch for. `app/error.tsx` + `app/global-error.tsx` are the boundaries whose absence turned the render throw into a whole-tenant 500 — the app had none anywhere. Verified live through the BFF (upload → theme → `/login` renders → bytes served). |
 | **H-17** | Session bootstrap and rotation have no failure path | DONE | `apps/web/e2e/session-refresh.spec.ts::a transport failure never signs an admin out` (both halves: `/auth/me` aborted at the transport layer, and a products 401 whose refresh is answered 503) | `6f91538`, `417894d` | The refresh now reports three outcomes — only 401/403 ends a session; a transport failure, 5xx or unparseable 200 retries at 1s/3s/8s and leaves the session alone. The admin shell no longer treats every failure of its identity call as a sign-out. The "most busy flags have no try/finally" half was fixed in the transport rather than at forty call sites: `lib/bff-fetch.ts::unreachable` resolves a transport failure to a 503 carrying the API's own error envelope, and both `authedFetch` and the new `bffFetch` use it, so each caller's existing `!resp.ok` branch does the work. |
+| **H-5** | arq's default 300s `job_timeout` cancels real transcodes, orphans ffmpeg and leaves the asset stuck on `transcoding` | DONE | `tests/test_transcode_cancellation.py` (new: the child is killed and reaped; a real task cancellation leaves a `failed` row); `tests/test_config.py` (the timeout is ours, not arq's) | `c26df6f` | Three faults: no explicit timeout (`TRANSCODE_JOB_TIMEOUT_SECONDS`, 6h), no cancellation handling (the handler's commit is shielded — the cancellation is a real task cancellation, so without the shield the rollback would win), and no kill of the ffmpeg child (measured: without the kill the child is still running after the cancel). Found en route and fixed here: the pipeline wrote `transcode_jobs.state = "error"` while `services/operations.py` queried it for `"failed"`, so the operations screen has never shown *any* failed transcode. Not covered: `_failed_transcodes`' own join chain — reaching it needs a whole course/module/lesson/block/asset fixture no existing test builds. |
+| **H-14** | Argon2 password verification (~250ms) runs synchronously on the event loop | DONE | `tests/test_security.py` (the wrappers agree with the blocking versions both ways; a ticker keeps running through a verification; a source check that the identity service uses no blocking primitive but `_DUMMY_HASH`) | `63a48c4` | `hash_password_async` / `verify_password_async` wrap both primitives in `asyncio.to_thread`, as this repo already does for storage, pywebpush and SMTP. All seven call sites on the login, magic-link, reset and provisioning paths await them, the timing-equalisation dummy verifications included. Measured before committing: 0 ticks through the blocking call, 8 through the wrapper. The blocking names stay for migration `0002`, the seed script and the unit tests. |
+| **M-4** | `POST /auth/sso/start` runs uncached, synchronous DNS on the event loop, anonymous and unlimited | DONE | `tests/test_sso.py` (a deliberately slow resolver, with the loop still ticking through it; a discovery document fetched once and then served from cache, while an uncached caller still gets a live fetch) | *this commit* | Four things: `assert_reachable_publicly` is now async and uses the loop's own resolver; discovery is cached in Redis for an hour (invalidated when `PUT /tenant/sso` changes an issuer, and never consulted by that endpoint, since contacting the issuer *is* its validation); `POST /auth/sso/start` gained a per-IP budget (`rate_limit.SSO_START`, 30/min). The fourth was not in the finding's text and is the larger stall: `validate` fetched the JWKS over TLS **synchronously** from the async callback handler and built a fresh `PyJWKClient` each time, throwing away that library's own key cache. Now `validate_async` via `to_thread`, over a client memoised per JWKS URI. |
 
 ### Commits made by the 2026-09-03 pass
 
@@ -219,7 +222,7 @@ this run.
 | `dcd2c93` | Committed the previously-untracked `0041_lesson_blocks.py` migration — every migration `0042` onward depended on a file that was never in git. |
 | `8612d67` | Regenerated `packages/api-client/src/schema.gen.ts` for H-12/H-13's docstring changes. |
 
-### Commits made by the 2026-09-05 pass (§8 step 7)
+### Commits made by the 2026-09-05 pass (§8 steps 7 and 8)
 
 | Commit | What |
 |---|---|
@@ -228,6 +231,9 @@ this run.
 | `417894d` | H-17, second half — `lib/bff-fetch.ts`; a transport failure resolves to a 503 envelope for both transports instead of rejecting past every `setBusy(false)`. |
 | `7d1debb` | Unblocked the finance e2e: it located its row by buyer email on a shared dev database, so one dead run's leftover pending payment broke every run after it. |
 | `fe28409` | H-15 — the callback page, the sign-in button, and `next_path` returned and sanitised on both sides. |
+| `63a48c4` | H-14 — Argon2 hashing and verification moved off the event loop. |
+| `c26df6f` | H-5 — explicit transcode timeout, a cancelled job recorded as failed, the ffmpeg child killed, and one spelling for a failed job. |
+| *this commit* | M-4 — async DNS in the egress guard, cached discovery, a per-IP budget on the anonymous SSO start, and the JWKS fetch off the loop. |
 
 **Gate at the end of this pass.** Full API suite: green on a **fresh**
 `ttli_test` (the database is created once and never dropped, so it
@@ -263,12 +269,10 @@ picked up next, in this order:
 ~~**§8 step 7 — web session/SSO reliability**~~ — **DONE 2026-09-05**
 (H-15, H-16, H-17; rows in the Findings table above).
 
-**Next (§8 step 8 — event-loop blocking):**
-- **H-5** — arq's default 300s `job_timeout` is unset; a cancelled transcode leaves `asset.state="transcoding"` forever and orphans the ffmpeg child.
-- **H-14** — Argon2 password verification (~250ms) runs synchronously on the event loop with no `to_thread`.
-- **M-4** — `POST /auth/sso/start` runs uncached, synchronous DNS resolution on the event loop, anonymous and unlimited.
+~~**§8 step 8 — event-loop blocking**~~ — **DONE 2026-09-05**
+(H-5, H-14, M-4; rows in the Findings table above).
 
-**§8 step 9 — production-safety guard and backups:**
+**Next (§8 step 9 — production-safety guard and backups):**
 - **H-19** — `check_production_safety` checks a MinIO-era key, not the Garage key this repo actually commits; unchecked for staging; no live-Payfast-credentials-with-sandbox-flag check.
 - **H-20** — backup is a nightly logical dump with no restore path, no restore rehearsal, and no Garage (object storage) backup at all, contradicting the ops doc's stated PITR/15-min-RPO promise.
 

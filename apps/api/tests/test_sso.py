@@ -14,8 +14,10 @@ the flow a provider to talk to without a network.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import socket
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -122,10 +124,12 @@ class FakeIdp(httpx.AsyncBaseTransport):
         self.id_token: str | None = None
         self.token_status = 200
         self.token_requests: list[dict[str, str]] = []
+        self.discovery_requests = 0
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if url.endswith("/.well-known/openid-configuration"):
+            self.discovery_requests += 1
             return httpx.Response(
                 200,
                 json={
@@ -160,15 +164,18 @@ def fake_idp(monkeypatch: pytest.MonkeyPatch) -> FakeIdp:
     # so leaving it in would make every flow test fail on DNS rather
     # than on anything about OIDC. It has its own tests below, against
     # literal addresses that need no resolver.
-    monkeypatch.setattr(oidc, "assert_reachable_publicly", lambda url, **kw: None)
+    async def _allow(url: str, **kw: Any) -> None:
+        return None
+
+    monkeypatch.setattr(oidc, "assert_reachable_publicly", _allow)
     # PyJWKClient fetches JWKS with urllib, not httpx, so it is pointed
     # at the same key material directly.
     monkeypatch.setattr(oidc.httpx, "AsyncClient", patched)
-    monkeypatch.setattr(
-        oidc,
-        "PyJWKClient",
-        lambda uri: _StubJwkClient(),
-    )
+    # `_jwk_client`, not `PyJWKClient`: the real one is now memoised per
+    # JWKS URI for the process's life (so a sign-in does not re-fetch the
+    # key set every time), and patching the class would leave a stub in
+    # that cache for every test after this one.
+    monkeypatch.setattr(oidc, "_jwk_client", lambda uri: _StubJwkClient())
     return idp
 
 
@@ -515,7 +522,9 @@ async def test_a_wrong_binding_burns_the_state(  # type: ignore[no-untyped-def]
         ("https:///no-host", "a URL naming no host"),
     ],
 )
-def test_the_egress_guard_refuses_what_no_identity_provider_should_be(url: str, why: str) -> None:
+async def test_the_egress_guard_refuses_what_no_identity_provider_should_be(
+    url: str, why: str
+) -> None:
     """Post-authentication SSRF: the issuer is set by a tenant admin, so
     this is privileged — but it is still this server making a request to
     an address somebody else chose, and `PUT /tenant/sso` contacts the
@@ -524,17 +533,17 @@ def test_the_egress_guard_refuses_what_no_identity_provider_should_be(url: str, 
     Literal addresses throughout: the guard resolves hostnames, and a
     test that needs a resolver is a test that fails on a train."""
     with pytest.raises(oidc.SsoError):
-        oidc.assert_reachable_publicly(url)
+        await oidc.assert_reachable_publicly(url)
 
 
-def test_the_egress_guard_allows_a_public_https_host() -> None:
-    oidc.assert_reachable_publicly("https://8.8.8.8/.well-known/openid-configuration")
+async def test_the_egress_guard_allows_a_public_https_host() -> None:
+    await oidc.assert_reachable_publicly("https://8.8.8.8/.well-known/openid-configuration")
 
 
-def test_the_egress_guard_relaxes_only_when_the_caller_says_so() -> None:
+async def test_the_egress_guard_relaxes_only_when_the_caller_says_so() -> None:
     """A developer running a mock IdP on localhost needs both halves
     relaxed — scheme and address — and only outside production."""
-    oidc.assert_reachable_publicly("http://127.0.0.1:9999/", allow_local=True)
+    await oidc.assert_reachable_publicly("http://127.0.0.1:9999/", allow_local=True)
 
 
 async def test_the_callback_returns_the_deep_link_it_parked(  # type: ignore[no-untyped-def]
@@ -615,3 +624,75 @@ def test_safe_next_path_refuses_anywhere_but_this_site(candidate: str | None) ->
 @pytest.mark.parametrize("candidate", ["/learn", "/admin/catalogue", "/learn/abc?tab=quiz"])
 def test_safe_next_path_keeps_a_path_on_this_site(candidate: str) -> None:
     assert oidc.safe_next_path(candidate) == candidate
+
+
+async def test_resolving_an_issuer_leaves_the_event_loop_running(  # type: ignore[no-untyped-def]
+    monkeypatch,
+) -> None:
+    """fable5.1 review M-4. `socket.getaddrinfo` is a synchronous network
+    round-trip, and `POST /auth/sso/start` is anonymous and did four of
+    them per discovery. Called straight from the handler, a slow resolver
+    stalled the entire process.
+
+    The resolver is made slow on purpose — a literal address resolves too
+    fast to tell the two implementations apart — and what is asserted is
+    that the loop kept running through it, which is exactly what the old
+    code could not do.
+    """
+    real_getaddrinfo = socket.getaddrinfo
+
+    def slow_getaddrinfo(*args: Any, **kwargs: Any) -> Any:
+        time.sleep(0.2)
+        return real_getaddrinfo(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", slow_getaddrinfo)
+
+    ticks = 0
+    stop = False
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while not stop:
+            ticks += 1
+            await asyncio.sleep(0.001)
+
+    task = asyncio.create_task(ticker())
+    await asyncio.sleep(0.01)
+    before = ticks
+
+    await oidc.assert_reachable_publicly("https://8.8.8.8/.well-known/openid-configuration")
+
+    after = ticks
+    stop = True
+    await task
+    assert after > before, "the event loop made no progress during the lookup"
+
+
+async def test_a_discovery_document_is_fetched_once_and_then_cached(  # type: ignore[no-untyped-def]
+    settings, fake_idp
+) -> None:
+    """Every sign-in — start and callback both — re-fetched a document
+    that changes about once a year, over TLS, with four DNS lookups
+    behind it, from an endpoint an anonymous caller can reach as often as
+    they like (fable5.1 review M-4)."""
+    if not _redis_reachable(settings.redis_url):
+        pytest.skip("no Redis on the configured REDIS_URL")
+
+    redis = init_redis(settings)
+    await redis.delete(f"oidc:discovery:{ISSUER}")
+
+    first = await oidc.discover(ISSUER, allow_local=True, redis=redis)
+    second = await oidc.discover(ISSUER, allow_local=True, redis=redis)
+
+    assert first == second
+    assert fake_idp.discovery_requests == 1, (
+        f"the document was fetched {fake_idp.discovery_requests} times"
+    )
+
+    # Uncached callers still get a live fetch — `PUT /tenant/sso` relies
+    # on that, since contacting the issuer *is* its validation.
+    await oidc.discover(ISSUER, allow_local=True)
+    assert fake_idp.discovery_requests == 2
+
+    await redis.delete(f"oidc:discovery:{ISSUER}")
+    await dispose_redis()

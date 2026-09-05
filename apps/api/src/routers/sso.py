@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from pydantic import BaseModel, Field
 
 from src.core.config import Settings
@@ -51,7 +51,7 @@ from src.schemas.sso import (
     SsoConfigResponse,
     SsoStartResponse,
 )
-from src.services import audit, identity, oidc, tokens
+from src.services import audit, identity, oidc, rate_limit, tokens
 from src.services import tenant_users as people
 
 router = APIRouter(tags=["auth"])
@@ -112,6 +112,10 @@ async def sso_available(session: SessionDep, tenant: TenantDep) -> SsoAvailableR
     "/auth/sso/start",
     response_model=SsoStartResponse,
     summary="Begin an SSO login — returns the URL to send the browser to",
+    # Anonymous by necessity, so the budget is the only thing bounding how
+    # often a stranger can make this server fetch a discovery document and
+    # resolve four hostnames.
+    dependencies=[Depends(rate_limit.rate_limited(rate_limit.SSO_START))],
 )
 async def sso_start(
     request: Request,
@@ -125,7 +129,9 @@ async def sso_start(
     if config is None:
         raise NotFound("This organisation does not use single sign-on.")
 
-    discovery = await oidc.discover(config.issuer, allow_local=not settings.is_production)
+    discovery = await oidc.discover(
+        config.issuer, allow_local=not settings.is_production, redis=redis
+    )
     started = await oidc.begin(
         redis,
         config=config,
@@ -167,7 +173,9 @@ async def sso_callback(
     if config is None:
         raise NotFound("This organisation does not use single sign-on.")
 
-    discovery = await oidc.discover(config.issuer, allow_local=not settings.is_production)
+    discovery = await oidc.discover(
+        config.issuer, allow_local=not settings.is_production, redis=redis
+    )
     id_token = await oidc.exchange(
         config=config,
         crypto=crypto,
@@ -179,7 +187,7 @@ async def sso_callback(
         # fallback for it to drift to.
         redirect_uri=str(parked["redirect_uri"]),
     )
-    asserted = oidc.validate(
+    asserted = await oidc.validate_async(
         id_token=id_token, config=config, discovery=discovery, nonce=str(parked["nonce"])
     )
     oidc.assert_domain_allowed(asserted.email, config)
@@ -290,12 +298,19 @@ async def put_sso_config(
     session: AuditedSessionDep,
     crypto: CryptoDep,
     settings: SettingsDep,
+    redis: RedisDep,
 ) -> SsoConfigResponse:
     """The issuer is contacted before the config is saved. A tenant that
     mistypes it should find out here, not at the moment a colleague
     cannot sign in."""
     principal.require(MANAGE)
+    # Deliberately uncached: this call *is* the check that the issuer is
+    # real and reachable, and an admin correcting a mistake must not be
+    # answered from an hour-old copy of the document they are fixing.
     await oidc.discover(body.issuer, allow_local=not settings.is_production)
+    # Any cached document for this issuer predates whatever is being
+    # saved now, so it goes with it.
+    await redis.delete(f"oidc:discovery:{body.issuer}")
 
     for role_code in {*body.group_role_map.values(), *([body.default_role_code] or [])}:
         if role_code:

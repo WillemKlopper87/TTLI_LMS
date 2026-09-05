@@ -37,13 +37,14 @@ rather than as an argument.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import dataclasses
 import hashlib
 import hmac
 import ipaddress
 import json
 import secrets
-import socket
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -67,6 +68,11 @@ STATE_TTL_SECONDS = 600
 # Where an SSO login lands when it carried no deep link of its own.
 DEFAULT_NEXT_PATH = "/learn"
 DISCOVERY_TIMEOUT = 8.0
+# How long a discovery document is reused. It names four public
+# endpoints and changes about once a year; an hour is short enough
+# that a provider genuinely moving one is picked up the same working
+# day, and long enough that a burst of sign-ins costs one fetch.
+DISCOVERY_CACHE_SECONDS = 3600
 
 
 class SsoError(AppError):
@@ -109,12 +115,49 @@ async def get_config(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def discover(issuer: str, *, allow_local: bool = False) -> Discovery:
+async def discover(
+    issuer: str, *, allow_local: bool = False, redis: Redis | None = None
+) -> Discovery:
     """Read the IdP's own discovery document rather than guessing
     endpoint shapes. Entra, Okta and Google all differ in path, and a
-    hardcoded template is a support ticket per provider."""
+    hardcoded template is a support ticket per provider.
+
+    Cached in Redis when a client is given. Every sign-in — start and
+    callback both — was re-fetching a document that changes about once a
+    year, over TLS, with four DNS lookups behind it, from an endpoint an
+    anonymous caller can reach as often as they like (fable5.1 review
+    M-4). The cache holds only the four endpoint strings, all of which
+    are already public; it is a network round-trip saved, not a secret
+    stored.
+    """
+    cache_key = f"oidc:discovery:{issuer}"
+    if redis is not None:
+        cached = await redis.get(cache_key)
+        if cached:
+            try:
+                found = Discovery(**json.loads(cached))
+            except (ValueError, TypeError):
+                # A malformed or stale-shaped entry is not worth failing a
+                # login over; fall through and fetch it again.
+                await redis.delete(cache_key)
+            else:
+                # The egress guard runs on every *use*, not only on the
+                # fetch. What is cached is the document — the TLS round
+                # trip and the JSON — never the verdict that its
+                # endpoints are safe to contact. Skipping the check here
+                # would widen this module's one stated residual risk (a
+                # name that resolves publicly at check time and privately
+                # at connect time) from milliseconds to an hour.
+                for endpoint in (
+                    found.authorization_endpoint,
+                    found.token_endpoint,
+                    found.jwks_uri,
+                ):
+                    await assert_reachable_publicly(endpoint, allow_local=allow_local)
+                return found
+
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
-    assert_reachable_publicly(url, allow_local=allow_local)
+    await assert_reachable_publicly(url, allow_local=allow_local)
     try:
         # follow_redirects stays off (httpx's default): a redirect is how
         # a public issuer URL would otherwise be turned into a fetch of
@@ -144,7 +187,7 @@ async def discover(issuer: str, *, allow_local: bool = False) -> Discovery:
     # The endpoints come out of a document, and a document can name
     # anything. Each one is checked before it is ever fetched.
     for endpoint in (found.authorization_endpoint, found.token_endpoint, found.jwks_uri):
-        assert_reachable_publicly(endpoint, allow_local=allow_local)
+        await assert_reachable_publicly(endpoint, allow_local=allow_local)
 
     # The discovery document must agree with the issuer we asked about,
     # or a redirect has moved us to somebody else's provider.
@@ -153,10 +196,17 @@ async def discover(issuer: str, *, allow_local: bool = False) -> Discovery:
             "The identity provider's discovery document names a different issuer.",
             {"configured": issuer, "document": found.issuer},
         )
+
+    if redis is not None:
+        # Only after every check above has passed, so a document that was
+        # refused is never the one served from cache next time.
+        await redis.set(
+            cache_key, json.dumps(dataclasses.asdict(found)), ex=DISCOVERY_CACHE_SECONDS
+        )
     return found
 
 
-def assert_reachable_publicly(url: str, *, allow_local: bool = False) -> None:
+async def assert_reachable_publicly(url: str, *, allow_local: bool = False) -> None:
     """Refuse to make a request to anything that is not a public host.
 
     Every URL this module fetches is ultimately named by a tenant
@@ -190,7 +240,15 @@ def assert_reachable_publicly(url: str, *, allow_local: bool = False) -> None:
         raise SsoError("That identity provider URL names no host.", {"url": url})
 
     try:
-        resolved = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
+        # The loop's own resolver, which runs getaddrinfo in an executor.
+        # Called directly this is a synchronous network round-trip on the
+        # event loop — against a slow or hostile resolver, seconds of it,
+        # on an endpoint anonymous callers can reach (fable5.1 review
+        # M-4). Four of them per discovery, at that: once for the document
+        # and once for each endpoint it names.
+        resolved = await asyncio.get_running_loop().getaddrinfo(
+            host, parts.port or (443 if parts.scheme == "https" else 80)
+        )
     except OSError as exc:
         raise SsoError("That identity provider's hostname could not be resolved.") from exc
 
@@ -366,17 +424,53 @@ async def exchange(
     return id_token
 
 
+# One client per JWKS URI, kept for the process's life. PyJWKClient caches
+# the fetched key set internally, and a fresh client per call threw that
+# cache away — so every single sign-in fetched the provider's whole key
+# set over TLS again. Bounded by the number of configured issuers, which
+# is one per tenant.
+_jwk_clients: dict[str, PyJWKClient] = {}
+
+
+def _jwk_client(jwks_uri: str) -> PyJWKClient:
+    client = _jwk_clients.get(jwks_uri)
+    if client is None:
+        client = PyJWKClient(jwks_uri, cache_keys=True)
+        _jwk_clients[jwks_uri] = client
+    return client
+
+
+async def validate_async(
+    *, id_token: str, config: TenantIdpConfig, discovery: Discovery, nonce: str
+) -> SsoIdentity:
+    """`validate` off the event loop.
+
+    Fetching the JWKS is a synchronous HTTPS round-trip inside
+    `PyJWKClient`, and the RS256 verification after it is CPU work. Run
+    directly from the callback handler — which is what happened — that is
+    the whole process stalled on somebody else's server for as long as it
+    takes them to answer. Same class of defect as the DNS resolution in
+    `assert_reachable_publicly` (fable5.1 review M-4), and a much bigger
+    stall.
+    """
+    return await asyncio.to_thread(
+        validate, id_token=id_token, config=config, discovery=discovery, nonce=nonce
+    )
+
+
 def validate(
     *, id_token: str, config: TenantIdpConfig, discovery: Discovery, nonce: str
 ) -> SsoIdentity:
     """Signature, issuer, audience, expiry, nonce — then the claims.
+
+    Blocking: async callers want `validate_async` above.
 
     The JWKS URI comes from the discovery document of the configured
     issuer, never from the token: a token that could name its own key
     source would validate against a key its author controls.
     """
     try:
-        signing_key = PyJWKClient(discovery.jwks_uri).get_signing_key_from_jwt(id_token)
+        signing_key = _jwk_client(discovery.jwks_uri).get_signing_key_from_jwt(id_token)
         claims = jwt.decode(
             id_token,
             signing_key.key,
@@ -445,6 +539,7 @@ def roles_for(identity: SsoIdentity, config: TenantIdpConfig) -> list[str]:
 
 __all__ = [
     "DEFAULT_NEXT_PATH",
+    "DISCOVERY_CACHE_SECONDS",
     "STATE_TTL_SECONDS",
     "Discovery",
     "SsoError",
@@ -460,4 +555,5 @@ __all__ = [
     "safe_next_path",
     "take_state",
     "validate",
+    "validate_async",
 ]

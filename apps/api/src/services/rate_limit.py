@@ -70,6 +70,15 @@ LOGIN_ACCOUNT = RouteClass("auth:account", limit=5, window_seconds=60)
 LEADS = RouteClass("leads", limit=5, window_seconds=3600)
 GUEST_ACCESS = RouteClass("guest-access", limit=5, window_seconds=3600)
 
+# Starting an SSO login. Anonymous by necessity — it is how somebody
+# without a session gets one — and each hit made this server fetch a
+# remote discovery document and resolve four hostnames, so it was an
+# amplifier pointed at whatever the tenant configured as well as at
+# ourselves (fable5.1 review M-4). Generous against a real person, who
+# starts one login and leaves for their IdP: an office behind one
+# address signing in for the morning stays well inside it.
+SSO_START = RouteClass("sso-start", limit=30, window_seconds=60)
+
 # A credential's public verification page — low-volume by nature (someone
 # checking one certificate).
 PUBLIC_VERIFY = RouteClass("verify", limit=20, window_seconds=3600)
