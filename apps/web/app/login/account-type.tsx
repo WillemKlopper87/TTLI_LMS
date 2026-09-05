@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { LoginForm } from "./login-form";
+import { SsoButton } from "./sso-button";
 
 /**
  * Individual / Organisation sign-in (design doc §5 item 20).
@@ -16,11 +17,18 @@ import { LoginForm } from "./login-form";
  * organisation user signing in at the shared host would be
  * authenticating against the wrong tenant entirely.
  *
- * So the Organisation tab does the one thing it can honestly do today:
+ * So the Organisation tab does the one thing it can honestly do here:
  * take the workspace name and send the visitor to their own subdomain's
- * login. It does not pretend to offer SSO — no SAML/OIDC provider is
- * implemented (see the feature-matrix audit) — and says so rather than
- * showing a button that would fail.
+ * login, where their own tenant is the one authenticating them — and,
+ * if that tenant has configured an identity provider, where the SSO
+ * button appears.
+ *
+ * That button (SsoButton, on the Individual panel) renders only when
+ * `GET /auth/sso/available` says this tenant has an IdP, so the shared
+ * host shows nothing and a configured workspace leads with it. The copy
+ * here used to say SSO was not implemented at all; the flow was in fact
+ * built end to end except for the browser half, which is what fable5.1
+ * review H-15 was about.
  */
 export function AccountTypeSignIn({ baseHost }: { baseHost: string }) {
   const [tab, setTab] = useState<"individual" | "organisation">("individual");
@@ -54,6 +62,8 @@ export function AccountTypeSignIn({ baseHost }: { baseHost: string }) {
 
       {tab === "individual" ? (
         <div className="panel" role="tabpanel" aria-label="Individual sign-in">
+          {/* Renders nothing unless this tenant has an IdP configured. */}
+          <SsoButton />
           <LoginForm />
           <p
             style={{
@@ -104,8 +114,9 @@ export function AccountTypeSignIn({ baseHost }: { baseHost: string }) {
           </a>
           <div className="callout">
             <b>Don&rsquo;t know your workspace name?</b>
-            Your administrator set it up — it is the address your team uses to sign in. If your
-            organisation hasn&rsquo;t been set up yet,{" "}
+            Your administrator set it up — it is the address your team uses to sign in, and where
+            single sign-on appears if your organisation uses it. If your organisation
+            hasn&rsquo;t been set up yet,{" "}
             <Link href="/for-organisations">read how corporate accounts work</Link>.
           </div>
         </div>

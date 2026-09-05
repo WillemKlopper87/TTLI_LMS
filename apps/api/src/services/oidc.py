@@ -64,6 +64,8 @@ from src.models.sso import TenantIdpConfig
 # prompt, short enough that an abandoned attempt is not a standing
 # credential.
 STATE_TTL_SECONDS = 600
+# Where an SSO login lands when it carried no deep link of its own.
+DEFAULT_NEXT_PATH = "/learn"
 DISCOVERY_TIMEOUT = 8.0
 
 
@@ -218,6 +220,28 @@ def _state_key(state: str) -> str:
     return f"sso:state:{state}"
 
 
+def safe_next_path(next_path: str | None) -> str:
+    """Where to land after the round-trip, reduced to somewhere on this
+    site.
+
+    `?next=` reaches `POST /auth/sso/start` from an anonymous caller, is
+    parked for the length of the flow, and comes back out of the callback
+    for the browser to navigate to. Anything but a rooted path on this
+    origin would make that an open redirect wearing a login flow's
+    clothing — `//evil.example` is the one worth naming, since a browser
+    reads a protocol-relative URL as another host while it still looks
+    like a path. A backslash is refused for the same reason: some URL
+    parsers fold it to a slash.
+    """
+    if not next_path:
+        return DEFAULT_NEXT_PATH
+    if not next_path.startswith("/"):
+        return DEFAULT_NEXT_PATH
+    if next_path.startswith("//") or "\\" in next_path:
+        return DEFAULT_NEXT_PATH
+    return next_path
+
+
 async def begin(
     redis: Redis,
     *,
@@ -255,8 +279,9 @@ async def begin(
                 "binding_hash": hashlib.sha256(binding.encode()).hexdigest(),
                 "redirect_uri": redirect_uri,
                 # Carried through the round-trip so a deep link survives
-                # the detour to the IdP.
-                "next": next_path or "/learn",
+                # the detour to the IdP — sanitised first, because the
+                # browser navigates to whatever comes back out.
+                "next": safe_next_path(next_path),
             }
         ),
         ex=STATE_TTL_SECONDS,
@@ -419,6 +444,7 @@ def roles_for(identity: SsoIdentity, config: TenantIdpConfig) -> list[str]:
 
 
 __all__ = [
+    "DEFAULT_NEXT_PATH",
     "STATE_TTL_SECONDS",
     "Discovery",
     "SsoError",
@@ -431,6 +457,7 @@ __all__ = [
     "exchange",
     "get_config",
     "roles_for",
+    "safe_next_path",
     "take_state",
     "validate",
 ]

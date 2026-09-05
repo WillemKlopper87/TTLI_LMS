@@ -44,9 +44,9 @@ from src.core.ids import uuid7
 from src.core.security import issue_access_token
 from src.models.audit import AuditAction
 from src.models.sso import TenantIdpConfig
-from src.schemas.auth import TokenResponse
 from src.schemas.sso import (
     SsoAvailableResponse,
+    SsoCallbackResponse,
     SsoConfigRequest,
     SsoConfigResponse,
     SsoStartResponse,
@@ -141,7 +141,7 @@ async def sso_start(
 
 @router.post(
     "/auth/sso/callback",
-    response_model=TokenResponse,
+    response_model=SsoCallbackResponse,
     summary="Finish an SSO login — validates the id_token and issues a session",
 )
 async def sso_callback(
@@ -153,7 +153,7 @@ async def sso_callback(
     settings: SettingsDep,
     redis: RedisDep,
     sso_binding: Annotated[str | None, Header(alias="X-Sso-Binding")] = None,
-) -> TokenResponse:
+) -> SsoCallbackResponse:
     """Every check that matters lives in `services/oidc.py`; this reads
     as a sequence because that is what it is. The order is not
     cosmetic — the domain allowlist runs before any user lookup, so a
@@ -239,10 +239,13 @@ async def sso_callback(
         days=settings.refresh_token_days,
         device_fingerprint=request.headers.get("x-device-fingerprint"),
     )
-    return TokenResponse(
+    return SsoCallbackResponse(
         access_token=access_token,
         refresh_token=issued.raw,
         expires_in=settings.access_token_minutes * 60,
+        # Parked when the flow began and sanitised there; the callback
+        # page navigates to it rather than guessing where the user was.
+        next_path=oidc.safe_next_path(str(parked.get("next") or "")),
     )
 
 

@@ -19,7 +19,7 @@ import socket
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 import jwt
@@ -239,10 +239,11 @@ async def _configure(client, token: str, **overrides: Any) -> None:
     assert resp.status_code == 200, resp.text
 
 
-async def _start(client) -> tuple[str, str, str]:
+async def _start(client, *, next_path: str | None = None) -> tuple[str, str, str]:
     """Begin a login and read back the state, nonce and browser binding
     the server minted."""
-    resp = await client.post("/api/v1/auth/sso/start")
+    query = f"?next={quote(next_path, safe='')}" if next_path is not None else ""
+    resp = await client.post(f"/api/v1/auth/sso/start{query}")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     params = parse_qs(urlparse(body["authorization_url"]).query)
@@ -534,3 +535,83 @@ def test_the_egress_guard_relaxes_only_when_the_caller_says_so() -> None:
     """A developer running a mock IdP on localhost needs both halves
     relaxed — scheme and address — and only outside production."""
     oidc.assert_reachable_publicly("http://127.0.0.1:9999/", allow_local=True)
+
+
+async def test_the_callback_returns_the_deep_link_it_parked(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp
+) -> None:
+    """The browser half of the flow (fable5.1 review H-15) navigates to
+    whatever comes back here, so it has to come back at all — the parked
+    `next` was never returned, which would have dumped every SSO login on
+    the default screen regardless of what the user had clicked."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+
+    state, nonce, binding = await _start(client, next_path="/admin/catalogue")
+    fake_idp.id_token = make_id_token(nonce=nonce)
+
+    resp = await _callback(client, state=state, binding=binding)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["next_path"] == "/admin/catalogue"
+
+
+async def test_a_login_with_no_deep_link_lands_on_the_default(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp
+) -> None:
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+
+    state, nonce, binding = await _start(client)
+    fake_idp.id_token = make_id_token(nonce=nonce)
+
+    resp = await _callback(client, state=state, binding=binding)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["next_path"] == oidc.DEFAULT_NEXT_PATH
+
+
+async def test_an_off_site_next_never_survives_the_round_trip(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto, fake_idp
+) -> None:
+    """`?next=` reaches an anonymous endpoint and comes back out as
+    somewhere the browser is told to go. Anything that is not a rooted
+    path on this site would make the login flow an open redirect."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    await _configure(client, boss)
+
+    state, nonce, binding = await _start(client, next_path="//evil.example/take-over")
+    fake_idp.id_token = make_id_token(nonce=nonce)
+
+    resp = await _callback(client, state=state, binding=binding)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["next_path"] == oidc.DEFAULT_NEXT_PATH
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "https://evil.example/take-over",
+        "//evil.example/take-over",
+        "/\\evil.example",
+        "evil.example",
+        "",
+        None,
+    ],
+)
+def test_safe_next_path_refuses_anywhere_but_this_site(candidate: str | None) -> None:
+    assert oidc.safe_next_path(candidate) == oidc.DEFAULT_NEXT_PATH
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("candidate", ["/learn", "/admin/catalogue", "/learn/abc?tab=quiz"])
+def test_safe_next_path_keeps_a_path_on_this_site(candidate: str) -> None:
+    assert oidc.safe_next_path(candidate) == candidate

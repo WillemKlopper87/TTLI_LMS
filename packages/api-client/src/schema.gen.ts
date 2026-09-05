@@ -8398,6 +8398,31 @@ export interface components {
             /** State */
             state: string;
         };
+        /**
+         * SsoCallbackResponse
+         * @description A session, plus where the browser should land.
+         *
+         *     The deep link a user followed before being sent to their IdP is
+         *     parked with the rest of the flow state; without it on the way back
+         *     out, every SSO login would dump the user on the default screen
+         *     regardless of what they had clicked. `services/oidc.py` is what makes
+         *     sure the value is a path on this site and not somewhere else.
+         */
+        SsoCallbackResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
+            /** Expires In */
+            expires_in: number;
+            /** Next Path */
+            next_path: string;
+        };
         /** SsoConfigRequest */
         SsoConfigRequest: {
             /** Display Name */
@@ -17969,7 +17994,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": components["schemas"]["SsoCallbackResponse"];
                 };
             };
             /** @description Validation Error */

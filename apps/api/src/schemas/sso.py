@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from src.schemas.auth import TokenResponse
+
 
 class SsoAvailableResponse(BaseModel):
     """What an anonymous login page may know. Deliberately not the
@@ -54,8 +56,22 @@ class SsoConfigResponse(BaseModel):
     enabled: bool = False
 
 
+class SsoCallbackResponse(TokenResponse):
+    """A session, plus where the browser should land.
+
+    The deep link a user followed before being sent to their IdP is
+    parked with the rest of the flow state; without it on the way back
+    out, every SSO login would dump the user on the default screen
+    regardless of what they had clicked. `services/oidc.py` is what makes
+    sure the value is a path on this site and not somewhere else.
+    """
+
+    next_path: str
+
+
 __all__ = [
     "SsoAvailableResponse",
+    "SsoCallbackResponse",
     "SsoConfigRequest",
     "SsoConfigResponse",
     "SsoStartResponse",
