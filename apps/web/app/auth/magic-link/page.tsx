@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
 import { postLoginRedirect } from "@/lib/post-login-redirect";
 import { useSession } from "@/lib/session-context";
 
@@ -29,7 +30,7 @@ export default function MagicLinkPage() {
     if (!token) return;
     let cancelled = false;
     (async () => {
-      const resp = await fetch("/api/bff/auth/magic-link/consume", {
+      const resp = await bffFetch("/api/bff/auth/magic-link/consume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
@@ -59,7 +60,7 @@ export default function MagicLinkPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/auth/magic-link", {
+    const resp = await bffFetch("/api/bff/auth/magic-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),

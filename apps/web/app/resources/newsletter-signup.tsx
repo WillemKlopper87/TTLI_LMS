@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
+
 /**
  * Newsletter signup, on the existing lead-capture flow
  * (`POST /leads`, REQ-LEAD-01..03). There is no separate "subscriber"
@@ -29,7 +31,7 @@ export function NewsletterSignup() {
     }
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/leads", {
+    const resp = await bffFetch("/api/bff/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

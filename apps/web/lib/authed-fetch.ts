@@ -25,6 +25,7 @@
  * never changes — it drops out of dependency arrays entirely instead of
  * re-triggering effects every time the token rotates.
  */
+import { unreachable } from "@/lib/bff-fetch";
 import { getAccessToken, refreshAccessToken } from "@/lib/session";
 
 function withBearer(init: RequestInit, token: string): RequestInit {
@@ -39,7 +40,7 @@ function withBearer(init: RequestInit, token: string): RequestInit {
 
 export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = getAccessToken();
-  const resp = await fetch(path, withBearer(init, token ?? ""));
+  const resp = await fetch(path, withBearer(init, token ?? "")).catch(unreachable);
   if (resp.status !== 401) return resp;
 
   // Only retry a request that actually presented a token. A 401 on a
@@ -55,5 +56,5 @@ export async function authedFetch(path: string, init: RequestInit = {}): Promise
   // that renders its own signed-out state still sees one.
   if (!refreshed) return resp;
 
-  return fetch(path, withBearer(init, refreshed));
+  return fetch(path, withBearer(init, refreshed)).catch(unreachable);
 }

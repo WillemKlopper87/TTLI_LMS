@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
+
 type Step = "request" | "sent" | "confirm" | "done" | "error";
 
 /**
@@ -27,7 +29,7 @@ export default function PasswordResetPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/auth/password-reset", {
+    const resp = await bffFetch("/api/bff/auth/password-reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
@@ -48,7 +50,7 @@ export default function PasswordResetPage() {
     }
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/auth/password-reset/confirm", {
+    const resp = await bffFetch("/api/bff/auth/password-reset/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, new_password: newPassword }),

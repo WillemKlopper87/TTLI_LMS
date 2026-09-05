@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
+
 /**
  * A real contact form (Phase 2 close-out). The live ttli.co.za site has a
  * "Get In Touch" contact page with no working form, just contact details —
@@ -31,7 +33,7 @@ export function ContactForm() {
     }
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/leads", {
+    const resp = await bffFetch("/api/bff/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

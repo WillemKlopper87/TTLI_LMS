@@ -19,6 +19,8 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
+
 const TEAM_SIZES = ["Just me", "10–49", "50–249", "250+"];
 
 const TRAINING_GOALS = [
@@ -50,7 +52,7 @@ export function GuestAccessForm() {
     }
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/guest-access", {
+    const resp = await bffFetch("/api/bff/guest-access", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { bffFetch } from "@/lib/bff-fetch";
 import { postLoginRedirect } from "@/lib/post-login-redirect";
 import { useSession } from "@/lib/session-context";
 
@@ -20,7 +21,7 @@ export function LoginForm() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/auth/login", {
+    const resp = await bffFetch("/api/bff/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -43,7 +44,7 @@ export function LoginForm() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const resp = await fetch("/api/bff/auth/mfa/verify", {
+    const resp = await bffFetch("/api/bff/auth/mfa/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mfa_token: mfaToken, code }),
