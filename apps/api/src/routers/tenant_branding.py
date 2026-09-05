@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Response, UploadFile, status
 
 from src.core.deps import (
     AuditedSessionDep,
@@ -27,7 +27,7 @@ from src.core.deps import (
     StorageDep,
     TenantDep,
 )
-from src.core.errors import AppError, ServiceUnavailable
+from src.core.errors import AppError, NotFound, ServiceUnavailable
 from src.models.audit import AuditAction
 from src.models.tenant import TenantDomain
 from src.models.theme import TenantTheme
@@ -40,7 +40,7 @@ from src.schemas.tenant_branding import (
 )
 from src.services import antivirus, audit
 from src.services import tenant_branding as branding
-from src.services.storage.base import Container
+from src.services.storage.base import Container, ObjectNotFound
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -57,11 +57,20 @@ ON_BRAND = "#fdf8f9"
 # review of this file on 2026-08-21.
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 LOGO_MAX_BYTES = 2 * 1024 * 1024
+# The same table read backwards: the stored key carries the extension
+# this endpoint validated at upload time, so serving it needs no
+# sniffing and no second source of truth.
+LOGO_CONTENT_TYPES = {ext: content_type for content_type, ext in LOGO_TYPES.items()}
 
 
 def _branding(theme: TenantTheme | None) -> BrandingResponse:
+    """`logo_url` is resolved here for the same reason `GET /tenant/theme`
+    resolves it: the panel that reads this record renders the logo, and
+    the raw storage key is not something a browser can fetch. The key
+    itself stays in the audit trail, which is where it is actually
+    useful."""
     return BrandingResponse(
-        logo_url=getattr(theme, "logo_url", None),
+        logo_url=branding.resolve_logo_url(getattr(theme, "logo_url", None)),
         primary_color=getattr(theme, "primary_color", None),
         secondary_color=getattr(theme, "secondary_color", None),
         login_background_url=getattr(theme, "login_background_url", None),
@@ -113,6 +122,39 @@ async def update_branding(
         after=_branding(theme).model_dump(mode="json"),
     )
     return _branding(theme)
+
+
+@router.get("/branding/logo", summary="Serve this tenant's uploaded logo")
+async def get_logo(session: SessionDep, storage: StorageDep, tenant: TenantDep) -> Response:
+    """Unauthenticated, exactly like `GET /tenant/theme` and for the same
+    reason: the login page renders the tenant's logo before anyone has a
+    session. The object already lives in the public container, so this
+    exposes nothing that a public storage URL would not — it just keeps
+    the browser on one origin (see `resolve_logo_url` for why that
+    matters).
+    """
+    theme = await branding.get_theme(session, tenant_id=tenant.id)
+    key = getattr(theme, "logo_url", None)
+    # A site path is the web tier's asset, not ours to stream; only an
+    # uploaded storage key resolves to this route in the first place.
+    if not key or key.startswith("/"):
+        raise NotFound("This tenant has no uploaded logo.")
+
+    try:
+        data = await storage.get_object(Container.PUBLIC_MARKETING, key)
+    except ObjectNotFound as exc:
+        # The row can outlive the object (a restored database against a
+        # fresh bucket, say). A missing image is a 404, not a 500.
+        raise NotFound("This tenant has no uploaded logo.") from exc
+
+    return Response(
+        content=data,
+        media_type=LOGO_CONTENT_TYPES.get(key.rsplit(".", 1)[-1], "application/octet-stream"),
+        # Long enough that the header and sidebar don't re-fetch it on
+        # every navigation, short enough that a re-upload appears without
+        # anyone being told to hard-refresh.
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 
 @router.post(

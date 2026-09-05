@@ -27,6 +27,12 @@ export default async function LoginPage() {
               width={220}
               height={116}
               preload
+              // Not optimized, deliberately. An uploaded logo is served
+              // from /api/bff/tenant/branding/logo — the same URL for
+              // every tenant, resolved by Host — and next/image caches
+              // optimized output keyed by URL alone, so one tenant's
+              // logo would be served to the next.
+              unoptimized
             />
           </div>
         ) : (

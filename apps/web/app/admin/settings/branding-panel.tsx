@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { browserThemeAssetUrl } from "@/lib/theme-assets";
 
 /**
  * Tenant branding and custom domains (backlog P3, gaps #44 and #45).
@@ -50,6 +51,10 @@ export default function BrandingPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The logo is served from one stable, Host-resolved URL with a
+  // short cache lifetime, so a re-upload would otherwise leave the
+  // admin looking at the logo they just replaced.
+  const [logoVersion, setLogoVersion] = useState(0);
 
   const authed = useCallback(
     (path: string, init?: RequestInit) =>
@@ -101,6 +106,9 @@ export default function BrandingPanel() {
   }
 
   if (branding === null) return null;
+
+  const logoBase = browserThemeAssetUrl(branding.logo_url);
+  const logoPreview = logoBase ? `${logoBase}?v=${logoVersion}` : null;
 
   return (
     <>
@@ -177,7 +185,7 @@ export default function BrandingPanel() {
             Logo (PNG, JPEG, SVG or WebP, under 2 MB — virus-scanned on upload)
             <input
               type="file"
-              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+              accept="image/png,image/jpeg,image/webp"
               disabled={busy}
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -189,14 +197,25 @@ export default function BrandingPanel() {
                   "/tenant/branding/logo",
                   { method: "POST", body: payload },
                   "Logo uploaded.",
-                );
+                ).then(() => setLogoVersion((version) => version + 1));
               }}
             />
           </label>
-          {branding.logo_url ? (
-            <p className="mono" style={{ fontSize: "0.6875rem", color: "var(--muted)" }}>
-              Current: {branding.logo_url}
-            </p>
+          {logoPreview ? (
+            <figure className="mt-2">
+              {/* A plain img, not next/image: the source is this tenant's
+                  own logo route, which optimization would cache under a
+                  URL that is identical for every tenant. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoPreview}
+                alt="The logo this tenant currently uses"
+                style={{ maxHeight: "4rem", maxWidth: "100%" }}
+              />
+              <figcaption style={{ fontSize: "0.6875rem", color: "var(--muted)" }}>
+                Currently in use
+              </figcaption>
+            </figure>
           ) : null}
         </div>
       </section>

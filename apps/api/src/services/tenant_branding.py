@@ -46,6 +46,36 @@ HOSTNAME = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-
 
 MIN_CONTRAST = 4.5
 
+# Where `GET /tenant/branding/logo` is mounted, as a path relative to the
+# API's own root. `tenant_themes.logo_url` holds one of two things and
+# only one of them is a URL: a site path a migration seeded
+# (`/brand/ttli-logo.png`, from `0008`), or the storage key the logo
+# upload writes (`tenant-branding/<tenant>/logo.png`). Handing a bare key
+# to a browser is what took `/login` and the admin shell down for any
+# tenant that used the Branding panel — `next/image` throws on a src that
+# is neither root-relative nor allow-listed, and with no error boundary
+# above it that throw was a 500 for every visitor to that tenant. Reads
+# resolve a key to this route, which streams the object back through the
+# API, so the field is always something a browser can actually fetch.
+LOGO_ROUTE = "/api/v1/tenant/branding/logo"
+
+
+def resolve_logo_url(raw: str | None) -> str | None:
+    """The stored value, turned into something servable.
+
+    A site path passes through untouched (the web tier serves it); an
+    uploaded storage key becomes `LOGO_ROUTE`. Deliberately not
+    `storage.get_public_url` — that is `file://` under the local adapter
+    and a bucket hostname under Garage or Azure Blob, so it would need
+    per-environment `next/image` configuration to render at all and would
+    put logo delivery on a second origin. Same reasoning as serving
+    assignment submissions through the API rather than a signed storage
+    URL.
+    """
+    if not raw:
+        return None
+    return raw if raw.startswith("/") else LOGO_ROUTE
+
 
 def _channel(value: int) -> float:
     srgb = value / 255
@@ -168,6 +198,7 @@ async def remove_domain(
 
 
 __all__ = [
+    "LOGO_ROUTE",
     "MIN_CONTRAST",
     "add_domain",
     "assert_readable",
@@ -176,6 +207,7 @@ __all__ = [
     "list_domains",
     "relative_luminance",
     "remove_domain",
+    "resolve_logo_url",
     "upsert_theme",
     "verification_token",
 ]

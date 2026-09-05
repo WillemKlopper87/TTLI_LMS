@@ -7,6 +7,8 @@ import { headers } from "next/headers";
 
 import { createApiClient } from "@ttli/api-client";
 
+import { browserThemeAssetUrl } from "./theme-assets";
+
 export const API_URL = process.env.API_URL ?? "http://localhost:8010";
 
 export interface Theme {
@@ -28,7 +30,11 @@ export async function getTheme(): Promise<Theme | null> {
       cache: "no-store",
     });
     if (!response.ok || !data) return null;
-    return data as Theme;
+    const theme = data as Theme;
+    // Every consumer of this (the site header, the login page) renders
+    // logo_url directly, so it is resolved once here rather than at each
+    // of them — see lib/theme-assets.ts for what "resolved" means.
+    return { ...theme, logo_url: browserThemeAssetUrl(theme.logo_url) };
   } catch {
     // Theme is enhancement data, not a reason to take down every route.
     // This also keeps the public/a11y CI gate meaningful without an API.

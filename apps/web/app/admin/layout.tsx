@@ -7,6 +7,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 import type { Theme } from "@/lib/server-api";
+import { browserThemeAssetUrl } from "@/lib/theme-assets";
 import { useRequireAuth, useSession } from "@/lib/session-context";
 
 import { AdminContext, type Me } from "./admin-context";
@@ -96,7 +97,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       })
       .catch(() => router.replace("/login"));
     fetch("/api/bff/tenant/theme")
-      .then(async (resp) => (resp.ok ? setTheme(await resp.json()) : null))
+      .then(async (resp) => {
+        if (!resp.ok) return;
+        // The admin shell reads the theme itself rather than through
+        // lib/server-api.ts (it is a client component), so it has to do
+        // the same logo resolution that helper does.
+        const body: Theme = await resp.json();
+        setTheme({ ...body, logo_url: browserThemeAssetUrl(body.logo_url) });
+      })
       .catch(() => undefined);
   }, [ready, accessToken, router]);
 
@@ -128,7 +136,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       >
         <Link href="/admin" style={{ color: "var(--on-brand)" }}>
           {theme?.logo_url ? (
-            <Image src={theme.logo_url} alt={theme.tenant_name} width={120} height={63} />
+            <Image
+              src={theme.logo_url}
+              alt={theme.tenant_name}
+              width={120}
+              height={63}
+              unoptimized
+            />
           ) : (
             <span className="serif" style={{ fontSize: "1.0625rem", fontWeight: 600 }}>
               {theme?.tenant_name ?? me.tenant_slug}
@@ -207,6 +221,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               width={160}
               height={84}
               className="max-w-full"
+              unoptimized
             />
           ) : (
             <span className="serif" style={{ fontSize: "1.0625rem", fontWeight: 600 }}>

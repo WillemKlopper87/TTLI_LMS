@@ -18,6 +18,7 @@ from src.models.audit import AuditAction
 from src.models.tenant import Tenant
 from src.models.theme import TenantTheme
 from src.services import audit
+from src.services import tenant_branding as branding
 from src.services.media.ffmpeg import DEFAULT_RUNGS
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
@@ -41,7 +42,7 @@ async def theme(session: SessionDep, tenant: TenantDep) -> ThemeResponse:
     return ThemeResponse(
         tenant_slug=tenant.slug,
         tenant_name=tenant.name,
-        logo_url=row.logo_url if row else None,
+        logo_url=branding.resolve_logo_url(row.logo_url if row else None),
         primary_color=row.primary_color if row else None,
         secondary_color=row.secondary_color if row else None,
         login_background_url=row.login_background_url if row else None,

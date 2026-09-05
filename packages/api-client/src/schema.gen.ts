@@ -4317,7 +4317,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Serve this tenant's uploaded logo
+         * @description Unauthenticated, exactly like `GET /tenant/theme` and for the same
+         *     reason: the login page renders the tenant's logo before anyone has a
+         *     session. The object already lives in the public container, so this
+         *     exposes nothing that a public storage URL would not — it just keeps
+         *     the browser on one origin (see `resolve_logo_url` for why that
+         *     matters).
+         */
+        get: operations["get_logo_api_v1_tenant_branding_logo_get"];
         put?: never;
         /** Upload a logo — virus-scanned like every other upload here */
         post: operations["upload_logo_api_v1_tenant_branding_logo_post"];
@@ -17749,6 +17758,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_logo_api_v1_tenant_branding_logo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

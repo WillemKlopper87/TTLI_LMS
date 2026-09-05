@@ -597,6 +597,85 @@ async def test_a_logo_upload_refuses_svg_and_ignores_the_client_filename(  # typ
         files={"file": ("../../evil.png", _PNG_BYTES, "image/png")},
     )
     assert png.status_code == 200, png.text
-    key = png.json()["logo_url"]
+    async with tenant_session_factory(tenant_id) as s:
+        key = (
+            await s.execute(
+                sa.text("SELECT logo_url FROM tenant_themes WHERE tenant_id = :t"),
+                {"t": tenant_id},
+            )
+        ).scalar_one()
     assert key == f"tenant-branding/{tenant_id}/logo.png"
     assert ".." not in key
+
+
+async def test_an_uploaded_logo_is_served_as_a_url_not_a_storage_key(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """fable5.1 review H-16. `logo_url` used to be handed to the browser
+    as the bare storage key it is stored as, which `next/image` refuses
+    to render — a render-time throw with no error boundary above it, so
+    uploading a logo took `/login` and the admin shell down for the whole
+    tenant. Both reads now return a path the browser can actually fetch,
+    and that path serves the bytes."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {boss}"}
+
+    uploaded = await client.post(
+        "/api/v1/tenant/branding/logo",
+        headers=headers,
+        files={"file": ("logo.png", _PNG_BYTES, "image/png")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    route = "/api/v1/tenant/branding/logo"
+    assert uploaded.json()["logo_url"] == route
+
+    # The public theme read is the one the login page uses, before
+    # anyone has a session — it must resolve the key too.
+    theme = await client.get("/api/v1/tenant/theme")
+    assert theme.status_code == 200
+    assert theme.json()["logo_url"] == route
+
+    # And that path serves the image itself, unauthenticated.
+    served = await client.get(route)
+    assert served.status_code == 200, served.text
+    assert served.content == _PNG_BYTES
+    assert served.headers["content-type"].startswith("image/png")
+
+
+async def test_a_tenant_without_an_uploaded_logo_gets_a_404_not_a_500(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory
+) -> None:
+    """`acme` is seeded with no logo at all (`0006`), and a tenant can
+    also hold a site path from `0008` rather than an uploaded object.
+    Neither is something this route can stream, and neither is an error
+    worth a stack trace.
+
+    Read-only on purpose: the seeded tenants are shared by every test in
+    the suite, so this asserts against `acme` as seeded rather than
+    nulling its theme and leaving that for whoever runs next."""
+    async with tenant_session_factory(None) as s:
+        acme_id = uuid.UUID(
+            str(
+                (
+                    await s.execute(sa.text("SELECT id FROM tenants WHERE slug = 'acme'"))
+                ).scalar_one()
+            )
+        )
+    # tenant_themes is RLS-forced, so reading the row needs a session
+    # bound to that tenant — a tenant-less session sees nothing at all.
+    async with tenant_session_factory(acme_id) as s:
+        seeded = (
+            await s.execute(
+                sa.text("SELECT logo_url FROM tenant_themes WHERE tenant_id = :t"),
+                {"t": acme_id},
+            )
+        ).scalar_one()
+    assert seeded is None, "acme is the tenant that proves the no-logo path"
+
+    missing = await client.get(
+        "/api/v1/tenant/branding/logo", headers={"X-Tenant-Host": "meridian.localhost"}
+    )
+    assert missing.status_code == 404
