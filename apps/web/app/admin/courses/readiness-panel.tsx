@@ -41,8 +41,16 @@ export function ReadinessPanel({
   return (
     <div className="flex flex-col gap-5">
       <div>
+        {/* The score counts blockers AND warnings (services/course_wizard.py
+            ::get_readiness scores both), so a course with every blocker met
+            still reads well under 100% while the sentence beneath said
+            "everything the server checks at publish time passes" — a
+            publishable course showing 70% under a heading called "readiness"
+            reads as broken. Two separate facts, so say them separately: what
+            the server will refuse on, and how many optional recommendations
+            are still open. */}
         <div className="flex items-baseline justify-between gap-3">
-          <p className="eyebrow">Readiness score</p>
+          <p className="eyebrow">Recommendations complete</p>
           <span
             className="serif"
             style={{ fontSize: "1.5rem", fontVariantNumeric: "tabular-nums" }}
@@ -55,7 +63,9 @@ export function ReadinessPanel({
         </div>
         <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
           {readiness.publishable
-            ? "Everything the server checks at publish time passes."
+            ? "Every blocker passes, so this course can be published now. The percentage " +
+              "also counts the optional recommendations below — it does not have to reach " +
+              "100% first."
             : "At least one blocker below will refuse a publish."}
         </p>
       </div>
