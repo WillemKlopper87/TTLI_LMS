@@ -18,10 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.crypto import CryptoBox
 from src.core.security import (
     hash_password,
+    hash_password_async,
     hash_token,
     new_recovery_code,
     new_token,
-    verify_password,
+    verify_password_async,
     verify_totp,
 )
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset
@@ -128,14 +129,14 @@ async def authenticate(
     user = await find_by_email(session, crypto, email)
 
     if user is None:
-        verify_password(password, _DUMMY_HASH)
+        await verify_password_async(password, _DUMMY_HASH)
         return None
 
     if is_locked(user) or user.status != "active":
-        verify_password(password, _DUMMY_HASH)
+        await verify_password_async(password, _DUMMY_HASH)
         return None
 
-    if user.password_hash is None or not verify_password(password, user.password_hash):
+    if user.password_hash is None or not await verify_password_async(password, user.password_hash):
         user.failed_login_count += 1
         if user.failed_login_count >= LOCKOUT_THRESHOLD:
             user.locked_until = datetime.now(UTC) + timedelta(minutes=LOCKOUT_MINUTES)
@@ -167,7 +168,7 @@ async def create_user(
         email_blind_index=crypto.blind_index(normalised),
         email_domain=normalised.split("@", 1)[-1],
         full_name_encrypted=crypto.encrypt(full_name) if full_name else None,
-        password_hash=hash_password(password) if password else None,
+        password_hash=await hash_password_async(password) if password else None,
         is_guest=is_guest,
         guest_expires_at=(
             datetime.now(UTC) + timedelta(days=guest_days) if guest_days is not None else None
@@ -189,7 +190,7 @@ async def create_magic_link(
     """
     user = await find_by_email(session, crypto, email)
     if user is None or user.status != "active" or user.deleted_at is not None:
-        verify_password("timing-equalisation-only", _DUMMY_HASH)
+        await verify_password_async("timing-equalisation-only", _DUMMY_HASH)
         return None
 
     raw = new_token()
@@ -235,7 +236,7 @@ async def create_password_reset(
     must not let the two cases differ in response or timing."""
     user = await find_by_email(session, crypto, email)
     if user is None or user.status != "active" or user.deleted_at is not None:
-        verify_password("timing-equalisation-only", _DUMMY_HASH)
+        await verify_password_async("timing-equalisation-only", _DUMMY_HASH)
         return None
 
     raw = new_token()
@@ -272,7 +273,7 @@ async def consume_password_reset(
     if user is None or user.status != "active" or user.deleted_at is not None:
         return None
 
-    user.password_hash = hash_password(new_password)
+    user.password_hash = await hash_password_async(new_password)
     user.failed_login_count = 0
     user.locked_until = None
     await session.flush()

@@ -3,10 +3,21 @@
 Argon2id for passwords. SHA-256 for tokens, which are already high-entropy and
 only ever compared — running Argon2 over a 32-byte random token buys nothing and
 costs 250ms per request.
+
+**Async callers want `hash_password_async` / `verify_password_async`.** The
+250ms is deliberate — it is what makes the hash expensive to attack — but spent
+on the event loop it is 250ms during which this process serves nobody:
+not a heartbeat, not a payment webhook, not another login. Roughly four logins
+a second from four different addresses, comfortably inside the 10-per-minute
+per-IP limit, is enough to hold the loop down continuously (fable5.1 review
+H-14). The blocking versions below stay for the callers that are genuinely
+synchronous — migration `0002`, `scripts/seed_e2e_accounts.py`, and the unit
+tests — and for `_DUMMY_HASH`, which is computed once at import.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import uuid
@@ -34,6 +45,22 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return _hasher.verify(stored_hash, password)
     except (VerifyMismatchError, InvalidHashError, ValueError):
         return False
+
+
+async def hash_password_async(password: str) -> str:
+    """`hash_password` off the event loop. See the module docstring."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, stored_hash: str) -> bool:
+    """`verify_password` off the event loop. See the module docstring.
+
+    The thread hop does not weaken the constant-time-ish property the login
+    path relies on: the dummy-hash verification callers do for a missing
+    user goes through this same wrapper, so both branches pay the same
+    hop as well as the same Argon2 cost.
+    """
+    return await asyncio.to_thread(verify_password, password, stored_hash)
 
 
 def needs_rehash(stored_hash: str) -> bool:
@@ -141,6 +168,7 @@ __all__ = [
     "decode_access_token",
     "decode_purpose_token",
     "hash_password",
+    "hash_password_async",
     "hash_token",
     "issue_access_token",
     "issue_purpose_token",
@@ -150,5 +178,6 @@ __all__ = [
     "new_totp_secret",
     "totp_provisioning_uri",
     "verify_password",
+    "verify_password_async",
     "verify_totp",
 ]
