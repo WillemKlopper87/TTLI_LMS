@@ -77,12 +77,30 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // attendance on a phone — backlog P14, `app/admin/layout.tsx` used to be a
   // fixed w-56 sidebar with no narrow-viewport handling at all).
   const [navOpen, setNavOpen] = useState(false);
+  // A failed bootstrap used to be indistinguishable from a slow one: the
+  // shell rendered null either way, and any error at all — a dropped
+  // connection included — bounced a signed-in admin to /login (fable5.1
+  // review H-17).
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!ready || !accessToken) return;
     authedFetch("/api/bff/auth/me")
       .then(async (resp) => {
-        if (!resp.ok) throw new Error("unauthenticated");
+        // Only the API's own answer about this session sends anyone to
+        // /login. Anything else — a 502 from a restarting API, a body that
+        // will not parse — is this screen failing to load, not the user
+        // being signed out, and lib/authed-fetch.ts has already rotated and
+        // replayed once before a 401 reaches here.
+        if (resp.status === 401 || resp.status === 403) {
+          router.replace("/login");
+          return;
+        }
+        if (!resp.ok) {
+          setLoadFailed(true);
+          return;
+        }
         // Authorisation, not just authentication: this layout only ever
         // checked that someone was signed in, so a learner opening
         // /admin got the whole operations shell -- every section name in
@@ -93,9 +111,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           router.replace("/learn");
           return;
         }
+        setLoadFailed(false);
         setMe(body);
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => setLoadFailed(true));
     fetch("/api/bff/tenant/theme")
       .then(async (resp) => {
         if (!resp.ok) return;
@@ -106,7 +125,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         setTheme({ ...body, logo_url: browserThemeAssetUrl(body.logo_url) });
       })
       .catch(() => undefined);
-  }, [ready, accessToken, router]);
+  }, [ready, accessToken, router, attempt]);
 
   // Close the slide-in nav on navigation rather than leaving it open over
   // the page the link just went to.
@@ -121,7 +140,33 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     router.replace("/login");
   }
 
-  if (!me) return null;
+  if (!me) {
+    // Still loading is still nothing to show; failed is something to say.
+    if (!loadFailed) return null;
+    return (
+      <main className="pad-lg" style={{ textAlign: "center" }}>
+        <div style={{ maxWidth: "28rem", marginInline: "auto" }}>
+          <h1 className="serif" style={{ fontSize: "1.5rem" }}>
+            The admin area didn&rsquo;t load.
+          </h1>
+          <p style={{ color: "var(--muted)", marginTop: "0.75rem" }}>
+            You are still signed in — this screen could not reach the API. Try again.
+          </p>
+          <button
+            type="button"
+            className="btn btn--primary mt-4"
+            onClick={() => {
+              setLoadFailed(false);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      </main>
+    );
+  }
+
 
   return (
     <div className="flex min-h-screen">

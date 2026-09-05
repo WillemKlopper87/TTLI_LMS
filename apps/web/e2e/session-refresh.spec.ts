@@ -116,3 +116,84 @@ test("a stale access token is refreshed and the request replayed", async ({ page
     })
     .toBe(true);
 });
+
+/**
+ * The other half of the same defect (fable5.1 review H-17).
+ *
+ * The admin shell treated *every* failure of its identity call as "you
+ * are signed out": `.catch(() => router.replace("/login"))` covers a
+ * dropped connection and a restarting API just as much as a real 401, so
+ * a blip threw a working session onto the login form — and until that
+ * call resolved at all, the shell rendered `null`, which made a
+ * permanently failing bootstrap an indefinitely blank page. The provider
+ * behind it had the same blind spot: `postRefresh` reported a plain
+ * ok/not-ok, so a 503 was indistinguishable from the BFF's 401 for a
+ * spent refresh cookie, and both ended the session.
+ *
+ * Aborting a request is the honest reproduction of the first: it fails at
+ * the transport layer, exactly as an unreachable API would, which is the
+ * case a status-code check can never see.
+ */
+test("a transport failure never signs an admin out", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel(/email/i).fill(EMAIL);
+  await page.getByLabel(/password/i).fill(PASSWORD);
+  await page.getByRole("button", { name: /sign in|log ?in/i }).click();
+  await page.waitForURL(/\/(admin|learn)/, { timeout: 30_000 });
+
+  await page.route("**/api/bff/auth/me", (route) => route.abort("failed"));
+  await page.goto("/admin/catalogue");
+
+  await expect(page.getByRole("heading", { name: /admin area didn.t load/i })).toBeVisible();
+  // Still here, not on the login form: the session was never in doubt.
+  expect(new URL(page.url()).pathname).toBe("/admin/catalogue");
+
+  await page.unroute("**/api/bff/auth/me");
+  await page.getByRole("button", { name: /try again/i }).click();
+
+  // Recovered in place — no reload, no second sign-in.
+  await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
+
+  // Now the provider's half: every products GET is answered 401 exactly as
+  // a stale bearer would be, and the refresh each one provokes is answered
+  // 503 — unavailable, not "your session is over".
+  let refreshesAnswered503 = 0;
+  await page.route("**/api/bff/auth/refresh", (route) => {
+    refreshesAnswered503 += 1;
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "The service is unavailable." }),
+    });
+  });
+  await page.route("**/api/bff/catalogue/products", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "UNAUTHENTICATED", message: "Access token has expired." },
+      }),
+    });
+  });
+
+  // Client-side navigation away and back, so what is under test is the
+  // live session in this document rather than a fresh boot.
+  await page.getByRole("link", { name: "Courses" }).click();
+  await page.waitForURL(/\/admin\/courses/, { timeout: 10_000 });
+  // Waited for, not fired blind: without this the second click can land
+  // while the first navigation is still in flight, so it re-clicks the
+  // page already showing and nothing remounts or refetches.
+  await page.getByRole("link", { name: "Catalogue" }).click();
+  await page.waitForURL(/\/admin\/catalogue/, { timeout: 10_000 });
+
+  // The refresh really was attempted and really did fail...
+  await expect.poll(() => refreshesAnswered503, { timeout: 10_000 }).toBeGreaterThan(0);
+  // ...and the session survived it. A 503 used to be read as "signed out",
+  // which sent a perfectly valid session to the login form.
+  await expect(page.getByRole("link", { name: "Catalogue" })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/admin/catalogue");
+});
