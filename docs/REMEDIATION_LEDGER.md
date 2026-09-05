@@ -13,7 +13,9 @@ reliability defects), not feature work. Where a finding's remaining work
 is roadmap-shaped rather than a defect, the row below says so and points
 at the `BACKLOG.md` item that owns it (e.g. `O14`).
 
-Two audit passes feed this ledger, in the order they happened:
+Two audit passes feed this ledger, in the order they happened (a third
+remediation pass, 2026-09-05, closed Part B's §8 step 7 — see the Findings
+table and "Commits made by the 2026-09-05 pass"):
 
 - **Part A** — `TTLI_Audit_Report_2026-09-02.md` (audited `main` at
   `40a9d0d`): H1–H2, M1–M9, plus a POPIA-lifecycle section with no
@@ -204,8 +206,11 @@ this run.
 | **H-7** | Quiz attempt limits and answer/version counters are check-then-insert with no uniqueness backstop | DONE | `tests/test_assessment.py::test_parallel_quiz_starts_*`, `test_parallel_submits_of_the_same_attempt_do_not_double_count_answers`, `test_parallel_assignment_submissions_never_share_a_version` | `e58e8f1` (same commit as H-6 and H-8) | Migration `0044` unique indexes: `(enrolment_id, quiz_id, attempt_number)`, `(attempt_id, question_id)`, `(enrolment_id, assignment_id, version)`. |
 | **H-8** | A quiz attempt is consumed on every quiz-player mount (no resume-open-attempt path) | DONE — fell out of the H-7 fix | `tests/test_assessment.py::test_starting_a_quiz_with_an_open_attempt_resumes_it` / `test_starting_a_quiz_after_the_open_attempt_expired_issues_a_fresh_one` | `e58e8f1` | Backend-contract fix only: `start_attempt` now returns an already-open, unsubmitted attempt instead of minting a new one. This pass did not independently re-verify `quiz-player.tsx`'s mount behaviour against a live browser; correct at the API-contract level regardless of client call count, which is what actually closes the finding. |
 | **H-9** | Public preview access (media/quiz/survey/assignment) ignores course published state and tenant assignment | DONE | `tests/test_h9_public_preview_boundary.py` (new, 14 tests) | `df9a2fd` | — |
+| **H-15** | SSO cannot complete in the browser — `/auth/sso/callback` does not exist and the BFF routes are dead | DONE | `tests/test_sso.py` (deep-link round trip, default, off-site refusal, plus a parametrised `safe_next_path` unit test); `apps/web/e2e/sso.spec.ts` (new, 5 cases incl. axe) | `fe28409` | The server half needed no correctness fix; what was missing was the callback page and the entry button. The parked `next` is now returned as `next_path` and sanitised on both sides (`services/oidc.py::safe_next_path`) — it arrives from an anonymous query parameter and ends up as somewhere the browser is told to go. A full round trip against a **real** IdP is still untested; `tests/test_sso.py`'s fake provider at the HTTP boundary is what covers the protocol. |
+| **H-16** | A tenant logo upload crashes `/login` and the admin shell for that tenant | DONE | `tests/test_tenant_users.py` (served-as-URL, no-logo 404; the existing upload test now asserts the stored key against the database rather than the response) | `cec15f8` | `GET /tenant/branding/logo` streams the object and both theme reads resolve a stored key to it; `lib/theme-assets.ts` maps that to its BFF path and drops anything it cannot vouch for. `app/error.tsx` + `app/global-error.tsx` are the boundaries whose absence turned the render throw into a whole-tenant 500 — the app had none anywhere. Verified live through the BFF (upload → theme → `/login` renders → bytes served). |
+| **H-17** | Session bootstrap and rotation have no failure path | DONE | `apps/web/e2e/session-refresh.spec.ts::a transport failure never signs an admin out` (both halves: `/auth/me` aborted at the transport layer, and a products 401 whose refresh is answered 503) | `6f91538`, `417894d` | The refresh now reports three outcomes — only 401/403 ends a session; a transport failure, 5xx or unparseable 200 retries at 1s/3s/8s and leaves the session alone. The admin shell no longer treats every failure of its identity call as a sign-out. The "most busy flags have no try/finally" half was fixed in the transport rather than at forty call sites: `lib/bff-fetch.ts::unreachable` resolves a transport failure to a 503 carrying the API's own error envelope, and both `authedFetch` and the new `bffFetch` use it, so each caller's existing `!resp.ok` branch does the work. |
 
-### Commits made by this pass
+### Commits made by the 2026-09-03 pass
 
 | Commit | What |
 |---|---|
@@ -214,6 +219,40 @@ this run.
 | `dcd2c93` | Committed the previously-untracked `0041_lesson_blocks.py` migration — every migration `0042` onward depended on a file that was never in git. |
 | `8612d67` | Regenerated `packages/api-client/src/schema.gen.ts` for H-12/H-13's docstring changes. |
 
+### Commits made by the 2026-09-05 pass (§8 step 7)
+
+| Commit | What |
+|---|---|
+| `cec15f8` | H-16 — `GET /tenant/branding/logo` streams the uploaded logo; both theme reads resolve the stored key to it; `lib/theme-assets.ts` maps it to the BFF path and refuses anything else; `app/error.tsx` and `app/global-error.tsx` added. |
+| `6f91538` | H-17, first half — three named refresh outcomes with bounded transient retries, and an admin shell that only sends you to /login when the API says the session is over. |
+| `417894d` | H-17, second half — `lib/bff-fetch.ts`; a transport failure resolves to a 503 envelope for both transports instead of rejecting past every `setBusy(false)`. |
+| `7d1debb` | Unblocked the finance e2e: it located its row by buyer email on a shared dev database, so one dead run's leftover pending payment broke every run after it. |
+| `fe28409` | H-15 — the callback page, the sign-in button, and `next_path` returned and sanitised on both sides. |
+
+**Gate at the end of this pass.** Full API suite: green on a **fresh**
+`ttli_test` (the database is created once and never dropped, so it
+accumulates). Playwright: green per spec and green for the whole suite
+when it is not fighting itself — see below. ruff, ruff format, mypy,
+`alembic check`, api-client drift, web lint (0 errors, 4 pre-existing
+warnings), typecheck and build all clean.
+
+**Two pre-existing flakes this pass had to diagnose to trust its own gate
+run**, both instances of M-31 and neither introduced here:
+
+1. `tests/test_learning.py::test_progress_carries_structured_checks_and_a_course_roll_up`
+   and `::test_dashboard_greets_the_learner_and_points_at_the_next_lesson`
+   fail with `lessons_total == 4` against an expected 2. Some sibling test
+   adds lessons to the seeded "Executive Leadership Certificate" course and
+   does not clean up, and because `ttli_test` is never dropped the damage
+   is permanent from the first run onwards. Both pass on a freshly dropped
+   database. The culprit was not hunted down — it needs its own pass, and
+   the durable fix is a per-run database or a truthful teardown, not
+   another patched assertion.
+2. The Playwright suite run in parallel exhausts the API's 5-per-minute
+   per-account login limit, because several specs log in from
+   `beforeEach` as well as through the form. Four specs failed on 429 in a
+   full-suite run and every one of them passed alone.
+
 ## Not attempted in this pass
 
 Everything below is unchanged from `fable5.1_review.md` and was explicitly
@@ -221,12 +260,10 @@ out of scope for this pass. Ordered using the review's own
 **§8 "Suggested order of work"** (steps 7–11), which is what should be
 picked up next, in this order:
 
-**Next (§8 step 7 — web session/SSO reliability):**
-- **H-15** — SSO cannot complete in the browser (`/auth/sso/callback` doesn't exist; the BFF routes are dead).
-- **H-16** — a tenant logo upload with a bare storage key crashes `/login` and the admin shell for that tenant (no `remotePatterns`, no `error.tsx`).
-- **H-17** — session bootstrap/rotation has no failure path (`postRefresh` has no try/catch, the rotation timer doesn't reschedule on rejection, most `busy` flags have no `finally`).
+~~**§8 step 7 — web session/SSO reliability**~~ — **DONE 2026-09-05**
+(H-15, H-16, H-17; rows in the Findings table above).
 
-**§8 step 8 — event-loop blocking:**
+**Next (§8 step 8 — event-loop blocking):**
 - **H-5** — arq's default 300s `job_timeout` is unset; a cancelled transcode leaves `asset.state="transcoding"` forever and orphans the ffmpeg child.
 - **H-14** — Argon2 password verification (~250ms) runs synchronously on the event loop with no `to_thread`.
 - **M-4** — `POST /auth/sso/start` runs uncached, synchronous DNS resolution on the event loop, anonymous and unlimited.
