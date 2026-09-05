@@ -67,8 +67,16 @@ test("finance approves a pending EFT payment and the buyer is really enrolled", 
   await page.goto("/admin/payments");
   await expect(page.getByRole("heading", { name: "Payments", level: 1 })).toBeVisible();
 
-  const row = page.locator(".card", { has: page.getByText(pending.buyerEmail) });
+  // Addressed by payment id, not by buyer email. The queue is a shared
+  // dev database and this account has bought before — every earlier run
+  // that died between creating the payment and approving it leaves its row
+  // behind, so matching on the email resolved to two cards and failed
+  // strict mode. One failed run used to poison every run after it.
+  const row = page.locator(".card", {
+    has: page.getByLabel(`Reason for rejecting payment ${pending.paymentId}`),
+  });
   await expect(row).toBeVisible();
+  await expect(row.getByText(pending.buyerEmail)).toBeVisible();
   await expect(row.getByText("Proof uploaded")).toBeVisible();
 
   await row.getByRole("button", { name: "Approve" }).click();
