@@ -48,6 +48,7 @@ export default function People() {
   const [users, setUsers] = useState<TenantUser[] | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [includeLearners, setIncludeLearners] = useState(false);
+  const [query, setQuery] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("");
@@ -90,6 +91,15 @@ export default function People() {
       await load();
     })();
   }, [canInvite, load]);
+
+  const needle = query.trim().toLowerCase();
+  const visibleUsers = needle
+    ? (users ?? []).filter(
+        (user) =>
+          user.email.toLowerCase().includes(needle) ||
+          (user.full_name ?? "").toLowerCase().includes(needle),
+      )
+    : (users ?? []);
 
   async function act(path: string, init: RequestInit, success: string) {
     setBusy(true);
@@ -211,9 +221,30 @@ export default function People() {
       </section>
 
       <section className="mt-4">
-        <h2 className="serif" style={{ fontSize: "1.05rem" }}>
-          {includeLearners ? "Everyone" : "Staff"}
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="serif" style={{ fontSize: "1.05rem" }}>
+            {includeLearners ? "Everyone" : "Staff"}
+            {query.trim() ? (
+              <span style={{ fontSize: "0.8125rem", color: "var(--muted)", fontWeight: 400 }}>
+                {" "}
+                · {visibleUsers.length} of {(users ?? []).length}
+              </span>
+            ) : null}
+          </h2>
+          {/* Ticking "include learners" turns a short staff list into
+              every account in the tenant, which is unbounded — scanning
+              it by eye was the only way to find anyone. Filters the rows
+              already loaded; no new request. */}
+          <input
+            className="input"
+            type="search"
+            style={{ maxWidth: "16rem" }}
+            placeholder="Filter by name or email"
+            aria-label="Filter people by name or email"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         <div className="table-wrap mt-2">
           <table>
             <thead>
@@ -225,7 +256,14 @@ export default function People() {
               </tr>
             </thead>
             <tbody>
-              {(users ?? []).map((user) => (
+              {visibleUsers.length === 0 && (users ?? []).length > 0 ? (
+                <tr>
+                  <td colSpan={canManageRoles || canSuspend ? 4 : 3} style={{ color: "var(--muted)" }}>
+                    Nobody here matches “{query.trim()}”.
+                  </td>
+                </tr>
+              ) : null}
+              {visibleUsers.map((user) => (
                 <tr key={user.id}>
                   <td>
                     {user.full_name ? <div>{user.full_name}</div> : null}
@@ -299,7 +337,26 @@ export default function People() {
                             type="button"
                             className="btn btn--quiet"
                             disabled={busy}
-                            onClick={() =>
+                            onClick={() => {
+                              // Suspending is immediate and not local to
+                              // this screen: services/tenant_users.py's
+                              // set_status revokes every refresh-token
+                              // family and denies the account's existing
+                              // access tokens, so the person is signed out
+                              // of every device mid-session. One
+                              // mis-click on a row in a list of
+                              // near-identical email addresses did that
+                              // silently. Reinstating is not destructive
+                              // and stays a single click.
+                              if (
+                                user.status !== "suspended" &&
+                                !window.confirm(
+                                  `Suspend ${user.email}? They are signed out everywhere ` +
+                                    `immediately and cannot sign in again until reinstated.`,
+                                )
+                              ) {
+                                return;
+                              }
                               void act(
                                 `/tenant/users/${user.id}/status`,
                                 {
@@ -309,8 +366,8 @@ export default function People() {
                                   }),
                                 },
                                 user.status === "suspended" ? "Reinstated." : "Suspended.",
-                              )
-                            }
+                              );
+                            }}
                           >
                             {user.status === "suspended" ? "Reinstate" : "Suspend"}
                           </button>
