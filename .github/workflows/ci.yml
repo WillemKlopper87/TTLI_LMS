@@ -267,10 +267,11 @@ jobs:
 
       - name: Container image scan
         run: |
-          # boky/postfix intentionally not scanned yet -- see the
-          # postfix-relay service comment in
-          # infra/docker-compose.single-vm.yml and docs/BACKLOG.md's
-          # M3-postfix-cve-review item for why.
+          # The mail relay is no longer the exception this comment used to
+          # record (BACKLOG O15, closed 2026-09-08): it is built from
+          # infra/postfix-relay/ and scanned with the app images in the
+          # `images` job below, with no exceptions of its own.
+          #
           # The four util-linux IDs are scoped per image, each on its own
           # recorded evidence (.trivyignore carries both dispositions).
           # Strip them from the baseline every other image is scanned
@@ -402,6 +403,13 @@ jobs:
       - name: Build web image
         run: docker build --build-arg GIT_SHA="$GIT_SHA" -f apps/web/Dockerfile -t ttli-web:ci .
 
+      # The mail relay is a thin `apk upgrade` over boky/postfix's 5.1.0
+      # release (BACKLOG O15). It is built here rather than on the VM
+      # because the single-VM deployment only ever pulls by digest and
+      # never builds -- see deploy-single-vm.sh's registry note.
+      - name: Build postfix-relay image
+        run: docker build -t ttli-postfix-relay:ci infra/postfix-relay
+
       - name: Install Trivy
         run: |
           sudo apt-get install -y wget gnupg
@@ -426,7 +434,7 @@ jobs:
           { cat "$base_ignore"
             grep -E '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore"
           } > "$app_ignore"
-          for img in ttli-api:ci ttli-web:ci; do
+          for img in ttli-api:ci ttli-web:ci ttli-postfix-relay:ci; do
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$app_ignore" "$img"
             echo "::endgroup::"
@@ -439,6 +447,7 @@ jobs:
         run: |
           trivy image --format spdx-json --output ttli-api-sbom.spdx.json ttli-api:ci
           trivy image --format spdx-json --output ttli-web-sbom.spdx.json ttli-web:ci
+          trivy image --format spdx-json --output ttli-postfix-relay-sbom.spdx.json ttli-postfix-relay:ci
 
       - name: Log in to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -460,12 +469,16 @@ jobs:
           repo_lc=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           docker tag ttli-api:ci "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA"
           docker tag ttli-web:ci "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA"
+          docker tag ttli-postfix-relay:ci "ghcr.io/$repo_lc/ttli-postfix-relay:sha-$GIT_SHA"
           docker push "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA"
           docker push "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA"
+          docker push "ghcr.io/$repo_lc/ttli-postfix-relay:sha-$GIT_SHA"
           api_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/$repo_lc/ttli-api:sha-$GIT_SHA")
           web_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/$repo_lc/ttli-web:sha-$GIT_SHA")
+          relay_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/$repo_lc/ttli-postfix-relay:sha-$GIT_SHA")
           echo "api_digest=$api_digest" >> "$GITHUB_OUTPUT"
           echo "web_digest=$web_digest" >> "$GITHUB_OUTPUT"
+          echo "relay_digest=$relay_digest" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -480,8 +493,10 @@ jobs:
         run: |
           cosign sign --yes "${{ steps.push.outputs.api_digest }}"
           cosign sign --yes "${{ steps.push.outputs.web_digest }}"
+          cosign sign --yes "${{ steps.push.outputs.relay_digest }}"
           cosign attest --yes --predicate ttli-api-sbom.spdx.json --type spdxjson "${{ steps.push.outputs.api_digest }}"
           cosign attest --yes --predicate ttli-web-sbom.spdx.json --type spdxjson "${{ steps.push.outputs.web_digest }}"
+          cosign attest --yes --predicate ttli-postfix-relay-sbom.spdx.json --type spdxjson "${{ steps.push.outputs.relay_digest }}"
 
   web:
     runs-on: ubuntu-latest

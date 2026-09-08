@@ -154,6 +154,17 @@ services:
   # isn't in the ci.yml Trivy loop yet for that reason.
   # Re-resolve deliberately with:
   #   docker buildx imagetools inspect boky/postfix:5.1.0-alpine --format '{{.Manifest.Digest}}'
+  # PENDING SWAP (BACKLOG O15): this still pulls boky's own 5.1.0-alpine,
+  # which carries 74 CRITICAL/HIGH findings -- every one of them fixable,
+  # boky simply has not rebuilt the tag since 2026-01-04. CI now builds
+  # infra/postfix-relay/ (a thin `apk upgrade` over this same digest, which
+  # scans clean at zero) and pushes it to GHCR as ttli-postfix-relay. Repoint
+  # this line at that image's digest once the first push has produced one:
+  #   docker buildx imagetools inspect \
+  #     ghcr.io/willemklopper87/ttli_lms/ttli-postfix-relay:sha-<GIT_SHA> \
+  #     --format '{{.Manifest.Digest}}'
+  # Until then production runs the unpatched relay while CI proves the
+  # patched one -- which is the gap this note exists to keep visible.
   postfix-relay:
     image: boky/postfix:5.1.0-alpine@sha256:6e761312e833947f77af755072c0e77b67d298d127595470a79e9454008dd594
     environment:
