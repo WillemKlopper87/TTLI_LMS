@@ -2347,6 +2347,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/enrolments/{enrolment_id}/gradebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Weighted marks across every assessable item (P18)
+         * @description Reporting only. `percentage` has no bearing on whether the course is
+         *     complete or a certificate issues -- that stays services/completion.py's
+         *     decision (02 §5.2), and this endpoint deliberately cannot change it.
+         *
+         *     Scoped to the caller's own enrolment, like the transcript above: a
+         *     learner's marks are exactly as private as the lessons they completed.
+         */
+        get: operations["get_gradebook_api_v1_enrolments__enrolment_id__gradebook_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lessons/{lesson_id}/start": {
         parameters: {
             query?: never;
@@ -4760,6 +4785,8 @@ export interface components {
             approve: boolean;
             /** Rejected Reason */
             rejected_reason?: string | null;
+            /** Score */
+            score?: number | string | null;
         };
         /** AssignmentSubmissionResponse */
         AssignmentSubmissionResponse: {
@@ -4776,6 +4803,8 @@ export interface components {
             approved_at: string | null;
             /** Rejected Reason */
             rejected_reason: string | null;
+            /** Score */
+            score?: string | null;
         };
         /** AssignmentsPageResponse */
         AssignmentsPageResponse: {
@@ -5902,6 +5931,45 @@ export interface components {
         FeatureFlagsResponse: {
             /** Flags */
             flags: components["schemas"]["FeatureFlagInfo"][];
+        };
+        /** GradebookItemResponse */
+        GradebookItemResponse: {
+            /** Kind */
+            kind: string;
+            /** Item Id */
+            item_id: string;
+            /** Title */
+            title: string;
+            /** Weight */
+            weight: string;
+            /** Max Score */
+            max_score: string;
+            /** Score */
+            score: string | null;
+            /** Passed */
+            passed: boolean | null;
+        };
+        /**
+         * GradebookResponse
+         * @description P18's shared achievement view. Reporting only -- `percentage` has no
+         *     bearing on completion or certificate issuance, which remain
+         *     services/completion.py's decision (02 §5.2).
+         */
+        GradebookResponse: {
+            /** Enrolment Id */
+            enrolment_id: string;
+            /** Items */
+            items: components["schemas"]["GradebookItemResponse"][];
+            /** Percentage */
+            percentage: string | null;
+            /** Graded Weight */
+            graded_weight: string;
+            /** Total Weight */
+            total_weight: string;
+            /** Graded Count */
+            graded_count: number;
+            /** Ungraded Count */
+            ungraded_count: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -13963,6 +14031,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gradebook_api_v1_enrolments__enrolment_id__gradebook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrolment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradebookResponse"];
                 };
             };
             /** @description Validation Error */

@@ -330,11 +330,44 @@ class AssignmentSubmissionResponse(BaseModel):
     submitted_at: datetime
     approved_at: datetime | None
     rejected_reason: str | None
+    #: The mark, out of the assignment's `max_score` (P18). None means not
+    #: marked -- distinct from a marked zero, which the gradebook counts.
+    score: Decimal | None = None
 
 
 class AssignmentReviewRequest(BaseModel):
     approve: bool
     rejected_reason: str | None = None
+    #: Optional: a reviewer may approve without marking. The ceiling is the
+    #: parent assignment's `max_score`, checked server-side, since it cannot
+    #: be expressed here without knowing which assignment this is.
+    score: Decimal | None = Field(default=None, ge=0)
+
+
+class GradebookItemResponse(BaseModel):
+    kind: str
+    item_id: str
+    title: str
+    weight: Decimal
+    max_score: Decimal
+    score: Decimal | None
+    passed: bool | None
+
+
+class GradebookResponse(BaseModel):
+    """P18's shared achievement view. Reporting only -- `percentage` has no
+    bearing on completion or certificate issuance, which remain
+    services/completion.py's decision (02 §5.2)."""
+
+    enrolment_id: str
+    items: list[GradebookItemResponse]
+    #: None when nothing is marked yet, never 0 -- "no marks" and "scored
+    #: nothing" are different claims.
+    percentage: Decimal | None
+    graded_weight: Decimal
+    total_weight: Decimal
+    graded_count: int
+    ungraded_count: int
 
 
 class AssignmentListItem(BaseModel):

@@ -44,6 +44,11 @@ SurveyEvaluationRole = Enum(
 
 class Quiz(Base, TimestampMixin):
     __tablename__ = "quizzes"
+    __table_args__ = (
+        # Declared here as well as in 0045 so alembic's autogenerate drift
+        # check sees the same schema the migration created.
+        CheckConstraint("weight > 0", name="ck_quizzes_weight_positive"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -56,6 +61,10 @@ class Quiz(Base, TimestampMixin):
     pass_score: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("70"))
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("3"))
     time_limit_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Relative weight in the course gradebook (0045, P18). Defaults to 1 so
+    # every item counts equally until someone says otherwise -- adding this
+    # cannot silently move an existing learner's grade.
+    weight: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, server_default=text("1"))
 
 
 class QuizQuestion(Base):
@@ -284,14 +293,22 @@ class SurveyResponse(Base):
 
 class Assignment(Base, TimestampMixin):
     __tablename__ = "assignments"
+    __table_args__ = (
+        # See Quiz above (0045).
+        CheckConstraint("weight > 0", name="ck_assignments_weight_positive"),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     title: Mapped[str] = mapped_column(Text, nullable=False)
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The denominator a submission's `score` is marked out of. Until 0045
+    # this was decorative: nothing could record a mark against it.
     max_score: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("100"))
     approval_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
+    # See Quiz.weight (0045, P18).
+    weight: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False, server_default=text("1"))
 
 
 class AssignmentSubmission(Base):
@@ -310,6 +327,13 @@ class AssignmentSubmission(Base):
             "assignment_id",
             "version",
             unique=True,
+        ),
+        # The floor only; the ceiling is the parent assignment's max_score,
+        # which a single-table CHECK cannot reach -- services/gradebook.py
+        # ::validate_score enforces that half on the write path (0045).
+        CheckConstraint(
+            "score IS NULL OR score >= 0",
+            name="ck_assignment_submissions_score_non_negative",
         ),
     )
 
@@ -330,6 +354,12 @@ class AssignmentSubmission(Base):
     scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scan_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    # The mark, out of the parent Assignment.max_score (0045, P18). NULL is
+    # "not marked", which is distinct from a marked zero -- approval and
+    # marking are separate acts and the gradebook reports them separately.
+    # The upper bound lives in services/gradebook.py, since a single-table
+    # CHECK cannot reach across to assignments.max_score.
+    score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

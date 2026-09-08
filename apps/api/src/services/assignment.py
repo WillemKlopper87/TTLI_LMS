@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,7 @@ from src.models.assessment import Assignment, AssignmentSubmission
 from src.models.audit import AuditAction
 from src.models.learning import Enrolment
 from src.models.user import User
-from src.services import audit
+from src.services import audit, gradebook
 from src.services.courses import (
     assert_any_course_authorable,
     course_ids_for_assignment,
@@ -119,6 +120,7 @@ async def review(
     reviewer_user_id: uuid.UUID,
     approve: bool,
     rejected_reason: str | None = None,
+    score: Decimal | None = None,
 ) -> AssignmentSubmission:
     submission = await session.get(AssignmentSubmission, submission_id)
     if submission is None or submission.tenant_id != tenant_id:
@@ -127,6 +129,18 @@ async def review(
         raise AppError("This submission has already been approved.")
     if not approve and not rejected_reason:
         raise AppError("A reason is required to reject a submission.")
+
+    # Marking is optional and separate from approving (P18): a reviewer may
+    # approve without a mark, and `assignments.max_score` is the ceiling a
+    # single-table CHECK cannot reach, so it is enforced here.
+    if score is not None:
+        assignment = await session.get(Assignment, submission.assignment_id)
+        if assignment is None:
+            raise NotFound("No such assignment.")
+        try:
+            submission.score = gradebook.validate_score(score, assignment.max_score)
+        except ValueError as exc:
+            raise AppError(str(exc)) from exc
 
     submission.reviewed_by_user_id = reviewer_user_id
     if approve:
@@ -142,7 +156,11 @@ async def review(
         actor_user_id=reviewer_user_id,
         entity_type="assignment_submission",
         entity_id=submission.id,
-        after={"approved": approve, "rejected_reason": rejected_reason},
+        after={
+            "approved": approve,
+            "rejected_reason": rejected_reason,
+            "score": str(score) if score is not None else None,
+        },
     )
     await session.flush()
     return submission

@@ -1016,6 +1016,7 @@ async def review_assignment_submission(
         reviewer_user_id=principal.user_id,
         approve=body.approve,
         rejected_reason=body.rejected_reason,
+        score=body.score,
     )
     return AssignmentSubmissionResponse(
         id=str(submission.id),
@@ -1023,6 +1024,7 @@ async def review_assignment_submission(
         submitted_at=submission.submitted_at,
         approved_at=submission.approved_at,
         rejected_reason=submission.rejected_reason,
+        score=submission.score,
     )
 
 

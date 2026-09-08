@@ -8,6 +8,7 @@ import asyncio
 import json
 import socket
 import uuid
+from decimal import Decimal
 from urllib.parse import urlparse
 
 import pytest
@@ -1549,6 +1550,111 @@ async def test_assignment_submission_approval_flow(
     )
     assert review.status_code == 200
     assert review.json()["approved_at"] is not None
+
+
+async def test_assignment_review_records_a_mark_and_it_reaches_the_gradebook(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """P18 end to end: `assignments.max_score` shipped since 0013 with
+    nowhere to record a mark against it. A reviewer can now mark, the mark
+    is bounded by that maximum, and it surfaces on the learner's own
+    gradebook without touching whether the course is complete."""
+    if not _clamav_reachable(settings.clamav_host, settings.clamav_port):
+        pytest.skip(
+            "no ClamAV on the configured CLAMAV_HOST/PORT — run: "
+            "docker compose -f infra/docker-compose.yml up -d clamav"
+        )
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    assignment = await client.post(
+        "/api/v1/assignments",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"title": "Marked essay", "approval_required": True, "max_score": 50},
+    )
+    assignment_id = assignment.json()["id"]
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=2)
+    await _attach_assignment(client, author_token, lesson_id, assignment_id)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    submit = await client.post(
+        f"/api/v1/assignments/{assignment_id}/submissions",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+        files={"file": ("essay.txt", b"a real essay", "text/plain")},
+    )
+    assert submit.status_code == 201, submit.text
+    submission_id = submit.json()["id"]
+    # Not marked is not the same as marked zero.
+    assert submit.json()["score"] is None
+
+    # The ceiling is the parent assignment's max_score, which no
+    # single-table CHECK can reach — services/gradebook.py enforces it.
+    too_high = await client.post(
+        f"/api/v1/assignment-submissions/{submission_id}/review",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"approve": True, "score": 51},
+    )
+    assert too_high.status_code == 400, too_high.text
+    assert "50" in too_high.json()["error"]["message"]
+
+    review = await client.post(
+        f"/api/v1/assignment-submissions/{submission_id}/review",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"approve": True, "score": "37.5"},
+    )
+    assert review.status_code == 200, review.text
+    assert review.json()["approved_at"] is not None
+    assert Decimal(str(review.json()["score"])) == Decimal("37.5")
+
+    enrolments = await client.get(
+        "/api/v1/enrolments", headers={"Authorization": f"Bearer {buyer_token}"}
+    )
+    enrolment_id = enrolments.json()[0]["enrolment_id"]
+
+    book = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/gradebook",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert book.status_code == 200, book.text
+    body = book.json()
+    marked = [i for i in body["items"] if i["item_id"] == assignment_id]
+    assert len(marked) == 1
+    assert Decimal(str(marked[0]["score"])) == Decimal("37.5")
+    assert Decimal(str(marked[0]["max_score"])) == Decimal("50")
+    # 37.5/50 = 75%, and the percentage covers only what is marked.
+    assert Decimal(str(body["percentage"])) == Decimal("75.00")
+    assert body["graded_count"] >= 1
+
+
+async def test_gradebook_refuses_another_learners_enrolment(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """Marks are as private as the transcript beside them. Scoping on
+    tenant_id alone would have let any authenticated member of a tenant
+    read anyone else's results by enrolment id."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+
+    owner_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+    enrolments = await client.get(
+        "/api/v1/enrolments", headers={"Authorization": f"Bearer {owner_token}"}
+    )
+    enrolment_id = enrolments.json()[0]["enrolment_id"]
+
+    intruder_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    denied = await client.get(
+        f"/api/v1/enrolments/{enrolment_id}/gradebook",
+        headers={"Authorization": f"Bearer {intruder_token}"},
+    )
+    assert denied.status_code == 404, denied.text
 
 
 async def test_parallel_assignment_submissions_never_share_a_version(

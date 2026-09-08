@@ -25,6 +25,7 @@ from src.core.deps import (
 )
 from src.core.errors import AppError, NotFound
 from src.models.course import LessonBlock
+from src.schemas.assessment import GradebookItemResponse, GradebookResponse
 from src.schemas.learning import (
     DashboardCertificate,
     DashboardEnrolment,
@@ -45,6 +46,7 @@ from src.schemas.learning import (
 )
 from src.services import dashboard as dashboard_service
 from src.services import enrolment as enrolment_service
+from src.services import gradebook as gradebook_service
 from src.services import video_progress as video_progress_service
 
 router = APIRouter(tags=["learning"])
@@ -242,6 +244,49 @@ async def get_transcript(
             )
             for row in transcript.lessons
         ],
+    )
+
+
+@router.get(
+    "/enrolments/{enrolment_id}/gradebook",
+    response_model=GradebookResponse,
+    summary="Weighted marks across every assessable item (P18)",
+)
+async def get_gradebook(
+    enrolment_id: str, principal: PrincipalDep, session: SessionDep
+) -> GradebookResponse:
+    """Reporting only. `percentage` has no bearing on whether the course is
+    complete or a certificate issues -- that stays services/completion.py's
+    decision (02 §5.2), and this endpoint deliberately cannot change it.
+
+    Scoped to the caller's own enrolment, like the transcript above: a
+    learner's marks are exactly as private as the lessons they completed.
+    """
+    book = await gradebook_service.build_for_enrolment(
+        session,
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        enrolment_id=_parse_uuid(enrolment_id),
+    )
+    return GradebookResponse(
+        enrolment_id=enrolment_id,
+        items=[
+            GradebookItemResponse(
+                kind=item.kind,
+                item_id=item.item_id,
+                title=item.title,
+                weight=item.weight,
+                max_score=item.max_score,
+                score=item.score,
+                passed=item.passed,
+            )
+            for item in book.items
+        ],
+        percentage=book.percentage,
+        graded_weight=book.graded_weight,
+        total_weight=book.total_weight,
+        graded_count=len(book.graded),
+        ungraded_count=len(book.ungraded),
     )
 
 
