@@ -44,18 +44,21 @@ jobs:
         run: |
           set +e
           FAILED=0
-          for img in ttli-api:rescan ttli-web:rescan; do
-            # Filesystem-safe name computed once and reused for both the
-            # write here and the read in the issue step below — the
-            # previous version wrote to a colon-containing name but piped
-            # a *copy* of the output through sed into /dev/null instead of
-            # renaming the file, then the issue step read a third, still
-            # different name. All three now agree.
-            safe_name="trivy-${img//:/-}-report.txt"
+          non_postgres_ignore="$(mktemp)"
+          trap 'rm -f "$non_postgres_ignore"' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore > "$non_postgres_ignore"
+          postgres_image="postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
+          for spec in "ttli-api:rescan|ttli-api-rescan" "ttli-web:rescan|ttli-web-rescan" "$postgres_image|postgres-production"; do
+            IFS='|' read -r img report_name <<< "$spec"
+            ignorefile="$non_postgres_ignore"
+            if [[ "$img" == "$postgres_image" ]]; then
+              ignorefile="$GITHUB_WORKSPACE/.trivyignore"
+            fi
+            safe_name="trivy-${report_name}-report.txt"
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH --ignorefile .trivyignore \
+            trivy image --severity CRITICAL,HIGH --ignorefile "$ignorefile" \
               --format table "$img" > "$safe_name"
-            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore "$img"
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
             [ $? -ne 0 ] && FAILED=1
             echo "::endgroup::"
           done
@@ -80,6 +83,7 @@ jobs:
             const fs = require('fs');
             const apiReport = fs.existsSync('trivy-ttli-api-rescan-report.txt') ? fs.readFileSync('trivy-ttli-api-rescan-report.txt', 'utf8') : '(no api report file)';
             const webReport = fs.existsSync('trivy-ttli-web-rescan-report.txt') ? fs.readFileSync('trivy-ttli-web-rescan-report.txt', 'utf8') : '(no web report file)';
+            const postgresReport = fs.existsSync('trivy-postgres-production-report.txt') ? fs.readFileSync('trivy-postgres-production-report.txt', 'utf8') : '(no PostgreSQL report file)';
             // A stable marker, not the dated title, is what identifies
             // "the same unresolved finding" across weekly runs — without
             // it, every Monday opens a new issue for a CVE nobody has
@@ -88,16 +92,18 @@ jobs:
             const body = [
               marker,
               'The weekly image re-scan found a CRITICAL/HIGH finding not covered by `.trivyignore`,',
-              'against the *currently pinned* base images — nothing in this repo changed to cause this.',
+              'against the *currently pinned* application or PostgreSQL images — nothing in this repo changed to cause this.',
               '',
-              'This means a CVE was disclosed after the current digest pin was last resolved. See',
-              '`apps/api/Dockerfile`/`apps/web/Dockerfile`\'s own comments for how to re-resolve a pin',
-              '(`docker buildx imagetools inspect <image>:<tag>`), then decide: bump the pin, add a',
+              'This means a CVE was disclosed after the current digest pin was last resolved.',
+              'Identify the affected pin in `apps/api/Dockerfile`, `apps/web/Dockerfile`, or',
+              '`infra/docker-compose.single-vm.yml`; re-resolve it with',
+              '`docker buildx imagetools inspect <image>:<tag>`, then decide: bump the pin, add a',
               '`.trivyignore` entry with a stated reason if it\'s a false positive/not exploitable here,',
               'or accept and track if there\'s no fix upstream yet.',
               '',
               '<details><summary>API image report</summary>\n\n```\n' + apiReport.slice(0, 6000) + '\n```\n</details>',
               '<details><summary>Web image report</summary>\n\n```\n' + webReport.slice(0, 6000) + '\n```\n</details>',
+              '<details><summary>PostgreSQL image report</summary>\n\n```\n' + postgresReport.slice(0, 6000) + '\n```\n</details>',
             ].join('\n');
 
             const existing = await github.rest.issues.listForRepo({

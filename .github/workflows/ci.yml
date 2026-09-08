@@ -32,7 +32,10 @@ jobs:
         # GH Actions service containers use the image's own ephemeral
         # storage with no custom volume mount, so there's nothing for
         # the new versioned path to conflict with.
-        image: postgres:18-alpine
+        # Exact single-VM production digest. Keep both service jobs and the
+        # blocking scan below on this same immutable payload; scanning a
+        # mutable tag did not prove what production would run.
+        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
         env:
           POSTGRES_USER: ttli
           POSTGRES_PASSWORD: ttli_ci
@@ -268,9 +271,20 @@ jobs:
           # postfix-relay service comment in
           # infra/docker-compose.single-vm.yml and docs/BACKLOG.md's
           # M3-postfix-cve-review item for why.
-          for img in postgres:18-alpine redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable caddy:2-alpine; do
+          # Four util-linux findings are accepted only for the exact
+          # PostgreSQL digest below. Remove them from the ignore file used
+          # for every other image so the payload-specific disposition cannot
+          # hide a real util-linux installation elsewhere in the stack.
+          non_postgres_ignore="$(mktemp)"
+          trap 'rm -f "$non_postgres_ignore"' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$non_postgres_ignore"
+          for img in postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2 redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable caddy:2-alpine; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
+            ignorefile="$non_postgres_ignore"
+            if [[ "$img" == "postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2" ]]; then
+              ignorefile="$GITHUB_WORKSPACE/.trivyignore"
+            fi
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
             echo "::endgroup::"
           done
 
@@ -366,9 +380,12 @@ jobs:
 
       - name: Scan built images
         run: |
+          non_postgres_ignore="$(mktemp)"
+          trap 'rm -f "$non_postgres_ignore"' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$non_postgres_ignore"
           for img in ttli-api:ci ttli-web:ci; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$GITHUB_WORKSPACE/.trivyignore" "$img"
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$non_postgres_ignore" "$img"
             echo "::endgroup::"
           done
 
@@ -495,7 +512,8 @@ jobs:
 
     services:
       postgres:
-        image: postgres:18-alpine
+        # Same immutable payload used by quality and single-VM production.
+        image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
         env:
           POSTGRES_USER: ttli
           POSTGRES_PASSWORD: ttli_ci

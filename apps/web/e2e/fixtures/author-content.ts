@@ -21,10 +21,9 @@ import type { APIRequestContext, APIResponse } from "@playwright/test";
  * `docs/03_API_SPEC.md`); four-plus spec files starting in parallel from
  * one machine, each logging in two or three times for its own fixture
  * setup and mid-test approval, blows past the per-IP ceiling even though
- * every individual account stays under its own. Not a concern in CI,
- * which never runs a live API for these specs at all (`.github/
- * workflows/ci.yml`'s own comment: "the authenticated spec skips itself,
- * loudly").
+ * every individual account stays under its own. The authenticated CI job
+ * therefore runs these files one at a time and clears its test Redis limiter
+ * between files.
  */
 
 async function check(resp: APIResponse, step: string): Promise<APIResponse> {

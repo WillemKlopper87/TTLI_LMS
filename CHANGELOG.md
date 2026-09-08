@@ -12,6 +12,23 @@ carry false confidence a real changelog shouldn't have.
 
 ## [Unreleased]
 
+### Fixed
+
+- Close request transactions before sending responses, eliminating the
+  create-then-read race that made authenticated CI intermittently lose newly
+  created products and lesson blocks.
+- Anchor rolling analytics windows to PostgreSQL's clock, preventing small
+  host/container clock skew from excluding a just-committed event.
+- Pin the CI PostgreSQL services and blocking Trivy scan to the exact
+  single-VM production digest. Document four expiring, payload-scoped
+  util-linux false-positive exceptions: the image contains `libuuid`, but the
+  affected util-linux mount/nsenter implementations are absent.
+
+### Changed
+
+- Put production hardening ahead of Phase 6 AI work in the authoritative
+  backlog and current-state handoff.
+
 ## [0.1.0] - 2026-08-23
 
 First tagged snapshot. Phases 1, 4, 4.5 and 5 complete; Phases 2–3

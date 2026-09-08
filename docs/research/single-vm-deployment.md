@@ -317,15 +317,15 @@ Two triggers, one mechanism:
   (`.github/workflows/ci.yml`) passes because nothing new is vulnerable
   *yet*, and you want it live.
 - **A vulnerability fix** — `.github/workflows/image-scan-weekly.yml`
-  runs every Monday against the *currently pinned, unchanged* base
-  images and re-scans them with that day's Trivy database. If a CVE was
-  disclosed since the digest was last resolved, it opens a GitHub issue
-  (it never auto-bumps the pin or auto-merges anything — `apps/api/
-  Dockerfile` and `apps/web/Dockerfile` are both explicit that digest
-  re-resolution is deliberate, not scheduled). A human re-resolves the
-  digest (`docker buildx imagetools inspect <image>:<tag>`, per the
-  Dockerfiles' own comments), bumps the pin, and pushes — from here on
-  it's identical to a feature push.
+  runs every Monday against the *application* images rebuilt from the
+  pinned bases in `apps/api/Dockerfile` and `apps/web/Dockerfile`, plus the
+  exact PostgreSQL digest used by this single-VM topology. The other
+  infrastructure images are scanned by the blocking `quality` job on each
+  push. If the weekly scan finds a newly disclosed CVE or an expired
+  PostgreSQL exception, it opens a GitHub issue (it never auto-bumps or
+  auto-merges). A human re-resolves the affected digest (`docker buildx
+  imagetools inspect <image>:<tag>`), bumps the pin, and pushes — from here
+  on it is identical to a feature push.
 
 Either way, getting the fix into production is the same four steps:
 

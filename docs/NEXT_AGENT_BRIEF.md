@@ -1,23 +1,23 @@
-# TTLI_LMS — Next-agent brief (updated 2026-08-27)
+# TTLI_LMS — Next-agent brief (updated 2026-09-08)
 
 Read this first for operating context, then use `docs/BACKLOG.md` as the
 authoritative work queue. `STATUS.md` and `HANDOFF.md` are long-form historical
 logs and should only be opened for detail on a specific subsystem. This brief
-was refreshed after the 2026-08-27 review, authenticated-fetch consolidation,
-new browser journeys and P9 survey-results phase; older sections below retain
-useful design rationale but may contain historical counts.
+was refreshed after the 2026-09-08 CI diagnosis and production-hardening
+decision. Older sections below retain useful design rationale but may contain
+historical counts; the state table and `BACKLOG.md` immediate queue win.
 
 ---
 
 ## 1. State at a glance
 
-| Item | State (verified 2026-08-27) |
+| Item | State (verified 2026-09-08) |
 |---|---|
 | Branch / HEAD | `main` tracks `origin/main`; inspect `git status`/`git log -1` rather than copying a commit id from this document |
-| CI (`.github/workflows/ci.yml`) | GitHub Actions billing is resolved and jobs execute normally. `013ebc2` repaired the P9 formatting gate; `2cfe90e` adds a required authenticated-browser job. Confirm the latest run before marking T1/T3 done |
-| API gates | Ruff format/check and mypy pass. The full API suite and all 23 assessment tests pass locally against real Postgres/Redis/Garage/ClamAV; CI also enforces migrations, zero skipped integration tests, migration round-trip, model drift and generated-client drift |
-| Web gates | Typecheck/build pass; ESLint has 0 errors and 53 tracked warnings. Public/axe tests remain fast and API-free; learner assessment, checkout, finance and organisation journeys now have a separate seeded integration job |
-| Immediate work | Follow `docs/BACKLOG.md` T1–T6. Do not resurrect the obsolete 2026-08-20 order later in this file |
+| CI (`.github/workflows/ci.yml`) | **Latest remote push run is red at `d71291a`.** Quality reached the blocking image scan and found four util-linux findings attributed to PostgreSQL's `libuuid`; authenticated e2e exposed a response-before-commit race. T7/T8 contain the local remediation, but only a pushed green run closes them |
+| API gates | On the red remote run, lint, formatting, mypy, migrations, the full API suite, coverage floor, migration/model/client drift and docs gates all passed. Post-fix local verification passes the focused dependency/analytics regressions, all 641 API tests (640 passed, one local skip), model drift and the formerly failing learner browser journey; the remote gate remains required |
+| Web gates | Remote lint/typecheck/build and public e2e/axe passed. The historical 53-warning baseline was cleared on 2026-08-28; three unrelated warnings remain. Authenticated e2e is a required separate job and is currently the failing application gate |
+| Immediate work | Follow `docs/BACKLOG.md` T7–T13. Production hardening precedes Phase 6; do not use the superseded orders later in this file |
 | Dev services | `docker compose -f infra/docker-compose.yml` (or `scripts/dev-up.sh`) — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145, clamav 3410. API :8010, web :3010. |
 | Dev login | Run `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py`; it idempotently repairs the ten least-privilege accounts used by the Playwright specs. The script is the credential/role authority — do not copy its values into another seed path |
 
@@ -35,18 +35,32 @@ file are stale (they still say Phase 3 ~40%, Phase 1 ~95%) — trust the table.
 | 4 Core LMS | 100% | Content model, completion-rule engine, enrolments, real ffmpeg→HLS transcode with signed playback, heartbeat anti-bypass, WebVTT captions, quizzes/surveys/assignments with auto-grading, certificates (PDF+QR, public verify, LinkedIn), transcript, full course/module/lesson/template authoring UI |
 | 4.5 PWA + a11y | **100%** | Manifest/SW/offline shell, WCAG 2.1 AA contrast pass, Web Push (VAPID, 3 triggers, verified live on Edge/WNS), and since 2026-08-20 the axe-core gate — the last item. |
 | 5 Corporate / workshops / marketing | 100% | Organisations, seat pools, PO checkout, manager visibility, facilitators/workshops/sessions/waitlists, pluggable meeting provider (Teams), CRM (deals/tasks/notes), marketing engine (segments/templates/campaigns/unsubscribe) |
-| 6 AI insights | 0% | Not started (demo target: 500 survey responses summarised with zero identifiers transmitted) |
-| 7 Hardening + cloud | ~15% | Containerisation done 2026-08-20 (both Dockerfiles built and run, prod-shaped compose, CI image build + Trivy scan). Still absent: IaC, registry push, cloud provisioning, reverse proxy, staging, load test, restore drill. `docs/research/devsecops-deployment.md` remains the plan for the rest. |
+| 6 AI insights | 0% — **gated** | Not started. T7–T13 now explicitly require green CI, recovery, deployment integrity, observability, POPIA lifecycle, staged rollout and the data-residency decision before implementation begins |
+| 7 Hardening + cloud | in progress, now priority | Containerisation, CI-built/cosign-signed application images, a digest-pinned single-VM topology, rolling updater and Sentry capture exist. Still absent: scheduled DB/object backups and restore proof, active deployment canary, metrics/log shipping/alerts, POPIA lifecycle, IaC/cloud/staging and load test |
 | Enterprise UI pass (2026-08-17) | built | 11-screen prototype alignment, course-authoring wizard (`/admin/courses/new`), revenue analytics (`/admin/analytics`, migration 0028) |
 
-Scale: 24 routers / ~45 services / 27 models / 44 migrations (`0001`–`0044`) / ~26k LOC API;
-50 `page.tsx` + 6 BFF routes / ~20k LOC web; ~318 tests, all HTTP-level through the real
-middleware stack against real Postgres/Redis/Garage/ClamAV/ffmpeg.
+Scale: 44 migrations (`0001`–`0044`), 188 API source files, 58 API test
+modules and 133 files under the web App Router. The 2026-09-08 local full run
+collected 641 API tests (640 passed, one local skip); the remote quality job
+installs ffmpeg and enforces zero integration skips.
 
 ## 3. Open work
 
 ### 3a. Engineering — actionable now
-1. ~~**Make CI green**~~ **DONE 2026-08-20.** Also fixed en route: `Article`/`Recommendation` were never registered in `src/models/__init__.py`, so `alembic check` compared against blind metadata (masked by the red Format step). Original item: `ruff format` the two files; export `openapi.json` and `npm run generate` in `packages/api-client`; commit both. Convention (see §6) is that any router/schema change regenerates the client in the same commit — the last three passes skipped it.
+1. **Finish T7/T8 and prove the pushed run green.** Do not report CI green
+   from local gates. The last remote run (`d71291a`) failed both the blocking
+   PostgreSQL image scan and authenticated e2e; the 2026-09-08 patch addresses
+   both causes but is not closed until GitHub executes it.
+2. **Complete the production-hardening queue T9–T12 in order:** recovery
+   first, then deploy/rollback proof, minimum viable observability and the
+   POPIA operational lifecycle. Record objective evidence for each exit
+   criterion in `BACKLOG.md` rather than another status document.
+3. **Run T13 before Phase 6.** R9's tenant kill switches/budget enforcement
+   and B1 decision 4's redacted-data residency choice are entry conditions for
+   P11, not follow-up cleanup.
+
+### 3a-history. Closed core findings retained for context
+1. ~~**Make CI green (2026-08-20 incident)**~~ **DONE 2026-08-20.** Also fixed en route: `Article`/`Recommendation` were never registered in `src/models/__init__.py`, so `alembic check` compared against blind metadata (masked by the red Format step). Original item: `ruff format` the two files; export `openapi.json` and `npm run generate` in `packages/api-client`; commit both. Convention (see §6) is that any router/schema change regenerates the client in the same commit — the last three passes skipped it.
 2. ~~**Security: MFA-pending JWT is accepted as an access token.**~~ **FIXED 2026-08-20** — `decode_access_token` rejects `purpose` tokens; regression test in `tests/test_auth_flows.py`. Original finding: `src/core/security.py:98` `decode_access_token` checks signature + `exp` only; `issue_purpose_token` (`:104`) mints the MFA challenge token with the same secret and `sub`/`tid` claims (`routers/auth.py:110-118`). Result: with a password but no TOTP, an attacker gets a 5-minute bearer that passes `get_principal` (`core/deps.py:136`) with empty `perms`; every endpoint that takes `PrincipalDep` without `principal.require(...)` is reachable — `routers/learning.py` has 8 such endpoints and 0 `require` calls. The docstring on `issue_purpose_token` claims the opposite. Fix: reject any token carrying `purpose` in `decode_access_token` (or require a positive `typ: "access"` claim). Add a test.
 3. ~~**Idempotency middleware is replay-caching, not replay-protection.**~~ **FIXED 2026-08-20** — reservation flow + migration `0032` + nightly `prune_idempotency_keys` sweep; race + stale-takeover tests in `tests/test_idempotency.py`. Original finding: `core/idempotency.py:128-190` — SELECT key → `call_next` (handler commits) → INSERT key, in three transactions. Two concurrent replays both miss, both create the order, loser gets a 500 from the unique index after the side effect is durable. Fix: INSERT an in-flight row `ON CONFLICT DO NOTHING` *before* `call_next`, 0 rows = 409, update with the response after. Also nothing prunes `idempotency_keys`.
 4. ~~**`get_session` commits on every `AppError`, globally**~~ **FIXED 2026-08-20** — rollback default; `AuditedSessionDep` for the auth router and `POST /lessons/{id}/complete` (REQ-BYPASS-11). Beware: FastAPI yield-dependencies must stay flat generators (see HANDOFF 2026-08-20 entry). Original finding: (`core/deps.py:79-88`). Justified for login-failure counters, but it means any service that mutates and then raises a business-rule error commits the partial state. Give the auth path its own dependency; default everything else to rollback.
@@ -56,7 +70,8 @@ middleware stack against real Postgres/Redis/Garage/ClamAV/ffmpeg.
 8. Stale test data: ~~the workshops test above~~ (self-cleaning since 2026-08-20); the underlying issue — tests share the dev DB with the running app and leak rows — remains, tracked in §7b "Test environment isolation".
 
 ### 3b. Engineering — planned, larger
-- Phase 6 AI insights (ship inert behind `ai_enabled=false`), then Phase 7 hardening/containerisation per `docs/research/devsecops-deployment.md`.
+- Phase 7 production hardening now precedes Phase 6. Use T9–T13's explicit
+  exit criteria rather than the historical "AI, then hardening" order.
 - Payment analytics dashboard beyond what shipped in `/admin/analytics` (`docs/research/payment-analytics-dashboard.md`).
 - redis-py bump is blocked by `arq` (pins redis <6, maintenance-only); replacing arq (SAQ/Streaq) is a real migration across 4 job types.
 - Post-build cleanup the user has already asked for (see §5): docs consolidation + codebase shrink.
@@ -102,7 +117,7 @@ RLS with `set_config(..., true)` + `FORCE ROW LEVEL SECURITY` + double tenant as
 ## 5. Historical recommended order — superseded
 
 This 2026-08-20 sequence is retained as history. Do not execute it: most items
-are complete. The live order is `docs/BACKLOG.md` T1–T6.
+are complete. The live order is `docs/BACKLOG.md` T7–T13.
 
 1. Green CI (§3a.1) — one commit, push, wait for green. Delete `wip/enterprise-ui`.
 2. The three `core/` fixes (§3a.2–4) with a test each — one commit, live-smoke MFA login through the BFF.

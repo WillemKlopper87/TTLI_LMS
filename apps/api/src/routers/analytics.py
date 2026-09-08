@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.deps import PrincipalDep, SessionDep
@@ -50,14 +51,19 @@ PERMISSION = "analytics:view"
 _PRESET_HELP = "One of: " + ", ".join(PRESETS) + ". Mutually exclusive with from/to."
 
 
-def get_period(
+async def get_period(
+    session: SessionDep,
     preset: Annotated[str | None, Query(description=_PRESET_HELP)] = None,
     from_: Annotated[
         date | None, Query(alias="from", description="Custom range start (UTC day, inclusive)")
     ] = None,
     to: Annotated[date | None, Query(description="Custom range end (UTC day, inclusive)")] = None,
 ) -> Period:
-    return analytics_service.resolve_period(preset, from_, to)
+    # Event and commerce timestamps use PostgreSQL `now()` defaults. Anchor
+    # rolling windows to that same clock so small host/container clock skew
+    # cannot exclude a row that committed immediately before this request.
+    anchor: datetime = (await session.execute(select(func.now()))).scalar_one()
+    return analytics_service.resolve_period(preset, from_, to, now=anchor)
 
 
 PeriodDep = Annotated[Period, Depends(get_period)]

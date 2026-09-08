@@ -19,50 +19,56 @@ below are the roadmap-shaped exceptions that ledger's findings point back to.
 
 ---
 
-## Immediate TODO — review refresh 2026-08-27
+## Immediate TODO — production-hardening gate (refreshed 2026-09-08)
 
-This is the current execution queue. It takes precedence over the older
-suggested-order history at the end of this file.
+This is the current execution queue and takes precedence over every historical
+order later in this file. **Phase 6 AI work is paused until T7–T12 are complete
+or an explicit owner decision accepts a named residual risk.** T13 is the
+Phase 6 entry gate, not permission to start it early.
 
-- [x] **T1 — Restore green CI on `a0064e5` (S). DONE 2026-08-27 (`2cfe90e`
-  quality job).** Ruff formatting was only the first of two failures the
-  drift gate was masking: `packages/api-client/src/schema.gen.ts` had not
-  been regenerated after the two new survey-results endpoints landed, so
-  `api-client drift` failed CI even after formatting/mypy/tests/migrations
-  all passed. Regenerated via `npm run generate` in `packages/api-client`
-  and committed alongside this checklist update. Formatting, mypy,
-  migrations, the full API suite, migration round-trip, model-drift check,
-  OpenAPI/client drift and documentation gates all pass — not merely that the
-  formatting step is green.
-- [x] **T2 — Verify P9 Phase 1 against real services (S). DONE 2026-08-27.** With the isolated
-  test Postgres/Redis stack available, run `tests/test_assessment.py` and the
-  full API suite. Smoke the survey list, below-threshold result, threshold
-  transition and CSV export through the BFF. The latest CI never reached these
-  checks because T1 failed first.
-- [x] **T3 — Make the new authenticated browser journeys enforceable (M). DONE 2026-08-27 (`2cfe90e`).** New `authenticated-e2e` CI job passed on the latest run (one flaky retry on `learner-assessment.spec.ts`'s file input, not a real failure).
-  CI currently starts no API, so `learner-assessment.spec.ts`,
-  `checkout.spec.ts`, `admin-finance.spec.ts` and `organisations.spec.ts` all
-  skip. Add a CI service/fixture path or a separate integration workflow that
-  starts the API dependencies, runs `seed_e2e_accounts.py`, executes these
-  specs, and fails on skips. Preserve the fast public-page/axe job.
-- [x] **T4 — Refresh current-state documentation (S). DONE 2026-08-27.** Update
-  `NEXT_AGENT_BRIEF.md`, O6 and any coverage tables after T3; remove obsolete
-  claims about duplicated `authedFetch`, dead GitHub Actions billing, old HEAD,
-  migration/test counts and missing browser specs. Keep `BACKLOG.md` as the
-  status authority rather than adding another append-only status log.
-- [x] **T5 — Continue P9 assessment depth (M). DONE 2026-08-27.** **Phase 2:**
-  pre/post pairing (`evaluation_role`, `pair_id`), one-pre/one-post database
-  invariants, a `course:edit`-gated delta endpoint that withholds every delta
-  until both stages meet their own privacy threshold, admin authoring/results
-  UI, API regression coverage and an authenticated browser journey. **Phase 3:**
-  tenant-scoped reusable quiz/survey questions with RLS, management UI, copy-on-
-  apply course-authoring controls, permission/tenant/API tests and an
-  authenticated browser journey.
-- [ ] **T6 — Reduce the frontend warning baseline (M).** Address the current
-  53 ESLint warnings, starting with request-triggering
-  `react-hooks/set-state-in-effect` sites and the quiz timeout submission path.
-  Work in small behavioural slices with focused browser coverage; do not
-  blanket-disable the rule.
+- [x] **T7 — Repair the red push CI transaction race (S). DONE locally
+  2026-09-08; remote verification pending.** FastAPI yield dependencies used
+  the default request scope, so a create response could reach the browser
+  before its transaction committed. The authenticated assessment journey then
+  intermittently received `Product not found` or `No such block` on its next
+  request. `SessionDep` and `AuditedSessionDep` now close at function scope,
+  before response delivery, with a focused regression test. Rolling analytics
+  periods now use the database clock so a just-committed event cannot fall
+  outside the window because of host/container clock skew. The full local API
+  suite and the formerly failing learner browser journey pass; do not mark the
+  remote gate green until a pushed GitHub Actions run passes.
+- [x] **T8 — Make the PostgreSQL image gate deterministic and disposition its
+  four new findings (S). DONE locally 2026-09-08; remote verification
+  pending.** Both CI service jobs and the blocking scan now use the exact
+  single-VM production digest. Image inspection proved only the split
+  `libuuid` package is present; the affected util-linux mount/nsenter binaries
+  and libmount are absent (BusyBox supplies those commands). Four narrowly
+  documented exceptions expire 2026-12-07. Blocking, release and weekly scans
+  strip them from every non-PostgreSQL image; the weekly scan also rechecks the
+  exact production PostgreSQL digest so new advisories and expiry cannot wait
+  for a code push. Re-check earlier when the official image carries `libuuid >=
+  2.42.3-r0`.
+- [ ] **T9 — Backups and restore rehearsal (O2, M).** Implement scheduled
+  PostgreSQL plus object-storage backup, define retention/encryption/ownership,
+  and complete a timed restore drill with recorded RPO/RTO evidence. This is
+  the first operational control after green CI because an untested backup is
+  not a recovery capability.
+- [ ] **T10 — Deployment integrity and rollback proof (H2, M).** Replace the
+  rolling updater's five-second process check with an active API/worker canary,
+  record the running image digest and Git SHA for every component, and prove a
+  failed worker release rolls the whole application back.
+- [ ] **T11 — Minimum viable observability (O1, M).** Add service metrics,
+  structured log shipping, alerting and one operator dashboard for API errors,
+  latency, queue depth/failures, database saturation and storage failures.
+  Sentry error capture alone is insufficient for production operations.
+- [ ] **T12 — POPIA operational lifecycle (O3, M).** Implement and test data
+  access/export, correction and erasure with financial/legal exceptions,
+  retention enforcement, consent withdrawal and legal-hold handling. Confirm
+  the Information Officer responsibility in B8 rather than coding around it.
+- [ ] **T13 — Phase 6 readiness decision (R9 + B1 decision 4, S–M).** After
+  T7–T12, add per-tenant AI kill switches/budget enforcement and obtain the
+  signed decision on whether redacted prompt data may leave South Africa.
+  Only then begin P11's provider/redaction/insight implementation.
 
 ---
 
@@ -84,7 +90,7 @@ per unit of effort, with the procurement gate (P4) placed where it must be.
 | **P8** | **Departments / business units + dept-scoped reporting** (Pass F; audit #30). `departments` (org_id, parent_id), member FK, CSV import column, dept filter on reports, dept-scoped visibility, UI | M | Corporate reporting is flat per organisation. `department` returns **zero hits** | OPEN |
 | ~~**P9**~~ | ~~**Assessment depth** (Pass J; audit #8, #9, #13).~~ **DONE 2026-08-27.** Phase 1: privacy-gated survey results, CSV export and admin results UI. Phase 2: pre/post pairing and a two-threshold delta report. Phase 3: tenant-scoped reusable quiz/survey question bank, copy-on-apply authoring controls and browser coverage. | S–M | — | DONE |
 | **P10** | **Custom certificate design** (Pass I; audit #19). Design fields on templates (logo/background key, colours, layout preset), upload, renderer, admin preview | M | `render_certificate_pdf` is a fixed layout: Helvetica, one border, no logo. Certificates are the visible product of the LMS | OPEN |
-| **P11** | **AI insights vertical slice** (Pass K = Phase 6; audit #42, #43). Provider abstraction, PII-redaction gateway + redaction log, insight jobs, token budgets, kill switch, review UI | L | Phase 6's demo target: 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log. Only `Tenant.ai_enabled` / `ai_monthly_token_budget` columns exist. Must ship inert behind the flag | OPEN |
+| **P11** | **AI insights vertical slice** (Pass K = Phase 6; audit #42, #43). Provider abstraction, PII-redaction gateway + redaction log, insight jobs, token budgets, kill switch, review UI | L | **Do not start before T13.** Phase 6's demo target is 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log. Production hardening T7–T12, staged rollout R9 and the B1 data-residency decision now explicitly precede it | OPEN (GATED) |
 | **P12** | **CRM depth** (audit #36, #37). Deal owner/assignee, organisation link, search/filter, lead→deal conversion, contact detail page, import/export; campaigns: use `scheduled_at`, HTML email, preference centre | M | Fine for a demo, thin for daily use | OPEN |
 | ~~**P13**~~ | ~~Small, demo-visible items~~ **DONE 2026-08-26.** LinkedIn certificate sharing; extended CPD fields and expiry; guest-to-paid carry-over; sample-only watermarking; real Zoom and Google Meet providers; and one-on-one coaching discovery plus private slot booking. Coaching expands facilitator availability into open slots, serialises concurrent claims on the facilitator row, creates a capacity-one session, and exposes a learner-safe coach profile without email/user identifiers. Workshops integration tests, a real concurrent-claim test, strict API checks and the production web build pass | S each | — | DONE |
 | ~~**P14**~~ | ~~Mobile layout for the admin shell~~ **DONE 2026-08-23.** Below `md` the sidebar goes off-canvas (slide-in overlay + backdrop, closes on navigation) behind a fixed top bar with a hamburger toggle; `md:` and up is the unchanged fixed sidebar. Verified: axe-clean at 390px both nav states and at 1280px, desktop screenshot unchanged. Original scope: `app/admin/layout.tsx` had a fixed `w-56` sidebar with no narrow-viewport handling; facilitators mark attendance on phones (audit #4) | S | — | DONE |
@@ -170,5 +176,7 @@ Do not build around these; they change the build, not just the schedule.
 5. ~~**P3**~~ — done 2026-08-21. ~~**P4**~~ — SSO done 2026-08-22/23 (see git log; not yet given its own STATUS pass header).
 6. ~~Quick wins~~ — **R4**, **R6**, **O4**, **O5** (partly — no PRs/autosave-rewrite deliberately left alone), **O9**, **P14** all done 2026-08-21/23.
 7. ~~**P5**~~ — done 2026-08-23. ~~**P7**~~ — done 2026-08-24 (5 phases; Teams client unit-tested against mocked Graph, not live-verified — no Azure AD app registration exists here).
-8. **Now:** T1–T4 above, so `main` is green and the recently added coverage is a real gate.
-9. ~~**Then:** P9 phases 2–3 (T5).~~ **DONE 2026-08-27.** P11 can now proceed because the assessment data has a complete, privacy-gated reporting model.
+8. ~~T1–T5~~ — done 2026-08-27. ~~T6~~ — done 2026-08-28 under O7.
+9. **Now:** T7–T12, the production-hardening gate. T7/T8 are prepared
+   locally and still require a green pushed run; T9–T12 remain open.
+10. **Then:** T13. P11/Phase 6 begins only after that readiness decision.

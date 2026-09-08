@@ -2,7 +2,7 @@
 
 A multi-tenant platform for selling and delivering executive and leadership training in South Africa and internationally: storefront, Payfast/Netcash/EFT/purchase-order payments, an LMS with enforced completion rules, verifiable certificates and LinkedIn-shareable badges, live workshops through Microsoft Teams, an in-house CRM and billing spine, and anonymised AI insights — launched on infrastructure lean enough that hosting cost does not consume early revenue.
 
-**Status: Phases 1–5 built (Phase 4 and 5 complete); Phase 0 sign-off still with the customer; Phases 6–7 not started.** See [docs/NEXT_AGENT_BRIEF.md](docs/NEXT_AGENT_BRIEF.md) for the current-state handoff and [docs/STATUS.md](docs/STATUS.md) for the long-form build log.
+**Status: Phases 1–5 built (Phase 4 and 5 complete); Phase 0 sign-off remains with the customer; production hardening is now the active phase and Phase 6 AI is gated behind it.** See [docs/BACKLOG.md](docs/BACKLOG.md) for the authoritative execution queue, [docs/NEXT_AGENT_BRIEF.md](docs/NEXT_AGENT_BRIEF.md) for the current-state handoff and [docs/STATUS.md](docs/STATUS.md) for the historical build log.
 
 ---
 
@@ -145,7 +145,7 @@ Several projects share this machine. Every port below was checked against `Agent
 
 ## Current status
 
-**Phases 1 and 5 complete; 2–4.5 substantially built; Phase 0 sign-off still open.** The ten decisions in [docs/01_PRD.md §1.4](docs/01_PRD.md#14-open-decisions-blocking-phase-0-sign-off) remain with the customer, but the engineering work that doesn't depend on any of them was deliberately brought forward rather than left idle — see [docs/STATUS.md §1](docs/STATUS.md#1-summary) for the real per-phase breakdown and gate status.
+**Phases 1–5 are built; Phase 0 sign-off remains open; production hardening now precedes Phase 6.** The current queue is [docs/BACKLOG.md T7–T13](docs/BACKLOG.md#immediate-todo--production-hardening-gate-refreshed-2026-09-08): restore green CI, prove recovery and rollback, add minimum viable observability, implement the POPIA operational lifecycle, then make the AI rollout/data-residency readiness decision. `STATUS.md` is historical and must not be used to infer the latest gate state.
 
 > The blockers that matter most: the accountants' position on VAT for international digital services, whether signed HLS plus watermarking is accepted as "industry standard" in place of full DRM at launch, and whether prompt data may leave South Africa after redaction. Each of those changes the build, not just the schedule.
 >

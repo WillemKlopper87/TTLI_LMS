@@ -190,9 +190,20 @@ async def _cleanup_seeded_lesson_blocks(tenant_session_factory):  # type: ignore
     see its docstring. Video attach now creates a block (0041) rather
     than overwriting the lesson's one FK, so the seeded lesson's video
     blocks would otherwise accumulate across every test in this file
-    that attaches to it."""
+    that attaches to it. Remove the public sample lesson with direct test-DB
+    SQL as well: the API delete deliberately renumbers siblings, but leaving
+    the sample behind makes a second full suite see three seeded lessons."""
     yield
     async with tenant_session_factory(None) as s:
+        await s.execute(
+            sa.text(
+                "DELETE FROM lessons WHERE title = 'Guest Sample Lesson' AND module_id IN ("
+                "  SELECT m.id FROM modules m "
+                "  JOIN courses c ON c.id = m.course_id "
+                "  WHERE c.slug = 'executive-leadership-certificate'"
+                ")"
+            )
+        )
         await s.execute(
             sa.text(
                 "DELETE FROM lesson_blocks WHERE block_type != 'text' AND lesson_id IN ("
@@ -491,17 +502,13 @@ async def test_guest_playback_of_a_public_lesson_is_watermarked_as_sample(
     video_asset_id = await _upload_and_wait_ready(
         client, author_token, sample_video, tenant_session_factory
     )
-    # Appended to the seeded module, and deliberately left there. Both
-    # alternatives are worse against a test database that is never reset:
-    # deleting the lesson afterwards makes delete_lesson renumber the
-    # survivors gapless from 0, permanently shifting the seed's own
-    # "Welcome"/"Core Concepts" off the positions every other test looks
-    # them up by; giving it its own module instead leaves an extra module
-    # on the shared course, which breaks the tests that count them. The
-    # collision this does cause — `create_lesson` numbers from the row
-    # count (0-based) while migration 0011 seeds 1 and 2, so this lands on
-    # 2 alongside "Core Concepts" — is absorbed by `_seeded_lesson_id`,
-    # which takes the oldest row at a position rather than assuming one.
+    # Append to the seeded module, then let the autouse fixture remove it
+    # directly from the disposable test DB. Calling the API delete here would
+    # renumber the surviving seed lessons; leaving it behind would make a
+    # second full suite count three lessons. The position collision —
+    # `create_lesson` numbers from the row count (0-based) while migration
+    # 0011 seeds 1 and 2 — is absorbed by `_seeded_lesson_id`, which takes the
+    # oldest row at a position rather than assuming one.
     async with tenant_session_factory(tenant_id) as s:
         module_id = str(
             (

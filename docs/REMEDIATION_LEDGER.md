@@ -25,6 +25,13 @@ table and "Commits made by the 2026-09-05 pass"):
   H-1–H-20, plus ~45 Medium and ~60 Low findings not individually tracked
   here (see "Not attempted" below).
 
+**2026-09-08 current-state note:** the latest remote push run at `d71291a`
+is red even though the older gate record below was green. The application
+failure is a FastAPI yield-dependency transaction race; the quality failure
+is four util-linux findings attributed to `libuuid` in the pinned PostgreSQL
+image. `BACKLOG.md` T7/T8 own the local remediation and remote re-verification.
+Production hardening T9–T13 now precedes Phase 6.
+
 ---
 
 ## Part A — `TTLI_Audit_Report_2026-09-02.md` findings
@@ -35,7 +42,7 @@ table and "Commits made by the 2026-09-05 pass"):
 | **H2** | Worker deployment failure can leave an unreported mixed release | PARTIAL | `scripts/rolling-update.sh` now rolls API and worker back as one unit. Still open: the rollback check is still a 5-second process check, not an active heartbeat/canary; the final status doesn't record the actual running image digest + Git SHA per component. No BACKLOG item owns this yet — needs one before it's picked up. |
 | **M1** | Weekly image-scan issues omit their evidence (filename mismatch; duplicate issues per finding) | DONE | — |
 | **M2** | New video/platform functionality (feature flags, health endpoint, video settings, progressive delivery, 0040 upload/finalise) lacked targeted tests | MOSTLY DONE | Feature-flag, video-settings and H1 tests existed before this ledger; `tests/test_video_settings.py` (pure-function coverage) and Part B's H-2/H-3/H-4 concurrency tests close most of the remaining gap. Still open: a real browser journey for upload→select→finalise→attach→playback, and HLS-vs-progressive response/range/expiry tests. |
-| **M3** | Production releases built from mutable source and tags (local `docker build` on the host, `latest`/`stable` runtime tags) | MOSTLY DONE | Build-once-in-CI, publish-by-digest, sign and verify: DONE (Part B's C-3). `infra/docker-compose.single-vm.yml`'s `migrate`/`api`/`worker`/`web` no longer carry a `build:` stanza — they only ever run the CI-built, cosign-verified image. `postgres`/`redis`/`garage`/`clamav`/`caddy`/`postfix-relay` are now digest-pinned. Residual, narrower than the original finding: `ci.yml`'s own Trivy scan step still targets some infra images by tag rather than digest. |
+| **M3** | Production releases built from mutable source and tags (local `docker build` on the host, `latest`/`stable` runtime tags) | MOSTLY DONE | Build-once-in-CI, publish-by-digest, sign and verify: DONE (Part B's C-3). `infra/docker-compose.single-vm.yml`'s `migrate`/`api`/`worker`/`web` no longer carry a `build:` stanza — they only ever run the CI-built, cosign-verified image. `postgres`/`redis`/`garage`/`clamav`/`caddy`/`postfix-relay` are digest-pinned. As of 2026-09-08 both PostgreSQL CI services and its blocking Trivy scan use the exact production digest; other infra entries in the scan loop still use tags, so the broader residual remains. |
 | **M4** | Backup doesn't meet the documented 15-minute RPO; no object-storage backup; no restore rehearsal | OPEN | Unchanged. Tracked below as Part B's **H-20**. |
 | **M5** | Application test coverage overly infrastructure-dependent (fast/pure tier too thin) | DONE | Pure-function extraction landed: `services/subscriptions.py::compute_renewal_period`, plus new direct coverage for the already-pure `services/completion.py::evaluate/merge_rules` and `services/media/video_settings.py`. `pytest -m unit` marker and coverage config added to `apps/api/pyproject.toml`. The one regression this class of work had produced — `tests/test_orders_pricing.py` enshrining the wrong inclusive-VAT number — is fixed (Part B's H-1). |
 | **M6** | Backend domains crossed maintainability thresholds (largest files mix authorization, state, provider calls and reporting) | PARTIAL | `services/workshops.py` (1358 lines) split into `authoring`/`booking`/`attendance`/`reporting` submodules — the concrete, line-verified split this finding proposed, done with zero router or test touch required. `services/enrolment.py`, `routers/assessment.py`, `services/learning_paths.py`, `services/orders.py`, `routers/auth.py` and several frontend files (`admin/workshops/page.tsx`, `lesson-activity-panel.tsx`, `checkout/page.tsx`) remain oversized — tracked as `docs/BACKLOG.md` **O14**. |

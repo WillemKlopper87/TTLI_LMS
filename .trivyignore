@@ -42,6 +42,23 @@ CVE-2026-56859 exp:2026-11-26
 CVE-2026-56860 exp:2026-11-26
 CVE-2026-56862 exp:2026-11-26
 
+# --- postgres:18-alpine@sha256:d3e1620b...: Trivy attributes four
+# util-linux tool vulnerabilities to the split `libuuid` runtime package.
+# Reviewed 2026-09-08 against the exact deployed image: `apk info -e`
+# reports `libuuid` only (not `util-linux`, `util-linux-misc`, `mount`, or
+# `libmount`); `/bin/mount`, `/bin/umount`, and `/usr/bin/nsenter` resolve
+# to BusyBox. PostgreSQL retains libuuid for UUID support, while the affected
+# util-linux mount/nsenter implementations are absent. The shipped Compose
+# also grants neither privileged mode nor CAP_SYS_ADMIN. Re-check at expiry
+# or remove sooner when Docker Official Images rebuilds with libuuid >=
+# 2.42.3-r0. The blocking, release and weekly workflow scans remove these IDs
+# from the ignore file for every non-PostgreSQL image, so an image that
+# actually installs util-linux mount/nsenter still fails the build.
+CVE-2026-76642 exp:2026-12-07
+CVE-2026-78408 exp:2026-12-07
+CVE-2026-78409 exp:2026-12-07
+CVE-2026-78410 exp:2026-12-07
+
 # --- openssl 3.5.x point release: shared across every Alpine/Debian
 # base image pulled here (mailpit, clamav-debian, postgres, redis) --
 # status "fixed" means Debian/Alpine has published the patch, but none

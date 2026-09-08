@@ -6,6 +6,32 @@
 > a short current-state handoff, use [`docs/NEXT_AGENT_BRIEF.md`](NEXT_AGENT_BRIEF.md).
 > (`TTLI_Audit_Report_2026-09-02.md` M9.)
 
+**2026-09-08 — current-state refresh and production-hardening gate.** The
+latest remote push CI at `d71291a` is red despite older entries below saying
+the gate is green. Two independent causes were established. First, FastAPI
+0.141 defaults yield dependencies to request scope, so `get_session` committed
+after sending the response; authenticated e2e could use a newly returned
+product/block ID before the transaction became visible and intermittently got
+`Product not found` / `No such block`. Both transaction dependencies now use
+function scope and have a focused regression test. Rolling analytics windows
+also use the PostgreSQL clock, avoiding a newly committed row falling outside
+an app-clock boundary. The local full API suite (641 collected, 640 passed, one
+local skip) and the formerly failing learner assessment browser journey pass.
+Second, Trivy reported four
+util-linux CVEs against the pinned PostgreSQL image's split `libuuid` package.
+Inspection of the exact digest proved the affected util-linux mount/nsenter
+implementations and libmount are absent (the commands are BusyBox); four
+payload-scoped exceptions expire 2026-12-07. All non-PostgreSQL scan paths
+remove those exceptions, while both the blocking and weekly jobs scan the exact
+production digest. These changes are local until pushed; do not call CI green
+before the remote run passes.
+
+The owner also changed delivery order: production hardening now precedes Phase
+6. `BACKLOG.md` T7–T13 is the authoritative sequence: green CI and image
+disposition, recovery/restore proof, deploy/rollback integrity, observability,
+POPIA lifecycle, then AI rollout/data-residency readiness. Only after T13 may
+P11 begin.
+
 **Written:** 2026-08-08, end of the session that built Sprints 2–4 of Phase 1.
 **Updated:** 2026-08-09, three times. Second pass closed §4's last item
 (work committed, drift gate wired, all eight ranked weaknesses fixed with

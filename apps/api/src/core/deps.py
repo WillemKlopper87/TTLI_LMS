@@ -124,8 +124,17 @@ async def get_audited_session(tenant: TenantDep) -> AsyncIterator[AsyncSession]:
             await session.commit()
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
-AuditedSessionDep = Annotated[AsyncSession, Depends(get_audited_session)]
+# These dependencies own the request transaction, so their teardown is part
+# of the endpoint's correctness contract.  FastAPI's default scope for a
+# yield dependency is ``request``: the code after ``yield`` runs *after* the
+# response has been sent.  That let a fast follow-up request observe the ID
+# returned by a create endpoint before the creating transaction committed
+# (the authenticated browser gate reproduced this as intermittent "Product
+# not found" / "No such block" responses).  Function scope closes the
+# transaction before any response is sent while preserving the flat-generator
+# exception semantics documented above.
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
+AuditedSessionDep = Annotated[AsyncSession, Depends(get_audited_session, scope="function")]
 
 
 def get_crypto(settings: SettingsDep) -> CryptoBox:
