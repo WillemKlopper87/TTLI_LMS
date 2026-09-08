@@ -538,6 +538,19 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # Component and unit tests (REMEDIATION_LEDGER.md M7 — "component
+      # testing effectively absent"). Placed before the build deliberately:
+      # these run in under a second and cover the shared transport and
+      # session code every screen imports, so a break in `authedFetch`'s
+      # refresh-and-replay should not have to wait out a Next build and a
+      # Playwright browser install to be reported.
+      #
+      # `passWithNoTests: false` in vitest.config.mts means a glob that
+      # stops matching fails here rather than reporting a green run over
+      # zero tests.
+      - name: Component and unit tests
+        run: npm run test
+
       # --webpack (already in package.json's build script): Turbopack, Next
       # 16's default, cannot currently resolve @ttli/api-client through the
       # npm-workspace symlink above — a known, still-open upstream limitation

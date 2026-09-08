@@ -11,7 +11,13 @@
 export async function readError(resp: Response, fallback: string): Promise<string> {
   try {
     const body = await resp.json();
-    return body?.error?.message ?? fallback;
+    const message = body?.error?.message;
+    // `?? fallback` alone only guards null/undefined, so a non-string
+    // message -- a validation payload that arrived as an object or array
+    // rather than a sentence -- was returned as-is, making this function's
+    // `Promise<string>` a lie and rendering "[object Object]" at the user.
+    // Anything that isn't a usable sentence takes the fallback instead.
+    return typeof message === "string" && message.trim() !== "" ? message : fallback;
   } catch {
     return fallback;
   }
