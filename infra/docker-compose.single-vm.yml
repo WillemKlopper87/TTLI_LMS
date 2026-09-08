@@ -154,19 +154,23 @@ services:
   # isn't in the ci.yml Trivy loop yet for that reason.
   # Re-resolve deliberately with:
   #   docker buildx imagetools inspect boky/postfix:5.1.0-alpine --format '{{.Manifest.Digest}}'
-  # PENDING SWAP (BACKLOG O15): this still pulls boky's own 5.1.0-alpine,
-  # which carries 74 CRITICAL/HIGH findings -- every one of them fixable,
-  # boky simply has not rebuilt the tag since 2026-01-04. CI now builds
-  # infra/postfix-relay/ (a thin `apk upgrade` over this same digest, which
-  # scans clean at zero) and pushes it to GHCR as ttli-postfix-relay. Repoint
-  # this line at that image's digest once the first push has produced one:
+  # Built by CI from infra/postfix-relay/ (BACKLOG O15), not pulled from
+  # Docker Hub. boky's own 5.1.0-alpine carries 74 CRITICAL/HIGH findings
+  # -- every one of them fixable, the tag simply has not been rebuilt since
+  # 2026-01-04 -- and a thin `apk upgrade` over that same base clears all
+  # of them. This image scans clean at zero with no .trivyignore entries of
+  # its own, which is why it is in the blocking scan loop while the
+  # upstream one never was.
+  #
+  # Digest below is the build from 0a5d08e, the commit that added it.
+  # Like ttli-api/ttli-web this comes from GHCR, so the pull needs the same
+  # credentials deploy-single-vm.sh already configures. Re-resolve
+  # deliberately after a relay change with:
   #   docker buildx imagetools inspect \
   #     ghcr.io/willemklopper87/ttli_lms/ttli-postfix-relay:sha-<GIT_SHA> \
   #     --format '{{.Manifest.Digest}}'
-  # Until then production runs the unpatched relay while CI proves the
-  # patched one -- which is the gap this note exists to keep visible.
   postfix-relay:
-    image: boky/postfix:5.1.0-alpine@sha256:6e761312e833947f77af755072c0e77b67d298d127595470a79e9454008dd594
+    image: ghcr.io/willemklopper87/ttli_lms/ttli-postfix-relay@sha256:d0ec748f208b3710c8cb2e671236cfa36d131c54be1b09a30e6e9a440ddab93c
     environment:
       ALLOW_EMPTY_SENDER_DOMAINS: "true"
       RELAYHOST: ${SMTP_RELAY_HOST:?set in .env.prod, e.g. [smtp.sendgrid.net]:587}
