@@ -42,18 +42,67 @@ CVE-2026-56859 exp:2026-11-26
 CVE-2026-56860 exp:2026-11-26
 CVE-2026-56862 exp:2026-11-26
 
-# --- postgres:18-alpine@sha256:d3e1620b...: Trivy attributes four
-# util-linux tool vulnerabilities to the split `libuuid` runtime package.
-# Reviewed 2026-09-08 against the exact deployed image: `apk info -e`
-# reports `libuuid` only (not `util-linux`, `util-linux-misc`, `mount`, or
-# `libmount`); `/bin/mount`, `/bin/umount`, and `/usr/bin/nsenter` resolve
-# to BusyBox. PostgreSQL retains libuuid for UUID support, while the affected
-# util-linux mount/nsenter implementations are absent. The shipped Compose
-# also grants neither privileged mode nor CAP_SYS_ADMIN. Re-check at expiry
-# or remove sooner when Docker Official Images rebuilds with libuuid >=
-# 2.42.3-r0. The blocking, release and weekly workflow scans remove these IDs
-# from the ignore file for every non-PostgreSQL image, so an image that
-# actually installs util-linux mount/nsenter still fails the build.
+# --- util-linux subpackage over-attribution. Alpine splits util-linux
+# into subpackages that all carry the *source* package's version, so Trivy
+# reports the whole family's CVEs against whichever fragment an image
+# happens to install — even when the vulnerable binary was never shipped.
+# These four IDs are therefore scoped per image, on separate evidence, and
+# granted to nothing else: the blocking, release and weekly workflow scans
+# strip them from the baseline and hand each named image back only the
+# subset its own review justified. An image that genuinely installs
+# util-linux `mount`/`nsenter` still fails the build.
+#
+# postgres:18-alpine@sha256:d3e1620b... — all four. Trivy attributes them
+# to the split `libuuid` runtime package. Reviewed 2026-09-08 against the
+# exact deployed image: `apk info -e` reports `libuuid` only (not
+# `util-linux`, `util-linux-misc`, `mount`, or `libmount`); `/bin/mount`,
+# `/bin/umount`, and `/usr/bin/nsenter` resolve to BusyBox. PostgreSQL
+# retains libuuid for UUID support, while the affected util-linux
+# mount/nsenter implementations are absent. Re-check at expiry or remove
+# sooner when Docker Official Images rebuilds with libuuid >= 2.42.3-r0.
+#
+# clamav/clamav-debian@sha256:4c975c43... — all four, and unlike the two
+# images above this one genuinely installs util-linux (`util-linux`,
+# `mount`, `login`, `bsdutils`, `libmount1` at 1:2.41-5, Debian 13.6), so
+# the argument is reachability rather than absence. Debian marks all four
+# `affected` with no patched package on any tier, so there is nothing to
+# bump. Exploiting the mount/nsenter paths requires CAP_SYS_ADMIN, which
+# Docker drops by default and which nothing in
+# infra/docker-compose.single-vm.yml adds back (no `privileged`, no
+# `cap_add` anywhere in the file); all four are local privilege escalation
+# that presupposes code execution inside the container first. Re-check at
+# expiry — this is the weakest of the three dispositions and should be the
+# first to go when Debian ships a fix.
+#
+# redis:8-alpine@sha256:becdda6c... — 76642, 78408 and 78410 only; this
+# image does not trip 78409, which stays blocking for it. Reviewed
+# 2026-09-08 against the exact pinned image (Alpine 3.23.5): the only
+# util-linux fragment installed is `setpriv-2.41.4-r0` (redis's entrypoint
+# uses it to drop from root), and `apk info --who-owns` confirms
+# `/bin/mount`, `/bin/umount` and `/usr/bin/nsenter` are all symlinks into
+# `busybox-1.37.0-r30`. None of the three CVEs is in setpriv: 76642 and
+# 78410 are util-linux `mount` (external mount helpers, X-mount bind
+# options) and 78408 is util-linux `nsenter --join-cgroup`. Every alpine
+# redis tag shares the 2026-08-20 rebuild, so there is no published image
+# to bump to; remove this scoping once one ships setpriv >= 2.41.6-r0.
+#
+# ttli-api and ttli-web — all four, on the same reachability argument as
+# clamav-debian. Both are Debian-based (api on trixie, web on bookworm via
+# node:24-slim) and so ship the real thing: `dpkg -S` resolves
+# `/usr/bin/mount` to the `mount` package and `/usr/bin/nsenter` to
+# `util-linux`. Debian publishes no patched package on any tier, and
+# apps/api/Dockerfile already runs `apt-get upgrade -y`, so there is
+# nothing to upgrade into. Both images run as the unprivileged `app` user
+# (uid 10001, never root) with no CAP_SYS_ADMIN, and all four CVEs are
+# local privilege escalation that presupposes code execution inside the
+# container first. Bump the base digests and re-scan at expiry; these two
+# are the entries most likely to clear on a routine Debian rebuild.
+#
+# None of these is granted privileged mode or CAP_SYS_ADMIN anywhere in
+# infra/docker-compose.single-vm.yml, which the mount/nsenter paths
+# need — for postgres and redis that is a second line of defence behind
+# the binaries simply being absent; for clamav-debian, ttli-api and
+# ttli-web it is the argument.
 CVE-2026-76642 exp:2026-12-07
 CVE-2026-78408 exp:2026-12-07
 CVE-2026-78409 exp:2026-12-07
@@ -219,3 +268,56 @@ CVE-2026-46600 exp:2026-11-26
 CVE-2026-56852 exp:2026-11-26
 CVE-2026-56854 exp:2026-11-26
 CVE-2026-84304 exp:2026-11-26
+
+# --- clamav/clamav-debian@sha256:4c975c43... two further Debian trixie
+# findings, both `affected` with no patched package on any tier as of
+# 2026-09-08, in an image this repo only pulls. Reviewed against the exact
+# pinned image rather than the `stable` tag, which is mutable.
+#
+# CVE-2026-16742 is a systemd-homed local privilege escalation. Trivy
+# attributes it to libsystemd0/libudev1 — the shared libraries — but
+# systemd-homed is the vulnerable component, and it is not in this image:
+# `/usr/lib/systemd/systemd-homed`, `/lib/systemd/systemd-homed` and
+# `homectl` are all absent, and there is no homed-managed user for the bug
+# to escalate through. Nothing but the libraries ships here.
+CVE-2026-16742 exp:2026-12-07
+# CVE-2026-86140 is a strcat stack-based buffer overflow in libxml2's
+# `xmlSnprintfElements` (valid.c). This one is worth the sharpest look in
+# the file, because clamd is the single component that parses
+# attacker-controlled bytes by design — every learner upload reaches it
+# (04 §3, REQ-BYPASS-08) — `libclamav.so.12` does link libxml2, and
+# `ScanXMLDOCS` is on by default, so OOXML uploads really are parsed as
+# XML. It is nevertheless unreachable: `xmlSnprintfElements` exists only
+# to format DTD content-model validation errors, and libclamav never
+# validates. Its dynamic symbol table references only the streaming
+# xmlTextReader API — xmlReaderForMemory/ForFd/ForIO, xmlTextReaderRead,
+# xmlTextReaderNext and friends — and contains no `xmlValidate*`, no
+# `xmlParseDTD`, no `xmlSnprintfElements`, and no parser-property call
+# that would turn validation on. xmlTextReader does not DTD-validate
+# unless explicitly asked. Re-verify this symbol claim, not just the
+# version, if libclamav is ever rebuilt against a newer libxml2.
+CVE-2026-86140 exp:2026-12-07
+
+# --- caddy:2-alpine@sha256:5f5c8640... five findings disclosed since the
+# 2026-09-02 review above, checked 2026-09-08 against the same digest the
+# single-VM compose pins. `2-alpine` is still an alias for 2.11.4-alpine
+# (pushed 2026-06-24) and there is still no newer non-builder alpine tag,
+# so there remains nothing to bump to; the four curl CVEs are `fixed` at
+# 8.22.0-r0 in Alpine but this image ships 8.19.0-r0 and its maintainers
+# have not rebuilt.
+#
+# The four curl/libcurl entries extend the existing curl/c-ares
+# disposition verbatim: they are bundled OS packages Caddy's entrypoint
+# never invokes. Caddy's binary does its own HTTP/TLS/DNS in pure Go —
+# no shell-out to curl, no cgo resolver — so nothing in this container
+# drives libcurl with attacker-influenced input.
+CVE-2026-11352 exp:2026-12-07
+CVE-2026-11586 exp:2026-12-07
+CVE-2026-8925 exp:2026-12-07
+CVE-2026-9547 exp:2026-12-07
+# GHSA-hrxh-6v49-42gf is google.golang.org/grpc vendored into the caddy
+# binary — the same plugin-only surface as CVE-2026-56852 above. This
+# deployment's Caddyfile configures reverse_proxy and automatic HTTPS
+# only; no gRPC-based storage or cluster backend is built in or
+# configured, so the module is present but never reached.
+GHSA-hrxh-6v49-42gf exp:2026-12-07

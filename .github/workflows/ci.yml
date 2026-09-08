@@ -48,7 +48,7 @@ jobs:
           --health-retries 12
 
       redis:
-        image: redis:8-alpine
+        image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
         ports: ["6399:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -74,7 +74,7 @@ jobs:
       # start_period option the way docker-compose's healthcheck does, so
       # the retry budget covers it instead (15 × 30s = 7.5 min ceiling).
       clamav:
-        image: clamav/clamav-debian:stable
+        image: clamav/clamav-debian@sha256:4c975c439fcb7ab9cbdd72162c2802f5efcb4a11dcf5b0b37da1d746474ef20e
         ports: ["3410:3310"]
         options: >-
           --health-cmd "clamdcheck.sh"
@@ -271,19 +271,51 @@ jobs:
           # postfix-relay service comment in
           # infra/docker-compose.single-vm.yml and docs/BACKLOG.md's
           # M3-postfix-cve-review item for why.
-          # Four util-linux findings are accepted only for the exact
-          # PostgreSQL digest below. Remove them from the ignore file used
-          # for every other image so the payload-specific disposition cannot
+          # The four util-linux IDs are scoped per image, each on its own
+          # recorded evidence (.trivyignore carries both dispositions).
+          # Strip them from the baseline every other image is scanned
+          # against, then hand each named image back only the subset its
+          # review justified — so a payload-specific disposition cannot
           # hide a real util-linux installation elsewhere in the stack.
-          non_postgres_ignore="$(mktemp)"
-          trap 'rm -f "$non_postgres_ignore"' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$non_postgres_ignore"
-          for img in postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2 redis:8-alpine dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 clamav/clamav-debian:stable caddy:2-alpine; do
+          #
+          # Both images are pinned by digest: an exception argued from
+          # "this image ships BusyBox mount, not util-linux mount" is only
+          # as good as the bits it was argued against, and a mutable tag
+          # can be repointed under it.
+          POSTGRES_IMAGE="postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
+          REDIS_IMAGE="redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576"
+          CLAMAV_IMAGE="clamav/clamav-debian@sha256:4c975c439fcb7ab9cbdd72162c2802f5efcb4a11dcf5b0b37da1d746474ef20e"
+          CADDY_IMAGE="caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+
+          base_ignore="$(mktemp)"
+          trap 'rm -f "$base_ignore" "$base_ignore".*' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+
+          # Grant a named image back a named subset. The IDs are re-read
+          # from .trivyignore rather than restated here, so the `exp:`
+          # dates stay single-sourced and expire everywhere at once.
+          scoped_ignore() { # $1 = suffix, $2 = ERE of IDs to grant back
+            { cat "$base_ignore"
+              grep -E "$2" "$GITHUB_WORKSPACE/.trivyignore"
+            } > "$base_ignore.$1"
+            printf '%s' "$base_ignore.$1"
+          }
+          # redis installs only util-linux's `setpriv` fragment; its
+          # mount/umount/nsenter are BusyBox. Three IDs, and NOT 78409,
+          # which stays blocking for it.
+          redis_ignore="$(scoped_ignore redis '^CVE-2026-(76642|78408|78410) ')"
+          # clamav-debian really does install util-linux; its four are
+          # accepted on CAP_SYS_ADMIN reachability, not absence.
+          clamav_ignore="$(scoped_ignore clamav '^CVE-2026-(76642|78408|78409|78410) ')"
+
+          for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE"; do
             echo "::group::Trivy: $img"
-            ignorefile="$non_postgres_ignore"
-            if [[ "$img" == "postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2" ]]; then
-              ignorefile="$GITHUB_WORKSPACE/.trivyignore"
-            fi
+            case "$img" in
+              "$POSTGRES_IMAGE") ignorefile="$GITHUB_WORKSPACE/.trivyignore" ;;
+              "$REDIS_IMAGE")    ignorefile="$redis_ignore" ;;
+              "$CLAMAV_IMAGE")   ignorefile="$clamav_ignore" ;;
+              *)                 ignorefile="$base_ignore" ;;
+            esac
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
             echo "::endgroup::"
           done
@@ -380,12 +412,23 @@ jobs:
 
       - name: Scan built images
         run: |
-          non_postgres_ignore="$(mktemp)"
-          trap 'rm -f "$non_postgres_ignore"' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$non_postgres_ignore"
+          # Same per-image scoping as the blocking infra scan. Both app
+          # images are Debian-based and so ship real util-linux
+          # `mount`/`nsenter` — the four IDs are accepted here on
+          # reachability (non-root uid 10001, no CAP_SYS_ADMIN), not on
+          # the binaries being absent. .trivyignore records the evidence;
+          # the IDs are re-read from it so the `exp:` dates stay
+          # single-sourced.
+          base_ignore="$(mktemp)"
+          app_ignore="$(mktemp)"
+          trap 'rm -f "$base_ignore" "$app_ignore"' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          { cat "$base_ignore"
+            grep -E '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore"
+          } > "$app_ignore"
           for img in ttli-api:ci ttli-web:ci; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$non_postgres_ignore" "$img"
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$app_ignore" "$img"
             echo "::endgroup::"
           done
 
@@ -525,7 +568,7 @@ jobs:
           --health-timeout 3s
           --health-retries 12
       redis:
-        image: redis:8-alpine
+        image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
         ports: ["6399:6379"]
         options: >-
           --health-cmd "redis-cli ping"
@@ -533,7 +576,7 @@ jobs:
           --health-timeout 3s
           --health-retries 12
       clamav:
-        image: clamav/clamav-debian:stable
+        image: clamav/clamav-debian@sha256:4c975c439fcb7ab9cbdd72162c2802f5efcb4a11dcf5b0b37da1d746474ef20e
         ports: ["3410:3310"]
         options: >-
           --health-cmd "clamdcheck.sh"

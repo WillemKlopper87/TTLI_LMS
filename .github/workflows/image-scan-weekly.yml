@@ -44,13 +44,23 @@ jobs:
         run: |
           set +e
           FAILED=0
-          non_postgres_ignore="$(mktemp)"
-          trap 'rm -f "$non_postgres_ignore"' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore > "$non_postgres_ignore"
+          # Per-image scoping, matching ci.yml. The baseline strips the
+          # four util-linux IDs; postgres gets the full file, and the two
+          # Debian-based app images get them back on the reachability
+          # evidence recorded in .trivyignore (non-root uid 10001, no
+          # CAP_SYS_ADMIN). Anything added to this loop later starts from
+          # the strict baseline and must argue its own case.
+          base_ignore="$(mktemp)"
+          app_ignore="$(mktemp)"
+          trap 'rm -f "$base_ignore" "$app_ignore"' EXIT
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore > "$base_ignore"
+          { cat "$base_ignore"
+            grep -E '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore
+          } > "$app_ignore"
           postgres_image="postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
           for spec in "ttli-api:rescan|ttli-api-rescan" "ttli-web:rescan|ttli-web-rescan" "$postgres_image|postgres-production"; do
             IFS='|' read -r img report_name <<< "$spec"
-            ignorefile="$non_postgres_ignore"
+            ignorefile="$app_ignore"
             if [[ "$img" == "$postgres_image" ]]; then
               ignorefile="$GITHUB_WORKSPACE/.trivyignore"
             fi
