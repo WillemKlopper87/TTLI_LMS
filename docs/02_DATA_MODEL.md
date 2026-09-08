@@ -370,6 +370,8 @@ Each period's `Order` grants a fresh `Entitlement` per bundled course, with `exp
 
 Joins a user to a course, sourced from an entitlement. Carries `started_at`, `completed_at`, `expires_at`, `cohort_id`.
 
+`cohort_id` is still nullable and un-constrained in the shipped schema — self-paced enrolments have no cohort and never will, so it stays nullable even once the table exists. §13 #5 settles what it will point at (a scheduled run of a course or a learning path); the table and FK are follow-on schema work, tracked as P17a in [BACKLOG.md](BACKLOG.md).
+
 ### 7.2 `lesson_completions`
 
 The authoritative progress record. `state lesson_state`, `first_seen_at`, `completed_at`, `accumulated_seconds`, and `rule_evaluation` jsonb — a snapshot of which requirements were met and which were not, at the moment of the decision. That snapshot is what makes a completion dispute resolvable.
@@ -513,5 +515,9 @@ The invoice sequence audit is worth its own alert: a gap means something is wron
 2. **Events partitioning granularity** — monthly is proposed; weekly may suit if event volume exceeds projections.
 3. **Blind index rotation** — rotating the HMAC key requires recomputing every index. Design the dual-index migration path before the first key is issued, not after.
 4. **Bespoke enterprise lessons** — modelled as tenant-visible lessons inside a shared course. Confirm this survives a tenant wanting a wholly different module order.
-5. **Cohort definition for AI insights** — minimum cohort size, and how cohorts are formed when an organisation has fewer members than the minimum.
+5. ~~**Cohort definition for AI insights**~~ **Split and part-resolved 2026-09-08 (BACKLOG P17).** This question conflated two things that turn out to be different, which is why `Enrolment.cohort_id` sat as a placeholder for so long.
+
+   **Resolved — what a cohort *is*.** A cohort is **a scheduled run** of a course *or* a learning path: dates, a capacity cap, a facilitator. That is exactly how the product already sells it — `courses.format` has `live_cohort`, workshops have a `cohort_session` type, and the public copy says "ask us when the next cohort runs" and "capped cohort, so everyone speaks". It attaches to either a course or a learning path because both are sold: standalone courses, and the multi-course "executive programmes" that `learning_paths`/`path_enrolments` already model. So `Enrolment.cohort_id` will become a real FK to a `cohorts` table whose own parent is a course XOR a learning path.
+
+   **Still open — the anonymity set.** A cohort is explicitly **not** the unit AI insights may aggregate over. Conflating them ships a privacy bug the first time a run has three learners: a three-person cohort is a perfectly legitimate commercial run and an illegitimate anonymity set. §11.2's "`ai_insights` links to a cohort" should therefore be read as *an aggregation group*, not *this table*. The minimum group size, and what happens when an organisation has fewer members than that minimum, remain open and belong to the AI work (T12's POPIA lifecycle and T13's readiness gate), where the rule is enforced **at query time** — reporting refuses, or aggregates upward, below the threshold — rather than by constraining which runs may exist.
 6. **Video heartbeat interval** — 10 seconds is proposed. Shorter improves anti-bypass resolution and multiplies row volume.

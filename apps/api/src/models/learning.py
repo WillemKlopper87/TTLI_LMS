@@ -56,9 +56,21 @@ class Enrolment(Base, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # No cohort table yet (02 §13 lists cohort definition as an open
-    # question) — nullable and un-constrained on purpose, a forward-
-    # compatible placeholder rather than a guessed FK.
+    # Still no cohort table, but no longer an undecided one: 02 §13 #5 was
+    # settled on 2026-09-08 (BACKLOG P17). A cohort is a *scheduled run* —
+    # dates, a capacity cap, a facilitator — of a course or a learning path,
+    # which is how the product already sells it (`courses.format` carries
+    # `live_cohort`, and the public copy asks "when the next cohort runs").
+    # So this becomes a real FK to `cohorts` when P17a lands the table.
+    #
+    # It stays nullable even then: a self-paced enrolment has no cohort and
+    # never will, so nullable here is the domain, not a placeholder.
+    #
+    # What this deliberately is *not* is the anonymity set for AI insights.
+    # 02 §11.2 reads as though `ai_insights.cohort_id` points here; it must
+    # not be implemented that way. A three-person run is a legitimate cohort
+    # and an illegitimate anonymity set, so the minimum-group-size rule
+    # belongs to AI reporting at query time (T12/T13), not to this column.
     cohort_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 
 
