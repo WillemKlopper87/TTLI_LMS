@@ -216,14 +216,26 @@ Application logs 30 days hot · access logs 30–90 days · audit events 7 years
 
 Managed Postgres automated backups with point-in-time restore · object storage versioning · infrastructure as code · documented secrets recovery · DNS export · tenant configuration export.
 
-| Metric | Target |
-|---|---|
-| RPO | 15 minutes |
-| RTO | 4–8 hours |
-| Backup retention | 7–30 days |
-| Restore test | **Quarterly** |
+| Metric | Target | Measured by |
+|---|---|---|
+| RPO | 15 minutes | `restore-drill.sh`, `MAX_RPO_SECONDS=1200` |
+| RTO | 4–8 hours | `restore-drill.sh`, `MAX_RTO_SECONDS=28800` |
+| Backup retention | 7–30 days | `BACKUP_RETENTION_DAYS`, enforced on write |
+| Restore test | **Quarterly** | cron, 03:30 on 1 Jan/Apr/Jul/Oct |
 
 An untested backup is not a backup. The restore drill is on the calendar (§7.4), not in someone's intentions.
+
+**On the single-VM deployment** the targets above are implemented by two scripts, both installed by `deploy-single-vm.sh`:
+
+`scripts/backup-production.sh` runs every 15 minutes from cron — the cadence the RPO target names, rather than the 24-hour nightly job this section used to describe. Each run takes a custom-format `pg_dump`, verifies it is readable with `pg_restore --list` before publishing it, records a SHA-256, and syncs all five Garage buckets. Superseded object versions go to a per-run `objects/versions/<stamp>/` directory rather than being discarded, so an overwrite is recoverable and not just a deletion. Every run writes a manifest naming the owner, the git SHA, the Postgres image, the archive checksum and the elapsed time. An `flock` means a run that overruns its 15-minute slot makes the next one exit instead of stacking two `pg_dump`s on one small VM.
+
+Everything crosses an **rclone crypt remote**. Both scripts check the remote's type and abort if it is not `crypt`: these archives carry learner PII into storage we do not own, so the encryption boundary belongs on our side of the upload rather than in the provider's at-rest promise. Garage credentials reach rclone through `RCLONE_CONFIG_*` environment variables, so they never land in a config file or in a process's argv.
+
+`scripts/restore-drill.sh` is the measurement, quarterly from cron and runnable by hand any time. It restores the newest archive into a throwaway database and a throwaway bucket — never the live `ttli` database, never a production bucket — verifies the checksum first, asserts the restored schema has public tables, forced-RLS tables and an `alembic_version`, then round-trips one object per bucket and compares SHA-256 both ways. It computes actual RPO from the timestamp in the backup's name and actual RTO from its own elapsed time, writes a report to `backups/drills/`, uploads it to the encrypted remote as audit evidence, drops both drill targets, and **exits non-zero if either target is missed**. A drill that cannot find a sample object, or restores a database with no tables, fails rather than reporting success.
+
+`scripts/backup-db.sh` remains only as a shim that execs `backup-production.sh`, so existing cron installations keep working; `deploy-single-vm.sh` strips its old line on re-run.
+
+Required in `.env.prod`: `BACKUP_RCLONE_REMOTE` (a crypt remote), `BACKUP_OWNER` (a named human — this is who is paged, so a shared alias is not enough), and `BACKUP_RETENTION_DAYS` (7–30). All three are fatal if missing; the scripts refuse to run rather than take a backup nobody can restore or nobody owns.
 
 ### 5.5 Scaling triggers
 

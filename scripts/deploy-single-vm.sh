@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Prepare a fresh Ubuntu/Debian cloud VM and deploy the whole TTLI stack
 # onto it: Docker, firewall, the app + its infra containers (Postgres,
-# Redis, Garage, ClamAV, an SMTP relay) behind Caddy, plus a nightly
-# off-VM backup cron job. See docs/research/single-vm-deployment.md for
-# the architecture this implements and the tradeoffs against the
+# Redis, Garage, ClamAV, an SMTP relay) behind Caddy, plus the encrypted
+# 15-minute off-VM backup and quarterly restore-drill cron jobs. See
+# docs/research/single-vm-deployment.md for the architecture this
+# implements, and the tradeoffs against the
 # documented Azure Container Apps target (docs/06_OPERATIONS.md §4.2).
 #
 # Usage (as a user with sudo, on the target VM):
@@ -128,10 +129,30 @@ else
   [ -n "$GHCR_PAT" ] || die "GHCR_PAT is required -- create one at https://github.com/settings/personal-access-tokens/new"
 
   echo
-  echo "Off-VM backup destination (rclone remote, e.g. an rclone-configured"
-  echo "Azure Blob/S3/B2 bucket — run 'rclone config' separately if you"
-  echo "haven't already). Leave blank to skip backups for now (not recommended)."
-  read -rp "  rclone remote, e.g. myazure:ttli-backups : " BACKUP_RCLONE_REMOTE
+  echo "Off-VM backup destination. This MUST name an rclone *crypt* remote:"
+  echo "backup-production.sh refuses any other type, because these archives"
+  echo "carry learner PII and sit in someone else's storage account. Run"
+  echo "'rclone config' separately — create the underlying Azure Blob/S3/B2"
+  echo "remote first, then wrap it in a crypt remote and name that here."
+  echo "Leave blank to skip backups for now (not recommended)."
+  read -rp "  crypt remote, e.g. ttli-crypt:ttli-backups : " BACKUP_RCLONE_REMOTE
+
+  echo
+  echo "Backups need a named human owner — the person who is paged when a"
+  echo "backup or restore drill fails. It is recorded in every manifest and"
+  echo "drill report, so 'ops@' is not good enough."
+  read -rp "  Backup owner (name <email>): " BACKUP_OWNER
+
+  echo
+  read -rp "  Backup retention in days, 7-30 [30]: " BACKUP_RETENTION_DAYS
+  BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+  # Validate here rather than letting a typo through to a deploy that
+  # looks successful and whose backups then die every 15 minutes in a
+  # log nobody is reading yet. Same bounds backup-production.sh enforces.
+  [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] \
+    || die "BACKUP_RETENTION_DAYS must be an integer, got '$BACKUP_RETENTION_DAYS'"
+  (( BACKUP_RETENTION_DAYS >= 7 && BACKUP_RETENTION_DAYS <= 30 )) \
+    || die "BACKUP_RETENTION_DAYS must be between 7 and 30 (06 §5.4), got $BACKUP_RETENTION_DAYS"
 
   echo
   echo "Payfast (optional — leave blank to keep card checkout disabled, EFT/PO still work):"
@@ -199,6 +220,8 @@ SMTP_RELAY_PASSWORD=$SMTP_RELAY_PASSWORD
 EMAIL_FROM=$EMAIL_FROM
 
 BACKUP_RCLONE_REMOTE=$BACKUP_RCLONE_REMOTE
+BACKUP_OWNER=$BACKUP_OWNER
+BACKUP_RETENTION_DAYS=$BACKUP_RETENTION_DAYS
 
 PAYFAST_MERCHANT_ID=$PAYFAST_MERCHANT_ID
 PAYFAST_MERCHANT_KEY=$PAYFAST_MERCHANT_KEY
@@ -212,6 +235,9 @@ EOF
   if [ -z "$BACKUP_RCLONE_REMOTE" ]; then
     warn "No backup remote configured — this deployment has NO database backups."
     warn "Add BACKUP_RCLONE_REMOTE to $ENV_FILE and re-run this script once you have one."
+  elif [ -z "$BACKUP_OWNER" ]; then
+    warn "BACKUP_OWNER is empty — backup-production.sh will refuse to run."
+    warn "Add BACKUP_OWNER to $ENV_FILE before relying on these backups."
   fi
 fi
 
@@ -316,12 +342,46 @@ for svc in postgres redis clamav; do
 done
 
 # --------------------------------------------------------------------
-# 9. Nightly backup cron — 02:00 server time, idempotent (won't add a
-#    second identical line on re-run).
+# 9. Backup and restore-drill cron. Idempotent: every line this script
+#    has ever installed is stripped before the current set is written,
+#    so re-running (or upgrading from the old nightly backup-db.sh
+#    install) converges instead of accumulating duplicates.
+#
+#    Backups run every 15 minutes because 06_OPERATIONS.md §5.4 commits
+#    to a 15-minute RPO, and the old 02:00 nightly line only ever
+#    delivered 24 hours. backup-production.sh holds an flock, so a run
+#    that overruns its slot makes the next one exit rather than stack.
+#
+#    The drill runs quarterly — 03:30 on the 1st of Jan/Apr/Jul/Oct —
+#    which is the cadence §5.4 commits to. It restores into a throwaway
+#    database and bucket and drops both afterwards; it never touches
+#    the live `ttli` database. Deploy also asks for one rehearsal by
+#    hand (see the summary below), because a schedule whose first run
+#    is three months away is not evidence that restore works.
 # --------------------------------------------------------------------
-log "Installing nightly backup cron"
-CRON_LINE="0 2 * * * APP_DIR=$APP_DIR $APP_DIR/scripts/backup-db.sh >> /var/log/ttli-backup.log 2>&1"
-( crontab -l 2>/dev/null | grep -vF "backup-db.sh" ; echo "$CRON_LINE" ) | crontab -
+log "Installing backup (15-minute) and restore-drill (quarterly) cron"
+BACKUP_CRON="*/15 * * * * APP_DIR=$APP_DIR $APP_DIR/scripts/backup-production.sh >> /var/log/ttli-backup.log 2>&1"
+DRILL_CRON="30 3 1 1,4,7,10 * APP_DIR=$APP_DIR $APP_DIR/scripts/restore-drill.sh >> /var/log/ttli-restore-drill.log 2>&1"
+( crontab -l 2>/dev/null \
+    | grep -vF "backup-db.sh" \
+    | grep -vF "backup-production.sh" \
+    | grep -vF "restore-drill.sh" \
+  ; echo "$BACKUP_CRON" ; echo "$DRILL_CRON" ) | crontab -
+
+# A backup every 15 minutes turns this log into a disk-space problem in
+# a few weeks if nothing rotates it. Same for the drill log's reports.
+log "Installing logrotate for the backup logs"
+cat > /etc/logrotate.d/ttli-backup <<'LOGROTATE'
+/var/log/ttli-backup.log /var/log/ttli-restore-drill.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+LOGROTATE
 
 # --------------------------------------------------------------------
 # 10. Smoke test.
@@ -346,8 +406,19 @@ cat <<SUMMARY
     docker compose -f $COMPOSE_FILE ps
     docker compose -f $COMPOSE_FILE logs -f api
     docker compose -f $COMPOSE_FILE logs -f worker
-    $APP_DIR/scripts/backup-db.sh          # run a backup manually
-    crontab -l                             # confirm the nightly backup
+    $APP_DIR/scripts/backup-production.sh   # run a backup manually
+    $APP_DIR/scripts/restore-drill.sh       # rehearse a restore
+    crontab -l                              # confirm both cron lines
+
+  DO THIS NOW, before you consider the deploy finished:
+    1. $APP_DIR/scripts/backup-production.sh
+    2. $APP_DIR/scripts/restore-drill.sh
+  The drill restores the newest backup into a throwaway database and
+  bucket, checks RPO/RTO against §5.4's targets, and drops both. It
+  exits non-zero if either target is missed. Until it has passed once,
+  you have backups of unproven restorability, which is not the same
+  thing as backups. Keep the report it writes under
+  $APP_DIR/backups/drills/ — it is the audit evidence for §5.4.
 
   Read docs/research/single-vm-deployment.md for what's different from
   the documented Azure target, and when to move off this shape.
