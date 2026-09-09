@@ -321,3 +321,14 @@ CVE-2026-9547 exp:2026-12-07
 # only; no gRPC-based storage or cluster backend is built in or
 # configured, so the module is present but never reached.
 GHSA-hrxh-6v49-42gf exp:2026-12-07
+
+# CVE-2026-84445 is another gRPC-Go xDS-server crash disclosed after the
+# review above. Re-checked 2026-09-09: caddy:2-alpine still resolves to the
+# pinned 2.11.4 digest, so no official replacement exists. The affected code
+# is an xDS server handling malformed resource names; this stock image and
+# infra/Caddyfile build/configure only Caddy's HTTP reverse proxy and automatic
+# HTTPS, with no xDS server or gRPC storage/cluster plugin. The CI workflow
+# grants this exception to CADDY_IMAGE only, so the same CVE remains blocking
+# anywhere else. Remove on the next official Caddy rebuild, or re-review at
+# expiry.
+CVE-2026-84445 exp:2026-12-08
