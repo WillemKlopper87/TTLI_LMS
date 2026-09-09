@@ -82,6 +82,10 @@ The complete owner questionnaire and evidence request is
 the original 10-item decision register, VAT/accounting, gateway accounts,
 hosting, content, brand/marketing/legal copy, Information Officer/POPIA,
 integration access, UAT owners and launch signatories.
+Its companion
+[`PLATFORM_OWNER_RECOMMENDED_DEFAULTS.md`](PLATFORM_OWNER_RECOMMENDED_DEFAULTS.md)
+provides a market- and standards-aligned proposed answer for all 87 decisions;
+owners can accept each proposal or record a deliberate replacement.
 
 ## 4. What I would have done differently
 

@@ -9,6 +9,12 @@ their sections.
 
 ## How to complete it
 
+For a proposed answer to every item, use
+[`PLATFORM_OWNER_RECOMMENDED_DEFAULTS.md`](PLATFORM_OWNER_RECOMMENDED_DEFAULTS.md).
+Owners may accept a proposal verbatim or replace it, but must still name the
+approver and attach the requested evidence. The companion does not invent
+entity details, prices, bank accounts, officers or credentials.
+
 For every item, provide **one explicit answer**, a **named approver**, and the
 requested **evidence or secure access**. “Not at launch” is valid where offered.
 Do not put passwords, private keys or gateway secrets in this document: provide
