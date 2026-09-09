@@ -47,9 +47,9 @@ integration skips.
 ## 3. Open work
 
 ### 3a. Engineering — actionable now
-1. **Keep T7/T8 green.** The image-scan repair passed remotely at `0109408`;
-   the newest run failed only because this file's migration count drifted after
-   `0045`, which the docs integrity gate correctly caught.
+1. **Keep T7/T8 green.** The image-scan repair passed remotely at `0109408`.
+   CI's docs-integrity gate subsequently caught this file lagging migration
+   `0045`; keep treating such drift as a build failure, not harmless prose.
 2. **Complete the production-hardening queue T9–T12 in order:** finish T9's
    production restore rehearsal and record its evidence, then deployment/
    rollback proof, minimum viable observability and the POPIA operational

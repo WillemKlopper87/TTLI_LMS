@@ -27,4 +27,5 @@ regexes = [
   '''ac4324c09d4d0d3eec4b82db4520581a6bb66c2ba047c539''',              # infra/garage/garage.toml — Garage's local admin API token
   '''K9mP2xQ7vN4wZ8bR''',                                              # apps/api/tests/test_config.py — fabricated value asserting check_production_safety() rejects a real-looking password
   '''test-secret-key-at-least-32-characters-long''',                  # apps/api/tests — fixture JWT signing key, several test files
+  '''GK0123456789abcdef01234567''',                                   # ci.yml at 6fa8c09 — inert Compose-preflight placeholder, replaced after the scanner correctly flagged its realistic shape
 ]
