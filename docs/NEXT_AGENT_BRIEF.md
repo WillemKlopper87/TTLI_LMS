@@ -77,7 +77,11 @@ integration skips.
 - Post-build cleanup the user has already asked for (see §5): docs consolidation + codebase shrink.
 
 ### 3c. Customer-blocked (do not build around these)
-Decision register (10 items, `01_PRD.md §1.4`); VAT position for international sales; Payfast/Netcash sandbox accounts; Azure SA-North availability; content inventory (videos, podcast audio, book copy); brand/design system sign-off; footer social URLs; Information Officer registration.
+The complete owner questionnaire and evidence request is
+[`PLATFORM_OWNER_DECISION_PACK.md`](PLATFORM_OWNER_DECISION_PACK.md): it includes
+the original 10-item decision register, VAT/accounting, gateway accounts,
+hosting, content, brand/marketing/legal copy, Information Officer/POPIA,
+integration access, UAT owners and launch signatories.
 
 ## 4. What I would have done differently
 

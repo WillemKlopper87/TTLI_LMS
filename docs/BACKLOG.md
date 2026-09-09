@@ -101,7 +101,7 @@ per unit of effort, with the procurement gate (P4) placed where it must be.
 | **P16** | **Workshops calendar screen** (UI design screen 13). Month grid + agenda `.rowlist`, booking reuses `.buybox`, facilitator availability editor | M | Design-only. `calendar` returns zero hits in `apps/web` | OPEN |
 | ~~**P17**~~ | ~~**Cohort lifecycle decision**~~ **DECIDED 2026-09-08.** A cohort is a **scheduled run** — dates, a capacity cap, a facilitator — of a course **or** a learning path. Both are sold today (standalone courses, and the multi-course "executive programmes" that `learning_paths`/`path_enrolments` already model), and it is how the product already uses the word: `courses.format` carries `live_cohort`, workshops have a `cohort_session` type, and the public copy says "ask us when the next cohort runs" and "capped cohort, so everyone speaks". Researching it surfaced that `cohort_id` was carrying **two unrelated jobs**, which is why the question stayed open so long: 02 §11.2 also makes it the aggregation unit for `ai_insights`. Those are now explicitly separated — a three-person run is a legitimate commercial cohort and an illegitimate anonymity set, so the minimum-group-size rule is enforced by AI reporting **at query time** (refuse, or aggregate upward) rather than by constraining which runs may exist. 02 §13 #5 records the resolution and what remains open. | S | — | DONE |
 | **P17a** | **Cohort schema and lifecycle** (follows P17's decision) | M | The table P17 specified: `cohorts` (tenant-scoped, `course_id` **XOR** `learning_path_id`, `starts_at`/`ends_at`, `capacity`, facilitator, state), `Enrolment.cohort_id` promoted from an un-constrained uuid to a real FK, RLS policy and permissions to match the neighbouring tenant-scoped tables, plus the admin screens to create a run and see who is on it. `cohort_id` stays **nullable** — a self-paced enrolment has no cohort by definition. Blocks nothing else, but P18's unified gradebook wants it for group-level achievement | OPEN |
-| **P18** | **Unified gradebook / achievement model** (`what_next.md` item 3) | M | Quiz attempts, assignments, surveys, completion and credentials each carry their own grading/reporting logic today with no shared model for weighting, rubrics, manual grading + moderation, or transcript export | OPEN |
+| **P18** | **Unified gradebook / achievement model** (`what_next.md` item 3). **BACKEND PARTIAL 2026-09-08 (`b0b9b5b`).** Migration `0045`, weighted quiz/assignment achievement projection, assignment scores, learner-owned read endpoint and validation/tests are implemented without changing completion/certificate rules. Still open: admin/learner UI, rubrics, moderation workflow, cohort/group reporting and gradebook export. | M | The shared backend model exists, but the feature is not yet an operator-visible gradebook. | IN PROGRESS |
 | **P19** | **Competency / skills framework** (`what_next.md` item 4) | L | Learning paths exist; nothing connects a completed course to a role requirement or a skill-gap report. Argued as higher enterprise value than P11 — worth weighing against P11's position in this order | OPEN |
 
 ---
@@ -156,10 +156,12 @@ These remain.
 ## B — Blocked on someone outside engineering
 
 Do not build around these; they change the build, not just the schedule.
+The owner-ready questions, required evidence and answer format are consolidated
+in [`PLATFORM_OWNER_DECISION_PACK.md`](PLATFORM_OWNER_DECISION_PACK.md).
 
 | # | Item | Blocks |
 |---|---|---|
-| **B1** | **The decision register — all 10 items in `01_PRD.md` §1.4, signed** | Phase 0, and several items below |
+| **B1** | **The platform-owner decision pack, including the 10 decisions in `01_PRD.md` §1.4, signed** | Phase 0, production configuration and several items below |
 | **B2** | Accountants' written position on VAT for international digital services | O10, all pricing |
 | **B3** | Azure region/account availability confirmed and provisioned | O11, O12 |
 | **B4** | **Payfast (and Netcash) sandbox/production credentials** | Card checkout has never run against a real account; also blocks the one actionable EFT item in R13 |
