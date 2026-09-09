@@ -465,15 +465,27 @@ jobs:
           # the IDs are re-read from it so the `exp:` dates stay
           # single-sourced.
           base_ignore="$(mktemp)"
-          app_ignore="$(mktemp)"
-          trap 'rm -f "$base_ignore" "$app_ignore"' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          api_ignore="$(mktemp)"
+          web_ignore="$(mktemp)"
+          trap 'rm -f "$base_ignore" "$api_ignore" "$web_ignore"' EXIT
+          # Strip every image-specific disposition from the shared baseline.
+          # CVE-2026-84445 belongs only to the pinned Caddy image; 76956/76957
+          # belong only to the API image. None may leak into another artifact.
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|76956|76957) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          { cat "$base_ignore"
+            grep -E '^CVE-2026-(76642|78408|78409|78410|76956|76957) ' "$GITHUB_WORKSPACE/.trivyignore"
+          } > "$api_ignore"
           { cat "$base_ignore"
             grep -E '^CVE-2026-(76642|78408|78409|78410) ' "$GITHUB_WORKSPACE/.trivyignore"
-          } > "$app_ignore"
+          } > "$web_ignore"
           for img in ttli-api:ci ttli-web:ci ttli-postfix-relay:ci; do
             echo "::group::Trivy: $img"
-            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$app_ignore" "$img"
+            case "$img" in
+              ttli-api:ci) ignorefile="$api_ignore" ;;
+              ttli-web:ci) ignorefile="$web_ignore" ;;
+              *)           ignorefile="$base_ignore" ;;
+            esac
+            trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
             echo "::endgroup::"
           done
 

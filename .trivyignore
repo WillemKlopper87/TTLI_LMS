@@ -332,3 +332,16 @@ GHSA-hrxh-6v49-42gf exp:2026-12-07
 # anywhere else. Remove on the next official Caddy rebuild, or re-review at
 # expiry.
 CVE-2026-84445 exp:2026-12-08
+
+# --- ttli-api: Debian 13 libexpat1 2.8.3-1~deb13u1. Trivy first reported
+# these two advisories on 2026-09-09 and Debian publishes no fixed version.
+# They require an application to parse crafted XML (hash-flood DoS and memory
+# corruption respectively). TTLI's API source has no xml/ElementTree/expat/
+# lxml/defusedxml import and no XML ingestion endpoint; uploaded SVG is rejected
+# as an unsupported logo type rather than parsed. libexpat remains because it is
+# a dependency of the CPython runtime, so it cannot safely be removed. The
+# release workflow grants these entries to ttli-api:ci only; web, relay and all
+# third-party images remain blocking. Remove as soon as Debian publishes a fix,
+# or re-review source reachability at expiry.
+CVE-2026-76956 exp:2026-12-08
+CVE-2026-76957 exp:2026-12-08
