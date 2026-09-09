@@ -26,20 +26,19 @@ order later in this file. **Phase 6 AI work is paused until T7–T12 are complet
 or an explicit owner decision accepts a named residual risk.** T13 is the
 Phase 6 entry gate, not permission to start it early.
 
-- [x] **T7 — Repair the red push CI transaction race (S). DONE locally
-  2026-09-08; remote verification pending.** FastAPI yield dependencies used
+- [x] **T7 — Repair the red push CI transaction race (S). DONE and remotely
+  verified 2026-09-08.** FastAPI yield dependencies used
   the default request scope, so a create response could reach the browser
   before its transaction committed. The authenticated assessment journey then
   intermittently received `Product not found` or `No such block` on its next
   request. `SessionDep` and `AuditedSessionDep` now close at function scope,
   before response delivery, with a focused regression test. Rolling analytics
   periods now use the database clock so a just-committed event cannot fall
-  outside the window because of host/container clock skew. The full local API
-  suite and the formerly failing learner browser journey pass; do not mark the
-  remote gate green until a pushed GitHub Actions run passes.
+  outside the window because of host/container clock skew. The full API suite
+  and formerly failing learner browser journey pass locally and remotely.
 - [x] **T8 — Make the PostgreSQL image gate deterministic and disposition its
-  four new findings (S). DONE locally 2026-09-08; remote verification
-  pending.** Both CI service jobs and the blocking scan now use the exact
+  four new findings (S). DONE and remotely verified 2026-09-08.** Both CI
+  service jobs and the blocking scan now use the exact
   single-VM production digest. Image inspection proved only the split
   `libuuid` package is present; the affected util-linux mount/nsenter binaries
   and libmount are absent (BusyBox supplies those commands). Four narrowly
@@ -48,11 +47,15 @@ Phase 6 entry gate, not permission to start it early.
   exact production PostgreSQL digest so new advisories and expiry cannot wait
   for a code push. Re-check earlier when the official image carries `libuuid >=
   2.42.3-r0`.
-- [ ] **T9 — Backups and restore rehearsal (O2, M).** Implement scheduled
-  PostgreSQL plus object-storage backup, define retention/encryption/ownership,
-  and complete a timed restore drill with recorded RPO/RTO evidence. This is
-  the first operational control after green CI because an untested backup is
-  not a recovery capability.
+- [ ] **T9 — Backups and restore rehearsal (O2, M). IN PROGRESS.** Scheduled
+  PostgreSQL plus all-five-bucket Garage backup, 7–30-day version retention,
+  client-side `rclone crypt`, accountable-owner metadata, and an isolated timed
+  restore drill are implemented. The backup runs every 10 minutes to leave
+  headroom against the strict 15-minute RPO, and Garage is reachable from the
+  host only on loopback. Exit remains open until an operator supplies the real
+  off-VM crypt destination and individual owner, runs both scripts on the
+  production VM, and records a passing RPO/RTO report; code alone is not
+  recovery evidence.
 - [ ] **T10 — Deployment integrity and rollback proof (H2, M).** Replace the
   rolling updater's five-second process check with an active API/worker canary,
   record the running image digest and Git SHA for every component, and prove a
@@ -178,6 +181,6 @@ Do not build around these; they change the build, not just the schedule.
 6. ~~Quick wins~~ — **R4**, **R6**, **O4**, **O5** (partly — no PRs/autosave-rewrite deliberately left alone), **O9**, **P14** all done 2026-08-21/23.
 7. ~~**P5**~~ — done 2026-08-23. ~~**P7**~~ — done 2026-08-24 (5 phases; Teams client unit-tested against mocked Graph, not live-verified — no Azure AD app registration exists here).
 8. ~~T1–T5~~ — done 2026-08-27. ~~T6~~ — done 2026-08-28 under O7.
-9. **Now:** T7–T12, the production-hardening gate. T7/T8 are prepared
-   locally and still require a green pushed run; T9–T12 remain open.
+9. **Now:** T9–T12, the production-hardening gate. T7/T8 passed remotely;
+   T9 is implemented but remains open pending production restore evidence.
 10. **Then:** T13. P11/Phase 6 begins only after that readiness decision.

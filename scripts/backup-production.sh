@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 15-minute encrypted database + Garage backup for the single-VM topology.
+# Encrypted database + Garage backup for the single-VM topology. Cron runs it
+# every 10 minutes so a completed backup can stay within the 15-minute RPO.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ttli}"
@@ -28,6 +29,10 @@ BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 
 [ -n "$BACKUP_RCLONE_REMOTE" ] || die "BACKUP_RCLONE_REMOTE is required"
 [ -n "$BACKUP_OWNER" ] || die "BACKUP_OWNER is required"
+[[ "$BACKUP_RCLONE_REMOTE" =~ ^[^[:space:]=:]+:[^[:space:]=]+$ ]] \
+  || die "BACKUP_RCLONE_REMOTE must be remote:path with no whitespace or '='"
+[[ "$BACKUP_OWNER" =~ ^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$ ]] \
+  || die "BACKUP_OWNER must be a 3-128 character operator ID or email without spaces"
 [ -n "$S3_ACCESS_KEY" ] || die "S3_ACCESS_KEY is required"
 [ -n "$S3_SECRET_KEY" ] || die "S3_SECRET_KEY is required"
 [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || die "BACKUP_RETENTION_DAYS must be an integer"
@@ -81,11 +86,14 @@ for bucket in "${BUCKETS[@]}"; do
 done
 
 FINISHED="$(date +%s)"
+POSTGRES_CONTAINER="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q postgres)"
+[ -n "$POSTGRES_CONTAINER" ] || die "PostgreSQL container is not running"
+POSTGRES_IMAGE="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Config.Image}}{{end}}' "$POSTGRES_CONTAINER")"
 cat > "$MANIFEST" <<EOF
 timestamp_utc=$STAMP
 owner=$BACKUP_OWNER
 git_sha=$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || printf unknown)
-postgres_image=$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" images -q postgres)
+postgres_image=$POSTGRES_IMAGE
 database_archive=$(basename "$DUMP")
 database_sha256=$(cut -d' ' -f1 "$CHECKSUM")
 object_buckets=${BUCKETS[*]}

@@ -8,12 +8,17 @@ ENV_FILE="${ENV_FILE:-$APP_DIR/.env.prod}"
 COMPOSE_FILE="${COMPOSE_FILE:-$APP_DIR/infra/docker-compose.single-vm.yml}"
 DRILL_DIR="${DRILL_DIR:-$APP_DIR/backups/drills}"
 GARAGE_BACKUP_ENDPOINT="${GARAGE_BACKUP_ENDPOINT:-http://127.0.0.1:9140}"
-MAX_RPO_SECONDS="${MAX_RPO_SECONDS:-1200}"
+MAX_RPO_SECONDS="${MAX_RPO_SECONDS:-900}"
 MAX_RTO_SECONDS="${MAX_RTO_SECONDS:-28800}"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 env_value() { awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 [ -f "$ENV_FILE" ] || die "$ENV_FILE not found"
+need docker
+need rclone
+need sha256sum
+need mktemp
 
 BACKUP_RCLONE_REMOTE="${BACKUP_RCLONE_REMOTE:-$(env_value BACKUP_RCLONE_REMOTE)}"
 BACKUP_OWNER="${BACKUP_OWNER:-$(env_value BACKUP_OWNER)}"
@@ -22,6 +27,12 @@ S3_SECRET_KEY="${S3_SECRET_KEY:-$(env_value S3_SECRET_KEY)}"
 S3_REGION="${S3_REGION:-$(env_value S3_REGION)}"
 [ -n "$BACKUP_RCLONE_REMOTE" ] || die "BACKUP_RCLONE_REMOTE is required"
 [ -n "$BACKUP_OWNER" ] || die "BACKUP_OWNER is required"
+[[ "$BACKUP_RCLONE_REMOTE" =~ ^[^[:space:]=:]+:[^[:space:]=]+$ ]] \
+  || die "BACKUP_RCLONE_REMOTE must be remote:path with no whitespace or '='"
+[[ "$BACKUP_OWNER" =~ ^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$ ]] \
+  || die "BACKUP_OWNER must be a 3-128 character operator ID or email without spaces"
+[[ "$MAX_RPO_SECONDS" =~ ^[0-9]+$ ]] || die "MAX_RPO_SECONDS must be an integer"
+[[ "$MAX_RTO_SECONDS" =~ ^[0-9]+$ ]] || die "MAX_RTO_SECONDS must be an integer"
 REMOTE_NAME="${BACKUP_RCLONE_REMOTE%%:*}"
 rclone config show "$REMOTE_NAME" | grep -Eq '^type = crypt$' \
   || die "BACKUP_RCLONE_REMOTE must name an rclone crypt remote"
@@ -50,6 +61,7 @@ BACKUP_STAMP="${LATEST#ttli-}"
 BACKUP_STAMP="${BACKUP_STAMP%.dump}"
 BACKUP_EPOCH="$(date -u -d "${BACKUP_STAMP:0:8} ${BACKUP_STAMP:9:2}:${BACKUP_STAMP:11:2}:${BACKUP_STAMP:13:2}Z" +%s)"
 RPO_SECONDS="$((STARTED - BACKUP_EPOCH))"
+(( RPO_SECONDS >= 0 )) || die "latest backup timestamp is in the future; check host clock"
 
 rclone copyto "$BACKUP_RCLONE_REMOTE/database/$LATEST" "$WORK_DIR/$LATEST"
 rclone copyto "$BACKUP_RCLONE_REMOTE/database/$LATEST.sha256" "$WORK_DIR/$LATEST.sha256"

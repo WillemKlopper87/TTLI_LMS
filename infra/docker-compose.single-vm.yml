@@ -7,8 +7,9 @@
 # Container Apps target. Generated/populated by scripts/deploy-single-vm.sh,
 # not meant to be hand-run with a copied .env.example.
 #
-# Network model: only Caddy publishes ports to the host (80/443). Every
-# other service talks to every other service by its compose service name
+# Network model: only Caddy publishes ports externally (80/443). Garage also
+# publishes its S3 API on the host loopback interface solely for the host-run
+# backup/restore scripts. Every other service talks by its compose service name
 # on the default network — nothing else is reachable from outside the VM,
 # which is also what keeps DATABASE_URL/REDIS_URL passing
 # check_production_safety() (it refuses "localhost"/"127.0.0.1", not a
@@ -112,6 +113,10 @@ services:
       - ./garage.toml:/etc/garage.toml:ro
       - ttli-garage-meta:/var/lib/garage/meta
       - ttli-garage-data:/var/lib/garage/data
+    ports:
+      # Host-run backup/restore scripts use this endpoint. Loopback binding is
+      # deliberate: never expose Garage's S3 API directly to the internet.
+      - "127.0.0.1:9140:3900"
     restart: unless-stopped
 
   # First boot downloads virus definitions (a few minutes) — the long

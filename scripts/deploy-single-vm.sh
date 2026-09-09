@@ -2,7 +2,7 @@
 # Prepare a fresh Ubuntu/Debian cloud VM and deploy the whole TTLI stack
 # onto it: Docker, firewall, the app + its infra containers (Postgres,
 # Redis, Garage, ClamAV, an SMTP relay) behind Caddy, plus the encrypted
-# 15-minute off-VM backup and quarterly restore-drill cron jobs. See
+# 10-minute off-VM backup and quarterly restore-drill cron jobs. See
 # docs/research/single-vm-deployment.md for the architecture this
 # implements, and the tradeoffs against the
 # documented Azure Container Apps target (docs/06_OPERATIONS.md §4.2).
@@ -136,18 +136,26 @@ else
   echo "remote first, then wrap it in a crypt remote and name that here."
   echo "Leave blank to skip backups for now (not recommended)."
   read -rp "  crypt remote, e.g. ttli-crypt:ttli-backups : " BACKUP_RCLONE_REMOTE
+  if [ -n "$BACKUP_RCLONE_REMOTE" ]; then
+    [[ "$BACKUP_RCLONE_REMOTE" =~ ^[^[:space:]=:]+:[^[:space:]=]+$ ]] \
+      || die "backup remote must be remote:path with no whitespace or '='"
+  fi
 
   echo
-  echo "Backups need a named human owner — the person who is paged when a"
+  echo "Backups need a named operator owner — the person who is paged when a"
   echo "backup or restore drill fails. It is recorded in every manifest and"
-  echo "drill report, so 'ops@' is not good enough."
-  read -rp "  Backup owner (name <email>): " BACKUP_OWNER
+  echo "drill report. Use their individual email or operator ID (no spaces)."
+  read -rp "  Backup owner (individual email or operator ID): " BACKUP_OWNER
+  if [ -n "$BACKUP_OWNER" ]; then
+    [[ "$BACKUP_OWNER" =~ ^[A-Za-z0-9][A-Za-z0-9._@+-]{2,127}$ ]] \
+      || die "backup owner must be a 3-128 character operator ID or email without spaces"
+  fi
 
   echo
   read -rp "  Backup retention in days, 7-30 [30]: " BACKUP_RETENTION_DAYS
   BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
   # Validate here rather than letting a typo through to a deploy that
-  # looks successful and whose backups then die every 15 minutes in a
+  # looks successful and whose backups then die every 10 minutes in a
   # log nobody is reading yet. Same bounds backup-production.sh enforces.
   [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] \
     || die "BACKUP_RETENTION_DAYS must be an integer, got '$BACKUP_RETENTION_DAYS'"
@@ -347,9 +355,10 @@ done
 #    so re-running (or upgrading from the old nightly backup-db.sh
 #    install) converges instead of accumulating duplicates.
 #
-#    Backups run every 15 minutes because 06_OPERATIONS.md §5.4 commits
-#    to a 15-minute RPO, and the old 02:00 nightly line only ever
-#    delivered 24 hours. backup-production.sh holds an flock, so a run
+#    Backups run every 10 minutes to leave five minutes of completion
+#    headroom against 06_OPERATIONS.md §5.4's 15-minute RPO. The old
+#    02:00 nightly line only ever delivered 24 hours. The script holds an
+#    flock, so a run
 #    that overruns its slot makes the next one exit rather than stack.
 #
 #    The drill runs quarterly — 03:30 on the 1st of Jan/Apr/Jul/Oct —
@@ -359,8 +368,8 @@ done
 #    hand (see the summary below), because a schedule whose first run
 #    is three months away is not evidence that restore works.
 # --------------------------------------------------------------------
-log "Installing backup (15-minute) and restore-drill (quarterly) cron"
-BACKUP_CRON="*/15 * * * * APP_DIR=$APP_DIR $APP_DIR/scripts/backup-production.sh >> /var/log/ttli-backup.log 2>&1"
+log "Installing backup (10-minute) and restore-drill (quarterly) cron"
+BACKUP_CRON="*/10 * * * * APP_DIR=$APP_DIR $APP_DIR/scripts/backup-production.sh >> /var/log/ttli-backup.log 2>&1"
 DRILL_CRON="30 3 1 1,4,7,10 * APP_DIR=$APP_DIR $APP_DIR/scripts/restore-drill.sh >> /var/log/ttli-restore-drill.log 2>&1"
 ( crontab -l 2>/dev/null \
     | grep -vF "backup-db.sh" \
@@ -368,7 +377,7 @@ DRILL_CRON="30 3 1 1,4,7,10 * APP_DIR=$APP_DIR $APP_DIR/scripts/restore-drill.sh
     | grep -vF "restore-drill.sh" \
   ; echo "$BACKUP_CRON" ; echo "$DRILL_CRON" ) | crontab -
 
-# A backup every 15 minutes turns this log into a disk-space problem in
+# A backup every 10 minutes turns this log into a disk-space problem in
 # a few weeks if nothing rotates it. Same for the drill log's reports.
 log "Installing logrotate for the backup logs"
 cat > /etc/logrotate.d/ttli-backup <<'LOGROTATE'

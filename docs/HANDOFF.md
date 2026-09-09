@@ -6,6 +6,20 @@
 > a short current-state handoff, use [`docs/NEXT_AGENT_BRIEF.md`](NEXT_AGENT_BRIEF.md).
 > (`TTLI_Audit_Report_2026-09-02.md` M9.)
 
+**2026-09-09 — CI recheck and T9 continuation.** T7/T8 are no longer local-
+only claims: the corrected all-image scan passed remotely at `0109408`. The
+newest run after migration `0045` went red only because the docs-integrity
+gate caught `NEXT_AGENT_BRIEF.md` still claiming `0044`; the claim is updated
+in this change. T9's code exists: a 10-minute encrypted custom-format database
+backup plus all five Garage buckets, bounded version retention, manifest
+provenance, quarterly isolated database/object restore, checksum/schema/RLS
+validation and measured RPO/RTO. This pass also connected the host scripts to
+Garage through a loopback-only Compose port and made the 15-minute RPO strict
+(`900s`, with five minutes of schedule headroom). T9 remains IN PROGRESS until
+a real production operator configures the off-VM rclone crypt destination and
+individual owner and preserves a passing drill report. Do not substitute a
+local mock for that exit evidence; do not start Phase 6 before T9–T13 clear.
+
 **2026-09-08 — current-state refresh and production-hardening gate.** The
 latest remote push CI at `d71291a` is red despite older entries below saying
 the gate is green. Two independent causes were established. First, FastAPI

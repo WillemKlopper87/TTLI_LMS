@@ -25,12 +25,12 @@ table and "Commits made by the 2026-09-05 pass"):
   H-1–H-20, plus ~45 Medium and ~60 Low findings not individually tracked
   here (see "Not attempted" below).
 
-**2026-09-08 current-state note:** the latest remote push run at `d71291a`
-is red even though the older gate record below was green. The application
-failure is a FastAPI yield-dependency transaction race; the quality failure
-is four util-linux findings attributed to `libuuid` in the pinned PostgreSQL
-image. `BACKLOG.md` T7/T8 own the local remediation and remote re-verification.
-Production hardening T9–T13 now precedes Phase 6.
+**2026-09-09 current-state note:** T7/T8's transaction and image-scan repairs
+passed remotely at `0109408`. The next red run was documentation drift only:
+the migration-count guard caught `NEXT_AGENT_BRIEF.md` lagging migration
+`0045`. T9's scheduled encrypted database/object backup and isolated restore
+drill are implemented; production RPO/RTO evidence is still required.
+Production hardening T9–T13 precedes Phase 6.
 
 ---
 
@@ -43,7 +43,7 @@ Production hardening T9–T13 now precedes Phase 6.
 | **M1** | Weekly image-scan issues omit their evidence (filename mismatch; duplicate issues per finding) | DONE | — |
 | **M2** | New video/platform functionality (feature flags, health endpoint, video settings, progressive delivery, 0040 upload/finalise) lacked targeted tests | MOSTLY DONE | Feature-flag, video-settings and H1 tests existed before this ledger; `tests/test_video_settings.py` (pure-function coverage) and Part B's H-2/H-3/H-4 concurrency tests close most of the remaining gap. Still open: a real browser journey for upload→select→finalise→attach→playback, and HLS-vs-progressive response/range/expiry tests. |
 | **M3** | Production releases built from mutable source and tags (local `docker build` on the host, `latest`/`stable` runtime tags) | MOSTLY DONE | Build-once-in-CI, publish-by-digest, sign and verify: DONE (Part B's C-3). `infra/docker-compose.single-vm.yml`'s `migrate`/`api`/`worker`/`web` no longer carry a `build:` stanza — they only ever run the CI-built, cosign-verified image. `postgres`/`redis`/`garage`/`clamav`/`caddy`/`postfix-relay` are digest-pinned. As of 2026-09-08 both PostgreSQL CI services and its blocking Trivy scan use the exact production digest; other infra entries in the scan loop still use tags, so the broader residual remains. |
-| **M4** | Backup doesn't meet the documented 15-minute RPO; no object-storage backup; no restore rehearsal | OPEN | Unchanged. Tracked below as Part B's **H-20**. |
+| **M4** | Backup doesn't meet the documented 15-minute RPO; no object-storage backup; no restore rehearsal | PARTIAL | The 10-minute encrypted DB/all-bucket schedule and isolated drill are implemented. Open until the production drill records passing RPO/RTO evidence. Tracked below as Part B's **H-20**. |
 | **M5** | Application test coverage overly infrastructure-dependent (fast/pure tier too thin) | DONE | Pure-function extraction landed: `services/subscriptions.py::compute_renewal_period`, plus new direct coverage for the already-pure `services/completion.py::evaluate/merge_rules` and `services/media/video_settings.py`. `pytest -m unit` marker and coverage config added to `apps/api/pyproject.toml`. The one regression this class of work had produced — `tests/test_orders_pricing.py` enshrining the wrong inclusive-VAT number — is fixed (Part B's H-1). |
 | **M6** | Backend domains crossed maintainability thresholds (largest files mix authorization, state, provider calls and reporting) | PARTIAL | `services/workshops.py` (1358 lines) split into `authoring`/`booking`/`attendance`/`reporting` submodules — the concrete, line-verified split this finding proposed, done with zero router or test touch required. `services/enrolment.py`, `routers/assessment.py`, `services/learning_paths.py`, `services/orders.py`, `routers/auth.py` and several frontend files (`admin/workshops/page.tsx`, `lesson-activity-panel.tsx`, `checkout/page.tsx`) remain oversized — tracked as `docs/BACKLOG.md` **O14**. |
 | **M7** | Frontend contracts/tests don't match the breadth of the UI (most screens hand-typed, not generated; component testing effectively absent) | PARTIAL | **Testing half DONE 2026-09-08.** There was no component/unit runner at all — only Playwright. vitest + Testing Library now run in CI (`web` job, before the build) over the shared transport and session code every screen imports: `lib/authed-fetch.ts` (all four refresh-and-replay outcomes, header-shape preservation, transport failure on both the original and the replay), `lib/bff-fetch.ts` and `lib/api-error.ts`, plus the first real component test (`components/site-footer.test.tsx`). 28 tests. These are the H-15/H-16/H-17 seams, which Playwright can only reach by racing an 80%-of-lifetime token timer. The authedFetch suite was mutation-checked — four separate mutants (dropped no-token guard, failed refresh masked as success, dropped caller headers, removed transport catch) each produced a failure. Writing them found and fixed a real defect: `readError` is declared `Promise<string>` but returned the raw value, so an object-valued `error.message` reached the user as "[object Object]". **Contracts half still OPEN**: `packages/api-client` is generated and drift-checked in CI, and `lib/api-client.ts` gives it a typed browser front door — but exactly **1** file imports it while **53** still hand-roll `authedFetch` with their own local interfaces. The drift gate therefore proves the generated artifact matches the backend, never that a given screen does; a field rename stays green in CI and breaks a page at runtime. Remaining work is that migration, per-interface rather than mechanical. Overlaps Part B's **H-17** (session failure handling, DONE) and the effect-warning items below. |
@@ -281,7 +281,7 @@ picked up next, in this order:
 
 **Next (§8 step 9 — production-safety guard and backups):**
 - **H-19** — `check_production_safety` checks a MinIO-era key, not the Garage key this repo actually commits; unchecked for staging; no live-Payfast-credentials-with-sandbox-flag check.
-- **H-20** — backup is a nightly logical dump with no restore path, no restore rehearsal, and no Garage (object storage) backup at all, contradicting the ops doc's stated PITR/15-min-RPO promise.
+- **H-20 (PARTIAL)** — encrypted scheduled database and Garage backups plus an isolated restore path now exist. Close only after a production operator supplies the off-VM crypt destination/owner and records a passing timed drill.
 
 **§8 step 10 — proxy trust and upload limits:**
 - **M-2** — per-IP rate limiting trusts the first (attacker-controlled) `X-Forwarded-For` hop; every IP-keyed limit is bypassable behind an appending proxy.

@@ -30,7 +30,7 @@ a measurement" discipline):
 
 | Trigger | What breaks on one VM |
 |---|---|
-| Real user data exists and matters | No point-in-time restore — nightly `pg_dump` only, see §7 |
+| Real user data exists and matters | Logical backups target a 15-minute RPO, but there is no point-in-time recovery and the VM remains the live-system failure domain; see §7 |
 | VM CPU sustained >70% | Postgres, the transcoder, and the app are all fighting for the same cores — no separating them without re-provisioning |
 | More than a handful of concurrent video streams | ClamAV, ffmpeg transcode jobs, and Postgres all want RAM at once (§3) |
 | A customer asks about disaster recovery / uptime SLA | One VM going down takes everything down, DB included |
@@ -178,10 +178,10 @@ rather than doing it silently as part of a deploy script.
 ## 6. Firewall
 
 `scripts/deploy-single-vm.sh` configures `ufw` to allow exactly three
-inbound ports: 22 (SSH), 80, 443. Everything else — Postgres, Redis,
-Garage's S3 API, ClamAV, the API's own 8010 — is reachable only from
-inside the VM, because nothing publishes those ports to the host in the
-first place (`expose`, not `ports`, in the compose file). Two independent
+inbound ports: 22 (SSH), 80, 443. Postgres, Redis, ClamAV and the API's own
+8010 are reachable only from inside the VM. Garage's S3 API is also available
+at `127.0.0.1:9140`, bound to loopback solely for host-run backup and restore
+scripts; it is not externally reachable. Two independent
 layers doing the same job on purpose: a compose-file mistake alone
 shouldn't be enough to make Postgres internet-reachable.
 
@@ -189,31 +189,29 @@ shouldn't be enough to make Postgres internet-reachable.
 
 ## 7. Backup and recovery — read this before you need it
 
-`06_OPERATIONS.md` §5.4 targets a 15-minute RPO via managed Postgres'
-continuous point-in-time restore. **This shape does not have that.**
-`scripts/backup-db.sh`, cron'd nightly at 02:00, gives you:
+`06_OPERATIONS.md` §5.4 targets a 15-minute RPO. This shape schedules
+`scripts/backup-production.sh` every 10 minutes, leaving five minutes for a
+run to finish before the newest completed archive exceeds that target. It is
+still logical-backup recovery, not managed Postgres point-in-time restore:
 
 | Metric | Documented target (§5.4) | This shape, honestly |
 |---|---|---|
-| RPO | 15 minutes | ~24 hours (nightly dump) |
-| RTO | 4–8 hours | Untested until you run the drill — assume longer |
+| RPO | 15 minutes | Implemented; measured from the newest archive by `restore-drill.sh` |
+| RTO | 4–8 hours | Implemented measurement, but unproven until the first production drill |
 | Backup location | Managed, geo-redundant | Wherever your `rclone` remote points — **must be off this VM** |
 
-The backup script refuses to run without `BACKUP_RCLONE_REMOTE`
-configured, on purpose — a dump sitting next to the database it's
+The backup script refuses to run without a `BACKUP_RCLONE_REMOTE` crypt
+destination configured, on purpose — a dump sitting next to the database it's
 protecting is not a backup, it's a second copy of the same single point
 of failure. Point it at any `rclone`-supported target (Azure Blob, S3,
 Backblaze B2) that isn't this VM.
 
-**Object storage** (course video, certificates, invoices, payment
-proofs) is *not* covered by `backup-db.sh` — it lives in the `garage`
-container's own Docker volumes, on this VM's own disk, with no backup at
-all as shipped. If that content matters as much as the database (it
-does — course video is expensive to re-encode, certificates and invoices
-are financial/legal records), add a second `rclone sync` cron for
-Garage's data volume, or move to `STORAGE_BACKEND=azure` against a real
-Blob Storage account, which gets you managed redundancy for free — worth
-weighing against §3's disk-sizing note either way.
+**Object storage** (course video, certificates, invoices and payment proofs)
+is covered in the same run: all five Garage buckets are synced through the
+crypt remote, while overwritten/deleted objects are retained as timestamped
+versions for the configured 7–30-day window. The compatibility wrapper
+`backup-db.sh` invokes this production backup rather than maintaining a
+separate database-only path.
 
 **The restore drill `06_OPERATIONS.md` §7.4 already commits to
 quarterly is not optional here — it's the only way to know §7's numbers
@@ -261,16 +259,17 @@ First run prompts for everything in §8, generates every secret
 (`SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, `BLIND_INDEX_KEY`,
 `APP_DB_PASSWORD`, the Postgres/Redis passwords, a fresh Garage key pair
 — never the checked-in dev credentials in `infra/garage/garage.toml`),
-writes `/opt/ttli/.env.prod` (`chmod 600`), builds the four application
-images, brings up all nine containers, installs the nightly backup cron,
+writes `/opt/ttli/.env.prod` (`chmod 600`), deploys the CI-built application
+images, brings up all nine containers, installs the 10-minute backup and
+quarterly restore-drill cron jobs,
 and smoke-tests `https://<your-domain>/`.
 
 **Re-running the script later** (to deploy a new version, say) reuses
 the existing `.env.prod` untouched — it will not regenerate
 `FIELD_ENCRYPTION_KEY`/`BLIND_INDEX_KEY`/`APP_DB_PASSWORD`, because doing
 so after real data exists makes every already-encrypted row and the
-database password permanently wrong. It does rebuild images and restart
-services.
+database password permanently wrong. It pulls and verifies the CI-built images
+for the checked-out Git SHA and restarts services.
 
 **Back up `.env.prod` itself**, somewhere other than this VM (a password
 manager, Key Vault) — it's the one file that reconstructs this exact
@@ -286,8 +285,9 @@ docker compose -f infra/docker-compose.single-vm.yml ps
 docker compose -f infra/docker-compose.single-vm.yml logs -f api
 docker compose -f infra/docker-compose.single-vm.yml logs -f worker
 docker compose -f infra/docker-compose.single-vm.yml logs -f caddy   # cert issuance issues show up here first
-./scripts/backup-db.sh                                                # run a backup on demand
-crontab -l                                                            # confirm the nightly one is installed
+./scripts/backup-production.sh                                        # run a backup on demand
+./scripts/restore-drill.sh                                            # timed isolated restore proof
+crontab -l                                                            # confirm both schedules
 ```
 
 **Deploying a new version day-to-day: `scripts/rolling-update.sh`, not

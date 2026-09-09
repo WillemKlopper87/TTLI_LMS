@@ -36,25 +36,25 @@ file are stale (they still say Phase 3 ~40%, Phase 1 ~95%) — trust the table.
 | 4.5 PWA + a11y | **100%** | Manifest/SW/offline shell, WCAG 2.1 AA contrast pass, Web Push (VAPID, 3 triggers, verified live on Edge/WNS), and since 2026-08-20 the axe-core gate — the last item. |
 | 5 Corporate / workshops / marketing | 100% | Organisations, seat pools, PO checkout, manager visibility, facilitators/workshops/sessions/waitlists, pluggable meeting provider (Teams), CRM (deals/tasks/notes), marketing engine (segments/templates/campaigns/unsubscribe) |
 | 6 AI insights | 0% — **gated** | Not started. T7–T13 now explicitly require green CI, recovery, deployment integrity, observability, POPIA lifecycle, staged rollout and the data-residency decision before implementation begins |
-| 7 Hardening + cloud | in progress, now priority | Containerisation, CI-built/cosign-signed application images, a digest-pinned single-VM topology, rolling updater and Sentry capture exist. Still absent: scheduled DB/object backups and restore proof, active deployment canary, metrics/log shipping/alerts, POPIA lifecycle, IaC/cloud/staging and load test |
+| 7 Hardening + cloud | in progress, now priority | Containerisation, CI-built/cosign-signed application images, a digest-pinned single-VM topology, rolling updater, Sentry capture, and scheduled encrypted DB/object backups exist. Still absent: production restore-drill evidence, active deployment canary, metrics/log shipping/alerts, POPIA lifecycle, IaC/cloud/staging and load test |
 | Enterprise UI pass (2026-08-17) | built | 11-screen prototype alignment, course-authoring wizard (`/admin/courses/new`), revenue analytics (`/admin/analytics`, migration 0028) |
 
-Scale: 44 migrations (`0001`–`0044`), 188 API source files, 58 API test
-modules and 133 files under the web App Router. The 2026-09-08 local full run
-collected 641 API tests (640 passed, one local skip); the remote quality job
-installs ffmpeg and enforces zero integration skips.
+Scale: 45 migrations (`0001`–`0045`), 189 API source files, 59 API test
+modules and 133 files under the web App Router. The 2026-09-08 remote quality
+run collected and passed 665 API tests; CI installs ffmpeg and enforces zero
+integration skips.
 
 ## 3. Open work
 
 ### 3a. Engineering — actionable now
-1. **Finish T7/T8 and prove the pushed run green.** Do not report CI green
-   from local gates. The last remote run (`d71291a`) failed both the blocking
-   PostgreSQL image scan and authenticated e2e; the 2026-09-08 patch addresses
-   both causes but is not closed until GitHub executes it.
-2. **Complete the production-hardening queue T9–T12 in order:** recovery
-   first, then deploy/rollback proof, minimum viable observability and the
-   POPIA operational lifecycle. Record objective evidence for each exit
-   criterion in `BACKLOG.md` rather than another status document.
+1. **Keep T7/T8 green.** The image-scan repair passed remotely at `0109408`;
+   the newest run failed only because this file's migration count drifted after
+   `0045`, which the docs integrity gate correctly caught.
+2. **Complete the production-hardening queue T9–T12 in order:** finish T9's
+   production restore rehearsal and record its evidence, then deployment/
+   rollback proof, minimum viable observability and the POPIA operational
+   lifecycle. Record objective evidence for each exit criterion in
+   `BACKLOG.md` rather than another status document.
 3. **Run T13 before Phase 6.** R9's tenant kill switches/budget enforcement
    and B1 decision 4's redacted-data residency choice are entry conditions for
    P11, not follow-up cleanup.

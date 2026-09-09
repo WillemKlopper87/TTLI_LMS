@@ -235,6 +235,34 @@ jobs:
         working-directory: .
         run: python docs/check_links.py
 
+      # Recovery code should not wait for a production incident to reveal a
+      # syntax error or an invalid Compose topology. The real restore drill is
+      # still production evidence; these are only deterministic preflight gates.
+      - name: Backup and restore preflight
+        working-directory: .
+        run: |
+          bash -n scripts/backup-production.sh scripts/restore-drill.sh scripts/backup-db.sh scripts/deploy-single-vm.sh
+          docker compose -f infra/docker-compose.single-vm.yml config --quiet
+        env:
+          DATABASE_URL: postgresql+asyncpg://app_user:x@postgres:5432/ttli
+          DATABASE_URL_SYNC: postgresql+psycopg2://ttli:x@postgres:5432/ttli
+          APP_DB_PASSWORD: x
+          REDIS_URL: redis://:x@redis:6379/0
+          REDIS_PASSWORD: x
+          SECRET_KEY: ci-preflight-secret-at-least-thirty-two-characters
+          FIELD_ENCRYPTION_KEY: ci-preflight-field-key
+          BLIND_INDEX_KEY: ci-preflight-index-key
+          SENTRY_DSN: https://x@example.invalid/1
+          PUBLIC_WEB_URL: https://lms.example.invalid
+          API_PUBLIC_URL: https://lms.example.invalid/api/bff
+          S3_ACCESS_KEY: GK0123456789abcdef01234567
+          S3_SECRET_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          POSTGRES_SUPERUSER_PASSWORD: x
+          SMTP_RELAY_HOST: "[smtp.example.invalid]:587"
+          SMTP_RELAY_USERNAME: x
+          SMTP_RELAY_PASSWORD: x
+          EMAIL_FROM: noreply@example.invalid
+
       - name: Source extraction fidelity
         working-directory: .
         run: python docs/source/extract.py --check
