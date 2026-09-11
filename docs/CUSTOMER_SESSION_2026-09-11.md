@@ -130,14 +130,18 @@ Specs (2026-09-11, approved approach, pending written review):
 [assessment platform](superpowers/specs/2026-09-11-assessment-platform-design.md) ·
 [analyst workspace](superpowers/specs/2026-09-11-analyst-workspace-design.md) ·
 [facilitator licensing + xAPI](superpowers/specs/2026-09-11-facilitator-licensing-xapi-design.md) ·
-[partner portal](superpowers/specs/2026-09-11-partner-portal-design.md) (the external view for consultants, facilitators and health professionals; first assessment product: TTLI ENGQ).
+[partner portal](superpowers/specs/2026-09-11-partner-portal-design.md) (the external view for consultants, facilitators and health professionals) ·
+[programmes](superpowers/specs/2026-09-11-programmes-design.md) (the five entry paths as runnable programmes; launch scope per the customer, 2026-09-11).
 
 1. Sprint 0/1 hardening (in flight, ~3 weeks). Unchanged.
 2. LWI content intake + publish rehearsal on UAT. Can run in parallel with 1.
 3. Brainstorm + spec §3.2 (assessments), then §3.3 (analyst workflow). They
    share the data model, so do them together.
-4. Brainstorm + spec §3.1 (licensing) and xAPI. Commercial questions first.
-5. Multi-region, Power BI Embedded, AI insights: post-launch.
+4. Programmes (entry paths as typed learning paths with runs), in parallel with 3.
+5. Brainstorm + spec §3.1 (licensing) and xAPI. Commercial questions first.
+6. Multi-region, Power BI Embedded, AI insights: post-launch.
+
+Week plan and staffing implication: programmes spec §7.
 
 ## 4a. Services brochure (received 2026-09-11)
 

@@ -17,7 +17,7 @@ One portal, one `partner_profiles` row per organisation, three capability sets s
 |---|---|---|---|
 | **Analyst** (contracted consultant, psychologist) | Works on *TTLI's* clients' assessments | An engagement (analyst spec §3) | Engagements, Reports (submit to TTLI) |
 | **Licensee facilitator** | Runs LWI for *their own* learners | A course licence (licensing spec §3) | Practice: learners, seats, cohorts, progress; Integrations (xAPI) |
-| **Licensed practitioner** (consultant or health professional) | Runs the TTLI ENGQ for *their own* client companies | An assessment licence (new, §4.2) | Clients, Assessments (run ENGQ), Results, Reports (release to client, optionally via TTLI review) |
+| **Licensed practitioner** (consultant or health professional) | Runs TTLI instruments and programmes for *their own* client companies | An assessment licence (new, §4.2) or a path licence ([programmes](2026-09-11-programmes-design.md) §3) | Clients, Assessments, Programmes (run board), Results, Reports (release to client, optionally via TTLI review) |
 
 A fourth capability, **Accredited administrator**, covers DISC and REACH:
 the practitioner holds the vendor accreditation, administers the instrument
@@ -40,7 +40,8 @@ Health professionals are licensed practitioners with two extra profile fields: p
 /partner/engagements          Analyst: TTLI-assigned instances, window, status
 /partner/engagements/[id]     Same detail page as above, in engagement mode
 /partner/reports              Drafts, submitted, returned, accepted, released
-/partner/practice             Licensee: learners, seats, invite, cohorts, progress
+/partner/practice             Licensee: learners, seats, invite, progress
+/partner/programmes           Licensed paths: runs per client, run board, scheduling
 /partner/integrations         xAPI LRS settings and status
 /partner/profile              Credentials, agreements, registration, logo, MFA
 ```

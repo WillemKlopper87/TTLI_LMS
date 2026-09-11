@@ -61,7 +61,7 @@ progress, with one-on-one sessions and four workshops in between. So a
 surveys do today (`standalone`|`pre`|`post`), and the subject report for a
 `post` instance shows the delta per competency against the paired `pre`. The
 programme itself (assessment → one-on-ones → workshops → assessment →
-one-on-ones) is a learning-path shape; see §10.
+one-on-ones) is specified in [programmes](2026-09-11-programmes-design.md); see §10.
 
 Items 7 and 8 are third-party instruments administered by an accredited
 external practitioner (a health professional today). Both vendors require
@@ -269,17 +269,14 @@ width, no auth, no layout chrome.
 L. About four weeks for one engineer including web. Builds first; the analyst
 workspace spec assumes these tables exist.
 
-## 10. Programmes (out of scope here, flagged for the learning-path model)
+## 10. Programmes
 
 Lead with Intent and Cultivate with Intent are sold as eight-phase journeys:
-360 → one-on-one → four workshops → second 360 → one-on-one. Everything in
-that chain already has a home (assessment instances, workshop bookings, the
-LWI course in learning paths) except the chain itself. Recommendation: a
-learning path gains step types `assessment` and `one_on_one` alongside
-`course` and `workshop`, so a programme is a path and progress through it is
-visible on the organisation dashboard. That is a small extension to
-`learning_paths`, to be specced after this platform lands; it is not needed
-for the January assessment launch.
+360 → one-on-one → four workshops → second 360 → one-on-one. The chain is
+launch scope (customer instruction 2026-09-11) and is specified in
+[programmes](2026-09-11-programmes-design.md): learning paths gain typed
+steps and a run per organisation, and an `assessment` step creates the
+instance (paired pre/post for 360s) for that run's participants.
 
 ## 11. Open items for the customer
 

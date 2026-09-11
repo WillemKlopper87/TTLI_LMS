@@ -35,7 +35,8 @@ organisations
   + logo_object_key (nullable)      shown on licensee learners' certificates and header
 
 licences
-  id, tenant_id, organisation_id, course_id, status ('active'|'suspended'|'expired'),
+  id, tenant_id, organisation_id, course_id XOR learning_path_id (a programme licence, see
+  the programmes spec §3), status ('active'|'suspended'|'expired'),
   seats_purchased int, seats_used int (derived, cached), starts_at, ends_at,
   price_per_seat_cents, currency, royalty_pct (nullable, for reporting only),
   order_id (nullable), notes, timestamps
