@@ -44,9 +44,11 @@ clients.
 **What exists:** tenancy in the schema, organisation seats, white-label
 tenants (05 §2.6), a Facilitator role scoped to *TTLI's* workshops.
 
-**Gap:** a facilitator-as-tenant model. A licensee owns their own learners,
-cohorts, reporting and possibly branding, on TTLI's content, with TTLI
-retaining content ownership and royalty/usage visibility. To settle:
+**Gap:** a licensee model. A licensee owns their own learners, cohorts and
+reporting on TTLI's content, with TTLI retaining content ownership and
+royalty/usage visibility. Design decision (see the spec): a licensee is an
+**Organisation with `kind = licensee`** inside the TTLI tenant, not a
+separate Tenant. To settle:
 
 - Is a licensee a white-label tenant (existing model, priced at 05 §2.6) or a
   new lighter "practice" tenant tier?
@@ -123,6 +125,11 @@ virus-scanned uploads, audit events.
 care goes, and it is a security-officer item.
 
 ## 4. Suggested sequencing (for the January 2027 date)
+
+Specs (2026-09-11, approved approach, pending written review):
+[assessment platform](superpowers/specs/2026-09-11-assessment-platform-design.md) ·
+[analyst workspace](superpowers/specs/2026-09-11-analyst-workspace-design.md) ·
+[facilitator licensing + xAPI](superpowers/specs/2026-09-11-facilitator-licensing-xapi-design.md).
 
 1. Sprint 0/1 hardening (in flight, ~3 weeks). Unchanged.
 2. LWI content intake + publish rehearsal on UAT. Can run in parallel with 1.
