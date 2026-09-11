@@ -186,3 +186,38 @@ in [`PLATFORM_OWNER_DECISION_PACK.md`](PLATFORM_OWNER_DECISION_PACK.md).
 9. **Now:** T9–T12, the production-hardening gate. T7/T8 passed remotely;
    T9 is implemented but remains open pending production restore evidence.
 10. **Then:** T13. P11/Phase 6 begins only after that readiness decision.
+
+---
+
+## F — 2026-09-11 independent review findings (verified against code)
+
+Found by a fresh review of `main` at `e13a3c9` plus a screenshot pass over every persona.
+Each was verified by hand against the cited file, not taken from a prior document. The
+sequenced execution order for these and for T9–T13 is [`BACKLOG_2026-09-11.md`](BACKLOG_2026-09-11.md).
+
+| # | Item | Size | Where | Status |
+|---|---|---|---|---|
+| **F1** | Four Playwright specs (`admin`, `learner`, `session-refresh`, `survey-pairing`) `test.skip` without an API and lack the `REQUIRE_API_E2E` hard-fail; the `authenticated-e2e` job loops only the other five, so these are green by never running | S | `.github/workflows/ci.yml:757-761`, `apps/web/e2e/*.spec.ts` | OPEN |
+| **F2** | Tenant-domain resolution cache (60 s, `tenant:host:*`) is never invalidated by `POST/DELETE /tenant/domains`; the module docstring's "nothing edits domains yet" predates P3 | S | `apps/api/src/core/tenancy.py:26,64`; `routers/tenant.py` | OPEN |
+| **F3** | Gradebook build issues `session.get(Quiz)` + a full attempts query per quiz/assignment block (N+1) | S | `apps/api/src/services/gradebook.py:211-231` | OPEN |
+| **F4** | Learner dashboard issues `session.get(Quiz)` + an attempts COUNT per block, per lesson, per enrolment, on every `/learn/dashboard` load | S | `apps/api/src/services/dashboard.py:262-285,144-154` | OPEN |
+| **F5** | `POST /campaigns/{id}/send` loops every contact (2 SELECTs + INSERT + enqueue each) inside the request transaction | S–M | `apps/api/src/services/campaigns.py:171-230`; `routers/campaigns.py:148-168` | OPEN |
+| **F6** | Unbounded admin lists/exports: `GET /video-assets`, `/tenant/users?include_learners`, plus audit, learners, org progress, finance, campaigns, certificates, enrolments need `limit`/cursor/max page size | M | e.g. `routers/media.py:129-150`; pattern in `routers/deals.py:74-88` | OPEN |
+| **F7** | `infra/docker-compose.prod.yml` is stale: 0 healthchecks vs 6 in single-vm, ~15 env keys missing (CLAMAV, SMTP, EMAIL_FROM, PAYFAST_*, VAPID_*) — would boot a broken stack | S | `infra/docker-compose.prod.yml` | OPEN |
+| **F8** | No `mem_limit`/`cpus`/`logging` rotation in any compose file; on one VM json-file logs grow unbounded | S | `infra/docker-compose.single-vm.yml` | OPEN |
+| **F9** | `worker` has no healthcheck; `rolling-update.sh:138` polls "running" only — a worker that boots and hangs on Redis passes a deploy | S | `infra/docker-compose.single-vm.yml:233-249` | OPEN (feeds T10) |
+| **F10** | Dependabot has no `docker` ecosystem; every base-image digest is bumped by hand after the weekly scan | S | `.github/dependabot.yml` | OPEN |
+| **F11** | CI repeats work: Playwright browsers installed twice uncached, `npm run build` three times, full pytest then the fast tier again, ffmpeg/Trivy apt twice | S–M | `ci.yml:110,121,163,173,288,438-456,611,617,701,733,738` | OPEN |
+| **F12** | Digest-pinned images are not reproducible: `apt-get upgrade` at build + unpinned pip transitives (25 direct pins only) | S | `apps/api/Dockerfile:24-35`, `requirements.txt` | OPEN |
+| **F13** | Six raw `toLocaleDateString()` calls (transcript, subscription, leads, credentials) and a local ZAR-only money formatter in `admin/analytics` bypass `lib/format.ts` — invoice and transcript show different date formats for the same order | S | `app/learn/[enrolmentId]/transcript/page.tsx:96,102,137`; `app/admin/analytics/page.tsx:135-141` | OPEN |
+| **F17** | UX defects seen in the screenshot pass: (a) push-notification banner on every authenticated page incl. checkout and player; (b) public header overflows on mobile, no hamburger; (c) mobile catalogue puts the whole filter sidebar above results; (d) player "Next lesson" half off-screen at 1440×900; (e) learner nav carries 8 admin-shaped items and no "Continue" hero | S each | `components/site-header.tsx`, `app/catalogue/catalogue-browser.tsx`, `app/learn/[enrolmentId]/`, push-prompt component | OPEN |
+| **F18** | Storefront pages are `force-dynamic` + `no-store` (6 pages) with zero `loading.tsx` anywhere — no caching on anonymous pages, no skeleton on first paint | S | `app/page.tsx:71`, `app/catalogue/page.tsx:17`, `lib/server-api.ts:30,63` | OPEN |
+| **F19** | `ttli_test` is only ever created/migrated; fixtures commit, so state accumulates across local runs | S | `apps/api/tests/conftest.py:153-190,232` | OPEN |
+| **F20** | Thin test areas (`audit_read.py`, `invoice_documents.py`, `question_bank.py`, `tenant_branding`, `invoicing.py`) and two uncommented `except Exception` on the role/suspension path | S–M | `services/tenant_users.py:162,174` | OPEN |
+| **F21** | `alembic downgrade -1 && upgrade head` only proves the newest migration reverses | S | `ci.yml:190-193`, `scripts/gates.sh:17` | OPEN |
+| **F22** | Trivy installed from a mutable apt channel while every other tool/image is pinned or checksum-verified | S | `ci.yml:294,456`, weekly workflow | OPEN |
+
+Ruled out by the same review (do not re-raise): authenticated-response caching through the BFF
+(the API sets `Cache-Control` only on the public logo endpoint); SSO `next=` open redirect
+(sanitised server-side); `getTheme()` ×3 in the root layout (request-memoised); the
+`getAccessToken()` boot race in admin pages (the layout gates on `me`).
