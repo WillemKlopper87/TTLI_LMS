@@ -129,7 +129,8 @@ care goes, and it is a security-officer item.
 Specs (2026-09-11, approved approach, pending written review):
 [assessment platform](superpowers/specs/2026-09-11-assessment-platform-design.md) ·
 [analyst workspace](superpowers/specs/2026-09-11-analyst-workspace-design.md) ·
-[facilitator licensing + xAPI](superpowers/specs/2026-09-11-facilitator-licensing-xapi-design.md).
+[facilitator licensing + xAPI](superpowers/specs/2026-09-11-facilitator-licensing-xapi-design.md) ·
+[partner portal](superpowers/specs/2026-09-11-partner-portal-design.md) (the external view for consultants, facilitators and health professionals; first assessment product: TTLI ENGQ).
 
 1. Sprint 0/1 hardening (in flight, ~3 weeks). Unchanged.
 2. LWI content intake + publish rehearsal on UAT. Can run in parallel with 1.
