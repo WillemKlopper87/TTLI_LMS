@@ -249,6 +249,16 @@ progress report does today.
 
 ## 7. Web
 
+Approved mockups (2026-09-11, static, in the existing admin shell):
+https://claude.ai/code/artifact/19bc9788-01ad-49a9-a157-79866b6ee492
+Screens: run wizard step 3 (finalise questionnaire with audited edits),
+monitor (counts only while open, group-floor warning), ENGQ results
+(nine-element bars sorted weakest first, level heatmap with withheld
+cells, department tiles, free text above the floor), and two respondent
+options (A: one section per screen, tappable 1-5; B: one long page with
+radio rows). Element names in the mockups are illustrative.
+
+
 Admin: templates list/editor (reuse the survey question editor components),
 instance list per organisation, instance detail with invitations, results and
 export buttons. Organisation dashboard: "Assessments" tab showing instances
