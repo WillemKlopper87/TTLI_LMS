@@ -104,13 +104,13 @@ assessment_responses
   id, tenant_id, instance_id, invitation_id (nullable), subject_id (nullable),
   rater_group (nullable), user_id (nullable), respondent_reference bytea (nullable),
   department, role_label, answers jsonb, created_at
+  CHECK ((user_id IS NULL) <> (respondent_reference IS NULL))   -- same as 0013
+  UNIQUE (instance_id, invitation_id)
 
 assessment_subject_results      (external_instrument only)
   id, subject_id, administered_by_user_id (accredited practitioner),
   administered_at, vendor_reference, scores jsonb (nullable, e.g. DISC D/I/S/C),
   report_object_key (private container, virus-scanned), timestamps
-  CHECK ((user_id IS NULL) <> (respondent_reference IS NULL))   -- same as 0013
-  UNIQUE (instance_id, invitation_id)
 ```
 
 `assessment_responses` mirrors `survey_responses` on purpose (same
