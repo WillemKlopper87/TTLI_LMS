@@ -139,6 +139,18 @@ Specs (2026-09-11, approved approach, pending written review):
 4. Brainstorm + spec §3.1 (licensing) and xAPI. Commercial questions first.
 5. Multi-region, Power BI Embedded, AI insights: post-launch.
 
+## 4a. Services brochure (received 2026-09-11)
+
+The customer's public services brochure is extracted to
+[source/05_ttli_services_brochure_2026.md](source/05_ttli_services_brochure_2026.md).
+It fixes the assessment catalogue at nine instruments (ENGQ, 360LWIA,
+360CWIA, LSA, PSA, ICA, TCA, DISC, REACH), the ENGQ shape (50 items, nine
+elements, executive/management/frontline cuts, anonymous, tailored per
+client), and the LWI/CWI eight-phase programme with a pre and post 360. It
+also lists the five entry paths and the fifteen Essential Skills workshops,
+which is catalogue content for the LMS and workshop modules and belongs on
+the intake checklist's course-catalogue row.
+
 ## 5. Questions to take back to the customer
 
 - Does the January 2027 date mean *LWI selling to the public* or *everything

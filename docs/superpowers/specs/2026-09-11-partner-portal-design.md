@@ -107,7 +107,8 @@ Audit events on invite, agreement acceptance and activation. Suspension by TTLI 
 flowchart TD
   A[Partner home: ENGQ licence 3 of 5 runs left] --> B[New assessment]
   B --> C[Pick or create client organisation]
-  C --> D[Wizard: title, window,\nidentified or anonymous - fixed by template,\ndepartments list]
+  C --> C2[Finalise questionnaire:\ntailor snapshot from template, audited]
+  C2 --> D[Wizard: title, window,\nidentified or anonymous - fixed by template,\ndepartments + levels: executive / management / frontline]
   D --> E{Respondents}
   E -- CSV --> F[Named invitations by email]
   E -- count --> G[N anonymous links or one open link + QR]
@@ -115,7 +116,7 @@ flowchart TD
   G --> H
   H --> I[Monitor: invited / opened / submitted per department\nreminders via ESP]
   I --> J[Close at window end or manually]
-  J --> K[Results: 9 areas of engagement\nper-area score, distribution, department heatmap\ngated by minimum group size]
+  J --> K[Results: 9 engagement elements\nper-element score, distribution,\nlevel and department heatmaps\ngated by minimum group size]
   K --> L[Export CSV/JSON for Power BI]
   K --> M[Draft report: summary + upload PDF]
   M --> N{Licence requires TTLI review?}
@@ -173,11 +174,14 @@ The practitioner flow in §5.2 applies with a subjects step: add leaders,
 add raters per leader (or let leaders self-nominate with manager
 confirmation), open, monitor per subject and rater group, close, then
 per-subject reports plus an organisation roll-up. Peer and direct-report
-groups stay hidden below three responses.
+groups stay hidden below three responses. Both programmes run the 360 twice
+(Phase 1 discovery, Phase 7 progress measurement): the second run is created
+as a `post` instance paired to the first, inherits its subjects, and the
+subject report shows the per-competency shift.
 
 ## 6. The TTLI ENGQ template
 
-Modelled as an `assessment_template` with nine sections matching the nine areas of the TTLI Engagement Model ([ttli.co.za/engagement](https://ttli.co.za/engagement/)), Likert 1–5 with optional reverse-scored items, one free-text item per area, and department and role attributes on the respondent. Results page shows area scores, the weakest three areas, and department heatmap above threshold. The specific areas and item wording are the customer's IP and must come from them (§9). Anonymous by default: TTLI's own article argues most employees will not answer internal surveys honestly, so trust in anonymity is the product ([ttli.co.za](https://ttli.co.za/why-south-african-companies-get-employee-engagement-wrong/)).
+Modelled as an `assessment_template` with nine sections matching the nine engagement elements and 50 items, per the services brochure p.8 ([source extract](../../source/05_ttli_services_brochure_2026.md)), Likert 1–5 with optional reverse-scored items, one free-text item per element, and department, level (executive / management / frontline) and role attributes on the respondent. The template is tailored per client in the instance's draft state ("finalisation of questionnaire"), then frozen. Results page shows area scores, the weakest three areas, and department heatmap above threshold. The specific areas and item wording are the customer's IP and must come from them (§9). Anonymous by default: TTLI's own article argues most employees will not answer internal surveys honestly, so trust in anonymity is the product ([ttli.co.za](https://ttli.co.za/why-south-african-companies-get-employee-engagement-wrong/)).
 
 ## 7. Security and isolation
 
@@ -194,7 +198,7 @@ One new section, **Partners**: list of partner organisations with type badges, s
 
 ## 9. Open items for the customer
 
-- Item content for all six TTLI-owned instruments (see assessment spec §10). Without it every template is a shell.
+- Item content for all seven TTLI-owned instruments (see assessment spec §11). Without it every template is a shell.
 - Which practitioner holds DISC and REACH accreditation, and on which vendor platform they administer.
 - Whether a practitioner's first N runs must always pass TTLI review, and whether reports released without review still carry TTLI branding.
 - Pricing unit for ENGQ licences: per run (assumed), per respondent, or annual unlimited.

@@ -17,23 +17,51 @@ REACH) on the platform.
 
 ## 1a. The assessment catalogue and its four shapes
 
-The customer's catalogue (2026-09-11) is not one kind of form. Each product
-maps to one of four `kind` values on the template, and the kind decides who
-answers, about whom, and how results are cut.
+The catalogue is taken from the customer's services brochure
+([source extract](../../source/05_ttli_services_brochure_2026.md), p.28),
+which lists nine instruments; the verbal list from the session omitted Team
+Capacity. Each maps to one of four `kind` values on the template, and the
+kind decides who answers, about whom, and how results are cut.
 
 | # | Product | Kind | Who answers | About whom | Result unit |
 |---|---|---|---|---|---|
-| 1 | TTLI Engagement Analysis (TTLI ENGQ) | `org_survey` | client staff, anonymous | the organisation | organisation / department |
-| 2 | 360 Lead With Intent Assessment (360 LWIA) | `multi_rater` | self + manager + peers + direct reports | one leader | subject |
-| 3 | 360 Cultivate With Intent Assessment (360 CWIA) | `multi_rater` | as above | one leader | subject |
+| 1 | TTLI Engagement Analysis (TTLI ENGQ) | `org_survey` | client staff, anonymous | the organisation | organisation / level / department |
+| 2 | 360 Lead With Intent Assessment (360LWIA) | `multi_rater` | self + manager + peers + direct reports | one leader | subject, pre/post |
+| 3 | 360 Cultivating with Intent Assessment (360CWIA) | `multi_rater` | as above | one leader | subject, pre/post |
 | 4 | TTLI Leadership Skills Assessment (TTLI LSA) | `individual` | the person | themselves | subject |
-| 5 | TTLI Psychological Safety Assessment | `org_survey` | team members, anonymous | a team / organisation | team / organisation |
-| 6 | TTLI Individual Capacity Analysis | `individual` | the person | themselves | subject |
-| 7 | DISC Analysis | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
-| 8 | REACH Profiles | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
+| 5 | TTLI Psychological Safety Assessment (TTLI PSA) | `org_survey` | team members, anonymous | a team | team |
+| 6 | TTLI Individual Capacity Analysis (TTLI ICA) | `individual` | the person | themselves | subject |
+| 7 | TTLI Team Capacity Analysis (TTLI TCA) | `org_survey` | team members | a team | team |
+| 8 | DISC Analysis | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
+| 9 | REACH Profiles | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
 
-The customer's list labels #5 "TTLI ICA" and #6 "TTLI TCA"; the acronyms look
-swapped against the names and must be confirmed (§10).
+**What the brochure fixes about the ENGQ** (p.8): a structured 50-question
+diagnostic across nine engagement elements; customised per organisation
+(culture, industry, size); insights cut by **Executive, Management and
+Frontline** level; anonymous digital collection; a comprehensive report.
+TTLI's delivery is three steps: *finalisation of questionnaire → survey
+administration and analysis → solutioning*. Two consequences for the model:
+
+- `level` (`executive`|`management`|`frontline`) is a first-class respondent
+  attribute alongside `department`, and results are cut by it. Each level
+  bucket is gated by `minimum_group_size` like any other.
+- "Finalisation of questionnaire" means per-client tailoring. An instance in
+  `draft` may edit its `question_snapshot` (reword, drop, add from the bank)
+  before opening; the template is the starting point, not a lock. Edits are
+  audited and the snapshot is frozen on open.
+
+The brochure's engagement model names three value drivers, Connection,
+Clarity and Capacity (pp.3–4); the nine elements are likely three per driver,
+but the item bank itself is not published and stays an open item (§11).
+
+**What it fixes about the 360s** (pp.9–10): both LWI and CWI are eight-phase
+programmes in which Phase 1 is a 360 and Phase 7 is a *second* 360 to measure
+progress, with one-on-one sessions and four workshops in between. So a
+`multi_rater` instance carries `evaluation_role` and `pair_id` exactly as
+surveys do today (`standalone`|`pre`|`post`), and the subject report for a
+`post` instance shows the delta per competency against the paired `pre`. The
+programme itself (assessment → one-on-ones → workshops → assessment →
+one-on-ones) is a learning-path shape; see §10.
 
 Items 7 and 8 are third-party instruments administered by an accredited
 external practitioner (a health professional today). Both vendors require
@@ -83,8 +111,12 @@ assessment_template_questions   (frozen per template version)
 assessment_instances            (one run for one organisation)
   id, tenant_id, template_id (+version), organisation_id,
   title, status ('draft'|'open'|'closed'|'archived'),
+  evaluation_role ('standalone'|'pre'|'post'), pair_id (nullable),
+  levels_enabled bool (ENGQ: cut by executive/management/frontline),
   opens_at, closes_at, question_snapshot jsonb, created_by, timestamps
-  -- snapshot is what respondents see; template edits never leak into a live run
+  -- snapshot is what respondents see; editable in draft (tailoring), frozen
+  -- on open; template edits never leak into a live run
+  -- pre/post pairing: same CHECK and partial unique indexes as `surveys`
 
 assessment_subjects             (multi_rater, individual, external_instrument)
   id, instance_id, user_id (nullable), name_encrypted, email_encrypted,
@@ -95,7 +127,7 @@ assessment_subjects             (multi_rater, individual, external_instrument)
 assessment_invitations
   id, instance_id, subject_id (nullable; required unless org_survey),
   rater_group (nullable; multi_rater only), token_hash bytea UNIQUE,
-  email_encrypted (nullable when anonymous), department, role_label,
+  email_encrypted (nullable when anonymous), department, level, role_label,
   sent_at, opened_at, submitted_at, expires_at
   -- for anonymous instances the token is the only identity; email is never
   -- stored, and the invitation row is what prevents double submission
@@ -103,7 +135,7 @@ assessment_invitations
 assessment_responses
   id, tenant_id, instance_id, invitation_id (nullable), subject_id (nullable),
   rater_group (nullable), user_id (nullable), respondent_reference bytea (nullable),
-  department, role_label, answers jsonb, created_at
+  department, level, role_label, answers jsonb, created_at
   CHECK ((user_id IS NULL) <> (respondent_reference IS NULL))   -- same as 0013
   UNIQUE (instance_id, invitation_id)
 
@@ -124,9 +156,12 @@ No new tables for analysis. Aggregation is computed, not stored.
 **Per-kind rules**
 
 - `org_survey`: no subjects; anonymity and `minimum_group_size` as for
-  surveys; results by organisation and department.
-- `multi_rater`: one subject per assessed leader; invitations carry a rater
-  group; `self` and `manager` responses are identified to the subject's
+  surveys; results by organisation, level and department. Team-level
+  instruments (PSA, TCA) are the same kind run for a team-sized group; the
+  "team" is the instance, no extra entity.
+- `multi_rater`: one subject per assessed leader; a `post` instance reuses
+  the `pre` instance's subjects and shows per-competency deltas; invitations
+  carry a rater group; `self` and `manager` responses are identified to the subject's
   report (there is one of each), `peer`/`direct_report`/`other` are anonymous
   and only shown when the group meets its `min_group_size` (default 3).
   Results per subject: per-competency self score, others' mean, gap, and
@@ -234,13 +269,28 @@ width, no auth, no layout chrome.
 L. About four weeks for one engineer including web. Builds first; the analyst
 workspace spec assumes these tables exist.
 
-## 10. Open items for the customer
+## 10. Programmes (out of scope here, flagged for the learning-path model)
 
-- The item content for every TTLI-owned instrument (ENGQ's nine areas, the
-  360 LWIA and CWIA competencies, LSA, Psychological Safety, Individual
-  Capacity): sections, items, scales, reverse-scored items, scoring and any
-  benchmarks. A sample MS Forms export of each.
-- Confirm the acronyms for #5 and #6 (ICA vs TCA).
+Lead with Intent and Cultivate with Intent are sold as eight-phase journeys:
+360 → one-on-one → four workshops → second 360 → one-on-one. Everything in
+that chain already has a home (assessment instances, workshop bookings, the
+LWI course in learning paths) except the chain itself. Recommendation: a
+learning path gains step types `assessment` and `one_on_one` alongside
+`course` and `workshop`, so a programme is a path and progress through it is
+visible on the organisation dashboard. That is a small extension to
+`learning_paths`, to be specced after this platform lands; it is not needed
+for the January assessment launch.
+
+## 11. Open items for the customer
+
+- The item content for every TTLI-owned instrument (the ENGQ's 50 items and
+  nine elements, the 360LWIA and 360CWIA competencies, LSA, PSA, ICA, TCA):
+  sections, items, scales, reverse-scored items, scoring and any benchmarks.
+  A sample MS Forms export of each.
+- Confirm that ICA is `individual` and TCA is `org_survey` at team scope, and
+  whether PSA/TCA respondents are anonymous (assumed yes, as for the ENGQ).
+- How much per-client tailoring of the ENGQ is typical (reword only, or add
+  and drop items), so the draft-edit rules are not wider than needed.
 - For DISC and REACH: which practitioner is accredited, on which vendor
   platform, and whether the vendor's terms allow storing the PDF report on
   a third-party platform (most do for the client's own records).
