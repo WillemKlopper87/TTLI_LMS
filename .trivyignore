@@ -345,3 +345,15 @@ CVE-2026-84445 exp:2026-12-08
 # or re-review source reachability at expiry.
 CVE-2026-76956 exp:2026-12-08
 CVE-2026-76957 exp:2026-12-08
+
+# --- clamav/clamav-debian: Debian 13 libxml2 2.12.7+dfsg+really2.9.14-2.1+deb13u3.
+# Trivy first reported CVE-2026-74860 on 2026-09-11 and Debian publishes no
+# fixed version. The advisory is a double-free/use-after-free in libxml2's
+# *Python bindings* (python3-libxml2). Verified against the pinned digest
+# (`dpkg -l` inside the running container): the image installs no python3
+# and no python3-libxml2 package at all -- clamd links libxml2.so.2 for its
+# own XML parsing, but the vulnerable binding layer is absent, so the code
+# path cannot be reached. ci.yml grants this entry to the clamav image only;
+# every other image keeps it blocking. Remove as soon as Debian publishes a
+# fix, or re-verify package absence at expiry.
+CVE-2026-74860 exp:2026-12-11
