@@ -46,6 +46,7 @@ body, brand, budget/date), Payfast credentials, real course content and video, I
 
 | Need | Document |
 |---|---|
+| **Start here: the ordered sprint queue** | [`BACKLOG_2026-09-11.md`](BACKLOG_2026-09-11.md) |
 | Actionable work queue (the only task-status authority) | [`BACKLOG.md`](BACKLOG.md) |
 | Audit / review findings and their status | [`REMEDIATION_LEDGER.md`](REMEDIATION_LEDGER.md) |
 | Requirements, data model, API, security, commercial, operations | `01_PRD.md` … `06_OPERATIONS.md` |

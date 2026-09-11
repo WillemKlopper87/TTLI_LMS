@@ -12,8 +12,30 @@ carry false confidence a real changelog shouldn't have.
 
 ## [Unreleased]
 
+## [0.9.0-uat1] - 2026-09-11
+
+The first UAT baseline: every application gate green on a protected `main`.
+Tagged at the merge of #22 so the UAT team can name the exact build it tested.
+
+### Added
+
+- Branch protection on `main`: pull request required; `quality`, `web`,
+  `authenticated-e2e`, `secrets` and `images` must pass; branch must be up to
+  date; linear history; no force-push or deletion. CI is now a pre-merge gate,
+  not a post-push alarm.
+- `docs/BACKLOG_2026-09-11.md`, the ordered remediation queue from the
+  2026-09-11 code review, and its 22 verified findings (F1–F22) in `BACKLOG.md`.
+
+### Changed
+
+- `docs/NEXT_AGENT_BRIEF.md` is now a short current-state document; the
+  2026-09-08 narrative version is archived with its rationale intact.
+
 ### Fixed
 
+- Scope CVE-2026-74860 (libxml2 Python-binding use-after-free) to the ClamAV
+  image only, expiring 2026-12-11: the pinned digest ships no python3, so the
+  vulnerable binding layer is absent. Every other image keeps it blocking.
 - Close request transactions before sending responses, eliminating the
   create-then-read race that made authenticated CI intermittently lose newly
   created products and lesson blocks.
