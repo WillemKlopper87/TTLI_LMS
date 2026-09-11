@@ -19,6 +19,13 @@ One portal, one `partner_profiles` row per organisation, three capability sets s
 | **Licensee facilitator** | Runs LWI for *their own* learners | A course licence (licensing spec §3) | Practice: learners, seats, cohorts, progress; Integrations (xAPI) |
 | **Licensed practitioner** (consultant or health professional) | Runs the TTLI ENGQ for *their own* client companies | An assessment licence (new, §4.2) | Clients, Assessments (run ENGQ), Results, Reports (release to client, optionally via TTLI review) |
 
+A fourth capability, **Accredited administrator**, covers DISC and REACH:
+the practitioner holds the vendor accreditation, administers the instrument
+on the vendor's platform, and uses the portal only to record who was
+assessed and upload the per-subject report (assessment spec §1a, kind
+`external_instrument`). Their accreditation (vendor, certificate reference,
+expiry) is stored on the partner profile and shown on the report cover.
+
 Health professionals are licensed practitioners with two extra profile fields: professional body and registration number (for example HPCSA), shown on the report cover and required before an assessment licence can be activated. No patient data enters the platform; respondents are employees of a client company, exactly as for any ENGQ run.
 
 ## 3. Portal structure
@@ -150,6 +157,24 @@ flowchart LR
   E --> F[Integrations: xAPI statements\nposted to the partner's LRS]
 ```
 
+### 5.5 Accredited administrator records a DISC or REACH result
+
+```mermaid
+flowchart LR
+  A[TTLI or partner creates instance\nkind external_instrument, adds subjects] --> B[Practitioner runs the instrument\non the vendor platform]
+  B --> C[/partner/assessments/id: per subject\nmark administered, enter scores, upload vendor PDF/]
+  C --> D[Virus scan, stored against subject]
+  D --> E[Draft engagement report if requested\nsubmit to TTLI or release to client]
+```
+
+### 5.6 360 assessment (LWIA / CWIA)
+
+The practitioner flow in §5.2 applies with a subjects step: add leaders,
+add raters per leader (or let leaders self-nominate with manager
+confirmation), open, monitor per subject and rater group, close, then
+per-subject reports plus an organisation roll-up. Peer and direct-report
+groups stay hidden below three responses.
+
 ## 6. The TTLI ENGQ template
 
 Modelled as an `assessment_template` with nine sections matching the nine areas of the TTLI Engagement Model ([ttli.co.za/engagement](https://ttli.co.za/engagement/)), Likert 1–5 with optional reverse-scored items, one free-text item per area, and department and role attributes on the respondent. Results page shows area scores, the weakest three areas, and department heatmap above threshold. The specific areas and item wording are the customer's IP and must come from them (§9). Anonymous by default: TTLI's own article argues most employees will not answer internal surveys honestly, so trust in anonymity is the product ([ttli.co.za](https://ttli.co.za/why-south-african-companies-get-employee-engagement-wrong/)).
@@ -169,7 +194,8 @@ One new section, **Partners**: list of partner organisations with type badges, s
 
 ## 9. Open items for the customer
 
-- The ENGQ itself: the nine areas, item wording, scale, reverse-scored items, and any scoring rules or benchmarks TTLI applies. Without this the template is a shell.
+- Item content for all six TTLI-owned instruments (see assessment spec §10). Without it every template is a shell.
+- Which practitioner holds DISC and REACH accreditation, and on which vendor platform they administer.
 - Whether a practitioner's first N runs must always pass TTLI review, and whether reports released without review still carry TTLI branding.
 - Pricing unit for ENGQ licences: per run (assumed), per respondent, or annual unlimited.
 - Whether health professionals are ever licensed for LWI as well as ENGQ (the model allows it; the commercial answer decides the pricing page).

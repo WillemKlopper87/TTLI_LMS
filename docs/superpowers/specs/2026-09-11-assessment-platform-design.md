@@ -12,7 +12,42 @@ invite link, with built-in high-level analysis and a clean export for the
 customer's existing Power BI work. Launch: January 2027, alongside LWI.
 
 Not in scope: Power BI Embedded, AI summarisation (Phase 6, gated on PRD
-§1.4 #4), branching/skip logic, per-respondent scoring feedback.
+§1.4 #4), branching/skip logic, hosting third-party instrument items (DISC,
+REACH) on the platform.
+
+## 1a. The assessment catalogue and its four shapes
+
+The customer's catalogue (2026-09-11) is not one kind of form. Each product
+maps to one of four `kind` values on the template, and the kind decides who
+answers, about whom, and how results are cut.
+
+| # | Product | Kind | Who answers | About whom | Result unit |
+|---|---|---|---|---|---|
+| 1 | TTLI Engagement Analysis (TTLI ENGQ) | `org_survey` | client staff, anonymous | the organisation | organisation / department |
+| 2 | 360 Lead With Intent Assessment (360 LWIA) | `multi_rater` | self + manager + peers + direct reports | one leader | subject |
+| 3 | 360 Cultivate With Intent Assessment (360 CWIA) | `multi_rater` | as above | one leader | subject |
+| 4 | TTLI Leadership Skills Assessment (TTLI LSA) | `individual` | the person | themselves | subject |
+| 5 | TTLI Psychological Safety Assessment | `org_survey` | team members, anonymous | a team / organisation | team / organisation |
+| 6 | TTLI Individual Capacity Analysis | `individual` | the person | themselves | subject |
+| 7 | DISC Analysis | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
+| 8 | REACH Profiles | `external_instrument` | the person, on the vendor's platform | themselves | subject (uploaded report) |
+
+The customer's list labels #5 "TTLI ICA" and #6 "TTLI TCA"; the acronyms look
+swapped against the names and must be confirmed (§10).
+
+Items 7 and 8 are third-party instruments administered by an accredited
+external practitioner (a health professional today). Both vendors require
+accreditation and run their own platforms: REACH practitioners issue survey
+codes on the REACH Ecosystem and debrief the profile
+([REACH certification](https://us.reachecosystem.com/reach-certification?isRedirect=true),
+[PD Training](https://pdtraining.com.au/courses/reach-ecosystem-accredited-practitioner-training-course));
+DISC accreditation in South Africa is HPCSA-registered and practitioners
+administer and debrief on the provider's psychometrics platform
+([InterACT-Global](https://interact-global.co/psychometric-training-accreditation-courses/disc-south-africa/)).
+The platform therefore never hosts their items: it records who was assessed,
+by which accredited practitioner, and stores the resulting report against the
+subject, feeding the same report workflow as everything else. Reproducing
+DISC or REACH item content on the platform would be a licensing breach.
 
 ## 2. Decisions carried in
 
@@ -30,6 +65,10 @@ assessments are the standalone, sellable form of the same thing.
 ```
 assessment_templates            (tenant-owned product definition)
   id, tenant_id, slug, title, description, version (int),
+  kind ('org_survey'|'multi_rater'|'individual'|'external_instrument'),
+  rater_groups jsonb (multi_rater only: [{key:'self'|'manager'|'peer'|'direct_report'|'other',
+                     min_group_size:int, anonymous:bool}]),
+  vendor (external_instrument only: 'disc'|'reach'|...),
   response_mode ('identified'|'anonymous'), minimum_group_size (default 5),
   status ('draft'|'published'|'retired'), price_id -> products (nullable),
   sections jsonb [{key, title, position}], created_by, timestamps
@@ -47,17 +86,29 @@ assessment_instances            (one run for one organisation)
   opens_at, closes_at, question_snapshot jsonb, created_by, timestamps
   -- snapshot is what respondents see; template edits never leak into a live run
 
+assessment_subjects             (multi_rater, individual, external_instrument)
+  id, instance_id, user_id (nullable), name_encrypted, email_encrypted,
+  department, role_label, status ('pending'|'in_progress'|'complete'),
+  timestamps
+  -- the person being assessed; org_survey instances have no subjects
+
 assessment_invitations
-  id, instance_id, token_hash bytea UNIQUE, email_encrypted (nullable when
-  anonymous), department, role_label, sent_at, opened_at, submitted_at,
-  expires_at
+  id, instance_id, subject_id (nullable; required unless org_survey),
+  rater_group (nullable; multi_rater only), token_hash bytea UNIQUE,
+  email_encrypted (nullable when anonymous), department, role_label,
+  sent_at, opened_at, submitted_at, expires_at
   -- for anonymous instances the token is the only identity; email is never
   -- stored, and the invitation row is what prevents double submission
 
 assessment_responses
-  id, tenant_id, instance_id, invitation_id (nullable),
-  user_id (nullable), respondent_reference bytea (nullable),
+  id, tenant_id, instance_id, invitation_id (nullable), subject_id (nullable),
+  rater_group (nullable), user_id (nullable), respondent_reference bytea (nullable),
   department, role_label, answers jsonb, created_at
+
+assessment_subject_results      (external_instrument only)
+  id, subject_id, administered_by_user_id (accredited practitioner),
+  administered_at, vendor_reference, scores jsonb (nullable, e.g. DISC D/I/S/C),
+  report_object_key (private container, virus-scanned), timestamps
   CHECK ((user_id IS NULL) <> (respondent_reference IS NULL))   -- same as 0013
   UNIQUE (instance_id, invitation_id)
 ```
@@ -69,6 +120,23 @@ are the only attributes an anonymous respondent carries, and only aggregated
 above `minimum_group_size`.
 
 No new tables for analysis. Aggregation is computed, not stored.
+
+**Per-kind rules**
+
+- `org_survey`: no subjects; anonymity and `minimum_group_size` as for
+  surveys; results by organisation and department.
+- `multi_rater`: one subject per assessed leader; invitations carry a rater
+  group; `self` and `manager` responses are identified to the subject's
+  report (there is one of each), `peer`/`direct_report`/`other` are anonymous
+  and only shown when the group meets its `min_group_size` (default 3).
+  Results per subject: per-competency self score, others' mean, gap, and
+  hidden-strength / blind-spot lists; an instance-level roll-up across
+  subjects for the organisation.
+- `individual`: one subject who is also the sole respondent; identified;
+  results per subject with a personal report and an organisation roll-up.
+- `external_instrument`: no questions, no invitations; the practitioner
+  records administration and uploads the vendor report per subject. Results
+  page lists subjects, status and report links only.
 
 ## 4. Flows
 
@@ -82,8 +150,15 @@ title, window, and either uploads a respondent CSV (email, department, role)
 or generates N anonymous links. Opening the instance sends invitations
 through the existing ESP path.
 
+**Set up subjects (multi_rater, individual, external):** admin or partner
+adds subjects (CSV: name, email, department, role) and, for 360s, each
+subject's raters with their group. The subject nominates peers and direct
+reports themselves when the instance is configured `self_nominated = true`,
+via their own invite link, with the manager confirming the list.
+
 **Respond (no account):** `GET /a/{token}` renders the snapshot, one submit,
-then the token is spent. Rate-limited per IP through the existing limiter.
+then the token is spent. A 360 rater sees the subject's name and their own
+group on the form. Rate-limited per IP through the existing limiter.
 Identified instances record `user_id` when the email matches an existing user,
 otherwise the invitation is the identity.
 
@@ -161,7 +236,13 @@ workspace spec assumes these tables exist.
 
 ## 10. Open items for the customer
 
-- First two assessments to migrate (names, sections, question counts, scales)
-  and a sample MS Forms export of each.
+- The item content for every TTLI-owned instrument (ENGQ's nine areas, the
+  360 LWIA and CWIA competencies, LSA, Psychological Safety, Individual
+  Capacity): sections, items, scales, reverse-scored items, scoring and any
+  benchmarks. A sample MS Forms export of each.
+- Confirm the acronyms for #5 and #6 (ICA vs TCA).
+- For DISC and REACH: which practitioner is accredited, on which vendor
+  platform, and whether the vendor's terms allow storing the PDF report on
+  a third-party platform (most do for the client's own records).
 - Whether any assessment must remain identified for the psychologist's
   one-on-one work (drives which templates are `identified`).
