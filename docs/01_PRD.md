@@ -42,15 +42,15 @@ Engineering does not start until these are closed. Each is unanswered in the sou
 
 | # | Decision | Why it blocks | Owner |
 |---|---|---|---|
-| 1 | **SCORM/xAPI required?** | Changes the content model at its root. Asked by the blueprint, skipped in the reply. | Customer |
+| 1 | ~~SCORM/xAPI required?~~ **Resolved 2026-09-11: xAPI required.** Not yet built; scoped in [CUSTOMER_SESSION_2026-09-11.md](CUSTOMER_SESSION_2026-09-11.md) §3.1. | — | Customer |
 | 2 | **VAT on international digital services** | The tax engine cannot be built on a guess. The blueprint itself defers to the accountants. | Customer's accountants |
 | 3 | **Is signed HLS + watermarking accepted as "industry standard" for launch?** | If not, a DRM provider joins the critical path and the cost model changes. See §5.8. | Customer |
 | 4 | **AI provider and DPA** — may prompt data leave South Africa after redaction? | Determines whether AI insights ship at all under the residency requirement. | Customer + legal |
 | 5 | ~~Subscriptions in or out?~~ **Resolved: in.** Multi-tier, course-bundle plans built, funded through the existing EFT/PO checkout (no automatic card charging — no Payfast/Netcash integration exists). See [05 §5](05_COMMERCIAL.md#5-commercial-terms) and REQ-PAY-12. | — | Customer |
-| 6 | **Guest access expiry: 7 or 14 days?** | Both offered in the source, neither chosen. | Customer |
-| 7 | **CPD/accreditation body** | Determines mandatory certificate fields and whether points are tracked. | Customer |
+| 6 | ~~Guest access expiry: 7 or 14 days?~~ **Resolved 2026-09-11: 7 days** (matches `guest_access_days` default). | — | Customer |
+| 7 | ~~CPD/accreditation body~~ **Resolved 2026-09-11: none.** No CPD points tracked; CPD fields stay unused. | — | Customer |
 | 8 | **Brand and design system** | Recorded as TBA. Blocks all UI work. | Customer |
-| 9 | **Budget and launch date** | Recorded as TBA. Determines phase sequencing and team size. | Customer |
+| 9 | **Budget** (open) · ~~launch date~~ **Resolved 2026-09-11: January 2027.** Hosting confirmed Azure SA North. | Budget still determines team size. | Customer |
 | 10 | **Azure Container Apps availability in South Africa North** | Verify, do not assume. App Service for Containers is the documented fallback. See [06_OPERATIONS.md §4](06_OPERATIONS.md#4-infrastructure). | Engineering |
 
 ---

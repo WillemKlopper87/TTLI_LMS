@@ -23,13 +23,12 @@ by who on the customer's side actually owns the answer.
   from what the platform actually does (Payfast, survey-privacy
   thresholds, tenant isolation), but neither has had a lawyer's review.
   Do this before real user data is collected.
-- [ ] **CPD/accreditation body**, if any — determines mandatory
-  certificate fields and whether CPD points are tracked at all.
-  (`01_PRD.md` §1.4 #7 — still open.)
-- [ ] **SCORM/xAPI required?** — changes the content model at its root
-  if yes. Asked once already and never answered. (§1.4 #1.)
-- [ ] **Guest access duration** — 7 or 14 days? Currently shipped as 14
-  days as a reasonable default, never explicitly confirmed. (§1.4 #6.)
+- [x] **CPD/accreditation body** — **none** (2026-09-11). No CPD points
+  tracked. (`01_PRD.md` §1.4 #7.)
+- [x] **SCORM/xAPI required?** — **xAPI, yes** (2026-09-11). Not built yet;
+  see `CUSTOMER_SESSION_2026-09-11.md` §3.1. (§1.4 #1.)
+- [x] **Guest access duration** — **7 days** (2026-09-11), which is already
+  the code default (`guest_access_days`). (§1.4 #6.)
 - [ ] **DRM acceptance** — is signed HLS + a visible watermark
   acceptable as "industry standard" for launch, or is a dedicated DRM
   provider (EZDRM, PallyCon, Mux) required? Changes the cost model if
@@ -138,9 +137,8 @@ by who on the customer's side actually owns the answer.
   (`check_production_safety()`); someone needs to own this account.
 - [ ] **Domain registrar / DNS access** — for the main domain and any
   per-organisation custom domains (see §9).
-- [ ] **Cloud provider account** (Azure, if following the documented
-  target) with billing already set up, or sign-off to proceed on the
-  single-VM shape first.
+- [ ] **Cloud provider account** — **Azure, South Africa** confirmed
+  2026-09-11; a billing-enabled subscription is still needed.
 - [ ] **Who holds the `rclone` backup destination credentials** — the
   off-VM backup target needs an owner who isn't only the engineer who
   set it up.
@@ -172,9 +170,11 @@ For each of the initial organisation/corporate customers:
 
 ## 11. Timing
 
-- [ ] **Launch date target** — recorded as TBA in original scoping,
-  drives phase sequencing and which of the above become hard blockers
-  versus post-launch cleanup. (§1.4 #9.)
+See `CUSTOMER_SESSION_2026-09-11.md` for the 2026-09-11 decisions and the
+three new scope requests (licensing, assessments, analyst workflow).
+
+- [x] **Launch date target** — **January 2027** (2026-09-11), first product
+  LWI (Lead With Intent). (§1.4 #9.)
 - [ ] **Budget**, if it hasn't already been settled separately — same
   §1.4 #9 item, listed here because it's still open in the source
   document this whole project traces back to.
