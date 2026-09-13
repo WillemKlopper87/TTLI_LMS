@@ -357,3 +357,31 @@ CVE-2026-76957 exp:2026-12-08
 # every other image keeps it blocking. Remove as soon as Debian publishes a
 # fix, or re-verify package absence at expiry.
 CVE-2026-74860 exp:2026-12-11
+
+# --- clamav/clamav-debian@sha256:4c975c43... two libpcre2-8-0 findings
+# Trivy first reported on 2026-09-13. Debian has published a fix
+# (10.46-1~deb13u2), but `clamav/clamav-debian:stable` has not rebuilt
+# with it as of the same date (re-pulled and re-resolved the `stable` tag
+# directly: it is still the exact digest already pinned here, still
+# shipping 10.46-1~deb13u1) -- nothing to bump to.
+#
+# CVE-2026-86145 is an out-of-bounds write in `pcre2_dfa_match`, and its
+# own advisory text says it "requires an attacker-controlled regular
+# expression, or a recursive pattern in conjunction with a small heap
+# limit" -- either way, control over the *pattern*, not the data being
+# matched. CVE-2026-89161 is a use-after-free in `pcre2_jit_match`.
+# Verified against the pinned digest by dynamic-symbol inspection
+# (`objdump -T`), the same method already used for the libxml2 entry
+# above: `libclamav.so.12.1.0` imports only `pcre2_compile_8` and
+# `pcre2_match_8` from libpcre2 -- never `pcre2_dfa_match_8`,
+# `pcre2_jit_compile_8`, or `pcre2_jit_match_8`. Swept every binary in the
+# image that links libpcre2 (`clamd`, `clamscan`, `clamdscan`,
+# `freshclam`, `libclamav.so`), and none imports either vulnerable
+# function -- so both are unreachable regardless of where the regex
+# pattern comes from. ci.yml grants both entries to the clamav image
+# only; every other image keeps them blocking. Remove as soon as Debian's
+# fix reaches the image, or re-verify the symbol table at expiry if
+# libclamav is rebuilt against a newer libpcre2 (JIT could be compiled in
+# then, even if unused today).
+CVE-2026-86145 exp:2026-12-12
+CVE-2026-89161 exp:2026-12-12

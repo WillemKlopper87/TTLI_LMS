@@ -318,7 +318,7 @@ jobs:
 
           base_ignore="$(mktemp)"
           trap 'rm -f "$base_ignore" "$base_ignore".*' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
 
           # Grant a named image back a named subset. The IDs are re-read
           # from .trivyignore rather than restated here, so the `exp:`
@@ -336,15 +336,18 @@ jobs:
           # clamav-debian really does install util-linux; its four are
           # accepted on CAP_SYS_ADMIN reachability, not absence. 74860 is
           # libxml2's Python-binding UAF: the image ships no python3, so the
-          # binding layer is absent (see .trivyignore). Clamav only.
-          clamav_ignore="$(scoped_ignore clamav '^CVE-2026-(76642|78408|78409|78410|74860) ')"
+          # binding layer is absent. 86145/89161 are libpcre2's dfa_match/
+          # jit_match bugs: libclamav and every binary that links libpcre2
+          # import only pcre2_compile/pcre2_match, never the vulnerable
+          # functions (see .trivyignore). Clamav only.
+          clamav_ignore="$(scoped_ignore clamav '^CVE-2026-(76642|78408|78409|78410|74860|86145|89161) ')"
           # Caddy 2.11.4 vendors gRPC, but this deployment does not build or
           # configure the vulnerable xDS server surface. Keep that exception
           # from suppressing the same CVE in any other image.
           caddy_ignore="$(scoped_ignore caddy '^CVE-2026-84445 ')"
           # PostgreSQL retains the complete historical baseline, except for
           # the Caddy-only xDS and clamav-only libxml2 dispositions above.
-          grep -Ev '^CVE-2026-(84445|74860) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
+          grep -Ev '^CVE-2026-(84445|74860|86145|89161) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
 
           for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE"; do
