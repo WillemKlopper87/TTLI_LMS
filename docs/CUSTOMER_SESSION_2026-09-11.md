@@ -142,6 +142,7 @@ Specs (2026-09-11, approved approach, pending written review):
 6. Multi-region, Power BI Embedded, AI insights: post-launch.
 
 Week plan and staffing implication: programmes spec §7.
+Delivery instructions for the next agent: [FEATURE_DELIVERY_BRIEF.md](FEATURE_DELIVERY_BRIEF.md).
 
 ## 4a. Services brochure (received 2026-09-11)
 

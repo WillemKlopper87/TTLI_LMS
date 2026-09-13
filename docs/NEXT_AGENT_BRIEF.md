@@ -70,6 +70,10 @@ integration skips.
 8. Stale test data: ~~the workshops test above~~ (self-cleaning since 2026-08-20); the underlying issue — tests share the dev DB with the running app and leak rows — remains, tracked in §7b "Test environment isolation".
 
 ### 3b. Engineering — planned, larger
+- **The five launch modules (assessments, programmes, analyst workspace, partner
+  portal, licensing + xAPI) start only after Sprint 1 hardening.** How to plan,
+  slice, test and deliver them is in [`FEATURE_DELIVERY_BRIEF.md`](FEATURE_DELIVERY_BRIEF.md);
+  the specs are under `docs/superpowers/specs/`.
 - Phase 7 production hardening now precedes Phase 6. Use T9–T13's explicit
   exit criteria rather than the historical "AI, then hardening" order.
 - Payment analytics dashboard beyond what shipped in `/admin/analytics` (`docs/research/payment-analytics-dashboard.md`).
