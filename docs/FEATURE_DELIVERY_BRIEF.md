@@ -40,6 +40,12 @@ If (1) is not true, work the hardening queue. If (2) or (3) is not true, build t
 first slice anyway (it is model + service + tests, no content needed) and put the
 question in the PR description so the owner sees it.
 
+**Staffing reality, stated once here because it changes what "on track" means from
+day one:** the plan in §3 needs two engineers from week 5 or the January date slips
+or scope drops. If you are reading this alone, decide now which cut you are taking
+(see §3's staffing note) and say so in BACKLOG before you start slice A.1, not when
+you notice you're behind in December.
+
 ## 2. How to think about this work
 
 These are the principles behind every decision in the specs. When a spec is silent,
@@ -101,8 +107,10 @@ Sprint 1 hardening ─┐
   four weeks, no parallel feature work on it.
 - **B and C together from week 5** if there are two engineers; B then C if there is
   one. They touch different tables and different screens.
-- **E can start any time after Sprint 1** because it depends on nothing new. If a
-  second engineer exists earlier than week 5, they start E.
+- **E can start any time after Sprint 1 hardening plus §6's permission migration**
+  (the only thing it depends on). If a second engineer exists earlier than week 5,
+  they start E once that migration is merged — it is a slice 0 in front of A, not a
+  reason to wait for A itself.
 - **D last.** It is mostly a shell over A, C and E, and its model deltas
   (`parent_organisation_id`, `assessment_licences`, `partner_profiles`) are small.
   Building it first would mean building it twice.
@@ -214,7 +222,9 @@ modules gate the next workshop (assumed: no).
 2. Analyst read endpoints with audit-on-read and watermarked exports.
 3. `reports` state machine and `report_attachments` through antivirus; immutability
    after accept; version bump on resubmit; release as a separate step.
-4. Owner inbox in `/admin › Partners`; ESP templates for assigned, submitted,
+4. Owner inbox at `/admin › Partners` (built here, in C, hosted in D's admin
+   namespace — D's own slices do not recreate it, they only add the practitioner
+   reports that land in the same inbox); ESP templates for assigned, submitted,
    returned, accepted, released.
 5. Analyst pages on the partner shell (§D slice 1 provides the shell; build C's
    pages against a minimal shell if D has not started).
@@ -241,7 +251,11 @@ last two, fall back to PDF only if not).
    partner (assumed allowed) with TTLI visibility of the tree.
 4. `assessment_licences` with runs and `requires_ttli_review`; practitioner run
    wizard reusing A's wizard components; report release honouring the review gate.
-5. Admin Partners section: list, invite, grant licence, suspend (freeze, not delete).
+   Practitioner reports submitted here land in C's owner inbox (`/admin ›
+   Partners`) — no new inbox to build, just the `requires_ttli_review` routing.
+5. Admin Partners section: list, invite, grant licence, suspend (freeze, not
+   delete). The report inbox from C.4 lives on this same page; this slice adds the
+   partner roster and licence controls around it.
 
 Exit demo: invite a practitioner, they cannot open `/admin`, they complete
 onboarding, run an ENGQ for a client they created, submit the report, TTLI reviews
@@ -275,10 +289,13 @@ at launch).
 
 ## 6. Cross-cutting items to do once, early
 
-- **Permissions**: add all new permission strings in one migration at the start of
-  A (`assessment:author`, `assessment:run`, `assessment:analyse`, `report:submit`,
-  `report:review`, `cohort:run`), seed them onto Admin, and the subset onto Content
-  author and Facilitator. Partners get capability through membership, licences and
+- **Permissions — slice 0, before any module's slice 1.** Add all new permission
+  strings in one migration (`assessment:author`, `assessment:run`,
+  `assessment:analyse`, `report:submit`, `report:review`, `cohort:run`), seed them
+  onto Admin, and the subset onto Content author and Facilitator. This is the one
+  migration every module reads, including E if it starts in parallel with A — do it
+  first and merge it before any module's slice 1 branches, so nobody is blocked
+  mid-slice waiting on it. Partners get capability through membership, licences and
   engagements, never through admin permissions.
 - **Feature flags**: the five `KNOWN_FLAGS` entries, in A's first PR.
 - **ESP templates**: assessment invitation and reminder, engagement assigned, report
