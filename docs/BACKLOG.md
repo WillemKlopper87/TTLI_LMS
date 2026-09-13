@@ -64,10 +64,45 @@ Phase 6 entry gate, not permission to start it early.
   structured log shipping, alerting and one operator dashboard for API errors,
   latency, queue depth/failures, database saturation and storage failures.
   Sentry error capture alone is insufficient for production operations.
-- [ ] **T12 — POPIA operational lifecycle (O3, M).** Implement and test data
-  access/export, correction and erasure with financial/legal exceptions,
-  retention enforcement, consent withdrawal and legal-hold handling. Confirm
-  the Information Officer responsibility in B8 rather than coding around it.
+- [ ] **T12 — POPIA operational lifecycle (O3, M). IN PROGRESS (2026-09-13,
+  migration 0046).** Four of 04_SECURITY_AND_COMPLIANCE.md §5.3's five
+  data-subject rights now have a real implementation, in `services/
+  privacy.py` and `routers/privacy.py`:
+  - **Access / Portability** — `POST /me/privacy/export` assembles profile,
+    consent history, enrolments, certificates and orders as JSON, uploaded
+    to `generated-documents` and delivered by the same short-lived
+    signed-URL mechanism `credentials.py` already uses for certificate
+    PDFs. Not yet exhaustive (workshops, survey responses and CRM contact
+    history aren't in the export yet); the response body says so.
+  - **Deletion** — `POST /me/privacy/erase` anonymises, never deletes: the
+    row survives (so orders/invoices/audit history stay intact), only
+    identity columns are tombstoned, and it reuses `services.tenant_users.
+    set_status`'s exact session-termination path. Refuses a second erasure
+    (`erased_at` is the guard) and refuses one under legal hold.
+  - **Legal hold** — `POST`/`DELETE /admin/users/{user_id}/legal-hold`
+    close the exact gap this doc flagged as "needed before the first
+    enterprise contract": while set, erasure is refused outright.
+  - **Consent withdrawal** — `POST /me/privacy/consent` lets a signed-in
+    user grant or withdraw marketing/analytics/ai_processing themselves,
+    on top of the existing per-campaign unsubscribe link.
+  - **Objection to marketing** was already built (`suppressions`,
+    `services.campaigns.unsubscribe`) and is untouched.
+  - **Correction** is unchanged — self-service profile editing, wherever
+    it lands, was already the plan and is already audited by convention.
+
+  Verified: `alembic check` clean both directions (upgrade/downgrade/
+  upgrade round-trip against a real Postgres), full API test suite green
+  (no new skips), 5 new service-level tests in `tests/test_privacy.py`
+  covering tombstoning, idempotency and the legal-hold block/release
+  cycle, `ruff`/`mypy` clean.
+
+  **Still open:** admin-facing export/erasure UI (the endpoints exist,
+  nothing in `/admin` calls them yet); **retention enforcement** —
+  deliberately not attempted here, since inventing numeric retention
+  periods for personal or financial data without a customer/Information-
+  Officer decision risks under-retaining records SARS requires kept, which
+  is a worse failure than the gap this leaves open; confirm the
+  Information Officer responsibility in B8 rather than coding around it.
 - [ ] **T13 — Phase 6 readiness decision (R9 + B1 decision 4, S–M).** After
   T7–T12, add per-tenant AI kill switches/budget enforcement and obtain the
   signed decision on whether redacted prompt data may leave South Africa.

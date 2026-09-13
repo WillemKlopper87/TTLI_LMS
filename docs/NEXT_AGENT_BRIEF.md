@@ -11,7 +11,7 @@ rationale and superseded orders live in [`archive/NEXT_AGENT_BRIEF_2026-09-08.md
 | HEAD | `main` tracks `origin/main`. Run `git log -1` — do not copy a commit id from any document |
 | CI on `main` | **Red** at the last push: the blocking container-image scan in `quality` caught CVE-2026-74860 (libxml2 Python bindings) in the pinned ClamAV image. Every application gate passed. Fix is on `fix/trivy-clamav-libxml2` as a scoped, expiring exception — see `.trivyignore` |
 | Branch protection | Being enabled in the same pass: PR required, `quality` / `web` / `authenticated-e2e` / `secrets` / `images` required, branch must be up to date. Direct pushes to `main` stop working — that is intended |
-| Migrations | `0001`–`0045` (`docs/check_links.py` enforces this range stays current) |
+| Migrations | `0001`–`0046` (`docs/check_links.py` enforces this range stays current) |
 | Test tiers | API: ~597 tests, `pytest -m unit` runs without Docker, everything else needs `scripts/dev-up.sh`. Web: vitest (4 files) + 13 Playwright specs; 5 run against a real API in CI, the other 4 skip without one |
 | Dev services | `docker compose -f infra/docker-compose.yml up -d` — postgres 5452, redis 6399, garage 9140/9141, mailpit 1145/8145, clamav 3410. API :8010, web :3010 |
 | Dev logins | `apps/api/.venv/Scripts/python.exe scripts/seed_e2e_accounts.py` (ten least-privilege accounts, idempotent). `scripts/seed_demo_content.py` for the real catalogue, `scripts/seed_demo_enrolment.py` for a learner with an enrolment |

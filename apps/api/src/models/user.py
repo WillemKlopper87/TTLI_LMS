@@ -11,7 +11,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -69,6 +79,24 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         Integer, nullable=False, server_default=text("0")
     )
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # BACKLOG T12 / 0046: 04_SECURITY_AND_COMPLIANCE.md §5.3's data-subject
+    # rights. A hold blocks services.privacy.erase_user outright — it exists
+    # for the case the security doc named and left open: a dispute or
+    # investigation that must survive the subject's own erasure request.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    legal_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_hold_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legal_hold_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Set once, by services.privacy.erase_user, and never cleared — the
+    # idempotency guard against a second erasure and the record of when
+    # the anonymisation actually happened, distinct from `deleted_at`
+    # (SoftDeleteMixin), which this table has never used for a live user.
+    erased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 __all__ = ["User"]
