@@ -56,10 +56,34 @@ Phase 6 entry gate, not permission to start it early.
   off-VM crypt destination and individual owner, runs both scripts on the
   production VM, and records a passing RPO/RTO report; code alone is not
   recovery evidence.
-- [ ] **T10 — Deployment integrity and rollback proof (H2, M).** Replace the
-  rolling updater's five-second process check with an active API/worker canary,
-  record the running image digest and Git SHA for every component, and prove a
-  failed worker release rolls the whole application back.
+- [ ] **T10 — Deployment integrity and rollback proof (H2, M). IN PROGRESS
+  (2026-09-13).** The worker's process-alive check is replaced: it now has a
+  real Docker healthcheck (`arq --check src.workers.main.WorkerSettings`),
+  `src/workers/main.py`'s `health_check_interval` is lowered from arq's
+  1-hour default to 30s so a dead worker's Redis sentinel actually expires
+  inside the rolling-update script's `HEALTH_TIMEOUT` window instead of
+  reading "healthy" for up to an hour, and `scripts/rolling-update.sh`'s
+  worker swap and its own rollback path both call `wait_healthy worker`
+  (the old `wait_running` polling function is gone). Verified locally
+  against a standalone Redis, not the compose stack: no worker → `--check`
+  exits 1; a live worker → exits 0; the worker killed → the sentinel's TTL
+  (31s) actually expires and `--check` returns to exit 1, proving the
+  interval change closes the stale-healthy gap arq's default would leave
+  open. `scripts/rolling-update.sh` also now writes
+  `release-<sha>.json` after every swap — registry digests, running image
+  IDs, `APP_VERSION` read back from the live container, and three
+  independent checks (`/health/ready`, the worker heartbeat, a web HTTP
+  probe) — and `scripts/backup-production.sh` uploads and age-prunes it
+  alongside the database backup, closing "persisted off-host with the
+  backups". `docker compose config` validated against the full compose
+  file with dummy secrets.
+  **Still open:** the forced-rollback rehearsal itself — deploy a
+  deliberately broken worker image against the real single-VM host,
+  confirm the canary fails and api+worker roll back together, and record
+  the before/after manifests here — needs the production VM, GHCR and
+  cosign, none of which this session has access to. An operator must run
+  it and paste the manifest paths/timestamps into this row before T10
+  closes.
 - [ ] **T11 — Minimum viable observability (O1, M).** Add service metrics,
   structured log shipping, alerting and one operator dashboard for API errors,
   latency, queue depth/failures, database saturation and storage failures.

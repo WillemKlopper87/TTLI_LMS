@@ -107,6 +107,22 @@ for artifact in "$DUMP" "$CHECKSUM" "$MANIFEST"; do
   rclone copy "$artifact" "$BACKUP_RCLONE_REMOTE/database/"
 done
 
+# BACKLOG T10: scripts/rolling-update.sh writes one release-<sha>.json per
+# deploy into this same BACKUP_DIR rather than carrying its own rclone
+# crypt credentials — this is where "persisted off-host with the backups"
+# actually happens. A deploy manifest carries no embedded, sortable
+# timestamp the way ttli-<STAMP> filenames do (a git SHA isn't one), so
+# retention below prunes it by remote object age instead of by filename.
+shopt -s nullglob
+RELEASE_MANIFESTS=("$BACKUP_DIR"/release-*.json)
+shopt -u nullglob
+if [ "${#RELEASE_MANIFESTS[@]}" -gt 0 ]; then
+  printf '[%s] uploading %d release manifest(s)\n' "$STAMP" "${#RELEASE_MANIFESTS[@]}"
+  for manifest in "${RELEASE_MANIFESTS[@]}"; do
+    rclone copy "$manifest" "$BACKUP_RCLONE_REMOTE/releases/"
+  done
+fi
+
 # Prune by the timestamp embedded in names, not object mtime: rclone's
 # --backup-dir preserves the original object's mtime, which may be years old.
 CUTOFF="$(date -u -d "$BACKUP_RETENTION_DAYS days ago" +%Y%m%dT%H%M%SZ)"
@@ -123,6 +139,10 @@ while IFS= read -r file; do
   fi
 done < <(rclone lsf "$BACKUP_RCLONE_REMOTE/database" --files-only 2>/dev/null || true)
 
-find "$BACKUP_DIR" -type f \( -name 'ttli-*.dump' -o -name 'ttli-*.dump.sha256' -o -name 'ttli-*.manifest' \) -mtime +1 -delete
+# Age-based, not name-matched like the loop above — release-<sha>.json has
+# no sortable timestamp in its name to parse a cutoff from.
+rclone delete "$BACKUP_RCLONE_REMOTE/releases/" --min-age "${BACKUP_RETENTION_DAYS}d" 2>/dev/null || true
+
+find "$BACKUP_DIR" -type f \( -name 'ttli-*.dump' -o -name 'ttli-*.dump.sha256' -o -name 'ttli-*.manifest' -o -name 'release-*.json' \) -mtime +1 -delete
 printf '[%s] backup complete in %ss; encrypted remote: %s; owner: %s\n' \
   "$STAMP" "$((FINISHED - STARTED))" "$BACKUP_RCLONE_REMOTE" "$BACKUP_OWNER"
