@@ -1,8 +1,8 @@
 """Data-subject rights (`services/privacy.py`, BACKLOG T12).
 
-Service-level tests pin the invariants that matter: exports are short-lived and
-one-time, anonymisation never deletes the user row, and legal hold actually
-blocks erasure.
+Service-level tests pin the invariants that matter: personal-data exports are
+produced directly for the authenticated request rather than persisted, anonymisation
+never deletes the user row, and legal hold actually blocks erasure.
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import socket
 import uuid
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import pytest
-from src.core.errors import AppError, NotFound
+from src.core.errors import AppError
 from src.core.redis import dispose_redis, init_redis
 from src.models.user import User
 from src.services import privacy
@@ -67,8 +67,8 @@ async def _make_user(session, crypto, *, tenant_id, email: str) -> User:
     return user
 
 
-async def test_export_is_ephemeral_one_time_and_contains_profile_and_consent(
-    tenant_session_factory, crypto, redis
+async def test_export_returns_decrypted_profile_and_consent_without_persisting(
+    tenant_session_factory, crypto
 ):  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(tenant_id) as session:
@@ -87,33 +87,14 @@ async def test_export_is_ephemeral_one_time_and_contains_profile_and_consent(
             user_id=user.id,
         )
 
-        url = await privacy.build_export(
-            session,
-            crypto,
-            redis,
-            user=user,
-            api_public_url="https://api.example.test",
-        )
-
-        parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "api.example.test"
-        assert parsed.path == "/api/v1/privacy/export-download"
-        token = parse_qs(parsed.query)["token"][0]
-        key = f"{privacy.EXPORT_KEY_PREFIX}{token}"
-
-        ttl = await redis.ttl(key)
-        assert 0 < ttl <= privacy.EXPORT_EXPIRES_IN_SECONDS
-
-        raw = await privacy.consume_export(redis, token=token)
+        raw = await privacy.build_export(session, crypto, user=user)
         body = json.loads(raw)
         assert body["profile"]["email"] == crypto.decrypt(user.email_encrypted)
         assert body["consent"][0]["purpose"] == "marketing"
         assert body["consent"][0]["granted"] is True
-        assert await redis.get(key) is None
-
-        with pytest.raises(NotFound, match="expired or has already been downloaded"):
-            await privacy.consume_export(redis, token=token)
+        assert "workshops" in body["note"]
+        assert "survey responses" in body["note"]
+        assert "CRM contact history" in body["note"]
 
 
 async def test_erase_user_tombstones_but_never_deletes_the_row(
