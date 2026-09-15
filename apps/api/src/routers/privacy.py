@@ -1,16 +1,16 @@
 """Data-subject rights (BACKLOG T12, 04_SECURITY_AND_COMPLIANCE.md §5.3).
 
 Self-service rights live under `/me/privacy/*`; admin-mediated legal-hold and
-erasure actions reuse the existing `user:suspend` permission. Export downloads
-use a high-entropy five-minute capability and therefore do not require a second
-authentication round-trip; the capability is deleted after the first download.
+erasure actions reuse the existing `user:suspend` permission. Personal-data
+exports are returned directly to the authenticated request and are never persisted
+as an object, cache entry, or bearer capability URL.
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Response, status
 
 from src.core.deps import (
     AuditedSessionDep,
@@ -23,7 +23,6 @@ from src.core.deps import (
 from src.core.errors import AppError, NotFound
 from src.schemas.privacy import (
     ConsentRequest,
-    DataExportResponse,
     EraseAccountRequest,
     LegalHoldRequest,
     LegalHoldStatusResponse,
@@ -41,41 +40,19 @@ SUSPEND = "user:suspend"
 
 @router.post(
     "/me/privacy/export",
-    response_model=DataExportResponse,
+    response_class=Response,
+    response_model=None,
     summary="Export your personal data (POPIA access / portability)",
 )
 async def export_my_data(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     crypto: CryptoDep,
-    redis: RedisDep,
-    settings: SettingsDep,
-) -> DataExportResponse:
+) -> Response:
     user = await get_user(session, tenant_id=principal.tenant_id, user_id=principal.user_id)
     if user is None:
         raise NotFound("No such user.")
-    url = await privacy.build_export(
-        session,
-        crypto,
-        redis,
-        user=user,
-        api_public_url=settings.api_public_url,
-    )
-    return DataExportResponse(
-        download_url=url, expires_in_seconds=privacy.EXPORT_EXPIRES_IN_SECONDS
-    )
-
-
-@router.get(
-    "/privacy/export-download",
-    response_class=Response,
-    summary="Download a short-lived personal-data export capability",
-)
-async def download_privacy_export(
-    redis: RedisDep,
-    token: str = Query(..., min_length=32, max_length=128),
-) -> Response:
-    body = await privacy.consume_export(redis, token=token)
+    body = await privacy.build_export(session, crypto, user=user)
     return Response(
         content=body,
         media_type="application/json",
