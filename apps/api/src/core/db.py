@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -33,6 +34,20 @@ TENANT_GUC = "app.tenant_id"
 
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DatabasePoolStats:
+    size: int
+    checked_out: int
+    overflow: int
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseRuntimeStats:
+    connections: int
+    max_connections: int
+    size_bytes: int
 
 
 def init_engine(settings: Settings) -> AsyncEngine:
@@ -53,6 +68,54 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     if _sessionmaker is None:
         raise RuntimeError("init_engine() must be called before sessions are requested")
     return _sessionmaker
+
+
+def database_pool_stats() -> DatabasePoolStats:
+    """Return the app-side pool pressure without opening a connection."""
+
+    if _engine is None:
+        return DatabasePoolStats(size=0, checked_out=0, overflow=0)
+    pool = _engine.sync_engine.pool
+    return DatabasePoolStats(
+        size=pool.size(),
+        checked_out=pool.checkedout(),
+        # QueuePool reports negative overflow before the base pool has filled;
+        # operationally that still means zero overflow connections exist.
+        overflow=max(0, pool.overflow()),
+    )
+
+
+async def database_runtime_stats() -> DatabaseRuntimeStats:
+    """Sample PostgreSQL connection saturation and database size.
+
+    This intentionally uses server-side facts rather than inferring database
+    pressure from the application's own pool alone. `pg_stat_activity` exposes
+    connection rows to ordinary users even though query text for other roles is
+    protected, and `pg_database_size(current_database())` needs no elevated
+    privilege.
+    """
+
+    factory = get_sessionmaker()
+    async with factory() as session:
+        row = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        count(*)::int AS connections,
+                        current_setting('max_connections')::int AS max_connections,
+                        pg_database_size(current_database())::bigint AS size_bytes
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                    """
+                )
+            )
+        ).one()
+    return DatabaseRuntimeStats(
+        connections=int(row.connections),
+        max_connections=int(row.max_connections),
+        size_bytes=int(row.size_bytes),
+    )
 
 
 async def dispose_engine() -> None:
@@ -90,7 +153,11 @@ async def tenant_session(tenant_id: uuid.UUID | None) -> AsyncIterator[AsyncSess
 
 
 __all__ = [
+    "DatabasePoolStats",
+    "DatabaseRuntimeStats",
     "TENANT_GUC",
+    "database_pool_stats",
+    "database_runtime_stats",
     "dispose_engine",
     "get_sessionmaker",
     "init_engine",
