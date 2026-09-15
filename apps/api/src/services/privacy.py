@@ -1,31 +1,16 @@
 """Data-subject rights (BACKLOG T12, 04_SECURITY_AND_COMPLIANCE.md §5.3).
 
-Four of the five rows in that section's table get their implementation
-here; the fifth (objection to marketing) already exists as `suppressions`
-and `services.campaigns.unsubscribe` and is untouched by this module:
-
-- Access / Portability: `build_export` assembles a JSON document,
-  uploaded to `GENERATED_DOCUMENTS`, delivered the same way
-  `credentials.py` already signs a URL for a certificate PDF.
-- Correction: self-service profile editing, wherever it lands, is
-  already audited by convention — nothing new to add here.
-- Deletion: `erase_user` anonymises, never `DELETE`s. The row survives
-  so anything financial (orders, invoices) that references it stays
-  intact; only identity columns are tombstoned.
-- Legal hold: `set_legal_hold` / `clear_legal_hold` are the mechanism
-  §5.3's own gap note in the security doc ("no mechanism is specified
-  for suspending deletion during a dispute") says is needed before the
-  first enterprise contract.
-
-Erasure reuses `services.tenant_users.set_status`'s exact session-
-termination mechanism (suspend, not a new status value) rather than
-inventing a third account state the rest of the codebase would need to
-learn about for one event.
+The access/export path deliberately keeps its decrypted artefact out of object
+storage. A generated export is held in Redis behind a high-entropy capability
+for five minutes and removed on first successful download; Redis TTL is the
+crash-safe fallback. This prevents a short-lived signed link from leaving an
+indefinite decrypted PII object behind.
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -35,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
-from src.core.errors import AppError
+from src.core.errors import AppError, NotFound
 from src.models.audit import AuditAction
 from src.models.commerce import Order
 from src.models.consent import ConsentRecord
@@ -44,9 +29,9 @@ from src.models.credential import Certificate
 from src.models.learning import Enrolment
 from src.models.user import User
 from src.services import audit, tokens
-from src.services.storage.base import Container, StorageService
 
 EXPORT_EXPIRES_IN_SECONDS = 300
+EXPORT_KEY_PREFIX = "privacy-export:"
 
 
 async def _export_payload(
@@ -139,12 +124,10 @@ async def _export_payload(
     return {
         "exported_at": datetime.now(UTC).isoformat(),
         "note": (
-            "This export covers profile, consent history, course "
-            "enrolments and certificates, and orders. It is not yet "
-            "exhaustive of every category of personal data the platform "
-            "holds (workshops, survey responses and CRM contact history "
-            "are not included) — request an extension from support if "
-            "you need one of those."
+            "This export covers profile, consent history, course enrolments and certificates, "
+            "and orders. It is not yet exhaustive of every category of personal data the "
+            "platform holds: workshops, survey responses and CRM contact history remain tracked "
+            "as T12 residual scope and must be supplied through the support process until added."
         ),
         "profile": profile,
         "consent": consent,
@@ -157,24 +140,24 @@ async def _export_payload(
 async def build_export(
     session: AsyncSession,
     crypto: CryptoBox,
-    storage: StorageService,
+    redis: Redis,
     *,
     user: User,
+    api_public_url: str,
 ) -> str:
-    """Assemble the export and return a short-lived signed download URL.
+    """Assemble a five-minute, one-time personal-data download capability.
 
-    Synchronous, matching how certificate PDFs are generated inline
-    (services/enrolment.py) rather than via the worker — this is a JSONB
-    read-and-serialise over a handful of tables, not a transcode.
+    The decrypted JSON never enters object storage. Redis TTL guarantees
+    expiry even if the process dies before a download occurs; the download
+    endpoint deletes the key after a successful read.
     """
     payload = await _export_payload(session, crypto, user=user)
-    body = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
-    key = f"privacy-exports/{user.tenant_id}/{user.id}/{uuid.uuid4()}.json"
-    await storage.upload_object(
-        Container.GENERATED_DOCUMENTS, key, body, content_type="application/json"
-    )
-    url = await storage.generate_signed_url(
-        Container.GENERATED_DOCUMENTS, key, expires_in=EXPORT_EXPIRES_IN_SECONDS
+    body = json.dumps(payload, indent=2, ensure_ascii=False)
+    token = secrets.token_urlsafe(32)
+    await redis.set(
+        f"{EXPORT_KEY_PREFIX}{token}",
+        body,
+        ex=EXPORT_EXPIRES_IN_SECONDS,
     )
     await audit.record(
         session,
@@ -184,7 +167,17 @@ async def build_export(
         entity_type="user",
         entity_id=user.id,
     )
-    return url
+    return f"{api_public_url.rstrip('/')}/api/v1/privacy/export-download?token={token}"
+
+
+async def consume_export(redis: Redis, *, token: str) -> bytes:
+    """Return an export once, deleting the capability immediately after read."""
+    key = f"{EXPORT_KEY_PREFIX}{token}"
+    payload = await redis.get(key)
+    if payload is None:
+        raise NotFound("This privacy export has expired or has already been downloaded.")
+    await redis.delete(key)
+    return str(payload).encode("utf-8")
 
 
 _TOMBSTONE_NAME = "Erased user"
@@ -199,12 +192,7 @@ async def erase_user(
     actor_user_id: uuid.UUID,
     access_token_ttl_seconds: int,
 ) -> None:
-    """Anonymise, never delete. `user` survives so every FK pointing at it
-    (orders, invoices, enrolments, audit history) stays intact — exactly
-    04_SECURITY_AND_COMPLIANCE.md §5.3's "financial retention outranks
-    erasure" line, which this makes true by construction rather than by
-    convention: there is no code path that deletes the row at all.
-    """
+    """Anonymise, never delete, preserving financial/accreditation references."""
     if user.legal_hold:
         raise AppError(
             "This account is under legal hold and cannot be erased.",
@@ -225,9 +213,6 @@ async def erase_user(
     user.erased_at = datetime.now(UTC)
     await session.flush()
 
-    # Same session-termination mechanism services.tenant_users.set_status
-    # uses on suspension (fable5.1_review.md H-11) — an erased identity
-    # must not keep a live refresh token or a still-valid access token.
     await tokens.revoke_all_for_user(session, user_id=user.id)
     await tokens.revoke_access_tokens_for_user(
         redis, user_id=user.id, ttl_seconds=access_token_ttl_seconds
@@ -284,8 +269,10 @@ async def clear_legal_hold(session: AsyncSession, *, user: User, actor_user_id: 
 
 __all__ = [
     "EXPORT_EXPIRES_IN_SECONDS",
+    "EXPORT_KEY_PREFIX",
     "build_export",
     "clear_legal_hold",
+    "consume_export",
     "erase_user",
     "set_legal_hold",
 ]
