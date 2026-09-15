@@ -249,6 +249,23 @@ async def list_domains(
     )
 
 
+async def _commit_domain_change_and_invalidate(
+    session: AuditedSessionDep, redis: RedisDep, hostname: str
+) -> None:
+    """Commit a domain mutation without allowing a stale cache refill to survive.
+
+    Evicting only before commit leaves a race: another request can miss the
+    uncommitted database change and repopulate the old cache value. Evicting
+    only after commit leaves the already-cached old value readable until the
+    eviction. The two-phase delete closes both windows. The request-scoped
+    session dependency may commit again during teardown; with no active
+    transaction that second commit is a harmless no-op.
+    """
+    await invalidate_tenant_host_cache(redis, hostname)
+    await session.commit()
+    await invalidate_tenant_host_cache(redis, hostname)
+
+
 @router.post(
     "/domains",
     response_model=DomainRow,
@@ -275,11 +292,9 @@ async def add_domain(
         entity_id=domain.id,
         after={"hostname": domain.hostname, "added": True},
     )
-    # A failed lookup is cached too. Forget it now so the newly added
-    # hostname resolves on the very next request instead of remaining a
-    # negative cache entry for up to MISS_TTL_SECONDS.
-    await invalidate_tenant_host_cache(redis, str(domain.hostname))
-    return _domain_row(settings.secret_key, principal.tenant_id, domain)
+    row = _domain_row(settings.secret_key, principal.tenant_id, domain)
+    await _commit_domain_change_and_invalidate(session, redis, str(domain.hostname))
+    return row
 
 
 @router.delete(
@@ -309,10 +324,7 @@ async def remove_domain(
         before={"hostname": domain.hostname},
         after={"removed": True},
     )
-    # The positive mapping may have been cached by normal traffic. Drop it
-    # immediately so a removed hostname cannot keep resolving to its former
-    # tenant for the remainder of CACHE_TTL_SECONDS.
-    await invalidate_tenant_host_cache(redis, str(domain.hostname))
+    await _commit_domain_change_and_invalidate(session, redis, str(domain.hostname))
 
 
 __all__ = ["router"]
