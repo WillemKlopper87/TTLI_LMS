@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { authorAndSubmitPendingEftPayment } from "./fixtures/author-content";
+import { authorAndSellAssessmentCourse } from "./fixtures/author-content";
 
 /**
  * The admin operations home, course reports, audit log and revenue chart
@@ -21,20 +21,17 @@ import { authorAndSubmitPendingEftPayment } from "./fixtures/author-content";
  * to diagnose on 2026-08-21.
  *
  * Four form logins per run stays inside the 5/min per-account limit. The
- * analytics fixture adds three API logins on separate content/buyer/finance
- * accounts, keeping the whole file below the 10/min per-IP limit as well.
- * The availability probe below deliberately uses a PUBLIC endpoint so it
- * does not spend one of them. Adding another authenticated setup means
- * re-checking both limiter budgets, not reviving shared state.
+ * analytics fixture adds two API logins on separate content/buyer accounts,
+ * keeping the whole file below the 10/min per-IP limit even when that test
+ * consumes its one CI retry. The availability probe below deliberately uses
+ * a PUBLIC endpoint so it does not spend one of them.
  */
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? "ops-admin@example.com";
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "SmokeTest123!admin";
 const CONTENT_EMAIL = process.env.E2E_CONTENT_EMAIL ?? "content-fixture@example.com";
 const CONTENT_PASSWORD = process.env.E2E_CONTENT_PASSWORD ?? "SmokeTest123!content";
-const FINANCE_EMAIL = process.env.E2E_FINANCE_EMAIL ?? "finance-e2e@example.com";
-const FINANCE_PASSWORD = process.env.E2E_FINANCE_PASSWORD ?? "SmokeTest123!finance";
-const BUYER_EMAIL = process.env.E2E_FINANCE_BUYER_EMAIL ?? "finance-buyer-e2e@example.com";
-const BUYER_PASSWORD = process.env.E2E_FINANCE_BUYER_PASSWORD ?? "SmokeTest123!financebuyer";
+const BUYER_EMAIL = process.env.E2E_BUYER_EMAIL ?? "checkout-buyer@example.com";
+const BUYER_PASSWORD = process.env.E2E_BUYER_PASSWORD ?? "SmokeTest123!buyer";
 
 test.beforeEach(async ({ request }) => {
   const probe = await request
@@ -117,28 +114,18 @@ test("the analytics dashboard draws a revenue line with a table fallback", async
   page,
   request,
 }) => {
+  test.setTimeout(60_000);
+
   // A clean CI database has no paid orders, and RevenueChart correctly renders
-  // its empty state in that case. Create a genuine paid ledger event through the
-  // same EFT workflow users exercise so this test deterministically covers the
+  // its empty state in that case. Create a genuine fulfilled EFT sale through
+  // the existing assessment fixture so this test deterministically covers the
   // non-empty chart path instead of depending on stale/shared database state.
-  const pending = await authorAndSubmitPendingEftPayment(request, {
+  await authorAndSellAssessmentCourse(request, {
     contentEmail: CONTENT_EMAIL,
     contentPassword: CONTENT_PASSWORD,
-    buyerEmail: BUYER_EMAIL,
-    buyerPassword: BUYER_PASSWORD,
+    learnerEmail: BUYER_EMAIL,
+    learnerPassword: BUYER_PASSWORD,
   });
-  const financeLogin = await request.post("/api/bff/auth/login", {
-    data: { email: FINANCE_EMAIL, password: FINANCE_PASSWORD },
-  });
-  expect(financeLogin.ok(), await financeLogin.text()).toBe(true);
-  const financeToken = await financeLogin.json();
-  const approval = await request.post(`/api/bff/payments/${pending.paymentId}/approve`, {
-    headers: {
-      Authorization: `Bearer ${financeToken.access_token}`,
-      "Idempotency-Key": `e2e-analytics-approve-${pending.paymentId}`,
-    },
-  });
-  expect(approval.ok(), await approval.text()).toBe(true);
 
   await signIn(page);
   await page.goto("/admin/analytics");
