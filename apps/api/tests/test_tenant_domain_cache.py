@@ -17,7 +17,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from src.core.tenancy import invalidate_tenant_host_cache
 from src.routers import tenant_branding as tenant_branding_router
 from src.schemas.tenant_branding import AddDomainRequest
