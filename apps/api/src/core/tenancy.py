@@ -2,9 +2,9 @@
 
 The hostname is the first thing every request is judged on, so the lookup is
 cached in Redis (get_or_resolve_tenant) rather than hitting Postgres on
-every request. A short TTL, not an invalidated-on-write cache: nothing in
-Phase 1 lets an admin edit tenant_domains yet, so bounded staleness is a
-simpler, sufficient trade for now — revisit once that exists.
+every request. Both successful lookups and misses are cached; tenant-domain
+mutations therefore invalidate the affected hostname immediately rather than
+waiting for the bounded TTL to expire.
 
 `X-Tenant-Host` is set by the web tier's BFF. Falling back to the Host header
 keeps direct API calls working in development.
@@ -64,6 +64,20 @@ def _cache_key(hostname: str) -> str:
     return f"tenant:host:{hostname}"
 
 
+async def invalidate_tenant_host_cache(redis: Redis, hostname: str) -> None:
+    """Forget either a cached tenant hit or cached miss for ``hostname``.
+
+    Domain administration normalises hostnames before persisting them, but this
+    helper deliberately normalises again so every write path invalidates the
+    exact key request resolution uses. Without this, a newly added domain can
+    remain a cached miss for ``MISS_TTL_SECONDS`` and a removed domain can keep
+    resolving to its former tenant for ``CACHE_TTL_SECONDS``.
+    """
+    normalised = hostname.strip().lower().rstrip(".")
+    if normalised:
+        await redis.delete(_cache_key(normalised))
+
+
 async def get_or_resolve_tenant(
     session: AsyncSession, redis: Redis, hostname: str, *, ttl_seconds: int = CACHE_TTL_SECONDS
 ) -> TenantContext | None:
@@ -91,5 +105,6 @@ __all__ = [
     "TenantContext",
     "get_or_resolve_tenant",
     "hostname_from_request",
+    "invalidate_tenant_host_cache",
     "resolve_tenant",
 ]
