@@ -1,188 +1,146 @@
-# TTLI_LMS — consolidated backlog
+# TTLI_LMS — active backlog
 
-Every outstanding item in one numbered list, so work can be picked by number.
-Compiled 2026-08-20 by checking each research document against the actual
-code, not by trusting the documents' own status claims. Sizes are S/M/L as
-the source research estimated them; where this compilation disagreed with a
-document, the code won.
+This is the **status authority** for outstanding work. It intentionally contains current state,
+ownership and exit criteria rather than a chronological build narrative.
 
-Sources: `docs/research/enterprise-gaps-plan.md` (Passes A–K),
-`docs/research/feature-matrix-coverage.md` (the 54-row audit),
-`docs/NEXT_AGENT_BRIEF.md` §7, the per-doc leftovers found on 2026-08-20, and
-`docs/archive/what_next.md` (2026-08-28 external-critique synthesis —
-P17–P19, O14, R15). Audit/review *findings* (as opposed to roadmap items) are
-tracked separately in `docs/REMEDIATION_LEDGER.md`, not here — O14 and O15
-below are the roadmap-shaped exceptions that ledger's findings point back to.
+- Detailed ordered remediation queue: [`BACKLOG_2026-09-11.md`](BACKLOG_2026-09-11.md),
+  refreshed on 2026-09-15.
+- Exact pre-refresh backlog snapshot: [#23 pre-refresh `docs/BACKLOG.md`](https://github.com/WillemKlopper87/TTLI_LMS/blob/49555bc963609c49f202c312add7c248afa4134d/docs/BACKLOG.md).
+- Sprint-1 merge/evidence coordination: GitHub issue #31.
 
-**Status key:** `OPEN` · `BLOCKED` (waiting on someone outside engineering) ·
-`DECIDED-NO` (deliberately not building).
+**Status key:** `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED` · `GATED` · `DECIDED-NO`.
 
 ---
 
-## Immediate TODO — production-hardening gate (refreshed 2026-09-08)
+## 1. Immediate gate — Sprint 1 production hardening
 
-This is the current execution queue and takes precedence over every historical
-order later in this file. **Phase 6 AI work is paused until T7–T12 are complete
-or an explicit owner decision accepts a named residual risk.** T13 is the
-Phase 6 entry gate, not permission to start it early.
+No Assessment Platform, Programmes, Analyst Workspace, Partner Portal, Licensing+xAPI,
+or Phase 6 AI implementation starts until this gate is closed or the platform owner explicitly
+accepts a named residual risk.
 
-- [x] **T7 — Repair the red push CI transaction race (S). DONE and remotely
-  verified 2026-09-08.** FastAPI yield dependencies used
-  the default request scope, so a create response could reach the browser
-  before its transaction committed. The authenticated assessment journey then
-  intermittently received `Product not found` or `No such block` on its next
-  request. `SessionDep` and `AuditedSessionDep` now close at function scope,
-  before response delivery, with a focused regression test. Rolling analytics
-  periods now use the database clock so a just-committed event cannot fall
-  outside the window because of host/container clock skew. The full API suite
-  and formerly failing learner browser journey pass locally and remotely.
-- [x] **T8 — Make the PostgreSQL image gate deterministic and disposition its
-  four new findings (S). DONE and remotely verified 2026-09-08.** Both CI
-  service jobs and the blocking scan now use the exact
-  single-VM production digest. Image inspection proved only the split
-  `libuuid` package is present; the affected util-linux mount/nsenter binaries
-  and libmount are absent (BusyBox supplies those commands). Four narrowly
-  documented exceptions expire 2026-12-07. Blocking, release and weekly scans
-  strip them from every non-PostgreSQL image; the weekly scan also rechecks the
-  exact production PostgreSQL digest so new advisories and expiry cannot wait
-  for a code push. Re-check earlier when the official image carries `libuuid >=
-  2.42.3-r0`.
-- [ ] **T9 — Backups and restore rehearsal (O2, M). IN PROGRESS.** Scheduled
-  PostgreSQL plus all-five-bucket Garage backup, 7–30-day version retention,
-  client-side `rclone crypt`, accountable-owner metadata, and an isolated timed
-  restore drill are implemented. The backup runs every 10 minutes to leave
-  headroom against the strict 15-minute RPO, and Garage is reachable from the
-  host only on loopback. Exit remains open until an operator supplies the real
-  off-VM crypt destination and individual owner, runs both scripts on the
-  production VM, and records a passing RPO/RTO report; code alone is not
-  recovery evidence.
-- [ ] **T10 — Deployment integrity and rollback proof (H2, M).** Replace the
-  rolling updater's five-second process check with an active API/worker canary,
-  record the running image digest and Git SHA for every component, and prove a
-  failed worker release rolls the whole application back.
-- [ ] **T11 — Minimum viable observability (O1, M).** Add service metrics,
-  structured log shipping, alerting and one operator dashboard for API errors,
-  latency, queue depth/failures, database saturation and storage failures.
-  Sentry error capture alone is insufficient for production operations.
-- [ ] **T12 — POPIA operational lifecycle (O3, M).** Implement and test data
-  access/export, correction and erasure with financial/legal exceptions,
-  retention enforcement, consent withdrawal and legal-hold handling. Confirm
-  the Information Officer responsibility in B8 rather than coding around it.
-- [ ] **T13 — Phase 6 readiness decision (R9 + B1 decision 4, S–M).** After
-  T7–T12, add per-tenant AI kill switches/budget enforcement and obtain the
-  signed decision on whether redacted prompt data may leave South Africa.
-  Only then begin P11's provider/redaction/insight implementation.
+| Ref | Item | Current state | Exit criterion |
+|---|---|---|---|
+| #27 | Image/security gate | **DONE 2026-09-15.** CI #168 green; payload-scoped Trivy dispositions, targeted web libpcre2 fix, API cJSON reachability guard; weekly issue #17 closed. Merged as `7996ab4`. | Five required checks green on the accepted payloads. |
+| **F1** | Truthful authenticated browser coverage | **DONE 2026-09-15 via #29.** CI #178 proves all nine named authenticated specs ran under `REQUIRE_API_E2E=1` with no silent skips. Merged as `3d28fd5`. | All nine authenticated journeys execute and pass in the required API-backed job. |
+| **F2** | Tenant-domain cache invalidation | **DONE 2026-09-15 via #29.** Domain writes now use `cache-delete → commit → cache-delete`, with regression coverage for hit/miss eviction and hostname normalization. | A domain add/remove is authoritative immediately; TTLs are fallback bounds only. |
+| **T9 / O2** | Backups + restore rehearsal | **OPEN — operator evidence.** Backup/restore tooling exists; no code change can substitute for a real off-VM crypt destination, accountable owner and production-shaped restore drill. | Archive lands off-host; isolated restore succeeds; measured RPO/RTO recorded and within targets. |
+| **F9 / T10** | Worker health, deployment integrity and rollback proof | **IN PROGRESS — #25.** Open PR owns active arq worker health/canary and release-evidence manifest. It still needs refresh onto current `main`, full CI, merge, then a forced broken-worker rollback rehearsal. | Stalled worker fails deployment; every release emits evidence; failed worker release rolls API+worker back together and known-good canary passes. |
+| **T11 / O1** | Minimum viable observability | **IN PROGRESS — #30.** Sentry error capture is already shipped. #30 owns aggregate API/worker/DB/queue/storage metrics, internal collection, alerting, searchable structured logs and an operator dashboard. | Required signals are collected without tenant/user-cardinality leakage; alerts are actionable; logs survive container restart and are searchable by request/job correlation id. |
+| **T12 / O3** | POPIA operational lifecycle | **IN PROGRESS — #26.** Open PR owns the current API tranche for access/export, erasure/anonymisation, legal hold and consent withdrawal. Retention policy/enforcement, admin workflow, Information Officer responsibility and remaining legal/owner decisions stay explicitly open. | Data-subject lifecycle is tested end to end; retained financial/accreditation records are de-identified rather than incorrectly deleted; owner/legal decisions are recorded. |
+| **T13 / P11** | Phase 6 readiness decision | **GATED.** Do not start the AI vertical slice before T9–T12 are closed or explicitly accepted and data-residency/budget/kill-switch decisions are signed. | Readiness decision recorded; tenant kill switches and budget enforcement exist before any LLM call path. |
 
----
+### Integration acceptance still required
 
-## P — Product gaps (the enterprise-gaps-plan Passes A–K)
-
-The table is the authority for item state; several passes shipped after the
-original 2026-08-20 compilation. Items remain ordered by the plan's demo value
-per unit of effort, with the procurement gate (P4) placed where it must be.
-
-| # | Item | Size | Why it matters | Status |
-|---|---|---|---|---|
-| ~~**P1**~~ | ~~Admin operations home + per-course analytics~~ **DONE 2026-08-21.** Shipped as `/analytics/overview`, `/analytics/courses`, `/analytics/courses/{id}` (path deviation from Pass A explained in `routers/operations.py`), plus `/admin`, `/admin/reports/courses` and the course detail screen. 6 API tests + 3 Playwright specs incl. axe. "Reports" nav is live; "Learners" is the last inert item (needs P3) | S–M | — | DONE |
-| ~~**P2**~~ | ~~Audit log read path + coverage~~ **DONE 2026-08-21.** `GET /audit-events` (action/actor/entity/date filters, keyset pagination), `/audit-events/actions`, `/audit-events/export.csv`, the `/admin/audit` browser, and `audit.record` added to payment approve/reject, refund, certificate revoke, course publish/unpublish and tenant settings. 7 API tests + a browser spec with axe. No migration needed — `audit:read` and the SELECT grant already existed. Original scope: (Pass B; audit #52). `GET /audit-events` filterable + keyset-paginated + CSV export, `audit:read` permission, `/admin/audit` page; add `audit.record` to payment approve/reject/refund, certificate revoke, role changes, course publish, tenant settings | M | "Advanced audit logs" is an Enterprise-column promise. Events are written but there is **no read path at all**, and finance/credential/RBAC actions aren't logged. Also the first thing a POPIA reviewer asks for. Note: `events` is monthly-partitioned (`0004`) — the read path must respect partition range | OPEN |
-| ~~**P3**~~ | ~~Tenant self-service: branding, domains, users, roles~~ **DONE 2026-08-21.** Staff admin (`/tenant/roles`, `/tenant/users`, grant/revoke, suspend, `/admin/people`) with a no-privilege-escalation rule and a no-self-change rule; `rbac.role.assigned`/`revoked` now emitted after existing unused since 0001. Branding (`GET/PATCH /tenant/branding`, `POST /tenant/branding/logo` — virus-scanned, contrast-checked at WCAG AA with the measured ratio in the refusal) and domains (`GET/POST/DELETE /tenant/domains`, globally unique, primary protected, HMAC-derived DNS TXT token). 9 API tests. **Domain verification and TLS issuance are deliberately not built** — resolving the TXT record is Phase 7 work, and nothing marks a domain verified on an admin's say-so | M | — | DONE |
-| ~~**P4**~~ | ~~SSO — Entra ID / OIDC~~ **DONE 2026-08-22.** Per-tenant OIDC discovery/configuration, PKCE/state/nonce validation, JIT provisioning, domain and role mapping, BFF start/callback routes and the individual/organisation sign-in choice. Follow-up review closed three flow defects (`136799c`, `4a388d9`). **This row was wrong until 2026-09-05**: everything above was the server and the BFF: no page served `/auth/sso/callback` — the redirect URI the API registers with the IdP — and no button started a flow, so a configured tenant sent its staff to a 404 (`REMEDIATION_LEDGER.md` H-15, closed in `fe28409`). SAML remains deliberately later scope | L | — | DONE |
-| ~~**P5**~~ | ~~Learning paths~~ **DONE 2026-08-23.** (Pass E; audit #7). `learning_paths` + `learning_path_courses`, path entitlement / `Product.kind="path"`, progress rollup, admin builder, learner page, path certificate. **Phase 1/4**: schema (`0035`) plus full admin authoring behind `/admin/paths`. **Phase 2/4**: `_fulfil_order`'s new `path` branch (one path entitlement + one course entitlement and enrolment per member course + a `path_enrolments` row, all get-or-create-safe); `GET /public/learning-paths` + `/{id}` (visibility mirrors `_visible_course`); the admin editor's new "Sell this path" section (`create_product`/`update_product` generalised to accept `learning_path_id`, mutually exclusive with `course_id`). A live-smoke run caught a real bug no test had: `list_all_products`'s SELECT gained a third joined column but a later tuple-unpack still assumed two, 500ing `GET /catalogue/products` the moment a real path-kind row existed — fixed, and a new test pins it. **Phase 3/4**: `services/learning_paths.py::get_path_progress` rolls up member courses' own `enrolment_service.get_progress` (equal-weight average, no second derivation); `services/enrolment.py::complete_lesson` gains a completion hook (deferred-imported to avoid a service-to-service cycle) that, once *every* member course of a `PathEnrolment` is done, issues a path certificate via a new `credentials_service.issue_for_completed_path` (its own function, not a generalisation of the course one). Two ownership checks — `services/credentials.py::set_certificate_visibility` and `routers/credentials.py`'s own `_owns_certificate` — still assumed `enrolment_id` was always set and silently rejected the rightful owner of a path certificate; both fixed, caught by a live-smoke pass, not a test. `GET /verify/{token}` gained `is_learning_path`. **Phase 4/4**: the learner-facing surface — `GET /path-enrolments` + `/{id}/progress` (list/detail split matching `GET /enrolments`'s own convention) and a new `GET /path-enrolments/{id}/credentials` (the path twin of `GET /enrolments/{id}/credentials`, `badge` always `null` since a path never issues one); `/paths` (public browse, plain grid — a tenant's paths are too few to need `/catalogue`'s facet browser) and `/paths/[pathId]` (buy, reusing the generic checkout flow unchanged); a "Learning paths" row in `LEARNER_NAV` (left `PUBLIC_NAV` alone — that array mirrors the real TTLI site's actual marketing nav, extracted from the live site, not a general-purpose nav); a "Learning paths" section on `/learn` fetched as its own small call rather than folded into `GET /learn/dashboard`'s composed payload, to avoid touching that endpoint's already-load-bearing anti-N+1 query; `/learn/paths/[pathEnrolmentId]` (per-course progress rows + `CredentialsPanel`, generalised to accept either an `enrolmentId` or a `pathEnrolmentId` rather than forking a near-duplicate component). 8 API tests total, full suite green, live-smoked end to end through the real browser and a from-scratch learner account: browsed `/paths` anonymously, bought a path via EFT, approved it as finance, watched the dashboard's new section and the progress page track 50% → 100% as each member course completed, and confirmed the certificate panel and download button render identically to a course certificate's | L | Core LMS vocabulary and a Professional-tier ✅ in the feature matrix. `learning_path` returned **zero hits** in the codebase before this pass | DONE |
-| ~~**P6**~~ | ~~Finance completeness~~ **DONE 2026-08-21** (the #34/#39 half). `GET /invoices` (own by default, tenant-wide with `order:view`), `/invoices/{id}`, `/invoices/{id}/pdf` (tax invoice rendered on demand — no stored artefact, no migration), `/invoices/export.csv` and `/ledger/export.csv` behind `invoice:create`. Buyer page at `/account/invoices`, export buttons on `/admin/payments`, 4 API tests. **#31 (live Payfast verification) remains — blocked on B4.** | S–M | — | MOSTLY DONE |
-| ~~**P7**~~ | ~~**Workshops end to end**~~ **DONE 2026-08-24.** (Pass G; audit #20, #22, #24, #25). Real Teams calendar-event-based meeting create/cancel + join_url delivery; ICS/calendar invites; learner "my sessions" page; multiple facilitators per session (`session_facilitators`); reschedule (REQ-WS-03); the full workshop-credit economy (product/price → purchase → decrement-on-book). **Phase 1/5 done 2026-08-24**: migration `0036` (`session_facilitators` + backfill, `workshops.requires_credit`/`meeting_provider`, `products.workshop_id`, `bookings.consumed_entitlement_id` — schema for all 5 phases, same batching P5's `0035` used). New `cancel_session` (a gap with **zero prior code path**, not just a named bullet — cancels every active booking via a newly-extracted shared `_cancel_booking_row` helper, cancels the provider meeting, notifies, audits) and `add_session_facilitator`/`remove_session_facilitator`/`list_session_facilitators`. A real bug found and fixed during implementation: `_facilitator_has_conflict` checked `WorkshopSession.facilitator_id` directly, which only ever caught a conflict where the facilitator was *primary* on another session — rewritten to join through `session_facilitators` so a co-facilitator's own double-booking is actually caught, the real point of multi-facilitator support. 2 new API tests, full suite green, axe-clean, live-smoked end to end through a real browser (add co-facilitator → cancel session → watch counts/controls update). **Phase 2/5 done 2026-08-24**: `POST /bookings/{id}/reschedule` (cancel-then-rebook in one transaction, same-workshop-only, marks the old `AttendanceRecord` `"rescheduled"` via the shared `_cancel_booking_row` helper Phase 1 extracted) and `GET /bookings` (`list_own_bookings`, mirrors P5's own-enrolment listings) — the read side of a real gap: a booking's workflow had no listing scoped to "mine" before this. New `/learn/sessions` page (cancel, reschedule, correct provider-labelled join button); `LEARNER_NAV`'s "Workshops" entry now points there instead of the `#workshops` anchor. A real bug found and fixed along the way: `/learn`'s "Coming up" rowlist hardcoded "Join on Teams" regardless of actual provider — `UpcomingItem` gained a real `provider` field. 1 new API test, full suite green, axe-clean, live-smoked end to end (book → reschedule → watch the row move and the old booking land in "Past & cancelled"). **Phase 3/5 done 2026-08-24**: `services/ics.py::build_ics` — hand-rolled `VCALENDAR`/`VEVENT` with real RFC 5545 line folding and value escaping, no new dependency. **A real bug this phase's own new unit tests caught before it ever shipped**: the fold function's UTF-8 boundary scan indexed one past the byte array's end whenever a chunk consumed every remaining byte exactly, raising on any content that folded onto a clean final line — fixed and pinned. New `GET /bookings/{id}/calendar.ics` (booking-owner-only) and "Add to calendar" on `/learn/sessions` + `BookButton`, both using the existing `lib/authed-download.ts` helper rather than a plain `<a href>` (which can't carry the in-memory access token). 8 new unit tests + 1 integration test, full suite green, axe-clean, live-smoked through a real headless-browser download with the saved `.ics` bytes parsed and confirmed correct. **Phase 4/5 done 2026-08-24**: the workshop-credit economy. `Workshop.requires_credit` (opt-in per workshop, default false — untouched byte-for-byte when unset) gates `book_session`: a new `_consume_workshop_credit` draws the caller's oldest valid `workshop_credit` entitlement (same `revoked_at`/`expires_at` filter `entitlements.py` already established), refusing with a clear message once none have `quantity > 0`, and records `Booking.consumed_entitlement_id`. A credit is spent on *either* `"registered"` or `"waitlisted"` — not registered-only — since a later waitlist promotion never calls `book_session` again, so registered-only would let a promoted seat go uncharged. `_cancel_booking_row` (the shared state-transition helper Phase 1 extracted) now always refunds a consumed credit via `_refund_workshop_credit`, which composes for free with `reschedule_booking`'s existing cancel-then-rebook shape into a same-workshop credit *transfer* rather than a double-charge. `services/catalogue.py::create_product`/`update_product` gained a `workshop_id` bridge (mutually exclusive with `course_id`/`learning_path_id`, inferring `kind="workshop_credit"`, mirroring P5's path bridge exactly down to `list_all_products`'s now-4-column join, with an explicit docstring warning against the exact tuple-unpack drift P5's own review pass once caught there); `services/orders.py::_fulfil_order` gained a `workshop_credit` branch — the entitlement grant itself, with no enrolment fan-out, is the entire fulfilment. New `PATCH /workshops/{id}` (there was previously no way to edit a workshop after creation at all) and admin UI: a "Requires a credit to book" toggle plus a "Sell credits" section on `/admin/workshops`, mirroring P5's "Sell this path" panel almost exactly. 2 new API tests (full purchase→book→cancel→refund→re-book→exhaust→refuse loop verified against the entitlement row itself, not just HTTP status codes; plus a regression pin that a non-gated workshop's booking is unaffected), full suite green, `ruff`/`mypy` clean, web `typecheck`/`lint`/`build` clean, axe-clean on the new admin panels. Live-smoked end to end through a real browser and a from-scratch buyer account: toggled the credit gate on, created and priced a credit product, confirmed booking was refused with no credits held, bought one via a real EFT purchase approved by a finance user, booked successfully, and watched `/learn/sessions` render the resulting booking correctly. **Phase 5/5 done 2026-08-24**: the real Microsoft Teams provider. `services/meeting/teams.py` rewritten from the always-raising stub — a real client-credentials token fetch mirroring `services/oidc.py::exchange`'s exact shape, no new dependency. A calendar event, not the bare `onlineMeetings` resource: `POST .../events` with `isOnlineMeeting: true` on one platform-wide service mailbox (`Settings.graph_organiser_upn`, new) creates the meeting, emails the invite, and (via `PATCH`/`DELETE`) updates/cancels it — REQ-WS-05's full "create, invite, update, cancel" in one Graph resource, since the bare `onlineMeetings` API has no cancel/update primitive and sends no invite. The `MeetingProvider` Protocol gained `add_attendee`/`remove_attendee` (a no-op for `manual`, GET-then-PATCH for `teams`) so every learner who books, cancels, or gets promoted off the waitlist is individually invited/uninvited, not just the facilitator; `book_session` no longer hardcodes `"manual"`, reading `workshop.meeting_provider` instead. Two silent pre-existing bugs fixed along the way, unreachable until this phase made the Teams path real: `MeetingLink.organiser_user_id` was the booking learner, not the facilitator; the Protocol's own `organiser_user_id` param was passed a `Facilitator.id` where a `User.id` was documented. Admin UI: a manual/Teams provider selector with a "not configured" warning (`GET /workshops` now carries `teams_configured`); `PATCH /workshops/{id}` refactored to genuinely independent partial updates alongside Phase 4's credit toggle. 8 new unit tests (mocked Graph over `httpx`, same `test_sso.py`-style transport fixture) + 2 integration tests (provider-selector validation, a regression pin that `manual` bookings are untouched), full suite green, axe-clean. Live-smoked the admin selector end to end (create → switch to teams → warning appears → persists → switch back → warning clears). **Explicitly bounded**: no Azure AD app registration exists in this environment, so the Graph calls themselves are unit-tested against mocked responses, not live-verified — disclosed plainly, same as Payfast live verification | M–L | Live workshops are half the commercial pitch | DONE |
-| **P8** | **Departments / business units + dept-scoped reporting** (Pass F; audit #30). `departments` (org_id, parent_id), member FK, CSV import column, dept filter on reports, dept-scoped visibility, UI | M | Corporate reporting is flat per organisation. `department` returns **zero hits** | OPEN |
-| ~~**P9**~~ | ~~**Assessment depth** (Pass J; audit #8, #9, #13).~~ **DONE 2026-08-27.** Phase 1: privacy-gated survey results, CSV export and admin results UI. Phase 2: pre/post pairing and a two-threshold delta report. Phase 3: tenant-scoped reusable quiz/survey question bank, copy-on-apply authoring controls and browser coverage. | S–M | — | DONE |
-| **P10** | **Custom certificate design** (Pass I; audit #19). Design fields on templates (logo/background key, colours, layout preset), upload, renderer, admin preview | M | `render_certificate_pdf` is a fixed layout: Helvetica, one border, no logo. Certificates are the visible product of the LMS | OPEN |
-| **P11** | **AI insights vertical slice** (Pass K = Phase 6; audit #42, #43). Provider abstraction, PII-redaction gateway + redaction log, insight jobs, token budgets, kill switch, review UI | L | **Do not start before T13.** Phase 6's demo target is 500 survey responses summarised with zero identifiers transmitted, shown beside the redaction log. Production hardening T7–T12, staged rollout R9 and the B1 data-residency decision now explicitly precede it | OPEN (GATED) |
-| **P12** | **CRM depth** (audit #36, #37). Deal owner/assignee, organisation link, search/filter, lead→deal conversion, contact detail page, import/export; campaigns: use `scheduled_at`, HTML email, preference centre | M | Fine for a demo, thin for daily use | OPEN |
-| ~~**P13**~~ | ~~Small, demo-visible items~~ **DONE 2026-08-26.** LinkedIn certificate sharing; extended CPD fields and expiry; guest-to-paid carry-over; sample-only watermarking; real Zoom and Google Meet providers; and one-on-one coaching discovery plus private slot booking. Coaching expands facilitator availability into open slots, serialises concurrent claims on the facilitator row, creates a capacity-one session, and exposes a learner-safe coach profile without email/user identifiers. Workshops integration tests, a real concurrent-claim test, strict API checks and the production web build pass | S each | — | DONE |
-| ~~**P14**~~ | ~~Mobile layout for the admin shell~~ **DONE 2026-08-23.** Below `md` the sidebar goes off-canvas (slide-in overlay + backdrop, closes on navigation) behind a fixed top bar with a hamburger toggle; `md:` and up is the unchanged fixed sidebar. Verified: axe-clean at 390px both nav states and at 1280px, desktop screenshot unchanged. Original scope: `app/admin/layout.tsx` had a fixed `w-56` sidebar with no narrow-viewport handling; facilitators mark attendance on phones (audit #4) | S | — | DONE |
-| **P15** | **Learner-facing search; notifications centre; email preference centre** (UI design screens 19 + baseline UX) | S–M | Push exists but there is no in-app inbox; no search across catalogue/resources; no email preference page. `notification centre` returns zero hits | OPEN |
-| **P16** | **Workshops calendar screen** (UI design screen 13). Month grid + agenda `.rowlist`, booking reuses `.buybox`, facilitator availability editor | M | Design-only. `calendar` returns zero hits in `apps/web` | OPEN |
-| ~~**P17**~~ | ~~**Cohort lifecycle decision**~~ **DECIDED 2026-09-08.** A cohort is a **scheduled run** — dates, a capacity cap, a facilitator — of a course **or** a learning path. Both are sold today (standalone courses, and the multi-course "executive programmes" that `learning_paths`/`path_enrolments` already model), and it is how the product already uses the word: `courses.format` carries `live_cohort`, workshops have a `cohort_session` type, and the public copy says "ask us when the next cohort runs" and "capped cohort, so everyone speaks". Researching it surfaced that `cohort_id` was carrying **two unrelated jobs**, which is why the question stayed open so long: 02 §11.2 also makes it the aggregation unit for `ai_insights`. Those are now explicitly separated — a three-person run is a legitimate commercial cohort and an illegitimate anonymity set, so the minimum-group-size rule is enforced by AI reporting **at query time** (refuse, or aggregate upward) rather than by constraining which runs may exist. 02 §13 #5 records the resolution and what remains open. | S | — | DONE |
-| **P17a** | **Cohort schema and lifecycle** (follows P17's decision) | M | The table P17 specified: `cohorts` (tenant-scoped, `course_id` **XOR** `learning_path_id`, `starts_at`/`ends_at`, `capacity`, facilitator, state), `Enrolment.cohort_id` promoted from an un-constrained uuid to a real FK, RLS policy and permissions to match the neighbouring tenant-scoped tables, plus the admin screens to create a run and see who is on it. `cohort_id` stays **nullable** — a self-paced enrolment has no cohort by definition. Blocks nothing else, but P18's unified gradebook wants it for group-level achievement | OPEN |
-| **P18** | **Unified gradebook / achievement model** (`what_next.md` item 3). **BACKEND PARTIAL 2026-09-08 (`b0b9b5b`).** Migration `0045`, weighted quiz/assignment achievement projection, assignment scores, learner-owned read endpoint and validation/tests are implemented without changing completion/certificate rules. Still open: admin/learner UI, rubrics, moderation workflow, cohort/group reporting and gradebook export. | M | The shared backend model exists, but the feature is not yet an operator-visible gradebook. | IN PROGRESS |
-| **P19** | **Competency / skills framework** (`what_next.md` item 4) | L | Learning paths exist; nothing connects a completed course to a role requirement or a skill-gap report. Argued as higher enterprise value than P11 — worth weighing against P11's position in this order | OPEN |
-
----
-
-## R — Research-document leftovers (found 2026-08-20 by re-checking each doc against code)
-
-| # | Item | Size | Detail | Status |
-|---|---|---|---|---|
-| ~~**R14**~~ | ~~`test_analytics.py` does not exist~~ **DONE 2026-08-24.** New `tests/test_analytics.py`: 10 tests covering `/revenue-summary`, `/registrations` and both CSV twins — gating, the arithmetic each service function's own docstring promises (`total_users = paid + awaiting + did_not_convert`, `actual_revenue = payments_received - refunds_issued`, `predicted_revenue.total = pipeline + subscription_renewals`), and CSV/JSON parity. Found 2026-08-21: the four payment-analytics endpoints shipped with **zero test coverage**; `test_operations.py` only ever covered `/revenue-series` and the operations overview | S | — | DONE |
-| ~~**R1**~~ | ~~Charts on the payment analytics dashboard~~ **DONE 2026-08-21, and the premise was wrong.** The dashboard was NOT "numbers and tables only": every proportion already rendered as a `.bar` share row with a direct label and percentage, which is the correct form for part-to-whole — the three pies §7 specified would have been downgrades (a 2-slice pie is not a chart). The real gap was **trend over time**, which no endpoint could serve: every analytics figure was a single aggregate for the period. Delivered instead: `GET /analytics/revenue-series` (server-chosen day/week/month buckets, per currency, reconciling exactly with the headline figure) and a hand-rolled SVG line chart. recharts was **not** added — §7 justified the dependency by six charts; the honest count is one | S–M | — | DONE |
-| ~~**R2**~~ | ~~"Podcast engagement" panel on the analytics dashboard~~ **DONE 2026-08-24.** `/admin/analytics` now surfaces plays, completion, CTA conversion and top CTA-converting episodes from the podcast event stream (`6bb1762`) | S | — | DONE |
-| ~~**R3**~~ | ~~Article view events~~ **DONE 2026-08-24.** Public article reads emit the `article.viewed` event for podcast-symmetric resource engagement reporting (`9910a4c`) | S | — | DONE |
-| ~~**R4**~~ | ~~EFT ageing alert (>48h pending)~~ **DONE 2026-08-23.** New daily cron `send_eft_ageing_alerts` (`workers/main.py`) over `due_eft_ageing_alerts()` (SECURITY DEFINER, `0034`, same atomic mark-and-return idiom as `0027`'s workshop reminders) — flags each `eft_pending_approval`/`po_pending_approval` order once via `orders.ageing_alert_sent_at`. Writes a `payment.ageing_alerted` audit event unconditionally (the durable signal, visible in `/admin/audit` regardless of push config) and best-effort push-notifies every user in that tenant holding `payment:approve`. Deliberately kept the tenant/permission lookup *out* of the SECURITY DEFINER function — a tenant with nobody currently holding `payment:approve` must still get the audit row, or the exact failure this item exists to fix (a silent signal) recurs one layer down. Verified: a dedicated test (idempotent, audited, tenant-agnostic-safe) plus a live run against the dev DB with a real 72h-stale order, confirmed showing in `/admin/audit`. Original scope: `02_DATA_MODEL.md` §12.4 designed it, `bank-eft-automation.md` names it as the trigger to revisit EFT automation; zero hits in code meant the signal could never fire | S | — | DONE |
-| ~~**R5**~~ | ~~Completion-time estimates~~ **Found already DONE 2026-08-24, the premise was wrong** (same class of stale-backlog-row as R1/R6): `services/course_wizard.py::_estimate_lesson_minutes` already implements exactly this (video via `duration_seconds`, documents via word count, quizzes via question count, plus surveys/assignments beyond the original ask), `routers/courses.py::list_public_courses`/`get_public_curriculum` already sum it into `estimated_minutes` on both `GET /public/courses` and the curriculum endpoint, and `apps/web/app/catalogue/course-card.tsx` already renders it via `formatDuration()` in the card's meta line — confirmed live against the demo tenant's real courses (non-zero, correctly computed minutes). Original scope (wizard differentiator #8): video `duration_seconds` already stored; documents by word count, quizzes by question count; surface the sum on `GET /public/courses` and in the catalogue | S–M | — | DONE |
-| ~~**R6**~~ | ~~Free-preview nudge~~ **DONE 2026-08-23.** The readiness warning (`has_free_preview`, exact wording this row names) already existed — `course_wizard.py`'s `get_readiness` and the per-lesson toggle in step-pricing.tsx both predate this pass, contrary to this row's "never picked up". What was missing was only the "+ one-click flip" half: `ReadinessPanel` now takes an optional `actions` slot keyed by check code (still "never decides anything" itself — the caller supplies the action), and step 7 wires a "Mark a lesson free" button into `has_free_preview` that PATCHes the first lesson's `access_level` to `public` and reloads, using the same endpoint step 6's toggle already used. Verified end to end against a real course: 70%→80% score, warning clears, axe-clean. Original scope: readiness warning "no lesson is marked public; free previews convert" + one-click flip (wizard differentiator #9) | S | — | DONE |
-| **R7** | **Bulk / zip content upload** (wizard differentiator #10) | M–H | Folder → modules/lessons. Feasible, but uploads are fully memory-buffered today; large zips want presigned upload first | OPEN |
-| ~~**R8**~~ | ~~`robots.txt` + Content Signals policy~~ **DONE 2026-08-24** (the `robots.txt` half; §6.5's own recommendation was to skip the Cloudflare-specific Content-Signals extension until Cloudflare is adopted). New `app/robots.ts`: `User-agent: *` disallows purely functional, no-SEO-value surfaces (admin, account, checkout, auth, the API); `GPTBot`/`CCBot`/`ClaudeBot`/`Google-Extended` additionally disallow the paid/substantive content pages (courses, the free-preview player, the learner course player, paths, podcasts, articles, workshops) — real search engines and human-driven AI fetch (Googlebot, ChatGPT-User) stay free to index them. §6.3's original ask: `devsecops-deployment.md` §6.3 recommends the Cloudflare Content-Signals `robots.txt` extension to separate search indexing from AI training. There was **no `robots.txt` at all** in `apps/web` | S | — | DONE |
-| **R9** | **Feature flags / staged rollout** | M | `devsecops-deployment.md` §5.3: do **not** adopt a platform; extend the existing `subscriptions_enabled` settings pattern to per-tenant and percentage rollout with kill switches. Needed before Phase 6 ships inert (P11) | OPEN |
-| **R10** | **Logo-wall expand toggle** | S | `homepage-redesign.md`: deliberately deferred until the logo count is meaningfully past 9. Revisit at 20+ | DECIDED-NO (for now) |
-| **R11** | **ASR / auto-captions** (wizard differentiator #11) | H | Codebase explicitly declines ASR; collides with the data-residency posture behind `01_PRD` §1.4 decision #4 | BLOCKED (policy) |
-| **R12** | **SCORM import** (wizard differentiator #12) | — | `01_PRD` §1.4 decision #1 puts it out of scope | DECIDED-NO |
-| **R13** | **PayShap Request-to-Pay; direct bank APIs** | M / L | `bank-eft-automation.md` items 3–4: defer RTP until R4's ageing alert fires regularly; direct bank integration is "not worth pursuing at this scale, possibly never" | DECIDED-NO (until R4 fires) |
-| **R15** | **Interoperability strategy decision** (`what_next.md` item 5) | S | SCORM is `DECIDED-NO` (R12), ASR is `BLOCKED (policy)` (R11) — but xAPI, LTI 1.3, HRIS sync, bulk history import and completion webhooks have no decision recorded at all. Documentation/decision task, not a build task, cheap to close | OPEN |
-
----
-
-## O — Operational / platform gaps still open
-
-Seven hardening passes shipped on 2026-08-20 (see `docs/NEXT_AGENT_BRIEF.md` §1).
-These remain.
-
-| # | Item | Size | Detail | Status |
-|---|---|---|---|---|
-| **O1** | **Observability** | M | **Error capture DONE 2026-08-28** (`core/logging.py::init_sentry`, wired into `main.py`'s startup, no-ops cleanly without a DSN like every other unconfigured third party) -- 3 tests, including one that fires a genuinely unhandled exception through a mini-app mirroring `main.py`'s exact exception-handler registration and confirms it reaches Sentry, while a deliberate `AppError` refusal correctly does not. Still open: no metrics, tracing, log shipping, dashboards or alerts, though `06_OPERATIONS.md` describes them. A real incident is diagnosable now, but still not observable in aggregate | OPEN |
-| **O2** | **Backups + a tested restore drill** | M | Prose only (the PG16→18 dump/restore). No scheduled backup, no restore ever tested. Phase 7's demo target is literally "restore drill completed" | OPEN |
-| **O3** | **POPIA data-subject rights** | M | No export-my-data, no delete-my-account, no retention jobs beyond guest expiry and auth purge. `04_SECURITY` §11 still lists legal hold and breach notification as open | OPEN |
-| ~~**O13**~~ | ~~Upload handlers are easy to get wrong~~ **DONE 2026-08-24.** New `core/object_keys.py::build_object_key()` — joins server-controlled prefix segments with a sanitised filename in one call, so a new upload site can't skip sanitising by forgetting the join. All six existing call sites (`orders.py` PO/proof, `media.py` source/playback, `assessment.py` submissions, `podcasts.py` audio) migrated. Surfaced a real edge case along the way: two sites fused a `uuid4().hex` uniqueness prefix into the filename with a hyphen before sanitising — running the *combined* string through `safe_filename` would silently drop that prefix for a client filename containing a `/`, since `safe_filename` takes only the last segment. Fixed by making the uuid its own path segment instead. 6 new unit tests. Original scope: the 2026-08-21 key-sanitising fix touched six call sites that had all copied the same unsafe pattern; a single helper call sites must use would stop the seventh | S | — | DONE |
-| ~~**O4**~~ | ~~Secret scanning in CI~~ **DONE 2026-08-23.** New `secrets` job: gitleaks (checksum-verified release download, same supply-chain reasoning as the `quality` job's Trivy step), full commit history (`fetch-depth: 0`), gated (`--exit-code` default). `.gitleaks.toml` allowlists exactly the nine pre-existing dev/test fixtures found by an actual run (Garage's dev keys, its rpc/admin tokens, two test-fixture secrets) — each verified individually against its file, matched by literal secret value so a *different* new secret in the same file still fails. Original scope: no gitleaks/trufflehog despite dev credentials committed in `infra/docker-compose.yml` and `ci.yml`; those are defensibly dev-scoped, but nothing caught the day a real key landed | S | — | DONE |
-| ~~**O5**~~ | ~~Release management~~ **PARTLY DONE 2026-08-23.** `CHANGELOG.md` (Keep a Changelog format, linked from README) plus the `v0.1.0` tag on this pass — the first version marker; `[Unreleased]` is where the next tag's entries land. Deliberately not backfilled further back than that: reconstructing exact per-commit boundaries across 150+ untagged commits after the fact would carry false precision. **Still open**: no PRs (direct-to-main is this project's existing, documented convention — that's a workflow decision for the user, not something to change unilaterally) and the 29 `autosave:` commits already on `main` stay as they are (history, not something to rewrite silently) | S | — | PARTLY DONE |
-| **O6** | **Deeper browser coverage** | M | **T3 DONE 2026-08-27:** a required `authenticated-e2e` CI job now starts the full API/DB/Redis/ClamAV stack, seeds the nine fixture accounts and runs the learner assessment, EFT checkout/return, finance approval and organisation seat purchasing journeys for real — they no longer silently skip. Video playback remains the one uncovered journey | OPEN |
-| ~~**O7**~~ | ~~**`react-hooks/set-state-in-effect` cleanup**~~ **DONE 2026-08-28.** All 53 warnings cleared across three slices, not a blanket disable: slice 1 fixed the quiz-timeout auto-submit bug the warning was pointing at (`7f0a43f`); slice 2 mechanically fixed the 32 call sites where the linter couldn't prove a called function's `setState` only ever happened after its first `await` (`4522960`); slice 3 gave the remaining 19 real cases (`admin/analytics`, `admin/audit`, `admin/page`, `admin/payments` had a genuine pre-await `setState`; 15 more called a setState setter directly in the effect body) the same individual behavioural review, deferring each into a microtask -- verified to be a real fix, not a lint trick, since React's own commit/paint cycle drains microtasks before ever painting a frame. Two of the trickier ones (`admin/layout.tsx`'s mobile-nav-closes-on-navigation, `lesson-activity-panel.tsx`'s poll-effect-keyed-on-videoPhase) got live-verified rather than assumed safe. Left alone, correctly: 2 pre-existing `@next/next/no-img-element` warnings in `site-header.tsx` and 1 `import/no-anonymous-default-export` in `postcss.config.mjs` -- unrelated rules, out of this item's scope | DONE |
-| **O8** | **Docs consolidation + codebase shrink** | M | `authedFetch` consolidation is DONE, `NEXT_AGENT_BRIEF.md` was refreshed 2026-08-27 (T4), and `docs/archive/` now holds every superseded one-off review (`latest_critique.md`, `TTLI_Code_report.md`, `what_next.md` — its own new-backlog-items section folded into P17–P19/O14/R15 first — plus, as of 2026-09-04, `TTLI_Audit_Report_2026-09-02.md` and `fable5.1_review.md` themselves, now that both their remediation passes are committed; `docs/REMEDIATION_LEDGER.md` is the single tracker for what either found and its current status, replacing both). `what_next.md` item 6 (GitHub Actions commit-SHA pinning) is already resolved — `ci.yml` pins every action by full commit SHA with a version comment today. Still open: `HANDOFF.md`/`STATUS.md` append-only bloat (kept as historical logs, not archived — they're the record, not a superseded snapshot), the 11k-line generated API client being barely used (see `docs/REMEDIATION_LEDGER.md` Part A, M7, for a scoped incremental-adoption plan), and an undersized shared-component layer | OPEN |
-| ~~**O9**~~ | ~~Test courses in the dev catalogue~~ **DONE 2026-08-21** — `--apply` run: 276 course assignments, 16 episodes, 8 articles, 8 recommendations hidden (nothing deleted, reversible). Catalogue is now the 7 real programmes | S | — | DONE |
-| **O10** | **Multi-currency / i18n plumbing** | M | Tax engine seeds SA VAT only and refuses international buyers; UI is English-only, ZAR-only. README's pitch is "South Africa and internationally" | BLOCKED on B2 |
-| **O11** | **Cloud provisioning: Azure Container Apps, Front Door, IaC, registry push, staging** | L | Containerisation is done and verified (2026-08-20). Everything above the image is not: no IaC, no registry, no environment, no TLS/edge, no staging | BLOCKED on B3 |
-| **O12** | **Load test at 100 concurrent** | M | Phase 7 demo target. Needs O11 first to be meaningful | BLOCKED on O11 |
-| **O14** | **Large-module decomposition** (`what_next.md` item 1; `TTLI_Audit_Report_2026-09-02.md` M6) | L | `services/workshops.py` (1358 lines), `services/enrolment.py` (1026), `routers/assessment.py` (987), `services/learning_paths.py` (803), `services/orders.py` (781), `routers/auth.py` (683) on the backend; `admin/workshops/page.tsx`, `lesson-activity-panel.tsx`, `checkout/page.tsx` on the frontend. Real change-risk, not cosmetic — several mix authorization, state changes, provider calls and reporting in one file. The 2026-09-02 audit's M6 finding gives `services/workshops.py` a concrete, line-verified split into `authoring`/`booking`/`attendance`/`reporting` submodules with zero router or test touch required — the proven pattern to repeat; `routers/auth.py` (login/refresh/mfa/recovery/magic-link) is documented with equal rigor as the direct follow-on. Characterise with tests before any further extraction, per both sources' own caution | OPEN |
-| ~~**O15**~~ | ~~**`postfix-relay` CVE review**~~ **DONE 2026-09-08.** Reviewed the 72: there was no per-CVE reachability case to make, because **every one of the 74 CRITICAL/HIGH findings had a published Alpine fix already**. This was never upstream debt like the `.trivyignore` entries — `boky/postfix` simply has not rebuilt `5.1.0-alpine` since 2026-01-04, and there is no newer *release* to move to (`edge-alpine` rebuilds more often but is a mutable development tag, and its 24 findings are all fixable too — less stale, not clean). So the answer was to rebuild, not to except: `infra/postfix-relay/Dockerfile` derives from the same pinned digest and runs `apk upgrade`, which clears all 74 OS findings. A second layer upgrades the `/sasl` XOAUTH2 virtualenv (PyJWT, cryptography, urllib3) that `apk` does not reach — `msal` had to move to 1.38.0 with it, because cryptography's fix for CVE-2026-69247 lands in 50.0.0 and msal 1.34.0 capped it at <49; `pip check` now fails the build if that conflict ever reopens. Deliberately a derived image rather than a hand-rolled postfix: boky's `/scripts/run.sh` implements the RELAYHOST/SASL-map/ALLOW_EMPTY_SENDER_DOMAINS behaviour the compose file configures. The image is built, scanned, SBOM'd, pushed and cosigned alongside ttli-api/ttli-web, and is in the blocking scan loop **with no exceptions of its own** — it scans clean at zero. `infra/docker-compose.single-vm.yml` now pulls that image by digest (`sha256:d0ec748f...`, the build from 0a5d08e) instead of boky's, so production and the gate run the same clean bits | M | — | DONE |
-
----
-
-## B — Blocked on someone outside engineering
-
-Do not build around these; they change the build, not just the schedule.
-The owner-ready questions, required evidence and answer format are consolidated
-in [`PLATFORM_OWNER_DECISION_PACK.md`](PLATFORM_OWNER_DECISION_PACK.md).
-
-| # | Item | Blocks |
+| Item | Status / blocker | Exit evidence |
 |---|---|---|
-| **B1** | **The platform-owner decision pack, including the 10 decisions in `01_PRD.md` §1.4, signed** | Phase 0, production configuration and several items below |
-| **B2** | Accountants' written position on VAT for international digital services | O10, all pricing |
-| **B3** | Azure region/account availability confirmed and provisioned | O11, O12 |
-| **B4** | **Payfast (and Netcash) sandbox/production credentials** | Card checkout has never run against a real account; also blocks the one actionable EFT item in R13 |
-| **B5** | Content inventory — video count, duration, source formats; real podcast audio; book copy | The unit-cost model, transcode sizing, and every "the platform is built but empty" page |
-| **B6** | Brand/design system sign-off; wireframes for the six persona views | — |
-| **B7** | Real footer social URLs | The last `homepage-redesign.md` item |
-| **B8** | Information Officer registered with the Information Regulator | POPIA compliance posture (customer obligation) |
-| ~~**B9**~~ | ~~GitHub Actions billing~~ | **RESOLVED by 2026-08-27:** Actions runs are executing again. Keep `scripts/gates.sh` as the local equivalent; current red CI is the actionable formatting failure in T1, not billing |
+| Payfast sandbox matrix | **BLOCKED on B4 credentials.** | Success/cancel/duplicate+replayed ITN/bad signature/wrong amount or currency/delay/refund/outage matrix recorded. |
+| Real Entra/OIDC acceptance | **Conditional.** Required if a pilot tenant uses SSO; needs tenant app registration. | Real IdP login/callback/session acceptance recorded. |
+| Production-shaped load test | **BLOCKED on a production-shaped host.** | Pilot profile exercised with latency, DB-pool saturation and duplicate-fulfilment assertions. |
 
 ---
 
-## Suggested order, if you want one
+## 2. 2026-09-11 independent review findings
 
-1. ~~**P1**~~ — done 2026-08-21.
-2. ~~**P2**~~ — done 2026-08-21.
-3. ~~**R1**~~ — done 2026-08-21.
-4. ~~**P6**~~ — done 2026-08-21 (bar #31, blocked on Payfast credentials).
-5. ~~**P3**~~ — done 2026-08-21. ~~**P4**~~ — SSO done 2026-08-22/23 (see git log; not yet given its own STATUS pass header).
-6. ~~Quick wins~~ — **R4**, **R6**, **O4**, **O5** (partly — no PRs/autosave-rewrite deliberately left alone), **O9**, **P14** all done 2026-08-21/23.
-7. ~~**P5**~~ — done 2026-08-23. ~~**P7**~~ — done 2026-08-24 (5 phases; Teams client unit-tested against mocked Graph, not live-verified — no Azure AD app registration exists here).
-8. ~~T1–T5~~ — done 2026-08-27. ~~T6~~ — done 2026-08-28 under O7.
-9. **Now:** T9–T12, the production-hardening gate. T7/T8 passed remotely;
-   T9 is implemented but remains open pending production restore evidence.
-10. **Then:** T13. P11/Phase 6 begins only after that readiness decision.
+These findings were verified against code at the review baseline. Status below is current; the
+original detailed sequencing and exit criteria are in [`BACKLOG_2026-09-11.md`](BACKLOG_2026-09-11.md).
+F14–F16 were not registered findings in that review; the numbering intentionally jumps from
+F13 to F17.
+
+| Ref | Finding | Status |
+|---|---|---|
+| **F1** | Four authenticated Playwright specs were green by never entering the API-backed required loop. | **DONE — #29 / CI #178.** |
+| **F2** | Tenant-domain resolution cache was not invalidated on domain mutation. | **DONE — #29 / CI #178.** |
+| **F3** | Gradebook N+1 around quiz lookup and attempts. | **OPEN.** |
+| **F4** | Learner dashboard N+1 around quiz lookup and attempts remaining. | **OPEN.** |
+| **F5** | Campaign send loops contacts and enqueues inside the request transaction. | **OPEN.** |
+| **F6** | Admin lists/exports lack consistent pagination/ceilings. | **OPEN.** |
+| **F7** | `infra/docker-compose.prod.yml` is stale relative to the single-VM production topology. | **OPEN.** |
+| **F8** | Compose resource/log-rotation limits are incomplete. | **OPEN.** |
+| **F9** | Worker had no active healthcheck; updater could accept a running-but-broken worker. | **IN PROGRESS — #25.** |
+| **F10** | Dependabot lacks Docker ecosystem coverage for base images. | **OPEN.** |
+| **F11** | CI duplicates expensive browser/build/test/tool-install work. | **OPEN.** |
+| **F12** | Digest-pinned images remain partly non-reproducible because package/transitive resolution is not fully locked. | **OPEN.** |
+| **F13** | Date/money formatting is inconsistent across several pages. | **OPEN.** |
+| **F17** | Screenshot-pass UX defects: push prompt placement, mobile header/catalogue/player and learner IA. | **OPEN.** |
+| **F18** | Anonymous storefront pages are force-dynamic/no-store and lack route loading states. | **OPEN.** |
+| **F19** | Local `ttli_test` state can accumulate across runs. | **OPEN.** |
+| **F20** | Thin test areas plus broad exception handling in tenant-user role/suspension paths. | **OPEN.** |
+| **F21** | Migration round-trip exercises only the newest migration. | **OPEN.** |
+| **F22** | Trivy is installed from a mutable apt channel rather than a checksum-pinned release. | **OPEN.** |
+
+The same review ruled out authenticated-response caching through the BFF, an SSO `next=` open
+redirect, repeated `getTheme()` work in the root layout, and the admin access-token boot race.
+Do not re-raise those without new evidence.
+
+---
+
+## 3. Structural debt after Sprint 1
+
+Do this after the production gate, and profile before optimising.
+
+| Area | Items | Status |
+|---|---|---|
+| Data access/performance | F3, F4, F5, F6; slow-query capture + `EXPLAIN (ANALYZE, BUFFERS)` before indexes. | **OPEN.** |
+| Storefront delivery | F18 caching/revalidation and `loading.tsx` coverage. | **OPEN.** |
+| Frontend contract safety | Incremental typed facade over `packages/api-client`, highest-risk pages first. | **OPEN.** |
+| Shared components / decomposition | O8/O14; split large mixed-responsibility pages/services after characterisation tests. | **OPEN.** |
+| UX | F17a–e. | **OPEN.** |
+| Test/CI hygiene | F7, F8, F10, F11, F12, F19, F20, F21, F22; media lifecycle and BFF edge coverage. | **OPEN.** |
+
+---
+
+## 4. Product / platform backlog after hardening
+
+Only owner-approved work should move ahead of the structural-debt queue.
+
+| Ref | Item | Status |
+|---|---|---|
+| **P6 residual** | Live Payfast verification. | **BLOCKED on B4.** |
+| **P8** | Departments / business units + department-scoped reporting. | **OPEN.** |
+| **P10** | Custom certificate design. | **OPEN.** |
+| **P11** | AI insights vertical slice. | **GATED on T13.** |
+| **P12** | CRM depth. | **OPEN.** |
+| **P15** | Learner search, notifications centre, email preferences. | **OPEN.** |
+| **P16** | Workshops calendar screen. | **OPEN.** |
+| **P17a** | Cohort schema and lifecycle. | **OPEN.** |
+| **P18** | Unified gradebook UI/moderation/group reporting/export. | **IN PROGRESS — backend partial only.** |
+| **P19** | Competency / skills framework. | **OPEN.** |
+| **R7** | Bulk / zip content upload. | **OPEN.** |
+| **R9** | Feature flags / staged rollout. | **OPEN; prerequisite for P11 rollout.** |
+| **R11** | ASR / auto-captions. | **BLOCKED on policy/data-residency position.** |
+| **R15** | Interoperability strategy decision: xAPI/LTI/HRIS/history import/completion webhooks. | **OPEN decision task.** |
+| **O6** | Deeper browser coverage — video playback remains uncovered. | **OPEN.** |
+| **O8** | Documentation consolidation + generated-client/shared-component cleanup. | **OPEN.** |
+| **O10** | Multi-currency / i18n plumbing. | **BLOCKED on B2.** |
+| **O11** | Azure production/staging provisioning and IaC. | **BLOCKED on B3.** |
+| **O12** | Production-shaped load test. | **BLOCKED on O11 / production host.** |
+| **O14** | Large-module decomposition. | **OPEN.** |
+
+Explicitly deferred/declined items such as SCORM and direct-bank integration remain documented
+in the commit-pinned historical backlog; they are not silently converted back into build work here.
+
+---
+
+## 5. External decisions / evidence
+
+Do not code around these.
+
+| Ref | Required input | Blocks |
+|---|---|---|
+| **B1** | Signed platform-owner decision pack. | Phase 0 decisions, production configuration, T13/P11. |
+| **B2** | Accountants' written international VAT position. | O10 / international pricing. |
+| **B3** | Azure region/account/environment provisioned. | O11, O12. |
+| **B4** | Payfast/Netcash sandbox and production credentials. | Live card acceptance. |
+| **B5** | Real content inventory and media inputs. | Cost model and production content readiness. |
+| **B6** | Brand/design-system sign-off. | Final persona/UI sign-off. |
+| **B7** | Real footer social URLs. | Final public-site cleanup. |
+| **B8** | Information Officer responsibility/registration confirmed. | T12 compliance posture. |
+
+---
+
+## Working rule
+
+Every implementation PR must update the relevant row here with evidence in the same change.
+Do not create parallel status documents. Historical snapshots are retained by immutable Git
+history; current truth belongs here. The ordered Sprint-1 closure remains issue #31 until that
+gate is complete.
