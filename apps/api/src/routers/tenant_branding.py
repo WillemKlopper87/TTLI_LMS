@@ -22,12 +22,14 @@ from fastapi import APIRouter, File, Response, UploadFile, status
 from src.core.deps import (
     AuditedSessionDep,
     PrincipalDep,
+    RedisDep,
     SessionDep,
     SettingsDep,
     StorageDep,
     TenantDep,
 )
 from src.core.errors import AppError, NotFound, ServiceUnavailable
+from src.core.tenancy import invalidate_tenant_host_cache
 from src.models.audit import AuditAction
 from src.models.tenant import TenantDomain
 from src.models.theme import TenantTheme
@@ -247,6 +249,23 @@ async def list_domains(
     )
 
 
+async def _commit_domain_change_and_invalidate(
+    session: AuditedSessionDep, redis: RedisDep, hostname: str
+) -> None:
+    """Commit a domain mutation without allowing a stale cache refill to survive.
+
+    Evicting only before commit leaves a race: another request can miss the
+    uncommitted database change and repopulate the old cache value. Evicting
+    only after commit leaves the already-cached old value readable until the
+    eviction. The two-phase delete closes both windows. The request-scoped
+    session dependency may commit again during teardown; with no active
+    transaction that second commit is a harmless no-op.
+    """
+    await invalidate_tenant_host_cache(redis, hostname)
+    await session.commit()
+    await invalidate_tenant_host_cache(redis, hostname)
+
+
 @router.post(
     "/domains",
     response_model=DomainRow,
@@ -258,6 +277,7 @@ async def add_domain(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
 ) -> DomainRow:
     principal.require(MANAGE)
     domain = await branding.add_domain(
@@ -272,7 +292,9 @@ async def add_domain(
         entity_id=domain.id,
         after={"hostname": domain.hostname, "added": True},
     )
-    return _domain_row(settings.secret_key, principal.tenant_id, domain)
+    row = _domain_row(settings.secret_key, principal.tenant_id, domain)
+    await _commit_domain_change_and_invalidate(session, redis, str(domain.hostname))
+    return row
 
 
 @router.delete(
@@ -286,6 +308,7 @@ async def remove_domain(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     tenant: TenantDep,
+    redis: RedisDep,
 ) -> None:
     principal.require(MANAGE)
     domain = await branding.remove_domain(
@@ -301,6 +324,7 @@ async def remove_domain(
         before={"hostname": domain.hostname},
         after={"removed": True},
     )
+    await _commit_domain_change_and_invalidate(session, redis, str(domain.hostname))
 
 
 __all__ = ["router"]

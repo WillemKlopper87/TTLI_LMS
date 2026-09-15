@@ -20,6 +20,11 @@ test.beforeEach(async ({ request }) => {
       failOnStatusCode: false,
     })
     .catch(() => null);
+  if ((!probe || !probe.ok()) && process.env.REQUIRE_API_E2E === "1") {
+    throw new Error(
+      `authenticated E2E requires a seeded API session for ${EMAIL}, but login failed`,
+    );
+  }
   test.skip(
     !probe || !probe.ok(),
     `no API session available for ${EMAIL} — start the API (scripts/dev-up.sh + uvicorn) ` +
