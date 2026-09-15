@@ -5,11 +5,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class DataExportResponse(BaseModel):
-    download_url: str
-    expires_in_seconds: int
-
-
 class EraseAccountRequest(BaseModel):
     # A deliberate extra step, not identity verification (the caller is
     # already authenticated) — a one-click POST to an irreversible
