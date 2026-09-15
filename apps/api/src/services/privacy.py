@@ -1,16 +1,13 @@
 """Data-subject rights (BACKLOG T12, 04_SECURITY_AND_COMPLIANCE.md §5.3).
 
-The access/export path deliberately keeps its decrypted artefact out of object
-storage. A generated export is held in Redis behind a high-entropy capability
-for five minutes and removed on first successful download; Redis TTL is the
-crash-safe fallback. This prevents a short-lived signed link from leaving an
-indefinite decrypted PII object behind.
+Personal-data exports are generated only for the authenticated request and returned
+directly to the caller. Decrypted export JSON is never persisted in object storage,
+Redis, a bearer URL, or another server-side artefact.
 """
 
 from __future__ import annotations
 
 import json
-import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -20,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
-from src.core.errors import AppError, NotFound
+from src.core.errors import AppError
 from src.models.audit import AuditAction
 from src.models.commerce import Order
 from src.models.consent import ConsentRecord
@@ -29,9 +26,6 @@ from src.models.credential import Certificate
 from src.models.learning import Enrolment
 from src.models.user import User
 from src.services import audit, tokens
-
-EXPORT_EXPIRES_IN_SECONDS = 300
-EXPORT_KEY_PREFIX = "privacy-export:"
 
 
 async def _export_payload(
@@ -137,28 +131,15 @@ async def _export_payload(
     }
 
 
-async def build_export(
-    session: AsyncSession,
-    crypto: CryptoBox,
-    redis: Redis,
-    *,
-    user: User,
-    api_public_url: str,
-) -> str:
-    """Assemble a five-minute, one-time personal-data download capability.
+async def build_export(session: AsyncSession, crypto: CryptoBox, *, user: User) -> bytes:
+    """Build an audited JSON export for immediate authenticated download.
 
-    The decrypted JSON never enters object storage. Redis TTL guarantees
-    expiry even if the process dies before a download occurs; the download
-    endpoint deletes the key after a successful read.
+    The bytes are returned to the request handler and are never written to a
+    storage backend or short-lived cache. This keeps the decrypted copy inside
+    the request lifetime only.
     """
     payload = await _export_payload(session, crypto, user=user)
-    body = json.dumps(payload, indent=2, ensure_ascii=False)
-    token = secrets.token_urlsafe(32)
-    await redis.set(
-        f"{EXPORT_KEY_PREFIX}{token}",
-        body,
-        ex=EXPORT_EXPIRES_IN_SECONDS,
-    )
+    body = json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
     await audit.record(
         session,
         tenant_id=user.tenant_id,
@@ -167,17 +148,7 @@ async def build_export(
         entity_type="user",
         entity_id=user.id,
     )
-    return f"{api_public_url.rstrip('/')}/api/v1/privacy/export-download?token={token}"
-
-
-async def consume_export(redis: Redis, *, token: str) -> bytes:
-    """Return an export once, deleting the capability immediately after read."""
-    key = f"{EXPORT_KEY_PREFIX}{token}"
-    payload = await redis.get(key)
-    if payload is None:
-        raise NotFound("This privacy export has expired or has already been downloaded.")
-    await redis.delete(key)
-    return str(payload).encode("utf-8")
+    return body
 
 
 _TOMBSTONE_NAME = "Erased user"
@@ -267,12 +238,4 @@ async def clear_legal_hold(session: AsyncSession, *, user: User, actor_user_id: 
     )
 
 
-__all__ = [
-    "EXPORT_EXPIRES_IN_SECONDS",
-    "EXPORT_KEY_PREFIX",
-    "build_export",
-    "clear_legal_hold",
-    "consume_export",
-    "erase_user",
-    "set_legal_hold",
-]
+__all__ = ["build_export", "clear_legal_hold", "erase_user", "set_legal_hold"]
