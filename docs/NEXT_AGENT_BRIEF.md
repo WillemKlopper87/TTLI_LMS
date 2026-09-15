@@ -12,7 +12,7 @@ belongs in `docs/archive/`, `STATUS.md` and `HANDOFF.md`.
 |---|---|
 | `main` | `7a4e2bf762ae3db3094f344832ded6a33bc2d6c6` after #25. Always verify with `git log -1` before acting; do not treat this document as a permanent SHA source. |
 | Branch protection | PR flow with required `quality`, `web`, `authenticated-e2e`, `secrets`, `images`; keep `main` green and up to date. |
-| Migrations | `0001`–`0045` on current `main`. #26 proposes `0046`; do not assume it exists until that PR merges. |
+| Migrations | This branch contains `0001`–`0046`; migration `0046` lands with #26. Current `main` remains at `0045` until this PR merges. |
 | Authenticated E2E | Required API-backed job runs **all nine** authenticated spec files serially. `REQUIRE_API_E2E=1` makes readiness/seed failures hard failures; the API-less `web` job may still skip authenticated journeys by design while owning public/browser/axe coverage. |
 | Current hardening gate | F1/F2 are closed; F9/T10 code is merged. #26/T12 is the active code gate, followed by T11 and the T9/T10/T12 operator evidence. |
 
