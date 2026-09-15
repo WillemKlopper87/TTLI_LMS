@@ -5,8 +5,7 @@ ownership and exit criteria rather than a chronological build narrative.
 
 - Detailed ordered remediation queue: [`BACKLOG_2026-09-11.md`](BACKLOG_2026-09-11.md),
   refreshed on 2026-09-15.
-- Full pre-refresh backlog, including completed historical rows and long implementation notes:
-  [`archive/BACKLOG_PRE_2026-09-15.md`](archive/BACKLOG_PRE_2026-09-15.md).
+- Exact pre-refresh backlog snapshot: [#23 pre-refresh `docs/BACKLOG.md`](https://github.com/WillemKlopper87/TTLI_LMS/blob/49555bc963609c49f202c312add7c248afa4134d/docs/BACKLOG.md).
 - Sprint-1 merge/evidence coordination: GitHub issue #31.
 
 **Status key:** `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED` · `GATED` · `DECIDED-NO`.
@@ -118,7 +117,7 @@ Only owner-approved work should move ahead of the structural-debt queue.
 | **O14** | Large-module decomposition. | **OPEN.** |
 
 Explicitly deferred/declined items such as SCORM and direct-bank integration remain documented
-in the archived backlog; they are not silently converted back into build work here.
+in the commit-pinned historical backlog; they are not silently converted back into build work here.
 
 ---
 
@@ -142,5 +141,6 @@ Do not code around these.
 ## Working rule
 
 Every implementation PR must update the relevant row here with evidence in the same change.
-Do not create parallel status documents. Historical detail belongs in `docs/archive/`; current
-truth belongs here. The ordered Sprint-1 closure remains issue #31 until that gate is complete.
+Do not create parallel status documents. Historical snapshots are retained by immutable Git
+history; current truth belongs here. The ordered Sprint-1 closure remains issue #31 until that
+gate is complete.
