@@ -40,6 +40,11 @@ pyotp==2.10.0
 boto3==1.43.67
 azure-storage-blob==12.30.0
 arq==0.28.0
+# Official Prometheus client. Metrics are exposed only on internal compose
+# ports (core/metrics.py), so this adds no public HTTP surface. The collector
+# is deliberately replaceable by Azure Monitor later; metric names/labels are
+# the application contract, not the storage backend.
+prometheus-client==0.26.0
 # The Payfast ITN "confirm with provider" round-trip (03 §5.7,
 # services/payments/payfast.py) — Payfast's own documented anti-forgery
 # check needs a real outbound HTTPS POST. Already a pinned dev/test
