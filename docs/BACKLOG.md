@@ -7,6 +7,7 @@ ownership and exit criteria rather than a chronological build narrative.
   refreshed on 2026-09-15.
 - Exact pre-refresh backlog snapshot: [#23 pre-refresh `docs/BACKLOG.md`](https://github.com/WillemKlopper87/TTLI_LMS/blob/49555bc963609c49f202c312add7c248afa4134d/docs/BACKLOG.md).
 - Sprint-1 merge/evidence coordination: GitHub issue #31.
+- Master delivery roadmap through the January 2027 integrated release: GitHub issue #32.
 
 **Status key:** `DONE` · `IN PROGRESS` · `OPEN` · `BLOCKED` · `GATED` · `DECIDED-NO`.
 
@@ -24,9 +25,9 @@ accepts a named residual risk.
 | **F1** | Truthful authenticated browser coverage | **DONE 2026-09-15 via #29.** CI #178 proves all nine named authenticated specs ran under `REQUIRE_API_E2E=1` with no silent skips. Merged as `3d28fd5`. | All nine authenticated journeys execute and pass in the required API-backed job. |
 | **F2** | Tenant-domain cache invalidation | **DONE 2026-09-15 via #29.** Domain writes now use `cache-delete → commit → cache-delete`, with regression coverage for hit/miss eviction and hostname normalization. | A domain add/remove is authoritative immediately; TTLs are fallback bounds only. |
 | **T9 / O2** | Backups + restore rehearsal | **OPEN — operator evidence.** Backup/restore tooling exists; no code change can substitute for a real off-VM crypt destination, accountable owner and production-shaped restore drill. | Archive lands off-host; isolated restore succeeds; measured RPO/RTO recorded and within targets. |
-| **F9 / T10** | Worker health, deployment integrity and rollback proof | **IN PROGRESS — #25 refreshed onto current `main`.** Code now gives the worker a real `arq --check` Docker healthcheck with a 30 s sentinel refresh, makes the rolling updater gate and roll back API+worker on worker-health failure, emits `release-<sha>.json` with live image/version/readiness evidence, and has the encrypted backup path upload/prune those manifests off-host. Remaining before T10 closes: exact-head protected CI, merge, then a forced broken-worker rollback rehearsal on the production-shaped host with before/after evidence. | Stalled worker fails deployment; every release emits evidence; failed worker release rolls API+worker back together and known-good canary passes. |
+| **F9 / T10** | Worker health, deployment integrity and rollback proof | **CODE DONE 2026-09-15 via #25; operator evidence remains.** CI #189 passed all five protected gates and #25 merged as `7a4e2bf`. Worker health now uses `arq --check` with a 30 s sentinel refresh; a failed worker rollout rolls API+worker back together; normal and rollback-state release manifests are written and the encrypted backup path persists them off-host. Remaining T10 gate: forced broken-worker rollback rehearsal on a production-shaped host with before/after evidence and known-good recovery. | Stalled worker fails deployment; every release emits evidence; failed worker release rolls API+worker back together and known-good canary passes. |
 | **T11 / O1** | Minimum viable observability | **IN PROGRESS — #30.** Sentry error capture is already shipped. #30 owns aggregate API/worker/DB/queue/storage metrics, internal collection, alerting, searchable structured logs and an operator dashboard. | Required signals are collected without tenant/user-cardinality leakage; alerts are actionable; logs survive container restart and are searchable by request/job correlation id. |
-| **T12 / O3** | POPIA operational lifecycle | **IN PROGRESS — #26.** Open PR owns the current API tranche for access/export, erasure/anonymisation, legal hold and consent withdrawal. Retention policy/enforcement, admin workflow, Information Officer responsibility and remaining legal/owner decisions stay explicitly open. | Data-subject lifecycle is tested end to end; retained financial/accreditation records are de-identified rather than incorrectly deleted; owner/legal decisions are recorded. |
+| **T12 / O3** | POPIA operational lifecycle | **IN PROGRESS — #26 refreshed after #25.** Current code tranche provides access/export, anonymising erasure, legal hold and consent withdrawal. Export JSON is now an ephemeral five-minute Redis capability deleted on first download, so it does not leave an indefinite decrypted object in storage. The export is still explicitly non-exhaustive: workshops, survey responses and CRM contact history remain support-handled residual categories. Retention policy/enforcement, admin workflow, Information Officer responsibility and remaining legal/owner decisions stay open. | Data-subject lifecycle is tested end to end; retained financial/accreditation records are de-identified rather than incorrectly deleted; export coverage/residual process is explicit; owner/legal decisions are recorded. |
 | **T13 / P11** | Phase 6 readiness decision | **GATED.** Do not start the AI vertical slice before T9–T12 are closed or explicitly accepted and data-residency/budget/kill-switch decisions are signed. | Readiness decision recorded; tenant kill switches and budget enforcement exist before any LLM call path. |
 
 ### Integration acceptance still required
@@ -56,7 +57,7 @@ F13 to F17.
 | **F6** | Admin lists/exports lack consistent pagination/ceilings. | **OPEN.** |
 | **F7** | `infra/docker-compose.prod.yml` is stale relative to the single-VM production topology. | **OPEN.** |
 | **F8** | Compose resource/log-rotation limits are incomplete. | **OPEN.** |
-| **F9** | Worker had no active healthcheck; updater could accept a running-but-broken worker. | **CODE COMPLETE IN #25; protected CI + merge pending, then rollback rehearsal evidence remains under T10.** |
+| **F9** | Worker had no active healthcheck; updater could accept a running-but-broken worker. | **DONE IN CODE — #25 / CI #189 / `7a4e2bf`; T10 rollback rehearsal evidence still open.** |
 | **F10** | Dependabot lacks Docker ecosystem coverage for base images. | **OPEN.** |
 | **F11** | CI duplicates expensive browser/build/test/tool-install work. | **OPEN.** |
 | **F12** | Digest-pinned images remain partly non-reproducible because package/transitive resolution is not fully locked. | **OPEN.** |
@@ -142,5 +143,5 @@ Do not code around these.
 
 Every implementation PR must update the relevant row here with evidence in the same change.
 Do not create parallel status documents. Historical snapshots are retained by immutable Git
-history; current truth belongs here. The ordered Sprint-1 closure remains issue #31 until that
-gate is complete.
+history; current truth belongs here. Sprint-1 closure remains issue #31; the macro roadmap
+through the integrated January 2027 release is issue #32.
