@@ -1,27 +1,22 @@
 """Data-subject rights (`services/privacy.py`, BACKLOG T12).
 
-Service-level, not HTTP: the invariants that matter here — anonymisation
-never deletes the row, a legal hold actually blocks erasure, the export
-contains exactly what it claims to, tombstoning cannot collide with the
-per-tenant email uniqueness constraint — live in the service, and testing
-them there avoids the auth/login boilerplate every other router-level test
-file in this suite duplicates for itself (NEXT_AGENT_BRIEF.md's own
-complaint about the test suite).
+Service-level tests pin the invariants that matter: exports are short-lived and
+one-time, anonymisation never deletes the user row, and legal hold actually
+blocks erasure.
 """
 
 from __future__ import annotations
 
+import json
 import socket
 import uuid
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
-from src.core.errors import AppError
+from src.core.errors import AppError, NotFound
 from src.core.redis import dispose_redis, init_redis
 from src.models.user import User
 from src.services import privacy
-from src.services.storage.base import Container
-from src.services.storage.local import LocalStorageAdapter
 
 pytestmark = pytest.mark.integration
 
@@ -72,13 +67,8 @@ async def _make_user(session, crypto, *, tenant_id, email: str) -> User:
     return user
 
 
-@pytest.fixture
-def storage(tmp_path):  # type: ignore[no-untyped-def]
-    return LocalStorageAdapter(root=str(tmp_path))
-
-
-async def test_export_contains_decrypted_profile_and_consent(
-    tenant_session_factory, crypto, storage
+async def test_export_is_ephemeral_one_time_and_contains_profile_and_consent(
+    tenant_session_factory, crypto, redis
 ):  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(tenant_id) as session:
@@ -97,20 +87,33 @@ async def test_export_contains_decrypted_profile_and_consent(
             user_id=user.id,
         )
 
-        url = await privacy.build_export(session, crypto, storage, user=user)
-        assert url
-
-        import json
-
-        objects = await storage.list_objects(
-            Container.GENERATED_DOCUMENTS, prefix=f"privacy-exports/{tenant_id}/{user.id}/"
+        url = await privacy.build_export(
+            session,
+            crypto,
+            redis,
+            user=user,
+            api_public_url="https://api.example.test",
         )
-        assert len(objects) == 1
-        raw = await storage.get_object(Container.GENERATED_DOCUMENTS, objects[0].key)
+
+        parsed = urlparse(url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "api.example.test"
+        assert parsed.path == "/api/v1/privacy/export-download"
+        token = parse_qs(parsed.query)["token"][0]
+        key = f"{privacy.EXPORT_KEY_PREFIX}{token}"
+
+        ttl = await redis.ttl(key)
+        assert 0 < ttl <= privacy.EXPORT_EXPIRES_IN_SECONDS
+
+        raw = await privacy.consume_export(redis, token=token)
         body = json.loads(raw)
         assert body["profile"]["email"] == crypto.decrypt(user.email_encrypted)
         assert body["consent"][0]["purpose"] == "marketing"
         assert body["consent"][0]["granted"] is True
+        assert await redis.get(key) is None
+
+        with pytest.raises(NotFound, match="expired or has already been downloaded"):
+            await privacy.consume_export(redis, token=token)
 
 
 async def test_erase_user_tombstones_but_never_deletes_the_row(
@@ -127,10 +130,6 @@ async def test_erase_user_tombstones_but_never_deletes_the_row(
             session, crypto, redis, user=user, actor_user_id=user_id, access_token_ttl_seconds=60
         )
 
-        # The row survives — this is the whole point of "anonymisation,
-        # not deletion" (04_SECURITY_AND_COMPLIANCE.md §5.3): anything
-        # with a foreign key to this user_id (an order, an invoice, an
-        # audit event) stays intact.
         refetched = await session.get(User, user_id)
         assert refetched is not None
         assert refetched.id == user_id
@@ -140,7 +139,9 @@ async def test_erase_user_tombstones_but_never_deletes_the_row(
         assert refetched.erased_at is not None
 
 
-async def test_erase_user_refuses_a_second_erasure(tenant_session_factory, crypto, redis):  # type: ignore[no-untyped-def]
+async def test_erase_user_refuses_a_second_erasure(
+    tenant_session_factory, crypto, redis
+):  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(tenant_id) as session:
         user = await _make_user(
@@ -169,9 +170,6 @@ async def test_legal_hold_blocks_erasure(tenant_session_factory, crypto, redis):
         user = await _make_user(
             session, crypto, tenant_id=tenant_id, email=f"hold-{uuid.uuid4().hex[:8]}@example.com"
         )
-        # legal_hold_set_by is a real FK — the "admin" placing the hold
-        # has to be an actual row, same as any other actor_user_id this
-        # codebase records.
         actor = await _make_user(
             session,
             crypto,
@@ -197,9 +195,6 @@ async def test_legal_hold_blocks_erasure(tenant_session_factory, crypto, redis):
         assert user.legal_hold is False
         assert user.legal_hold_reason is None
 
-        # With the hold lifted, the exact same call that was just refused
-        # now succeeds — proving the block was the hold, not something
-        # else about this user.
         await privacy.erase_user(
             session, crypto, redis, user=user, actor_user_id=user.id, access_token_ttl_seconds=60
         )
