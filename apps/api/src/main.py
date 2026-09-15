@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from time import perf_counter
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -21,6 +23,8 @@ from src.core.errors import (
 )
 from src.core.idempotency import idempotency_middleware
 from src.core.logging import configure_logging, get_logger, init_sentry
+from src.core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS, start_metrics_server, stop_metrics_server
+from src.core.observability import API_METRICS_PORT, sample_operational_metrics
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.routers import (
@@ -81,11 +85,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_engine(settings)
     init_redis(settings)
     await init_queue(settings)
-    log.info("api_started", environment=settings.environment)
-    yield
-    await dispose_engine()
-    await dispose_redis()
-    await dispose_queue()
+    start_metrics_server(API_METRICS_PORT)
+    sampler = asyncio.create_task(sample_operational_metrics(), name="operational-metrics")
+    log.info("api_started", environment=settings.environment, metrics_port=API_METRICS_PORT)
+    try:
+        yield
+    finally:
+        sampler.cancel()
+        with suppress(asyncio.CancelledError):
+            await sampler
+        stop_metrics_server()
+        await dispose_engine()
+        await dispose_redis()
+        await dispose_queue()
 
 
 def create_app() -> FastAPI:
@@ -115,13 +127,30 @@ def create_app() -> FastAPI:
     ) -> Response:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = request_id
+        started = perf_counter()
+        status_code = 500
+        response: Response | None = None
         structlog.contextvars.bind_contextvars(request_id=request_id, path=request.url.path)
         try:
             response = await call_next(request)
+            status_code = response.status_code
+            return response
         finally:
+            route_obj = request.scope.get("route")
+            route = str(getattr(route_obj, "path", "<unmatched>"))
+            duration = perf_counter() - started
+            HTTP_REQUESTS.labels(request.method, route, str(status_code)).inc()
+            HTTP_REQUEST_DURATION.labels(request.method, route).observe(duration)
+            log.info(
+                "http_request_completed",
+                method=request.method,
+                route=route,
+                status=status_code,
+                duration_ms=round(duration * 1000, 2),
+            )
+            if response is not None:
+                response.headers["x-request-id"] = request_id
             structlog.contextvars.clear_contextvars()
-        response.headers["x-request-id"] = request_id
-        return response
 
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)
