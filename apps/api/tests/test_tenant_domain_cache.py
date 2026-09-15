@@ -80,7 +80,7 @@ async def test_domain_change_brackets_commit_with_cache_eviction() -> None:
     redis = _Redis(events)
     session = _Session(events)
 
-    await tenant_branding_router._commit_domain_change_and_invalidate(  # noqa: SLF001
+    await tenant_branding_router._commit_domain_change_and_invalidate(
         session,  # type: ignore[arg-type]
         redis,  # type: ignore[arg-type]
         "Customer.Example.COM.",
