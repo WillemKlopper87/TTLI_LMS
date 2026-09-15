@@ -22,12 +22,14 @@ from fastapi import APIRouter, File, Response, UploadFile, status
 from src.core.deps import (
     AuditedSessionDep,
     PrincipalDep,
+    RedisDep,
     SessionDep,
     SettingsDep,
     StorageDep,
     TenantDep,
 )
 from src.core.errors import AppError, NotFound, ServiceUnavailable
+from src.core.tenancy import invalidate_tenant_host_cache
 from src.models.audit import AuditAction
 from src.models.tenant import TenantDomain
 from src.models.theme import TenantTheme
@@ -258,6 +260,7 @@ async def add_domain(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
 ) -> DomainRow:
     principal.require(MANAGE)
     domain = await branding.add_domain(
@@ -272,6 +275,10 @@ async def add_domain(
         entity_id=domain.id,
         after={"hostname": domain.hostname, "added": True},
     )
+    # A failed lookup is cached too. Forget it now so the newly added
+    # hostname resolves on the very next request instead of remaining a
+    # negative cache entry for up to MISS_TTL_SECONDS.
+    await invalidate_tenant_host_cache(redis, str(domain.hostname))
     return _domain_row(settings.secret_key, principal.tenant_id, domain)
 
 
@@ -286,6 +293,7 @@ async def remove_domain(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     tenant: TenantDep,
+    redis: RedisDep,
 ) -> None:
     principal.require(MANAGE)
     domain = await branding.remove_domain(
@@ -301,6 +309,10 @@ async def remove_domain(
         before={"hostname": domain.hostname},
         after={"removed": True},
     )
+    # The positive mapping may have been cached by normal traffic. Drop it
+    # immediately so a removed hostname cannot keep resolving to its former
+    # tenant for the remainder of CACHE_TTL_SECONDS.
+    await invalidate_tenant_host_cache(redis, str(domain.hostname))
 
 
 __all__ = ["router"]
