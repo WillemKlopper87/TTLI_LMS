@@ -195,6 +195,19 @@ CVE-2026-29036 exp:2026-11-26
 CVE-2026-67215 exp:2026-11-26
 CVE-2026-67216 exp:2026-11-26
 
+# CVE-2026-87933 was first reported against the freshly built API image on
+# 2026-09-15. Debian trixie ships libcjson1 1.7.18-3.1+deb13u1 and marks
+# trixie, testing and sid vulnerable with no fixed package available. The
+# bug is specifically in `cJSONUtils_MergePatch` from libcjson_utils.so,
+# not cJSON's core parser. Debian packages that utils library together with
+# libcjson.so, so package presence alone is not enough evidence to ignore it.
+# The `images` job therefore grants this entry to ttli-api only and first
+# performs a fail-closed binary sweep: any executable/shared object outside
+# libcjson_utils.so that links `libcjson_utils.so` makes CI fail before Trivy.
+# TTLI source contains no cJSON call site. Remove as soon as Debian publishes
+# a fix; otherwise re-run the reachability guard and review at expiry.
+CVE-2026-87933 exp:2026-12-14
+
 # --- Debian trixie libglib2.0-0t64: affected, no patched package yet
 # (ttli-api).
 CVE-2026-58010 exp:2026-11-26
