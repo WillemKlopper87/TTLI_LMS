@@ -1,20 +1,16 @@
 """Data-subject rights (BACKLOG T12, 04_SECURITY_AND_COMPLIANCE.md §5.3).
 
-Self-service under `/me/privacy/*` — export, erase, and consent, each
-exercised by the signed-in principal over their own account, no special
-permission required (being authenticated as that user *is* the identity
-check). Admin-mediated actions live under `/admin/users/{user_id}/*` and
-reuse `user:suspend` (tenant_users.py's own reasoning: legal hold and an
-admin-initiated erasure are both "take someone's access away"-shaped
-actions over another account, not a distinct permission worth minting for
-two endpoints).
+Self-service rights live under `/me/privacy/*`; admin-mediated legal-hold and
+erasure actions reuse the existing `user:suspend` permission. Export downloads
+use a high-entropy five-minute capability and therefore do not require a second
+authentication round-trip; the capability is deleted after the first download.
 """
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, Response, status
 
 from src.core.deps import (
     AuditedSessionDep,
@@ -23,7 +19,6 @@ from src.core.deps import (
     RedisDep,
     SessionDep,
     SettingsDep,
-    StorageDep,
 )
 from src.core.errors import AppError, NotFound
 from src.schemas.privacy import (
@@ -40,11 +35,7 @@ from src.services.tenant_users import get_user
 router = APIRouter(tags=["privacy"])
 
 CONSENT_PURPOSES = {"marketing", "analytics", "ai_processing"}
-# Matches the module-level constant already duplicated the same way in
-# routers/leads.py and routers/guest_access.py — genuinely shared only
-# once a real privacy-policy versioning story exists, not invented here.
 POLICY_VERSION = "unpublished-0"
-
 SUSPEND = "user:suspend"
 
 
@@ -57,14 +48,41 @@ async def export_my_data(
     principal: PrincipalDep,
     session: AuditedSessionDep,
     crypto: CryptoDep,
-    storage: StorageDep,
+    redis: RedisDep,
+    settings: SettingsDep,
 ) -> DataExportResponse:
     user = await get_user(session, tenant_id=principal.tenant_id, user_id=principal.user_id)
     if user is None:
         raise NotFound("No such user.")
-    url = await privacy.build_export(session, crypto, storage, user=user)
+    url = await privacy.build_export(
+        session,
+        crypto,
+        redis,
+        user=user,
+        api_public_url=settings.api_public_url,
+    )
     return DataExportResponse(
         download_url=url, expires_in_seconds=privacy.EXPORT_EXPIRES_IN_SECONDS
+    )
+
+
+@router.get(
+    "/privacy/export-download",
+    response_class=Response,
+    summary="Download a short-lived personal-data export capability",
+)
+async def download_privacy_export(
+    redis: RedisDep,
+    token: str = Query(..., min_length=32, max_length=128),
+) -> Response:
+    body = await privacy.consume_export(redis, token=token)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="ttli-personal-data.json"',
+        },
     )
 
 
