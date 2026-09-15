@@ -246,6 +246,24 @@ services:
       redis:
         condition: service_healthy
     command: ["arq", "src.workers.main.WorkerSettings"]
+    # BACKLOG T10/F9: replaces the rolling-update script's old
+    # process-alive check with a real canary. `arq --check` exits 0 only
+    # if arq's own health-check sentinel key is present in Redis
+    # (src/workers/main.py's health_check_interval=30 keeps that key from
+    # going stale for up to an hour, as arq's 3600s default would) —
+    # so a worker that boots but can never reach Redis, or one whose
+    # asyncio loop has hung, fails this within health_check_interval + a
+    # couple of retries, not by staying "running" while doing nothing.
+    healthcheck:
+      test: ["CMD", "arq", "--check", "src.workers.main.WorkerSettings"]
+      interval: 5s
+      timeout: 5s
+      # Worst case before Docker reports "unhealthy" is start_period +
+      # retries*interval = 20s + 30s = 50s — inside rolling-update.sh's
+      # 60s HEALTH_TIMEOUT default, same margin api's own healthcheck
+      # above (20s + 30s) already keeps.
+      retries: 6
+      start_period: 20s
     restart: unless-stopped
 
   web:

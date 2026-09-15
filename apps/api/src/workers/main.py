@@ -341,6 +341,18 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    # BACKLOG T10: the deploy-time and ongoing worker canary is
+    # `arq --check src.workers.main.WorkerSettings` (infra/docker-compose.
+    # single-vm.yml's worker healthcheck), which is only as fresh as this
+    # value — arq writes a Redis sentinel key with a TTL of
+    # health_check_interval+1 seconds and only refreshes it that often.
+    # arq's own default is 3600s: a worker that dies leaves a "healthy"
+    # sentinel sitting in Redis for up to an hour, which would make the
+    # healthcheck lie for most of that window. 30s keeps the false-healthy
+    # gap inside the rolling-update script's HEALTH_TIMEOUT (60s default)
+    # and short enough to matter for ongoing container monitoring, without
+    # adding a Redis write more than twice a minute per worker.
+    health_check_interval: ClassVar[int] = 30
 
 
 __all__ = [
