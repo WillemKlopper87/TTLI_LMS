@@ -44,26 +44,35 @@ jobs:
         run: |
           set +e
           FAILED=0
-          # Per-image scoping, matching ci.yml. The baseline strips the
-          # four util-linux IDs; postgres gets the full file, and the two
-          # Debian-based app images get them back on the reachability
-          # evidence recorded in .trivyignore (non-root uid 10001, no
-          # CAP_SYS_ADMIN). Anything added to this loop later starts from
-          # the strict baseline and must argue its own case.
+          # Keep image-specific dispositions from leaking between payloads.
+          # Start every application image from a strict baseline, then grant
+          # back only the findings justified for that image in .trivyignore.
+          # PostgreSQL keeps its historical baseline (including its own
+          # util-linux disposition) but never inherits Caddy-, ClamAV- or
+          # API-only exceptions.
           base_ignore="$(mktemp)"
-          app_ignore="$(mktemp)"
-          trap 'rm -f "$base_ignore" "$app_ignore"' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore > "$base_ignore"
+          api_ignore="$(mktemp)"
+          web_ignore="$(mktemp)"
+          postgres_ignore="$(mktemp)"
+          trap 'rm -f "$base_ignore" "$api_ignore" "$web_ignore" "$postgres_ignore"' EXIT
+
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161|76956|76957|87933) ' .trivyignore > "$base_ignore"
+          { cat "$base_ignore"
+            grep -E '^CVE-2026-(76642|78408|78409|78410|76956|76957|87933) ' .trivyignore
+          } > "$api_ignore"
           { cat "$base_ignore"
             grep -E '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore
-          } > "$app_ignore"
+          } > "$web_ignore"
+          grep -Ev '^CVE-2026-(84445|74860|86145|89161|76956|76957|87933) ' .trivyignore > "$postgres_ignore"
+
           postgres_image="postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
           for spec in "ttli-api:rescan|ttli-api-rescan" "ttli-web:rescan|ttli-web-rescan" "$postgres_image|postgres-production"; do
             IFS='|' read -r img report_name <<< "$spec"
-            ignorefile="$app_ignore"
-            if [[ "$img" == "$postgres_image" ]]; then
-              ignorefile="$GITHUB_WORKSPACE/.trivyignore"
-            fi
+            case "$img" in
+              ttli-api:rescan) ignorefile="$api_ignore" ;;
+              ttli-web:rescan) ignorefile="$web_ignore" ;;
+              "$postgres_image") ignorefile="$postgres_ignore" ;;
+            esac
             safe_name="trivy-${report_name}-report.txt"
             echo "::group::Trivy: $img"
             trivy image --severity CRITICAL,HIGH --ignorefile "$ignorefile" \
