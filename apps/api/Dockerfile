@@ -38,6 +38,24 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src
 
+# CVE-2026-87933 is in cJSON's optional RFC 7396 merge-patch utility,
+# cJSONUtils_MergePatch. Debian ships libcjson_utils.so in the same
+# libcjson1 package as the core parser, so Trivy reports the package even
+# when no runtime consumer links the vulnerable utility library. Keep the
+# reviewed exception fail-closed: if a future OS/Python dependency starts
+# linking libcjson_utils.so, the image build fails before Trivy can apply
+# the temporary API-only exception in .trivyignore.
+RUN set -eu; \
+    consumers="$(find /usr/bin /usr/local/bin /usr/lib /usr/local/lib /app \
+        -type f \( -perm /111 -o -name '*.so*' \) \
+        ! -name 'libcjson_utils.so*' \
+        -exec grep -aFl 'libcjson_utils.so' {} + 2>/dev/null || true)"; \
+    if [ -n "$consumers" ]; then \
+        echo 'Unexpected libcjson_utils.so consumer(s); re-review CVE-2026-87933:' >&2; \
+        echo "$consumers" >&2; \
+        exit 1; \
+    fi
+
 USER app
 
 # Baked at build time, not read from a running container's env — a

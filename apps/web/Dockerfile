@@ -38,6 +38,14 @@ ENV NEXT_PUBLIC_APP_VERSION=$GIT_SHA
 RUN cd apps/web && npm run build
 
 FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime
+# The pinned bookworm base still carries libpcre2-8-0 10.42-1, while the
+# Debian security repository publishes 10.42-1+deb12u1 for
+# CVE-2026-86145/CVE-2026-89161. Fix what we control rather than granting
+# the web image the reachability exception needed by the older ClamAV
+# payload. Keep this targeted: only upgrade the already-installed package.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 \
+    && rm -rf /var/lib/apt/lists/*
 # The base image bundles its own npm CLI (with its own vendored deps --
 # brace-expansion, tar, ip-address) at /usr/local/lib/node_modules/npm;
 # report M7's Trivy pass flagged CVEs in those exact vendored versions.
