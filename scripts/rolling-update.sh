@@ -172,8 +172,60 @@ if ! wait_healthy worker; then
   warn "New worker container failed its health check — rolling back api and worker together."
   [ -n "$PREV_API" ] && docker tag "$PREV_API" ttli-api:latest
   DC up -d --no-deps --force-recreate api worker
-  wait_healthy api || warn "Rollback of api did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs api"
-  wait_healthy worker || warn "Rollback of worker did not report healthy either — check logs by hand: docker compose -f $COMPOSE_FILE logs worker"
+
+  ROLLBACK_API=failed
+  ROLLBACK_WORKER=failed
+  if wait_healthy api; then
+    ROLLBACK_API=ok
+  else
+    warn "Rollback of api did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs api"
+  fi
+  if wait_healthy worker; then
+    ROLLBACK_WORKER=ok
+  else
+    warn "Rollback of worker did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs worker"
+  fi
+
+  # T10's rehearsal requires before/after evidence. A failed worker rollout
+  # used to exit before the normal success manifest was written, making the
+  # rollback itself unverifiable after the fact. Capture the actual restored
+  # container IDs and live checks before exiting; backup-production.sh picks
+  # up this release-*.json file on its next encrypted off-host sync.
+  mkdir -p "$BACKUP_DIR"
+  ROLLBACK_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ROLLBACK_MANIFEST="$BACKUP_DIR/release-rollback-$GIT_SHA.json"
+  ROLLBACK_API_ID="$(DC ps -q api | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_WORKER_ID="$(DC ps -q worker | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_WEB_ID="$(DC ps -q web | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_APP_VERSION="$(DC exec -T api printenv APP_VERSION 2>/dev/null | tr -d '\r\n' || echo unknown)"
+  if DC exec -T web node -e "require('http').get('http://localhost:3010/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))" >/dev/null 2>&1; then
+    ROLLBACK_WEB=ok
+  else
+    ROLLBACK_WEB=failed
+  fi
+  cat > "$ROLLBACK_MANIFEST" <<EOF
+{
+  "timestamp_utc": "$ROLLBACK_TIMESTAMP",
+  "outcome": "rolled_back_after_worker_failure",
+  "attempted_git_sha": "$GIT_SHA",
+  "running_app_version": "$ROLLBACK_APP_VERSION",
+  "attempted_registry_digests": {
+    "api": "$API_DIGEST",
+    "web": "$WEB_DIGEST"
+  },
+  "running_image_ids": {
+    "api": "$ROLLBACK_API_ID",
+    "worker": "$ROLLBACK_WORKER_ID",
+    "web": "$ROLLBACK_WEB_ID"
+  },
+  "checks": {
+    "api_health": "$ROLLBACK_API",
+    "worker_health": "$ROLLBACK_WORKER",
+    "web_http": "$ROLLBACK_WEB"
+  }
+}
+EOF
+  log "Rollback evidence written: $ROLLBACK_MANIFEST (synced off-host on the next scripts/backup-production.sh run)"
   die "worker rollout failed — api and worker were both rolled back together; web was never touched"
 fi
 
@@ -231,6 +283,7 @@ RELEASE_MANIFEST="$BACKUP_DIR/release-$GIT_SHA.json"
 cat > "$RELEASE_MANIFEST" <<EOF
 {
   "timestamp_utc": "$RELEASE_TIMESTAMP",
+  "outcome": "deployed",
   "git_sha": "$GIT_SHA",
   "app_version": "$APP_VERSION_RUNNING",
   "registry_digests": {
