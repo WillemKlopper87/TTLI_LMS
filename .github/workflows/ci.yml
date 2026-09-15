@@ -622,8 +622,8 @@ jobs:
         run: npm run test:e2e
 
   # The fast web job above deliberately has no API and owns the public/axe
-  # floor. These four journeys need real auth, RLS, payment, storage and
-  # antivirus behaviour, so run them separately against a migrated and
+  # floor. These authenticated journeys need real auth, RLS, payment, storage
+  # and antivirus behaviour, so run them separately against a migrated and
   # deterministically seeded stack. REQUIRE_API_E2E turns their normal
   # bare-checkout skip into a hard failure if this stack ever stops starting.
   authenticated-e2e:
@@ -750,12 +750,16 @@ jobs:
 
       - name: Authenticated browser journeys
         working-directory: apps/web
-        # Together these honest journeys perform 11 logins and would trip
-        # the production 10/min/IP policy. Give each spec a fresh limiter
-        # window instead of weakening that policy for CI. No session spans
-        # spec processes, so clearing Redis here cannot invalidate a journey.
+        # These journeys can exceed the production 10/min/IP login policy.
+        # Give each spec a fresh limiter window instead of weakening that
+        # policy for CI. No session spans spec processes, so clearing Redis
+        # here cannot invalidate a journey.
         run: |
           for spec in \
+            e2e/admin.spec.ts \
+            e2e/learner.spec.ts \
+            e2e/session-refresh.spec.ts \
+            e2e/survey-pairing.spec.ts \
             e2e/learner-assessment.spec.ts \
             e2e/checkout.spec.ts \
             e2e/admin-finance.spec.ts \
