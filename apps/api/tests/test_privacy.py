@@ -139,9 +139,7 @@ async def test_erase_user_tombstones_but_never_deletes_the_row(
         assert refetched.erased_at is not None
 
 
-async def test_erase_user_refuses_a_second_erasure(
-    tenant_session_factory, crypto, redis
-):  # type: ignore[no-untyped-def]
+async def test_erase_user_refuses_a_second_erasure(tenant_session_factory, crypto, redis):  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(tenant_id) as session:
         user = await _make_user(
