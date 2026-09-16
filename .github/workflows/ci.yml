@@ -374,8 +374,13 @@ jobs:
           # is the same gRPC-Go xDS-server crash disposed for Caddy below
           # — Grafana's grpc use is plugin IPC, not an xDS server.
           grafana_ignore="$(scoped_ignore grafana '^CVE-2026-(21728|28377|29181|39883|43871|33186|25681|27136|84445) ')"
+          # Loki's own vendored grpc-go started tripping this the same day
+          # the rest of this batch was reviewed -- see .trivyignore for
+          # the full reasoning (internal ring/distributor RPC, no xDS
+          # server, single-node config).
+          loki_ignore="$(scoped_ignore loki '^CVE-2026-84445 ')"
           # PostgreSQL retains the complete historical baseline, except for
-          # Caddy-, ClamAV-, Prometheus-, Grafana- and API-only
+          # Caddy-, ClamAV-, Prometheus-, Grafana-, Loki- and API-only
           # dispositions above.
           grep -Ev '^CVE-2026-(84445|74860|86145|89161|87933|86138|86139|86142|86143|86144|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
@@ -389,6 +394,7 @@ jobs:
               "$CADDY_IMAGE")      ignorefile="$caddy_ignore" ;;
               "$PROMETHEUS_IMAGE") ignorefile="$prometheus_ignore" ;;
               "$GRAFANA_IMAGE")    ignorefile="$grafana_ignore" ;;
+              "$LOKI_IMAGE")       ignorefile="$loki_ignore" ;;
               *)                    ignorefile="$base_ignore" ;;
             esac
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"

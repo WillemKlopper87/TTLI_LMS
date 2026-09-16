@@ -539,8 +539,23 @@ CVE-2026-43871 exp:2026-12-15
 
 # --- grafana/loki@sha256:d70e4659... and grafana/alloy@sha256:b8ec653c...
 # (T11 log shipping, added alongside the Prometheus/Grafana pair above).
-# Both scan clean at zero CRITICAL/HIGH findings on the pinned digests as
-# of 2026-09-16 -- no entries needed here. They still run through the
-# same blocking `for img in ...` loop in ci.yml as every other image, on
-# the base baseline, so a future finding on either fails the build like
-# any unreviewed CVE would.
+# Both scanned clean at zero CRITICAL/HIGH findings on the pinned digests
+# when first added on 2026-09-16; Alloy still does. They still run through
+# the same blocking `for img in ...` loop in ci.yml as every other image,
+# on the base baseline, so a future finding on either fails the build like
+# any unreviewed CVE would -- which is exactly what caught the entry below
+# the same day, before this PR merged.
+#
+# CVE-2026-84445 (the gRPC-Go xDS-server crash already disposed for
+# Caddy/Prometheus/Grafana above, and granted to LOKI_IMAGE too as of
+# this comment) started showing up against Loki's own vendored grpc-go
+# (v1.82.1) between this pass's first scan and CI's own run -- a Trivy
+# vulnerability-DB update, not an image change; the digest is unchanged.
+# Loki's gRPC usage is entirely internal: distributor, ingester, ruler
+# and query-scheduler communication between its own modules (visible in
+# its own startup logs -- "ring=ingester", "ring=scheduler"). In this
+# single-node deployment (infra/loki/local-config.yaml:
+# replication_factor: 1, inmemory ring) there is nothing to actually
+# connect to besides itself. None of that is an xDS server -- a
+# Kubernetes/service-mesh integration this deployment has no use for and
+# infra/loki/local-config.yaml doesn't configure.
