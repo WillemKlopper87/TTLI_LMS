@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep
-from src.core.errors import NotFound
+from src.core.errors import AppError, NotFound
 from src.models.partner import PartnerProfile
 from src.schemas.partner import (
     ActivationStatusResponse,
@@ -47,16 +47,27 @@ async def create_partner_profile(
 
     Initial status is 'invited'. Activation requires MFA, operator agreement,
     and (for health professionals) registration number.
+
+    Requires the caller to be an admin member of the target organisation.
     """
-    profile = await partner_service.create_partner_profile(
+    await partner_service.require_organisation_admin(
         session,
         tenant_id=principal.tenant_id,
         organisation_id=body.organisation_id,
-        display_name=body.display_name,
-        bio=body.bio,
-        logo_object_key=body.logo_object_key,
-        professional_body=body.professional_body,
+        user_id=principal.user_id,
     )
+    try:
+        profile = await partner_service.create_partner_profile(
+            session,
+            tenant_id=principal.tenant_id,
+            organisation_id=body.organisation_id,
+            display_name=body.display_name,
+            bio=body.bio,
+            logo_object_key=body.logo_object_key,
+            professional_body=body.professional_body,
+        )
+    except AppError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return PartnerProfileResponse(
         id=profile.id,
         organisation_id=profile.organisation_id,
@@ -145,11 +156,21 @@ async def activate_profile(
     if profile is None:
         raise NotFound("Partner profile not found")
 
+    await partner_service.require_organisation_admin(
+        session,
+        tenant_id=principal.tenant_id,
+        organisation_id=profile.organisation_id,
+        user_id=principal.user_id,
+    )
+
     user = await get_user(session, tenant_id=principal.tenant_id, user_id=principal.user_id)
     if user is None:
         raise NotFound("User not found")
 
-    await partner_service.activate_partner(session, profile=profile, user=user)
+    try:
+        await partner_service.activate_partner(session, profile=profile, user=user)
+    except AppError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post(
@@ -165,17 +186,28 @@ async def create_client_org(
 ) -> ClientOrgResponse:
     """Create a new client organisation under a partner.
 
-    The authenticated user's first organisation (assumed to be the partner)
-    is used as the parent. Future versions will support explicit parent selection.
+    The partner organisation is resolved from the caller's own admin
+    membership — a caller who does not administer any partner organisation
+    cannot create client organisations. Future versions will support
+    explicit parent selection among multiple partners.
     """
-    # For now, assume the authenticated user's org is the partner
-    # This is a simplified implementation; full scope would support explicit parent selection
-    org = await partner_service.create_client_organisation(
+    parent = await partner_service.get_admin_partner_organisation(
         session,
         tenant_id=principal.tenant_id,
-        parent_organisation_id=principal.tenant_id,  # Placeholder
-        name=body.name,
+        user_id=principal.user_id,
     )
+    if parent is None:
+        raise NotFound("No partner organisation administered by this user")
+
+    try:
+        org = await partner_service.create_client_organisation(
+            session,
+            tenant_id=principal.tenant_id,
+            parent_organisation_id=parent.id,
+            name=body.name,
+        )
+    except AppError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return ClientOrgResponse(
         id=org.id,
         name=org.name,

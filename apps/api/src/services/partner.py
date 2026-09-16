@@ -13,10 +13,48 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.errors import AppError
-from src.models.organisation import Organisation
+from src.core.errors import AppError, Forbidden
+from src.models.organisation import Organisation, OrganisationMember
 from src.models.partner import PartnerProfile
 from src.models.user import User
+
+
+async def is_organisation_admin(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    organisation_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    """Whether user_id is an 'admin'-relationship member of organisation_id.
+
+    Tenant-scoped: a membership row from another tenant never matches, since
+    OrganisationMember.tenant_id is checked alongside organisation_id/user_id.
+    """
+    member = (
+        await session.execute(
+            select(OrganisationMember).where(
+                OrganisationMember.tenant_id == tenant_id,
+                OrganisationMember.organisation_id == organisation_id,
+                OrganisationMember.user_id == user_id,
+                OrganisationMember.relationship == "admin",
+            )
+        )
+    ).scalar_one_or_none()
+    return member is not None
+
+
+async def require_organisation_admin(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    organisation_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    if not await is_organisation_admin(
+        session, tenant_id=tenant_id, organisation_id=organisation_id, user_id=user_id
+    ):
+        raise Forbidden("You must be an admin of this organisation.")
 
 
 async def create_partner_profile(
@@ -34,7 +72,16 @@ async def create_partner_profile(
     Initial status is 'invited'; activation requires MFA enrollment,
     operator agreement acceptance, and (for health professionals)
     a registration number.
+
+    Raises:
+        AppError: If a partner profile already exists for this organisation.
     """
+    existing = await get_partner_profile(
+        session, tenant_id=tenant_id, organisation_id=organisation_id
+    )
+    if existing is not None:
+        raise AppError("A partner profile already exists for this organisation")
+
     profile = PartnerProfile(
         tenant_id=tenant_id,
         organisation_id=organisation_id,
@@ -124,6 +171,35 @@ async def activate_partner(
     await session.flush()
 
 
+async def get_admin_partner_organisation(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Organisation | None:
+    """The partner-kind organisation the caller administers, if any.
+
+    Used to resolve the parent for client-org creation instead of trusting
+    a client-supplied organisation id.
+    """
+    return (
+        await session.execute(
+            select(Organisation)
+            .join(
+                OrganisationMember,
+                OrganisationMember.organisation_id == Organisation.id,
+            )
+            .where(
+                Organisation.tenant_id == tenant_id,
+                Organisation.kind == "partner",
+                OrganisationMember.tenant_id == tenant_id,
+                OrganisationMember.user_id == user_id,
+                OrganisationMember.relationship == "admin",
+            )
+        )
+    ).scalars().first()
+
+
 async def create_client_organisation(
     session: AsyncSession,
     *,
@@ -205,6 +281,9 @@ __all__ = [
     "can_activate_partner",
     "create_client_organisation",
     "create_partner_profile",
+    "get_admin_partner_organisation",
     "get_partner_clients",
     "get_partner_profile",
+    "is_organisation_admin",
+    "require_organisation_admin",
 ]
