@@ -317,6 +317,8 @@ jobs:
           CADDY_IMAGE="caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
           PROMETHEUS_IMAGE="prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702"
           GRAFANA_IMAGE="grafana/grafana:13.2.2@sha256:ac461fb352abc50da10a51c7d02462e9c05488f11f53f14b3ad79a8145f638a0"
+          LOKI_IMAGE="grafana/loki:3.7.7@sha256:d70e4659623f3e109af669cae76fe2a5dd5be54e2298fe8aed380d982fbc2500"
+          ALLOY_IMAGE="grafana/alloy:v1.19.2@sha256:b8ec653c44235fbe910879145dac3597d66b0aaecf60bcbbe82580767771a839"
 
           base_ignore="$(mktemp)"
           trap 'rm -f "$base_ignore" "$base_ignore".*' EXIT
@@ -372,7 +374,7 @@ jobs:
           grep -Ev '^CVE-2026-(84445|74860|86145|89161|87933|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
 
-          for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE" "$PROMETHEUS_IMAGE" "$GRAFANA_IMAGE"; do
+          for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE" "$PROMETHEUS_IMAGE" "$GRAFANA_IMAGE" "$LOKI_IMAGE" "$ALLOY_IMAGE"; do
             echo "::group::Trivy: $img"
             case "$img" in
               "$POSTGRES_IMAGE")   ignorefile="$postgres_ignore" ;;

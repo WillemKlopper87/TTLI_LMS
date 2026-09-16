@@ -492,3 +492,11 @@ CVE-2026-33186 exp:2026-12-15
 CVE-2026-21728 exp:2026-12-15
 CVE-2026-28377 exp:2026-12-15
 CVE-2026-43871 exp:2026-12-15
+
+# --- grafana/loki@sha256:d70e4659... and grafana/alloy@sha256:b8ec653c...
+# (T11 log shipping, added alongside the Prometheus/Grafana pair above).
+# Both scan clean at zero CRITICAL/HIGH findings on the pinned digests as
+# of 2026-09-16 -- no entries needed here. They still run through the
+# same blocking `for img in ...` loop in ci.yml as every other image, on
+# the base baseline, so a future finding on either fails the build like
+# any unreviewed CVE would.
