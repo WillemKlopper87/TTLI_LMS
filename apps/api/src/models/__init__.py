@@ -82,6 +82,7 @@ from src.models.learning_path import (
     LearningPathTenantAssignment,
     PathEnrolment,
 )
+from src.models.licence import Licence, LicenceSeatGrant
 from src.models.media import AudioAsset, TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.podcast import PodcastEpisode
@@ -161,6 +162,8 @@ __all__ = [
     "LearningPathCourse",
     "LearningPathTenantAssignment",
     "LedgerEntry",
+    "Licence",
+    "LicenceSeatGrant",
     "Lesson",
     "LessonBlock",
     "LessonCompletion",
