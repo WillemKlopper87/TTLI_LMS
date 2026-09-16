@@ -21,9 +21,7 @@ class ObservedStorageService(StorageService):
         self._inner = inner
         self._backend = backend
 
-    async def _observe(
-        self, operation: str, container: str, call: Callable[[], Awaitable[T]]
-    ) -> T:
+    async def _observe(self, operation: str, container: str, call: Callable[[], Awaitable[T]]) -> T:
         try:
             result = await call()
         except ObjectNotFound:
@@ -37,7 +35,9 @@ class ObservedStorageService(StorageService):
             return result
 
     async def ensure_container(self, container: str) -> None:
-        await self._observe("ensure_container", container, lambda: self._inner.ensure_container(container))
+        await self._observe(
+            "ensure_container", container, lambda: self._inner.ensure_container(container)
+        )
 
     async def upload_object(
         self,
@@ -61,7 +61,9 @@ class ObservedStorageService(StorageService):
         )
 
     async def get_object(self, container: str, key: str) -> bytes:
-        return await self._observe("get_object", container, lambda: self._inner.get_object(container, key))
+        return await self._observe(
+            "get_object", container, lambda: self._inner.get_object(container, key)
+        )
 
     async def delete_object(self, container: str, key: str) -> None:
         await self._observe(

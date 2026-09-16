@@ -29,7 +29,9 @@ def get_storage_adapter(settings: Settings) -> StorageService:
     else:
         from src.services.storage.azure_blob import AzureBlobStorageAdapter
 
-        adapter = AzureBlobStorageAdapter(connection_string=settings.azure_storage_connection_string)
+        adapter = AzureBlobStorageAdapter(
+            connection_string=settings.azure_storage_connection_string
+        )
 
     return ObservedStorageService(adapter, backend=settings.storage_backend)
 

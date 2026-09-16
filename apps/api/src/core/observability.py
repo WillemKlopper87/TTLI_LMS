@@ -61,9 +61,7 @@ async def refresh_operational_metrics() -> None:
         set_queue_depth(int(depth))
 
 
-async def sample_operational_metrics(
-    *, interval_seconds: int = SAMPLE_INTERVAL_SECONDS
-) -> None:
+async def sample_operational_metrics(*, interval_seconds: int = SAMPLE_INTERVAL_SECONDS) -> None:
     while True:
         await refresh_operational_metrics()
         await asyncio.sleep(interval_seconds)

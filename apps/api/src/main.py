@@ -23,7 +23,12 @@ from src.core.errors import (
 )
 from src.core.idempotency import idempotency_middleware
 from src.core.logging import configure_logging, get_logger, init_sentry
-from src.core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS, start_metrics_server, stop_metrics_server
+from src.core.metrics import (
+    HTTP_REQUEST_DURATION,
+    HTTP_REQUESTS,
+    start_metrics_server,
+    stop_metrics_server,
+)
 from src.core.observability import API_METRICS_PORT, sample_operational_metrics
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis

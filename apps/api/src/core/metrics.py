@@ -123,15 +123,17 @@ def set_database_pool_metrics(*, size: int, checked_out: int, overflow: int) -> 
     DATABASE_POOL_OVERFLOW.set(overflow)
 
 
-def set_database_runtime_metrics(*, connections: int, max_connections: int, size_bytes: int) -> None:
+def set_database_runtime_metrics(
+    *, connections: int, max_connections: int, size_bytes: int
+) -> None:
     DATABASE_CONNECTIONS.set(connections)
     DATABASE_MAX_CONNECTIONS.set(max_connections)
     DATABASE_SIZE_BYTES.set(size_bytes)
 
 
 __all__ = [
-    "HTTP_REQUEST_DURATION",
     "HTTP_REQUESTS",
+    "HTTP_REQUEST_DURATION",
     "OBSERVABILITY_SAMPLER_FAILURES",
     "STORAGE_OPERATIONS",
     "WORKER_JOB_ATTEMPTS",

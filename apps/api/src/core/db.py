@@ -19,6 +19,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import QueuePool
 
 from src.core.config import Settings
 
@@ -75,7 +77,10 @@ def database_pool_stats() -> DatabasePoolStats:
 
     if _engine is None:
         return DatabasePoolStats(size=0, checked_out=0, overflow=0)
-    pool = _engine.sync_engine.pool
+    # The async engine's default pool (AsyncAdaptedQueuePool) is a QueuePool
+    # subclass — nothing here overrides poolclass to something else — but the
+    # base `Pool` type SQLAlchemy exposes doesn't declare these methods.
+    pool = cast(QueuePool, _engine.sync_engine.pool)
     return DatabasePoolStats(
         size=pool.size(),
         checked_out=pool.checkedout(),
@@ -153,9 +158,9 @@ async def tenant_session(tenant_id: uuid.UUID | None) -> AsyncIterator[AsyncSess
 
 
 __all__ = [
+    "TENANT_GUC",
     "DatabasePoolStats",
     "DatabaseRuntimeStats",
-    "TENANT_GUC",
     "database_pool_stats",
     "database_runtime_stats",
     "dispose_engine",
