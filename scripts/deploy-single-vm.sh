@@ -180,6 +180,7 @@ else
   POSTGRES_SUPERUSER_PASSWORD="$(b64rand 24)"
   APP_DB_PASSWORD="$(b64rand 24)"
   REDIS_PASSWORD="$(b64rand 24)"
+  GRAFANA_ADMIN_PASSWORD="$(b64rand 24)"
   # Garage's own key format, not arbitrary — GK + 24 hex, then 64 hex
   # (infra/docker-compose.yml's own comment on this exact constraint).
   S3_ACCESS_KEY="GK$(hexrand 12)"
@@ -221,6 +222,8 @@ GHCR_USERNAME=$GHCR_USERNAME
 GHCR_PAT=$GHCR_PAT
 
 SENTRY_DSN=$SENTRY_DSN
+
+GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD
 
 SMTP_RELAY_HOST=$SMTP_RELAY_HOST
 SMTP_RELAY_USERNAME=$SMTP_RELAY_USERNAME

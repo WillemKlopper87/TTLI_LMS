@@ -218,6 +218,9 @@ services:
         condition: service_healthy
     expose:
       - "8010"
+      # core/observability.py's API_METRICS_PORT — internal-only, scraped
+      # by the prometheus service below, never published to the host.
+      - "9101"
     # Liveness only (routers/health.py's /health, not /health/ready) —
     # the rolling-update script (scripts/rolling-update.sh) polls this
     # before cutting traffic to a freshly-swapped container. curl is a
@@ -245,6 +248,10 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    expose:
+      # core/observability.py's WORKER_METRICS_PORT — internal-only,
+      # scraped by the prometheus service below.
+      - "9102"
     command: ["arq", "src.workers.main.WorkerSettings"]
     # BACKLOG T10/F9: replaces the rolling-update script's old
     # process-alive check with a real canary. `arq --check` exits 0 only
@@ -264,6 +271,57 @@ services:
       # above (20s + 30s) already keeps.
       retries: 6
       start_period: 20s
+    restart: unless-stopped
+
+  # ---- observability (T11, BACKLOG.md; issue #30) ----
+  #
+  # Neither service is reachable through Caddy or any host-published
+  # port — T11's own scope says not to expose metrics publicly. Grafana
+  # binds to the host loopback interface only, the same pattern Garage's
+  # S3 API above already established: an operator reaches it over an SSH
+  # tunnel (`ssh -L 3001:localhost:3001 <host>`), not by SSHing into the
+  # container itself.
+  #
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect prom/prometheus:v3.9.1 --format '{{.Manifest.Digest}}'
+  prometheus:
+    image: prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ttli-prometheus-data:/prometheus
+    depends_on:
+      - api
+      - worker
+    restart: unless-stopped
+
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect grafana/grafana:13.2.2 --format '{{.Manifest.Digest}}'
+  grafana:
+    image: grafana/grafana:13.2.2@sha256:ac461fb352abc50da10a51c7d02462e9c05488f11f53f14b3ad79a8145f638a0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env.prod}
+      # 13.x downloads its bundled datasource/app plugins from
+      # grafana.com at every boot unless told not to — outside the
+      # pinned image digest, so outside Trivy's scan coverage too
+      # (confirmed locally: disabling this is what stopped the
+      # "Installing plugin" log lines a fresh container otherwise
+      # prints). This deployment pins by digest specifically so it
+      # doesn't get surprise-mutated by a registry it doesn't control.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ttli-grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
   web:
@@ -313,3 +371,5 @@ volumes:
   ttli-clamav:
   ttli-caddy-data:
   ttli-caddy-config:
+  ttli-prometheus-data:
+  ttli-grafana-data:
