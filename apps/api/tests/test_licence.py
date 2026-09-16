@@ -351,7 +351,7 @@ async def test_has_active_licence_returns_false_for_revoked_grant(
         )
 
         # Revoke the seat
-        await licence_service.revoke_seat(session, grant_id=grant.id)
+        await licence_service.revoke_seat(session, tenant_id=tenant_id, grant_id=grant.id)
 
         has_lic = await licence_service.has_active_licence(
             session,

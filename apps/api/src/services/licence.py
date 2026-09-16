@@ -210,14 +210,23 @@ async def grant_seat(
 async def revoke_seat(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     grant_id: uuid.UUID,
 ) -> None:
     """Revoke a seat grant (soft delete via revoked_at).
 
     Decrements the associated licence's seats_used.
+
+    Scoped through a join to Licence.tenant_id — a bare
+    LicenceSeatGrant.id lookup would let a caller in one tenant revoke
+    another tenant's seat grant by guessing its UUID.
     """
     grant = (
-        await session.execute(select(LicenceSeatGrant).where(LicenceSeatGrant.id == grant_id))
+        await session.execute(
+            select(LicenceSeatGrant)
+            .join(Licence, Licence.id == LicenceSeatGrant.licence_id)
+            .where(LicenceSeatGrant.id == grant_id, Licence.tenant_id == tenant_id)
+        )
     ).scalar()
     if grant is None:
         raise AppError("Seat grant not found.")
@@ -229,7 +238,9 @@ async def revoke_seat(
 
     # Decrement seats_used
     licence = (
-        await session.execute(select(Licence).where(Licence.id == grant.licence_id))
+        await session.execute(
+            select(Licence).where(Licence.id == grant.licence_id, Licence.tenant_id == tenant_id)
+        )
     ).scalar()
     if licence is not None:
         licence.seats_used = max(0, licence.seats_used - 1)
@@ -261,7 +272,7 @@ async def list_licensee_seat_grants(
         query = query.where(LicenceSeatGrant.revoked_at.is_(None))
 
     result = await session.execute(query)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 async def get_active_licence(
@@ -290,7 +301,7 @@ async def list_organisation_licences(
             Licence.organisation_id == organisation_id,
         )
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 __all__ = [
