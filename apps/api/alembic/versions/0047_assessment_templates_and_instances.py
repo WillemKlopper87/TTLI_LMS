@@ -101,6 +101,12 @@ def upgrade() -> None:
         "assessment_template_questions",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
         sa.Column(
+            "tenant_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column(
             "template_id",
             pg.UUID(as_uuid=True),
             sa.ForeignKey("assessment_templates.id", ondelete="CASCADE"),
@@ -196,6 +202,12 @@ def upgrade() -> None:
         "assessment_subjects",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
         sa.Column(
+            "tenant_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column(
             "instance_id",
             pg.UUID(as_uuid=True),
             sa.ForeignKey("assessment_instances.id", ondelete="CASCADE"),
@@ -231,6 +243,12 @@ def upgrade() -> None:
     op.create_table(
         "assessment_invitations",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "tenant_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column(
             "instance_id",
             pg.UUID(as_uuid=True),
@@ -300,6 +318,12 @@ def upgrade() -> None:
     op.create_table(
         "assessment_subject_results",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "tenant_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column(
             "subject_id",
             pg.UUID(as_uuid=True),

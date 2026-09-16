@@ -17,7 +17,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel
 
 from src.core.deps import PrincipalDep, SessionDep
-from src.core.errors import NotFound
+from src.core.errors import Forbidden, NotFound
 from src.services import assessment_template as assessment_service
 
 router = APIRouter(prefix="/assessment-platform", tags=["assessment-platform"])
@@ -119,7 +119,8 @@ async def list_templates(principal: PrincipalDep, session: SessionDep) -> Templa
 
     Requires assessment:author or assessment:analyse permission.
     """
-    principal.require_one_of("assessment:author", "assessment:analyse")
+    if not principal.permissions & {"assessment:author", "assessment:analyse"}:
+        raise Forbidden("You do not have access to this resource.")
     rows = await assessment_service.list_templates(session, tenant_id=principal.tenant_id)
     return TemplatesPageResponse(
         items=[

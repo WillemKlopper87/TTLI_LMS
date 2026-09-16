@@ -101,7 +101,7 @@ async def list_templates(
         .order_by(AssessmentTemplate.created_at.desc())
     )
     result = await session.execute(stmt)
-    return result.all()
+    return [(template, count) for template, count in result.all()]
 
 
 async def create_instance(
@@ -185,7 +185,7 @@ async def list_instances(
         stmt = stmt.where(AssessmentInstance.organisation_id == organisation_id)
     stmt = stmt.order_by(AssessmentInstance.created_at.desc())
     result = await session.execute(stmt)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 def func_count_questions() -> Any:

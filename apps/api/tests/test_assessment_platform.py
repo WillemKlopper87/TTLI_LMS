@@ -33,9 +33,7 @@ async def _demo_tenant_id(tenant_session_factory) -> uuid.UUID:  # type: ignore
 async def _other_tenant_id(tenant_session_factory) -> uuid.UUID:  # type: ignore
     """Create a second tenant and return its ID."""
     async with tenant_session_factory(None) as s:
-        stmt = text(
-            "INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name) " "RETURNING id"
-        )
+        stmt = text("INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name) RETURNING id")
         result = await s.execute(
             stmt,
             {
@@ -202,8 +200,8 @@ async def test_list_templates(tenant_session_factory) -> None:  # type: ignore
             title="Template 2",
             kind="multi_rater",
         )
-        await s.commit()
 
+    async with tenant_session_factory(demo_id) as s:
         # List templates
         rows = await assessment_template.list_templates(s, tenant_id=demo_id)
 
@@ -351,8 +349,8 @@ async def test_list_instances(tenant_session_factory) -> None:  # type: ignore
             organisation_id=org_id,
             title="Instance 2",
         )
-        await s.commit()
 
+    async with tenant_session_factory(demo_id) as s:
         instances = await assessment_template.list_instances(
             s, tenant_id=demo_id, organisation_id=org_id
         )
