@@ -11,7 +11,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -69,6 +79,21 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         Integer, nullable=False, server_default=text("0")
     )
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # BACKLOG T12 / 0046: a legal hold blocks erasure during a dispute or
+    # investigation. The hold survives changes to the administrator who set it.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    legal_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    legal_hold_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legal_hold_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # Set once by services.privacy.erase_user and never cleared. This is the
+    # idempotency marker for anonymisation; the user row itself is retained
+    # so financial/accreditation/audit foreign keys remain intact.
+    erased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 __all__ = ["User"]

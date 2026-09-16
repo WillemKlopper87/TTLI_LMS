@@ -3871,6 +3871,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/privacy/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export your personal data (POPIA access / portability) */
+        post: operations["export_my_data_api_v1_me_privacy_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/privacy/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Erase your account (POPIA deletion — anonymisation, not row deletion) */
+        post: operations["erase_my_account_api_v1_me_privacy_erase_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/privacy/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grant or withdraw consent for a purpose */
+        post: operations["set_my_consent_api_v1_me_privacy_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/legal-hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an account's legal-hold status */
+        get: operations["get_legal_hold_api_v1_admin_users__user_id__legal_hold_get"];
+        put?: never;
+        /** Place an account under legal hold, blocking erasure */
+        post: operations["place_legal_hold_api_v1_admin_users__user_id__legal_hold_post"];
+        /** Clear a legal hold */
+        delete: operations["release_legal_hold_api_v1_admin_users__user_id__legal_hold_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/privacy/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin-initiated erasure, for a support-handled request */
+        post: operations["admin_erase_user_api_v1_admin_users__user_id__privacy_erase_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/revenue-summary": {
         parameters: {
             query?: never;
@@ -5370,6 +5457,13 @@ export interface components {
             /** Items */
             items: components["schemas"]["CoachingFacilitatorResponse"][];
         };
+        /** ConsentRequest */
+        ConsentRequest: {
+            /** Purpose */
+            purpose: string;
+            /** Granted */
+            granted: boolean;
+        };
         /** CourseAnalyticsResponse */
         CourseAnalyticsResponse: {
             /**
@@ -5898,6 +5992,14 @@ export interface components {
              */
             estimated_minutes: number;
         };
+        /** EraseAccountRequest */
+        EraseAccountRequest: {
+            /**
+             * Confirm
+             * @description Must be true; a safety rail against an accidental call.
+             */
+            confirm: boolean;
+        };
         /** FacilitatorResponse */
         FacilitatorResponse: {
             /** Id */
@@ -6261,6 +6363,20 @@ export interface components {
         LearningPathsPageResponse: {
             /** Items */
             items: components["schemas"]["LearningPathResponse"][];
+        };
+        /** LegalHoldRequest */
+        LegalHoldRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /** LegalHoldStatusResponse */
+        LegalHoldStatusResponse: {
+            /** Legal Hold */
+            legal_hold: boolean;
+            /** Legal Hold Reason */
+            legal_hold_reason: string | null;
+            /** Legal Hold Set At */
+            legal_hold_set_at: string | null;
         };
         /** LessonBlockCreateRequest */
         LessonBlockCreateRequest: {
@@ -16969,6 +17085,208 @@ export interface operations {
             header?: never;
             path: {
                 subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_my_data_api_v1_me_privacy_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    erase_my_account_api_v1_me_privacy_erase_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EraseAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_my_consent_api_v1_me_privacy_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_legal_hold_api_v1_admin_users__user_id__legal_hold_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalHoldStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    place_legal_hold_api_v1_admin_users__user_id__legal_hold_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalHoldRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_legal_hold_api_v1_admin_users__user_id__legal_hold_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_erase_user_api_v1_admin_users__user_id__privacy_erase_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
             };
             cookie?: never;
         };

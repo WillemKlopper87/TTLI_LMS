@@ -57,6 +57,7 @@ from src.routers import (
     organisations,
     platform,
     podcasts,
+    privacy,
     push,
     recommendations,
     sso,
@@ -186,6 +187,7 @@ def create_app() -> FastAPI:
     app.include_router(recommendations.router, prefix="/api/v1")
     app.include_router(events.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
+    app.include_router(privacy.router, prefix="/api/v1")
     app.include_router(analytics.router, prefix="/api/v1")
     # Same /analytics prefix, same analytics:view gate — split into its own
     # module because operations reads join half the domain models and would
