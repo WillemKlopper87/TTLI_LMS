@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "generate": "openapi-typescript ../../apps/api/openapi.json -o src/schema.gen.ts && git diff -- src/schema.gen.ts",
+    "generate": "openapi-typescript ../../apps/api/openapi.json -o src/schema.gen.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
