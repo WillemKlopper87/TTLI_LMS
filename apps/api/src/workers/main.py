@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
@@ -23,6 +24,8 @@ from sqlalchemy import select, text
 from src.core.config import get_settings
 from src.core.db import dispose_engine, get_sessionmaker, init_engine, set_tenant
 from src.core.logging import configure_logging, get_logger
+from src.core.metrics import start_metrics_server, stop_metrics_server
+from src.core.observability import WORKER_METRICS_PORT, sample_operational_metrics
 from src.models.audit import AuditAction
 from src.models.push import PushSubscription
 from src.models.rbac import RoleAssignment, RolePermission
@@ -32,10 +35,12 @@ from src.services import push as push_service
 from src.services.email import send_sync
 from src.services.media.pipeline import transcode_video_asset
 from src.services.storage import get_storage_adapter
+from src.workers.observability import instrument_job
 
 log = get_logger(__name__)
 
 
+@instrument_job
 async def extend_event_partitions(ctx: dict[str, Any]) -> int:
     """Keep ~12 months of events partitions ahead of now. Idempotent."""
     factory = get_sessionmaker()
@@ -45,6 +50,7 @@ async def extend_event_partitions(ctx: dict[str, Any]) -> int:
     return int(created)
 
 
+@instrument_job
 async def purge_expired_auth(ctx: dict[str, Any]) -> int:
     """Delete refresh tokens, magic links and password resets whose expiry is
     more than 30 days past. The grace period keeps recent rows available to
@@ -56,6 +62,7 @@ async def purge_expired_auth(ctx: dict[str, Any]) -> int:
     return int(purged)
 
 
+@instrument_job
 async def prune_idempotency_keys(ctx: dict[str, Any]) -> int:
     """Retention sweep for `idempotency_keys` (03 §1.6, 0032).
 
@@ -79,6 +86,7 @@ async def prune_idempotency_keys(ctx: dict[str, Any]) -> int:
     return int(pruned)
 
 
+@instrument_job
 async def revoke_lapsed_subscriptions(ctx: dict[str, Any]) -> int:
     """Formal bookkeeping closure for lapsed subscriptions — access itself
     already lapses live the moment an entitlement's `expires_at` (which
@@ -95,6 +103,7 @@ async def revoke_lapsed_subscriptions(ctx: dict[str, Any]) -> int:
     return int(revoked)
 
 
+@instrument_job
 async def downgrade_expired_guests(ctx: dict[str, Any]) -> int:
     """02 §12.4's hourly guest-expiry sweep — `users.status` bookkeeping
     only. Access itself already lapses live at the two points that
@@ -110,6 +119,7 @@ async def downgrade_expired_guests(ctx: dict[str, Any]) -> int:
     return int(downgraded)
 
 
+@instrument_job
 async def send_push_job(
     ctx: dict[str, Any],
     *,
@@ -151,6 +161,7 @@ async def send_push_job(
     return True
 
 
+@instrument_job
 async def send_workshop_reminders(ctx: dict[str, Any]) -> int:
     """The third of the product owner's three push triggers. `due_
     workshop_reminders()` (SECURITY DEFINER, `0027`) atomically finds
@@ -184,6 +195,7 @@ async def send_workshop_reminders(ctx: dict[str, Any]) -> int:
     return len(due)
 
 
+@instrument_job
 async def send_eft_ageing_alerts(ctx: dict[str, Any]) -> int:
     """02 §12.4's daily EFT ageing alert (BACKLOG.md R4) — until this job
     existed, nothing computed "an approval has been pending too long", so
@@ -251,6 +263,7 @@ async def send_eft_ageing_alerts(ctx: dict[str, Any]) -> int:
     return len(due)
 
 
+@instrument_job
 async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: str) -> None:
     """Raises on any SMTP failure so arq retries with backoff (max_tries
     below) instead of the message being silently dropped — the one thing
@@ -260,6 +273,7 @@ async def send_email_job(ctx: dict[str, Any], *, to: str, subject: str, body: st
     log.info("email_sent", to_domain=to.rsplit("@", 1)[-1])
 
 
+@instrument_job
 async def transcode_video_job(ctx: dict[str, Any], *, video_asset_id: str) -> None:
     """The long-running half of the media pipeline (06 §3.2) — ffmpeg is a
     blocking subprocess, so this runs off the request path entirely,
@@ -282,10 +296,20 @@ async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(level=settings.log_level, pretty=settings.environment == "local")
     init_engine(settings)
-    log.info("worker_started", environment=settings.environment)
+    start_metrics_server(WORKER_METRICS_PORT)
+    ctx["metrics_sampler"] = asyncio.create_task(
+        sample_operational_metrics(), name="operational-metrics"
+    )
+    log.info("worker_started", environment=settings.environment, metrics_port=WORKER_METRICS_PORT)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
+    sampler = ctx.get("metrics_sampler")
+    if sampler is not None:
+        sampler.cancel()
+        with suppress(asyncio.CancelledError):
+            await sampler
+    stop_metrics_server()
     await dispose_engine()
 
 

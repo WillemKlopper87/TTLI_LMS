@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from time import perf_counter
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import structlog
 from arq import Retry
@@ -16,7 +16,11 @@ from src.core.metrics import WORKER_JOB_ATTEMPTS, WORKER_JOB_DURATION
 
 log = get_logger(__name__)
 
-JobCallable = Callable[..., Awaitable[Any]]
+# Bound, not aliased, so the decorator returns arq's own registered-function
+# type unchanged (e.g. WorkerCoroutine) instead of widening every job to the
+# same loose Callable[..., Awaitable[Any]] shape that arq's func()/cron()
+# stubs then reject.
+JobCallable = TypeVar("JobCallable", bound=Callable[..., Awaitable[Any]])
 
 
 def instrument_job(function: JobCallable) -> JobCallable:
@@ -62,7 +66,7 @@ def instrument_job(function: JobCallable) -> JobCallable:
                     duration_ms=round(duration * 1000, 2),
                 )
 
-    return observed
+    return cast(JobCallable, observed)
 
 
 __all__ = ["instrument_job"]
