@@ -387,6 +387,23 @@ jobs:
             echo "::endgroup::"
           done
 
+      # T11 exit criterion: "CI validates the metrics contract/
+      # configuration" — promtool is the pinned Prometheus image's own
+      # binary (no separate install/version to track), run against the
+      # exact files infra/docker-compose.single-vm.yml mounts.
+      - name: Validate Prometheus config and alert rules
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/infra/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/infra/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702 \
+            check rules /etc/prometheus/alerts.yml
+
   # Secret scanning (04 §3, §10; BACKLOG.md O4). Dev credentials are
   # deliberately hardcoded in infra/docker-compose.yml, .env.example and
   # the `quality` job's own env block above — .gitleaks.toml allowlists
