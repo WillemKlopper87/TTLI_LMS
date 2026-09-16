@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { authorAndSellAssessmentCourse } from "./fixtures/author-content";
+
 /**
  * The admin operations home, course reports, audit log and revenue chart
  * (enterprise-gaps-plan Passes A and B, plus backlog R1). These are the screens an
@@ -18,18 +20,26 @@ import { expect, test } from "@playwright/test";
  * as "the page is broken" rather than "the fixture is". Cost half a pass
  * to diagnose on 2026-08-21.
  *
- * Four form logins per run stays inside the 5/min per-account limit;
- * the availability probe below deliberately uses a PUBLIC endpoint so it
- * does not spend one of them. Adding a fifth spec means giving it its own
- * account, not reviving shared state.
+ * Four form logins per run stays inside the 5/min per-account limit. The
+ * analytics fixture adds two API logins on separate content/buyer accounts,
+ * keeping the whole file below the 10/min per-IP limit even when that test
+ * consumes its one CI retry. The availability probe below deliberately uses
+ * a PUBLIC endpoint so it does not spend one of them.
  */
 const EMAIL = process.env.E2E_ADMIN_EMAIL ?? "ops-admin@example.com";
 const PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "SmokeTest123!admin";
+const CONTENT_EMAIL = process.env.E2E_CONTENT_EMAIL ?? "content-fixture@example.com";
+const CONTENT_PASSWORD = process.env.E2E_CONTENT_PASSWORD ?? "SmokeTest123!content";
+const BUYER_EMAIL = process.env.E2E_BUYER_EMAIL ?? "checkout-buyer@example.com";
+const BUYER_PASSWORD = process.env.E2E_BUYER_PASSWORD ?? "SmokeTest123!buyer";
 
 test.beforeEach(async ({ request }) => {
   const probe = await request
     .get("/api/bff/public/workshops", { failOnStatusCode: false })
     .catch(() => null);
+  if ((!probe || !probe.ok()) && process.env.REQUIRE_API_E2E === "1") {
+    throw new Error("authenticated E2E requires a healthy API, but its readiness probe failed");
+  }
   test.skip(
     !probe || !probe.ok(),
     "no API on :8010 — start it (scripts/dev-up.sh + uvicorn) and seed an " +
@@ -100,7 +110,23 @@ test("the audit log lists events and has no WCAG A/AA violations", async ({ page
   expect(summary, "axe violations on /admin/audit").toEqual([]);
 });
 
-test("the analytics dashboard draws a revenue line with a table fallback", async ({ page }) => {
+test("the analytics dashboard draws a revenue line with a table fallback", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60_000);
+
+  // A clean CI database has no paid orders, and RevenueChart correctly renders
+  // its empty state in that case. Create a genuine fulfilled EFT sale through
+  // the existing assessment fixture so this test deterministically covers the
+  // non-empty chart path instead of depending on stale/shared database state.
+  await authorAndSellAssessmentCourse(request, {
+    contentEmail: CONTENT_EMAIL,
+    contentPassword: CONTENT_PASSWORD,
+    learnerEmail: BUYER_EMAIL,
+    learnerPassword: BUYER_PASSWORD,
+  });
+
   await signIn(page);
   await page.goto("/admin/analytics");
 

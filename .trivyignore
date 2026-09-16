@@ -195,6 +195,19 @@ CVE-2026-29036 exp:2026-11-26
 CVE-2026-67215 exp:2026-11-26
 CVE-2026-67216 exp:2026-11-26
 
+# CVE-2026-87933 was first reported against the freshly built API image on
+# 2026-09-15. Debian trixie ships libcjson1 1.7.18-3.1+deb13u1 and marks
+# trixie, testing and sid vulnerable with no fixed package available. The
+# bug is specifically in `cJSONUtils_MergePatch` from libcjson_utils.so,
+# not cJSON's core parser. Debian packages that utils library together with
+# libcjson.so, so package presence alone is not enough evidence to ignore it.
+# The `images` job therefore grants this entry to ttli-api only and first
+# performs a fail-closed binary sweep: any executable/shared object outside
+# libcjson_utils.so that links `libcjson_utils.so` makes CI fail before Trivy.
+# TTLI source contains no cJSON call site. Remove as soon as Debian publishes
+# a fix; otherwise re-run the reachability guard and review at expiry.
+CVE-2026-87933 exp:2026-12-14
+
 # --- Debian trixie libglib2.0-0t64: affected, no patched package yet
 # (ttli-api).
 CVE-2026-58010 exp:2026-11-26
@@ -345,3 +358,43 @@ CVE-2026-84445 exp:2026-12-08
 # or re-review source reachability at expiry.
 CVE-2026-76956 exp:2026-12-08
 CVE-2026-76957 exp:2026-12-08
+
+# --- clamav/clamav-debian: Debian 13 libxml2 2.12.7+dfsg+really2.9.14-2.1+deb13u3.
+# Trivy first reported CVE-2026-74860 on 2026-09-11 and Debian publishes no
+# fixed version. The advisory is a double-free/use-after-free in libxml2's
+# *Python bindings* (python3-libxml2). Verified against the pinned digest
+# (`dpkg -l` inside the running container): the image installs no python3
+# and no python3-libxml2 package at all -- clamd links libxml2.so.2 for its
+# own XML parsing, but the vulnerable binding layer is absent, so the code
+# path cannot be reached. ci.yml grants this entry to the clamav image only;
+# every other image keeps it blocking. Remove as soon as Debian publishes a
+# fix, or re-verify package absence at expiry.
+CVE-2026-74860 exp:2026-12-11
+
+# --- clamav/clamav-debian@sha256:4c975c43... two libpcre2-8-0 findings
+# Trivy first reported on 2026-09-13. Debian has published a fix
+# (10.46-1~deb13u2), but `clamav/clamav-debian:stable` has not rebuilt
+# with it as of the same date (re-pulled and re-resolved the `stable` tag
+# directly: it is still the exact digest already pinned here, still
+# shipping 10.46-1~deb13u1) -- nothing to bump to.
+#
+# CVE-2026-86145 is an out-of-bounds write in `pcre2_dfa_match`, and its
+# own advisory text says it "requires an attacker-controlled regular
+# expression, or a recursive pattern in conjunction with a small heap
+# limit" -- either way, control over the *pattern*, not the data being
+# matched. CVE-2026-89161 is a use-after-free in `pcre2_jit_match`.
+# Verified against the pinned digest by dynamic-symbol inspection
+# (`objdump -T`), the same method already used for the libxml2 entry
+# above: `libclamav.so.12.1.0` imports only `pcre2_compile_8` and
+# `pcre2_match_8` from libpcre2 -- never `pcre2_dfa_match_8`,
+# `pcre2_jit_compile_8`, or `pcre2_jit_match_8`. Swept every binary in the
+# image that links libpcre2 (`clamd`, `clamscan`, `clamdscan`,
+# `freshclam`, `libclamav.so`), and none imports either vulnerable
+# function -- so both are unreachable regardless of where the regex
+# pattern comes from. ci.yml grants both entries to the clamav image
+# only; every other image keeps them blocking. Remove as soon as Debian's
+# fix reaches the image, or re-verify the symbol table at expiry if
+# libclamav is rebuilt against a newer libpcre2 (JIT could be compiled in
+# then, even if unused today).
+CVE-2026-86145 exp:2026-12-12
+CVE-2026-89161 exp:2026-12-12

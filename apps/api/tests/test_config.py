@@ -116,3 +116,23 @@ def test_the_transcode_job_carries_an_explicit_timeout() -> None:
     )
     assert transcode.timeout_s == _settings().transcode_job_timeout_seconds
     assert transcode.timeout_s > 300, "still inside arq's default, which is the bug"
+
+
+def test_worker_health_check_interval_is_not_arqs_hour_long_default() -> None:
+    """BACKLOG T10 / the compose worker healthcheck depends on this: arq
+    writes its Redis health-check sentinel with a TTL of
+    health_check_interval + 1 seconds and only refreshes it that often.
+    arq's own default (3600s) would leave a dead worker's sentinel reading
+    "healthy" for up to an hour — exactly the false-positive `wait_running`
+    used to hide. The value is *ours*, chosen to fit inside
+    scripts/rolling-update.sh's HEALTH_TIMEOUT (60s default), not a
+    framework default nobody looked at (same shape as the transcode-timeout
+    test above).
+    """
+    from src.workers.main import WorkerSettings
+
+    assert WorkerSettings.health_check_interval == 30
+    assert WorkerSettings.health_check_interval < 60, (
+        "must clear inside rolling-update.sh's HEALTH_TIMEOUT default, or a "
+        "dead worker could still read healthy for the whole deploy window"
+    )
