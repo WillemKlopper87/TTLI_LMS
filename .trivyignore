@@ -398,3 +398,47 @@ CVE-2026-74860 exp:2026-12-11
 # then, even if unused today).
 CVE-2026-86145 exp:2026-12-12
 CVE-2026-89161 exp:2026-12-12
+
+# --- clamav/clamav-debian@sha256:4c975c43... five more libxml2 findings,
+# first reported 2026-09-16, all `affected` on Debian trixie with no
+# patched package yet (still 2.12.7+dfsg+really2.9.14-2.1+deb13u3, same
+# version as the 74860/86140 entries above). Checked with the same
+# dynamic-symbol method used there: `objdump -T` against
+# libclamav.so.12.1.0 extracted from the pinned digest. The full set of
+# libxml2 symbols it imports is the streaming xmlTextReader API
+# (xmlReaderForMemory/ForFd/ForIO/Walker, xmlTextReaderRead and its
+# accessors), htmlGetMetaEncoding/htmlReadMemory, xmlFreeDoc,
+# xmlInitParser, xmlGetDocCompressMode, and the xmlStr*/xmlFree
+# primitives -- nothing else.
+#
+# CVE-2026-86139 (xmlURIEscapeStr, uri.c), CVE-2026-86142
+# (xmlXPtrEvalXPtrPart/xmlXPtrEval, xpointer.c), CVE-2026-86143
+# (xmlOutputWriteCallback/xmlBufUse, xmlIO.c -- the *serialization* path;
+# clamd only ever reads XML, never writes it back out) and CVE-2026-86144
+# (xmlXIncludeProcess/xmlXIncludeProcessTree, xinclude.c) are each a
+# top-level libxml2 entry point absent from that import list, the same
+# argument as 86140 above: unreachable regardless of what's inside a
+# scanned document, because nothing in libclamav ever calls in.
+CVE-2026-86139 exp:2026-12-15
+CVE-2026-86142 exp:2026-12-15
+CVE-2026-86143 exp:2026-12-15
+CVE-2026-86144 exp:2026-12-15
+
+# CVE-2026-86138 (xmlDictAddQString, dict.c) is a different shape of
+# argument: dict.c is libxml2's internal string-interning table, called
+# by the parser itself while tokenising, not a top-level entry point --
+# it sits inside the xmlTextReader path above rather than beside it, so
+# "not imported" doesn't apply. The integer overflow needs a single QName
+# component (the prefix or local-name half of one element/attribute name)
+# long enough to wrap a 32-bit size calculation in the arithmetic that
+# sizes its heap allocation -- on the order of billions of characters in
+# one tag/attribute name. clamd's own StreamMaxLength caps every file
+# this deployment scans at 25 MiB by default
+# (apps/api/src/services/antivirus.py's INSTREAM client relies on exactly
+# that default, and nothing under infra/ overrides StreamMaxLength,
+# MaxScanSize or MaxFileSize in clamd.conf). No single field inside a
+# document can exceed the whole document's size, so nothing this
+# deployment ever feeds clamd can get within many orders of magnitude of
+# the length the overflow needs. Re-verify this bound first if
+# StreamMaxLength is ever raised, not just at expiry.
+CVE-2026-86138 exp:2026-12-15
