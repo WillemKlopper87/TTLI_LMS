@@ -540,11 +540,12 @@ CVE-2026-43871 exp:2026-12-15
 # --- grafana/loki@sha256:d70e4659... and grafana/alloy@sha256:b8ec653c...
 # (T11 log shipping, added alongside the Prometheus/Grafana pair above).
 # Both scanned clean at zero CRITICAL/HIGH findings on the pinned digests
-# when first added on 2026-09-16; Alloy still does. They still run through
-# the same blocking `for img in ...` loop in ci.yml as every other image,
-# on the base baseline, so a future finding on either fails the build like
-# any unreviewed CVE would -- which is exactly what caught the entry below
-# the same day, before this PR merged.
+# when first added on 2026-09-16. They still run through the same blocking
+# `for img in ...` loop in ci.yml as every other image, on the base
+# baseline, so a future finding on either fails the build like any
+# unreviewed CVE would -- which is exactly what caught the entries below
+# the same day, before this PR merged (a live Trivy vulnerability-DB
+# update mid-review, not an image change on either unchanged digest).
 #
 # CVE-2026-84445 (the gRPC-Go xDS-server crash already disposed for
 # Caddy/Prometheus/Grafana above, and granted to LOKI_IMAGE too as of
@@ -559,3 +560,22 @@ CVE-2026-43871 exp:2026-12-15
 # connect to besides itself. None of that is an xDS server -- a
 # Kubernetes/service-mesh integration this deployment has no use for and
 # infra/loki/local-config.yaml doesn't configure.
+#
+# grafana/alloy@sha256:b8ec653c... picked up 3 findings the same way,
+# same review pass. CVE-2026-84445 (grpc) is the identical xDS-server
+# argument as above -- Alloy's own clustering feature
+# ("starting cluster node" in its own startup logs) uses grpc for peer
+# discovery, never an xDS server, and infra/alloy/config.alloy configures
+# no clustering (single instance, no join/discover peers).
+#
+# CVE-2026-41567 and CVE-2026-42306 (github.com/docker/docker) are both
+# specifically `docker cp` / archive-endpoint bugs: PUT and HEAD
+# /containers/{id}/archive, exploited via a malicious container writing
+# a trojanised decompression binary (41567) or racing a symlink into a
+# bind-mount destination during copy (42306). Both need something to
+# call the archive API in the first place. infra/alloy/config.alloy's
+# discovery.docker and loki.source.docker components only ever call
+# Docker's list/inspect/logs endpoints to find containers and tail their
+# stdout -- there is no docker cp equivalent anywhere in this config, and
+# nothing else in this image's own operation touches
+# /containers/{id}/archive.

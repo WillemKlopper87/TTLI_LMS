@@ -379,9 +379,17 @@ jobs:
           # the full reasoning (internal ring/distributor RPC, no xDS
           # server, single-node config).
           loki_ignore="$(scoped_ignore loki '^CVE-2026-84445 ')"
+          # Alloy's own docker/docker + grpc findings, same review pass.
+          # docker/docker's two are both docker-cp/archive-endpoint bugs;
+          # discovery.docker/loki.source.docker (infra/alloy/config.alloy)
+          # only call Docker's list/inspect/logs endpoints, never archive.
+          # 84445 is the same xDS argument as Loki/Prometheus/Grafana --
+          # Alloy's own clustering feature uses grpc for peer discovery,
+          # never an xDS server, and nothing here configures clustering.
+          alloy_ignore="$(scoped_ignore alloy '^CVE-2026-(41567|42306|84445) ')"
           # PostgreSQL retains the complete historical baseline, except for
-          # Caddy-, ClamAV-, Prometheus-, Grafana-, Loki- and API-only
-          # dispositions above.
+          # Caddy-, ClamAV-, Prometheus-, Grafana-, Loki-, Alloy- and
+          # API-only dispositions above.
           grep -Ev '^CVE-2026-(84445|74860|86145|89161|87933|86138|86139|86142|86143|86144|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
 
@@ -395,6 +403,7 @@ jobs:
               "$PROMETHEUS_IMAGE") ignorefile="$prometheus_ignore" ;;
               "$GRAFANA_IMAGE")    ignorefile="$grafana_ignore" ;;
               "$LOKI_IMAGE")       ignorefile="$loki_ignore" ;;
+              "$ALLOY_IMAGE")      ignorefile="$alloy_ignore" ;;
               *)                    ignorefile="$base_ignore" ;;
             esac
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
