@@ -18,6 +18,7 @@ import uuid
 from fastapi import APIRouter, status
 
 from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep
+from src.core.errors import Forbidden
 from src.schemas.analyst import (
     AcceptReportRequest,
     AssignEngagementRequest,
@@ -171,14 +172,26 @@ async def get_report(
 ) -> ReportView:
     """Fetch a report for reading.
 
-    Analyst can read their own reports; reviewers can read any report.
-    (Permission checks simplified for first slice; full implementation adds role-based visibility.)
+    Analyst can read their own reports; reviewers/admins can read any report
+    in the tenant.
     """
+    if not principal.permissions & {
+        REPORT_SUBMIT,
+        REPORT_REVIEW,
+        ASSESSMENT_ANALYSE,
+        ASSESSMENT_RUN,
+    }:
+        raise Forbidden("You do not have access to this resource.")
+
     report = await analyst.get_report(
         session,
         tenant_id=principal.tenant_id,
         report_id=report_id,
     )
+
+    is_reviewer = bool(principal.permissions & {REPORT_REVIEW, ASSESSMENT_RUN})
+    if not is_reviewer and report.author_user_id != principal.user_id:
+        raise Forbidden("You do not have access to this report.")
 
     return ReportView(
         id=report.id,

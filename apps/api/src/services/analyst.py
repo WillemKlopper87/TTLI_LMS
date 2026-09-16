@@ -228,6 +228,18 @@ async def create_report_draft(
     if engagement is None:
         raise NotFound("Engagement not found.")
 
+    # Only the analyst this engagement was assigned to may draft a report
+    # against it, and only while the engagement is active — otherwise any
+    # caller with report:submit could author reports for engagements they
+    # were never granted, or ones an admin already revoked.
+    if engagement.analyst_user_id != author_user_id:
+        raise Forbidden("You are not the analyst assigned to this engagement.")
+    if engagement.revoked_at is not None:
+        raise EngagementRevoked("This engagement has been revoked.")
+    now = datetime.now(UTC)
+    if not (engagement.starts_at <= now < engagement.ends_at):
+        raise EngagementExpired("This engagement is outside its valid time window.")
+
     report = Report(
         tenant_id=tenant_id,
         instance_id=engagement.instance_id,
