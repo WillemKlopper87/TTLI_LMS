@@ -1,0 +1,58 @@
+# Single-node filesystem storage — the same shape as this deployment's
+# other "one VM, no managed service behind it yet" components (Garage
+# for object storage, the single Postgres instance). ttli-loki-data
+# (docker-compose.single-vm.yml) is what actually makes /loki survive a
+# container recreation; this file is the schema/retention policy on top
+# of it.
+#
+# Checked in explicitly rather than relying on the image's own baked-in
+# default (which this is a copy of) so retention and analytics settings
+# are this repo's own decision, not whatever the image ships next.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# docs/06_OPERATIONS.md §5.3: "Application logs 30 days hot". The
+# compactor is what actually enforces retention_period below — without
+# compaction.enabled, Loki accepts the setting but never deletes
+# anything.
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+limits_config:
+  retention_period: 720h
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+# Loki's own default sends anonymous usage analytics to
+# stats.grafana.org — an outbound call nothing else in this deployment
+# makes without an explicit opt-in (Sentry/Payfast/VAPID all start
+# unconfigured). Off, not left to the image's own default.
+analytics:
+  reporting_enabled: false

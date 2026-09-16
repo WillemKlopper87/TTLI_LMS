@@ -340,10 +340,18 @@ GHSA-hrxh-6v49-42gf exp:2026-12-07
 # pinned 2.11.4 digest, so no official replacement exists. The affected code
 # is an xDS server handling malformed resource names; this stock image and
 # infra/Caddyfile build/configure only Caddy's HTTP reverse proxy and automatic
-# HTTPS, with no xDS server or gRPC storage/cluster plugin. The CI workflow
-# grants this exception to CADDY_IMAGE only, so the same CVE remains blocking
-# anywhere else. Remove on the next official Caddy rebuild, or re-review at
-# expiry.
+# HTTPS, with no xDS server or gRPC storage/cluster plugin. Remove on the next
+# official Caddy rebuild, or re-review at expiry.
+#
+# 2026-09-16 (T11): the same finding surfaced against the newly-added
+# Prometheus and Grafana images (both vendor grpc-go too). Same argument,
+# checked against each: Prometheus's grpc usage backs its OTLP receiver
+# (disabled by default, never enabled here) and Grafana's backs its
+# core-to-plugin IPC — neither is an xDS server, so both grants below are on
+# separate evidence from Caddy's, not an assumption that Caddy's clears it
+# for them. The CI workflow grants this exception to CADDY_IMAGE,
+# PROMETHEUS_IMAGE and GRAFANA_IMAGE only; it remains blocking everywhere
+# else.
 CVE-2026-84445 exp:2026-12-08
 
 # --- ttli-api: Debian 13 libexpat1 2.8.3-1~deb13u1. Trivy first reported
@@ -398,3 +406,176 @@ CVE-2026-74860 exp:2026-12-11
 # then, even if unused today).
 CVE-2026-86145 exp:2026-12-12
 CVE-2026-89161 exp:2026-12-12
+
+# --- clamav/clamav-debian@sha256:4c975c43... five more libxml2 findings,
+# first reported 2026-09-16, all `affected` on Debian trixie with no
+# patched package yet (still 2.12.7+dfsg+really2.9.14-2.1+deb13u3, same
+# version as the 74860/86140 entries above). Checked with the same
+# dynamic-symbol method used there: `objdump -T` against
+# libclamav.so.12.1.0 extracted from the pinned digest. The full set of
+# libxml2 symbols it imports is the streaming xmlTextReader API
+# (xmlReaderForMemory/ForFd/ForIO/Walker, xmlTextReaderRead and its
+# accessors), htmlGetMetaEncoding/htmlReadMemory, xmlFreeDoc,
+# xmlInitParser, xmlGetDocCompressMode, and the xmlStr*/xmlFree
+# primitives -- nothing else.
+#
+# CVE-2026-86139 (xmlURIEscapeStr, uri.c), CVE-2026-86142
+# (xmlXPtrEvalXPtrPart/xmlXPtrEval, xpointer.c), CVE-2026-86143
+# (xmlOutputWriteCallback/xmlBufUse, xmlIO.c -- the *serialization* path;
+# clamd only ever reads XML, never writes it back out) and CVE-2026-86144
+# (xmlXIncludeProcess/xmlXIncludeProcessTree, xinclude.c) are each a
+# top-level libxml2 entry point absent from that import list, the same
+# argument as 86140 above: unreachable regardless of what's inside a
+# scanned document, because nothing in libclamav ever calls in.
+CVE-2026-86139 exp:2026-12-15
+CVE-2026-86142 exp:2026-12-15
+CVE-2026-86143 exp:2026-12-15
+CVE-2026-86144 exp:2026-12-15
+
+# CVE-2026-86138 (xmlDictAddQString, dict.c) is a different shape of
+# argument: dict.c is libxml2's internal string-interning table, called
+# by the parser itself while tokenising, not a top-level entry point --
+# it sits inside the xmlTextReader path above rather than beside it, so
+# "not imported" doesn't apply. The integer overflow needs a single QName
+# component (the prefix or local-name half of one element/attribute name)
+# long enough to wrap a 32-bit size calculation in the arithmetic that
+# sizes its heap allocation -- on the order of billions of characters in
+# one tag/attribute name. clamd's own StreamMaxLength caps every file
+# this deployment scans at 25 MiB by default
+# (apps/api/src/services/antivirus.py's INSTREAM client relies on exactly
+# that default, and nothing under infra/ overrides StreamMaxLength,
+# MaxScanSize or MaxFileSize in clamd.conf). No single field inside a
+# document can exceed the whole document's size, so nothing this
+# deployment ever feeds clamd can get within many orders of magnitude of
+# the length the overflow needs. Re-verify this bound first if
+# StreamMaxLength is ever raised, not just at expiry.
+CVE-2026-86138 exp:2026-12-15
+
+# --- prom/prometheus@sha256:1f0f50f0... (T11 observability). v3.9.1 is the
+# current release as of 2026-09-16 -- checked docker buildx imagetools
+# against no newer tag existing. 17 findings, all in vendored Go modules
+# behind features this deployment never turns on, confirmed against the
+# binary's own --help and our own infra/prometheus/prometheus.yml:
+#
+# github.com/docker/docker (2), and the golang.org/x/crypto/ssh (8) and
+# golang.org/x/net/html (2) findings transitively pulled in alongside it,
+# back Prometheus's docker_sd_configs/dockerswarm_sd_configs service
+# discovery. infra/prometheus/prometheus.yml uses static_configs only --
+# no docker/dockerswarm SD block exists anywhere in this repo's config, so
+# that whole code path is never entered.
+#
+# go.opentelemetry.io/otel(/sdk) (3) and google.golang.org/grpc (1,
+# CRITICAL) back the OTLP write-receiver endpoint. `--help` on the pinned
+# binary confirms the flag ("--[no-]web.enable-otlp-receiver ... Enable API
+# endpoint accepting OTLP write requests") defaults off, and
+# infra/docker-compose.single-vm.yml's prometheus command never passes it.
+CVE-2026-41567 exp:2026-12-15
+CVE-2026-42306 exp:2026-12-15
+CVE-2026-29181 exp:2026-12-15
+CVE-2026-24051 exp:2026-12-15
+CVE-2026-39883 exp:2026-12-15
+CVE-2026-39828 exp:2026-12-15
+CVE-2026-39829 exp:2026-12-15
+CVE-2026-39830 exp:2026-12-15
+CVE-2026-39831 exp:2026-12-15
+CVE-2026-39832 exp:2026-12-15
+CVE-2026-39835 exp:2026-12-15
+CVE-2026-42508 exp:2026-12-15
+CVE-2026-46595 exp:2026-12-15
+CVE-2026-46597 exp:2026-12-15
+CVE-2026-25681 exp:2026-12-15
+CVE-2026-27136 exp:2026-12-15
+CVE-2026-33186 exp:2026-12-15
+
+# --- grafana/grafana@sha256:ac461fb3... (T11 observability). Checking a
+# specific version tag (12.3.1, the one first pulled) against `latest`
+# turned up 48 findings, almost all `status: fixed` -- a strong "this tag
+# is stale" signal seen before with Caddy. `latest` resolves to 13.2.2 and
+# clears every OS-package and all-but-seven Go-module findings for free;
+# pinned to that version tag rather than the mutable `latest` alias.
+#
+# github.com/grafana/tempo (2): both are server-side bugs in Tempo itself
+# (an unbounded-memory query handler and an S3 SSE-C key disclosure via
+# Tempo's own /status/config endpoint) -- this deployment runs no Tempo
+# server and infra/grafana/provisioning/datasources/ configures only
+# Prometheus, so Grafana only ever holds the Tempo datasource *client*
+# code, never a reason to call it.
+#
+# go.opentelemetry.io/otel(/sdk) (2, CVE-2026-29181/39883 -- already
+# granted above for Prometheus's own vendored copy on the same
+# never-enabled-OTLP-receiver argument) and github.com/apache/thrift (1):
+# Grafana's own tracing/Jaeger export, gated behind grafana.ini's
+# [tracing.opentelemetry] section (confirmed via Grafana's own dependency
+# history -- apache/thrift arrives transitively through
+# github.com/uber/jaeger-client-go, Grafana's Jaeger tracing client, not
+# any code path this deployment's minimal grafana.ini touches). This
+# deployment's environment only sets GF_SECURITY_ADMIN_* and
+# GF_SERVER_ROOT_URL; no [tracing.*] section exists anywhere in this repo.
+#
+# google.golang.org/grpc (1, CRITICAL, CVE-2026-33186 -- already granted
+# above for Prometheus's own copy): Grafana's own use of grpc-go is its
+# core-to-plugin-process IPC for datasource/panel plugins (a loopback
+# transport between Grafana's own processes, not something an inbound
+# HTTP client reaches). The specific CVE is in grpc-go's `authz` package --
+# an opt-in HTTP/2-path-based authorization policy layer -- which nothing
+# in Grafana's plugin transport configures; base grpc-go IPC does not pull
+# authz in. Re-verify this one specifically at expiry -- it's the weakest
+# argument in this batch, resting on how Grafana's plugin host uses
+# grpc-go rather than a symbol-level check.
+#
+# golang.org/x/net/html (2, CVE-2026-25681/27136 -- already granted above
+# for Prometheus's own copy): the one Grafana feature that plausibly calls
+# this is the dashboard Text panel's HTML-sanitize path (sanitization is
+# parse-then-Render by construction) -- reachable only by whoever can
+# already edit a dashboard. This deployment's Grafana is never reachable
+# through Caddy (T11 scope: "do not expose metrics publicly"); it binds to
+# the host loopback interface only, the same pattern already established
+# for Garage's S3 API above, so reaching the dashboard editor at all needs
+# an SSH tunnel and a valid Grafana login first. Re-verify at expiry, or
+# sooner if Grafana access is ever widened beyond loopback.
+CVE-2026-21728 exp:2026-12-15
+CVE-2026-28377 exp:2026-12-15
+CVE-2026-43871 exp:2026-12-15
+
+# --- grafana/loki@sha256:d70e4659... and grafana/alloy@sha256:b8ec653c...
+# (T11 log shipping, added alongside the Prometheus/Grafana pair above).
+# Both scanned clean at zero CRITICAL/HIGH findings on the pinned digests
+# when first added on 2026-09-16. They still run through the same blocking
+# `for img in ...` loop in ci.yml as every other image, on the base
+# baseline, so a future finding on either fails the build like any
+# unreviewed CVE would -- which is exactly what caught the entries below
+# the same day, before this PR merged (a live Trivy vulnerability-DB
+# update mid-review, not an image change on either unchanged digest).
+#
+# CVE-2026-84445 (the gRPC-Go xDS-server crash already disposed for
+# Caddy/Prometheus/Grafana above, and granted to LOKI_IMAGE too as of
+# this comment) started showing up against Loki's own vendored grpc-go
+# (v1.82.1) between this pass's first scan and CI's own run -- a Trivy
+# vulnerability-DB update, not an image change; the digest is unchanged.
+# Loki's gRPC usage is entirely internal: distributor, ingester, ruler
+# and query-scheduler communication between its own modules (visible in
+# its own startup logs -- "ring=ingester", "ring=scheduler"). In this
+# single-node deployment (infra/loki/local-config.yaml:
+# replication_factor: 1, inmemory ring) there is nothing to actually
+# connect to besides itself. None of that is an xDS server -- a
+# Kubernetes/service-mesh integration this deployment has no use for and
+# infra/loki/local-config.yaml doesn't configure.
+#
+# grafana/alloy@sha256:b8ec653c... picked up 3 findings the same way,
+# same review pass. CVE-2026-84445 (grpc) is the identical xDS-server
+# argument as above -- Alloy's own clustering feature
+# ("starting cluster node" in its own startup logs) uses grpc for peer
+# discovery, never an xDS server, and infra/alloy/config.alloy configures
+# no clustering (single instance, no join/discover peers).
+#
+# CVE-2026-41567 and CVE-2026-42306 (github.com/docker/docker) are both
+# specifically `docker cp` / archive-endpoint bugs: PUT and HEAD
+# /containers/{id}/archive, exploited via a malicious container writing
+# a trojanised decompression binary (41567) or racing a symlink into a
+# bind-mount destination during copy (42306). Both need something to
+# call the archive API in the first place. infra/alloy/config.alloy's
+# discovery.docker and loki.source.docker components only ever call
+# Docker's list/inspect/logs endpoints to find containers and tail their
+# stdout -- there is no docker cp equivalent anywhere in this config, and
+# nothing else in this image's own operation touches
+# /containers/{id}/archive.

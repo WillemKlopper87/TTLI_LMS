@@ -1,0 +1,136 @@
+{
+  "title": "TTLI Operations",
+  "uid": "ttli-operations",
+  "tags": ["ttli", "t11"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "API error rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(ttli_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(ttli_http_requests_total[5m]))",
+          "legendFormat": "5xx rate"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "API p95 latency",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ttli_http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Queue depth",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "ttli_queue_depth", "legendFormat": "depth" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Worker job attempts by outcome",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(ttli_worker_job_attempts_total[5m])) by (job, outcome)",
+          "legendFormat": "{{job}} — {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Database pool: checked out vs size",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        { "expr": "ttli_database_pool_checked_out", "legendFormat": "checked out" },
+        { "expr": "ttli_database_pool_size", "legendFormat": "pool size" },
+        { "expr": "ttli_database_pool_overflow", "legendFormat": "overflow" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Database connections vs max_connections",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        { "expr": "ttli_database_connections", "legendFormat": "connections" },
+        { "expr": "ttli_database_max_connections", "legendFormat": "max_connections" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Database size",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [{ "expr": "ttli_database_size_bytes", "legendFormat": "size" }]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Storage operations by outcome",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "ttli-prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(ttli_storage_operations_total[5m])) by (backend, operation, outcome)",
+          "legendFormat": "{{backend}} {{operation}} — {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "API / worker logs — filter by request_id or job_id in the search box",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "loki", "uid": "ttli-loki" },
+      "options": { "showTime": true, "wrapLogMessage": true },
+      "targets": [
+        {
+          "expr": "{compose_service=~\"api|worker\"} | json",
+          "legendFormat": "{{compose_service}}"
+        }
+      ]
+    }
+  ]
+}

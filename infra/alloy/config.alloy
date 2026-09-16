@@ -1,0 +1,55 @@
+// Ships every container's stdout to Loki so a log survives the container
+// that produced it — BACKLOG.md's T11 row: "logs survive container
+// restart and are searchable by request/job correlation id." Without
+// this, scripts/rolling-update.sh's normal `docker compose up -d
+// --no-deps api` deploy flow recreates the container and Docker's
+// default json-file log driver deletes the outgoing container's log
+// file with it.
+//
+// Stream labels stay low-cardinality (container/service name only) —
+// the same reasoning core/metrics.py's own header comment already
+// states for Prometheus labels applies identically to Loki labels: a
+// request_id or job_id per stream would create a new time series per
+// request, not per endpoint. Those fields are still in every log line
+// (structlog's JSON renderer, core/logging.py) and stay queryable with
+// LogQL's `| json | request_id="..."` at query time instead.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	// docker-compose.single-vm.yml sets no container_name: on any
+	// service, so the actual container name carries the compose project
+	// prefix and replica index (e.g. ttli-single-vm-api-1) — not
+	// something worth matching on directly. Compose's own
+	// com.docker.compose.service label is the stable value ("api",
+	// "worker", "postgres", ...) queries and the dashboard's Logs panel
+	// filter on instead.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+}
+
+loki.source.docker "containers" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.docker.containers.targets
+	labels        = {job = "ttli"}
+	relabel_rules = discovery.relabel.containers.rules
+	forward_to    = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

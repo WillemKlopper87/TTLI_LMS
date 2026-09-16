@@ -1,0 +1,25 @@
+# Scrapes the two internal-only metrics ports core/metrics.py starts
+# (API 9101, worker 9102 — core/observability.py). Neither is reachable
+# through Caddy or any host-published port; both processes bind
+# 0.0.0.0:<port> only because the compose network is itself
+# internal-only (see docker-compose.single-vm.yml's own header comment).
+#
+# static_configs only, deliberately — no docker_sd_configs/
+# dockerswarm_sd_configs block. .trivyignore's Prometheus entries cite
+# this file as the evidence that those service-discovery code paths are
+# never reached; a service-discovery block added here later would need
+# that disposition re-reviewed first.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: ttli-api
+    static_configs:
+      - targets: ["api:9101"]
+  - job_name: ttli-worker
+    static_configs:
+      - targets: ["worker:9102"]
