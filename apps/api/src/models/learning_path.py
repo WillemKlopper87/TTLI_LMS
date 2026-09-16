@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,13 +47,16 @@ class LearningPath(Base, TimestampMixin):
     )
 
 
-class LearningPathCourse(Base):
-    """Ordered membership — a course may appear in several paths, and a
-    path's completion order is `position`, not insertion order."""
+class LearningPathStep(Base, TimestampMixin):
+    """Typed step in a learning path (0047). Replaces learning_path_courses
+    with a `kind` enum: course, workshop, assessment, one_on_one, or document.
+    Every existing learning_path_courses row is migrated as kind='course'.
+    Existing learner path UI keeps working unchanged because course steps
+    are structurally identical to the old courses."""
 
-    __tablename__ = "learning_path_courses"
+    __tablename__ = "learning_path_steps"
     __table_args__ = (
-        Index("uq_learning_path_courses", "learning_path_id", "course_id", unique=True),
+        Index("uq_learning_path_steps_position", "learning_path_id", "position", unique=True),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -62,10 +66,28 @@ class LearningPathCourse(Base):
         nullable=False,
         index=True,
     )
-    course_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=False
-    )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # course, workshop, assessment, one_on_one, document
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    phase_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    optional: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True
+    )
+    workshop_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("workshops.id", ondelete="RESTRICT"), nullable=True
+    )
+    assessment_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("assessment_templates.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    evaluation_role: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'pre' or 'post'
+    completion_rules: Mapped[dict] = mapped_column(
+        JSON, nullable=False, server_default=text("'{}'")
+    )
 
 
 class LearningPathTenantAssignment(Base, TimestampMixin):
@@ -134,7 +156,7 @@ class PathEnrolment(Base, TimestampMixin):
 
 __all__ = [
     "LearningPath",
-    "LearningPathCourse",
+    "LearningPathStep",
     "LearningPathTenantAssignment",
     "PathEnrolment",
 ]

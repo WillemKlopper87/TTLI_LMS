@@ -58,6 +58,7 @@ from src.routers import (
     platform,
     podcasts,
     privacy,
+    programmes,
     push,
     recommendations,
     sso,
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(courses.router, prefix="/api/v1")
     app.include_router(course_wizard.router, prefix="/api/v1")
     app.include_router(learning_paths.router, prefix="/api/v1")
+    app.include_router(programmes.router, prefix="/api/v1")
     app.include_router(workshops.router, prefix="/api/v1")
     app.include_router(deals.router, prefix="/api/v1")
     app.include_router(campaigns.router, prefix="/api/v1")
