@@ -258,6 +258,7 @@ jobs:
           S3_ACCESS_KEY: preflight-placeholder
           S3_SECRET_KEY: preflight-placeholder
           POSTGRES_SUPERUSER_PASSWORD: x
+          GRAFANA_ADMIN_PASSWORD: x
           SMTP_RELAY_HOST: "[smtp.example.invalid]:587"
           SMTP_RELAY_USERNAME: x
           SMTP_RELAY_PASSWORD: x
@@ -315,10 +316,14 @@ jobs:
           REDIS_IMAGE="redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576"
           CLAMAV_IMAGE="clamav/clamav-debian@sha256:4c975c439fcb7ab9cbdd72162c2802f5efcb4a11dcf5b0b37da1d746474ef20e"
           CADDY_IMAGE="caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+          PROMETHEUS_IMAGE="prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702"
+          GRAFANA_IMAGE="grafana/grafana:13.2.2@sha256:ac461fb352abc50da10a51c7d02462e9c05488f11f53f14b3ad79a8145f638a0"
+          LOKI_IMAGE="grafana/loki:3.7.7@sha256:d70e4659623f3e109af669cae76fe2a5dd5be54e2298fe8aed380d982fbc2500"
+          ALLOY_IMAGE="grafana/alloy:v1.19.2@sha256:b8ec653c44235fbe910879145dac3597d66b0aaecf60bcbbe82580767771a839"
 
           base_ignore="$(mktemp)"
           trap 'rm -f "$base_ignore" "$base_ignore".*' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161|87933|86138|86139|86142|86143|86144) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161|87933|86138|86139|86142|86143|86144|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
 
           # Grant a named image back a named subset. The IDs are re-read
           # from .trivyignore rather than restated here, so the `exp:`
@@ -350,23 +355,77 @@ jobs:
           # configure the vulnerable xDS server surface. Keep that exception
           # from suppressing the same CVE in any other image.
           caddy_ignore="$(scoped_ignore caddy '^CVE-2026-84445 ')"
+          # T11 observability. Prometheus's 17: docker/docker + its
+          # transitive x/crypto/ssh and x/net/html back service discovery
+          # backends infra/prometheus/prometheus.yml never configures
+          # (static_configs only); otel(/sdk) + grpc back the OTLP
+          # write-receiver, confirmed off by default via the pinned
+          # binary's own --help and never passed as a flag. 84445 is the
+          # same gRPC-Go xDS-server crash already disposed for Caddy below
+          # — Prometheus never runs an xDS server either.
+          prometheus_ignore="$(scoped_ignore prometheus '^CVE-2026-(41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|84445) ')"
+          # Grafana's 8, on version 13.2.2 (48 findings on the stale
+          # 12.3.1 tag first checked, almost all already `status: fixed`
+          # upstream — same signal as Caddy's own stale-tag history).
+          # Tempo findings are server-side bugs in a Tempo server this
+          # deployment doesn't run; otel/thrift/grpc back Grafana's own
+          # tracing export and plugin IPC, neither configured/reachable
+          # here (see .trivyignore for the full per-CVE reasoning). 84445
+          # is the same gRPC-Go xDS-server crash disposed for Caddy below
+          # — Grafana's grpc use is plugin IPC, not an xDS server.
+          grafana_ignore="$(scoped_ignore grafana '^CVE-2026-(21728|28377|29181|39883|43871|33186|25681|27136|84445) ')"
+          # Loki's own vendored grpc-go started tripping this the same day
+          # the rest of this batch was reviewed -- see .trivyignore for
+          # the full reasoning (internal ring/distributor RPC, no xDS
+          # server, single-node config).
+          loki_ignore="$(scoped_ignore loki '^CVE-2026-84445 ')"
+          # Alloy's own docker/docker + grpc findings, same review pass.
+          # docker/docker's two are both docker-cp/archive-endpoint bugs;
+          # discovery.docker/loki.source.docker (infra/alloy/config.alloy)
+          # only call Docker's list/inspect/logs endpoints, never archive.
+          # 84445 is the same xDS argument as Loki/Prometheus/Grafana --
+          # Alloy's own clustering feature uses grpc for peer discovery,
+          # never an xDS server, and nothing here configures clustering.
+          alloy_ignore="$(scoped_ignore alloy '^CVE-2026-(41567|42306|84445) ')"
           # PostgreSQL retains the complete historical baseline, except for
-          # Caddy-, ClamAV- and API-only dispositions above.
-          grep -Ev '^CVE-2026-(84445|74860|86145|89161|87933|86138|86139|86142|86143|86144) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
+          # Caddy-, ClamAV-, Prometheus-, Grafana-, Loki-, Alloy- and
+          # API-only dispositions above.
+          grep -Ev '^CVE-2026-(84445|74860|86145|89161|87933|86138|86139|86142|86143|86144|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
 
-          for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE"; do
+          for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" dxflrs/garage:v2.3.0 axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE" "$PROMETHEUS_IMAGE" "$GRAFANA_IMAGE" "$LOKI_IMAGE" "$ALLOY_IMAGE"; do
             echo "::group::Trivy: $img"
             case "$img" in
-              "$POSTGRES_IMAGE") ignorefile="$postgres_ignore" ;;
-              "$REDIS_IMAGE")    ignorefile="$redis_ignore" ;;
-              "$CLAMAV_IMAGE")   ignorefile="$clamav_ignore" ;;
-              "$CADDY_IMAGE")    ignorefile="$caddy_ignore" ;;
-              *)                 ignorefile="$base_ignore" ;;
+              "$POSTGRES_IMAGE")   ignorefile="$postgres_ignore" ;;
+              "$REDIS_IMAGE")      ignorefile="$redis_ignore" ;;
+              "$CLAMAV_IMAGE")     ignorefile="$clamav_ignore" ;;
+              "$CADDY_IMAGE")      ignorefile="$caddy_ignore" ;;
+              "$PROMETHEUS_IMAGE") ignorefile="$prometheus_ignore" ;;
+              "$GRAFANA_IMAGE")    ignorefile="$grafana_ignore" ;;
+              "$LOKI_IMAGE")       ignorefile="$loki_ignore" ;;
+              "$ALLOY_IMAGE")      ignorefile="$alloy_ignore" ;;
+              *)                    ignorefile="$base_ignore" ;;
             esac
             trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile "$ignorefile" "$img"
             echo "::endgroup::"
           done
+
+      # T11 exit criterion: "CI validates the metrics contract/
+      # configuration" — promtool is the pinned Prometheus image's own
+      # binary (no separate install/version to track), run against the
+      # exact files infra/docker-compose.single-vm.yml mounts.
+      - name: Validate Prometheus config and alert rules
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/infra/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/infra/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702 \
+            check rules /etc/prometheus/alerts.yml
 
   # Secret scanning (04 §3, §10; BACKLOG.md O4). Dev credentials are
   # deliberately hardcoded in infra/docker-compose.yml, .env.example and

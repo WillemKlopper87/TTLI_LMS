@@ -1,0 +1,11 @@
+# Points Grafana at infra/grafana/dashboards/ so the operator dashboard
+# loads on first boot instead of needing an import step.
+apiVersion: 1
+
+providers:
+  - name: ttli
+    folder: TTLI
+    type: file
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/dashboards

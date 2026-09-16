@@ -1,0 +1,85 @@
+# T11 alert rules (docs/BACKLOG.md; issue #30). Thresholds for the first
+# four groups are docs/06_OPERATIONS.md §5.2's own table, verbatim — not
+# invented here. The last two groups (DB pool pressure, storage failures)
+# aren't in that table; §5.2 doesn't name a pool-pressure or storage-error
+# threshold at all, so these are this pass's own reasonable defaults,
+# called out as such below rather than presented as pre-existing policy.
+#
+# Evaluation only, no receiver wired yet — there is no paging channel
+# configured anywhere in this codebase (no Slack/PagerDuty webhook, same
+# "no-op until configured" shape as VAPID/Payfast/Sentry elsewhere).
+# Alertmanager routing is real follow-up work, not something this pass
+# claims to have finished; until it lands, firing alerts are visible on
+# Prometheus's own /alerts page and as the `ALERTS` series in Grafana.
+groups:
+  - name: ttli-api
+    rules:
+      - alert: HighErrorRate
+        expr: >
+          sum(rate(ttli_http_requests_total{status=~"5.."}[10m]))
+          / sum(rate(ttli_http_requests_total[10m])) > 0.02
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "API error rate above 2% for 10 minutes"
+
+      - alert: HighP95Latency
+        expr: >
+          histogram_quantile(0.95, sum(rate(ttli_http_request_duration_seconds_bucket[10m])) by (le)) > 0.8
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "API p95 latency above 800ms for 10 minutes"
+
+  - name: ttli-queue
+    rules:
+      - alert: QueueBacklog
+        expr: ttli_queue_depth > 500
+        # 06_OPERATIONS.md §5.2 states the threshold without a duration;
+        # 5m guards against a one-scrape blip rather than widening the
+        # documented 500-job threshold itself.
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "arq default queue backlog above 500 jobs"
+
+      - alert: TranscodeFailures
+        # §5.2 says "> 3 consecutive". transcode_video_job runs with
+        # max_tries=1 (workers/main.py — a failed transcode is never
+        # retried), so each attempt is exactly one distinct video's
+        # outcome; 3 failed attempts inside an hour is this rule's
+        # stand-in for "3 consecutive" without a separate
+        # last-N-outcomes exporter.
+        expr: increase(ttli_worker_job_attempts_total{job="transcode_video_job",outcome="error"}[1h]) >= 3
+        labels:
+          severity: page
+        annotations:
+          summary: "3 or more transcode failures in the last hour"
+
+  - name: ttli-database
+    rules:
+      # Not in 06_OPERATIONS.md §5.2 — this pass's own default, covering
+      # the "database saturation / connection-pool pressure" signal issue
+      # #30 asks for. Revisit the 80% figure once real pool-exhaustion
+      # incidents give a better number to alert on.
+      - alert: DatabasePoolPressure
+        expr: (ttli_database_pool_checked_out / ttli_database_pool_size) > 0.8
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Database connection pool above 80% checked out for 10 minutes"
+
+  - name: ttli-storage
+    rules:
+      # "Any" threshold, matching §5.2's own "Payment webhook failure |
+      # Any" style for a signal that should never be silently absorbed.
+      - alert: StorageOperationFailures
+        expr: increase(ttli_storage_operations_total{outcome="error"}[5m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "Object-storage operation failures in the last 5 minutes"
