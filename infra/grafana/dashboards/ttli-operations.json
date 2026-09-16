@@ -117,6 +117,20 @@
           "legendFormat": "{{backend}} {{operation}} — {{outcome}}"
         }
       ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "API / worker logs — filter by request_id or job_id in the search box",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "loki", "uid": "ttli-loki" },
+      "options": { "showTime": true, "wrapLogMessage": true },
+      "targets": [
+        {
+          "expr": "{compose_service=~\"api|worker\"} | json",
+          "legendFormat": "{{compose_service}}"
+        }
+      ]
     }
   ]
 }

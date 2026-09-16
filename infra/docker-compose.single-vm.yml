@@ -322,6 +322,59 @@ services:
       - "127.0.0.1:3001:3000"
     depends_on:
       - prometheus
+      - loki
+    restart: unless-stopped
+
+  # Filesystem storage, single-node — the same "no managed service
+  # behind it yet" shape as Garage/Postgres elsewhere in this file.
+  # ttli-loki-data is what makes it survive a container recreation;
+  # infra/loki/local-config.yaml is the retention policy on top of it
+  # (docs/06_OPERATIONS.md §5.3: 30 days hot).
+  #
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect grafana/loki:3.7.7 --format '{{.Manifest.Digest}}'
+  loki:
+    image: grafana/loki:3.7.7@sha256:d70e4659623f3e109af669cae76fe2a5dd5be54e2298fe8aed380d982fbc2500
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - ttli-loki-data:/loki
+    restart: unless-stopped
+
+  # Ships every container's stdout to Loki (BACKLOG.md T11: "logs survive
+  # container restart" — scripts/rolling-update.sh's normal deploy flow
+  # removes the outgoing container, and Docker's default json-file log
+  # driver deletes that container's log file with it).
+  #
+  # The Docker socket mount is the one real privilege trade-off in this
+  # observability stack: read access to it is host-root-equivalent (any
+  # process with it can inspect, exec into, or start a container with
+  # arbitrary mounts). `:ro` limits the *bind mount* to read-only: Alloy
+  # still gets the full authority the socket API itself grants, `:ro`
+  # only stops it from overwriting the socket file. Accepted for the same
+  # reason the existing util-linux CAP_SYS_ADMIN entries in .trivyignore
+  # are accepted — this pass's config
+  # (infra/alloy/config.alloy) only ever calls Docker's read-only
+  # container-list/logs endpoints, never create/exec/start, but the
+  # socket itself doesn't enforce that boundary; only this container's
+  # own code does. Re-review before ever exposing Alloy beyond this
+  # compose network.
+  #
+  # Re-resolve deliberately with:
+  #   docker buildx imagetools inspect grafana/alloy:v1.19.2 --format '{{.Manifest.Digest}}'
+  alloy:
+    image: grafana/alloy:v1.19.2@sha256:b8ec653c44235fbe910879145dac3597d66b0aaecf60bcbbe82580767771a839
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ttli-alloy-data:/var/lib/alloy/data
+    depends_on:
+      - loki
     restart: unless-stopped
 
   web:
@@ -373,3 +426,5 @@ volumes:
   ttli-caddy-config:
   ttli-prometheus-data:
   ttli-grafana-data:
+  ttli-loki-data:
+  ttli-alloy-data:
