@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, status
 
 from src.core.deps import PrincipalDep, SessionDep
-from src.core.errors import AppError, NotFound
+from src.core.errors import AppError, Forbidden, NotFound
 from src.services import programmes
 
 router = APIRouter(tags=["programmes"])
@@ -107,13 +107,24 @@ async def create_step(
 
     Requires course:edit permission.
     """
+    principal.require("course:edit")
+    kind = body.get("kind")
+    title = body.get("title")
+    position = body.get("position")
+    if not isinstance(kind, str) or not kind:
+        raise HTTPException(status_code=400, detail="kind is required")
+    if not isinstance(title, str) or not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    if not isinstance(position, int):
+        raise HTTPException(status_code=400, detail="position is required")
     try:
         step = await programmes.create_step(
             session,
+            tenant_id=principal.tenant_id,
             learning_path_id=learning_path_id,
-            kind=body.get("kind"),
-            title=body.get("title"),
-            position=body.get("position"),
+            kind=kind,
+            title=title,
+            position=position,
             phase_label=body.get("phase_label"),
             optional=body.get("optional", False),
             course_id=body.get("course_id"),
@@ -147,6 +158,10 @@ async def create_cohort(
 
     Requires cohort:run permission.
     """
+    principal.require("cohort:run")
+    title = body.get("title")
+    if not isinstance(title, str) or not title:
+        raise HTTPException(status_code=400, detail="title is required")
     try:
         cohort = await programmes.create_cohort(
             session,
@@ -154,7 +169,7 @@ async def create_cohort(
             learning_path_id=body.get("learning_path_id"),
             course_id=body.get("course_id"),
             organisation_id=body.get("organisation_id"),
-            title=body.get("title"),
+            title=title,
             starts_at=body.get("starts_at"),
             ends_at=body.get("ends_at"),
             capacity=body.get("capacity"),
@@ -183,6 +198,8 @@ async def list_cohorts(
 
     Requires cohort:run or org:admin permission.
     """
+    if not principal.permissions & {"cohort:run", "org:admin"}:
+        raise Forbidden("You do not have access to this resource.")
     cohorts = await programmes.list_cohorts(
         session,
         tenant_id=principal.tenant_id,

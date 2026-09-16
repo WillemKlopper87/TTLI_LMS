@@ -78,7 +78,7 @@ from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.learning_path import (
     LearningPath,
-    LearningPathCourse,
+    LearningPathStep,
     LearningPathTenantAssignment,
     PathEnrolment,
 )
@@ -158,7 +158,7 @@ __all__ = [
     "InvoiceNumberCounter",
     "Lead",
     "LearningPath",
-    "LearningPathCourse",
+    "LearningPathStep",
     "LearningPathTenantAssignment",
     "LedgerEntry",
     "Lesson",

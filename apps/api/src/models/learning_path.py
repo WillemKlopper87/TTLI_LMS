@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSON
@@ -85,7 +86,7 @@ class LearningPathStep(Base, TimestampMixin):
         nullable=True,
     )
     evaluation_role: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'pre' or 'post'
-    completion_rules: Mapped[dict] = mapped_column(
+    completion_rules: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=False, server_default=text("'{}'")
     )
 

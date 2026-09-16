@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError, NotFound
-from src.models.learning_path import LearningPath, LearningPathStep
+from src.models.learning_path import LearningPath, LearningPathStep, LearningPathTenantAssignment
 from src.models.organisation import Organisation
 from src.models.programme import Cohort, CohortMember, CohortStep
 from src.models.user import User
@@ -26,6 +26,7 @@ log = structlog.get_logger(__name__)
 async def create_step(
     session: AsyncSession,
     *,
+    tenant_id: uuid.UUID,
     learning_path_id: uuid.UUID,
     kind: str,
     title: str,
@@ -61,8 +62,24 @@ async def create_step(
         NotFound: If learning_path_id doesn't exist
         AppError: If kind/FK combination is invalid
     """
-    # Verify the path exists
-    path = await session.get(LearningPath, learning_path_id)
+    # Verify the path exists AND is assigned to this tenant. LearningPath
+    # rows are deliberately global (models/learning_path.py's own
+    # docstring — same split as courses/CourseTenantAssignment); the join
+    # through LearningPathTenantAssignment is what stops a caller in one
+    # tenant from adding a step to a path they were never assigned.
+    path = (
+        await session.execute(
+            select(LearningPath)
+            .join(
+                LearningPathTenantAssignment,
+                LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+            )
+            .where(
+                LearningPath.id == learning_path_id,
+                LearningPathTenantAssignment.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
     if not path:
         raise NotFound(f"Learning path {learning_path_id} not found")
 
@@ -73,10 +90,7 @@ async def create_step(
         raise AppError("Workshop steps must specify workshop_id")
     if kind == "assessment" and not assessment_template_id:
         raise AppError("Assessment steps must specify assessment_template_id")
-    if kind == "one_on_one" and not (workshop_id or True):  # one_on_ones use workshop_id too
-        pass  # one_on_one steps might not need FK at creation time
-    if kind == "document":
-        pass  # document steps have no FK
+    # one_on_one and document steps have no required FK at creation time.
 
     step = LearningPathStep(
         learning_path_id=learning_path_id,
@@ -151,9 +165,26 @@ async def create_cohort(
     if learning_path_id and course_id:
         raise AppError("Cannot specify both learning_path_id and course_id")
 
-    # Verify path or course exists
+    # Verify path or course exists — scoped by tenant_id, not just by id.
+    # session.get() alone would accept another tenant's row: a caller in
+    # tenant A passing tenant B's learning_path_id/organisation_id/
+    # lead_facilitator_id would otherwise create a cohort against data it
+    # has no business touching (the same class of cross-tenant leak F1/F2
+    # closed for tenant-domain caching elsewhere in this repo).
     if learning_path_id:
-        path = await session.get(LearningPath, learning_path_id)
+        path = (
+            await session.execute(
+                select(LearningPath)
+                .join(
+                    LearningPathTenantAssignment,
+                    LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+                )
+                .where(
+                    LearningPath.id == learning_path_id,
+                    LearningPathTenantAssignment.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
         if not path:
             raise NotFound(f"Learning path {learning_path_id} not found")
     else:
@@ -162,12 +193,26 @@ async def create_cohort(
 
     # Verify organisation and lead facilitator if provided
     if organisation_id:
-        org = await session.get(Organisation, organisation_id)
+        org = (
+            await session.execute(
+                select(Organisation).where(
+                    Organisation.id == organisation_id,
+                    Organisation.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
         if not org:
             raise NotFound(f"Organisation {organisation_id} not found")
 
     if lead_facilitator_id:
-        facilitator = await session.get(User, lead_facilitator_id)
+        facilitator = (
+            await session.execute(
+                select(User).where(
+                    User.id == lead_facilitator_id,
+                    User.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
         if not facilitator:
             raise NotFound(f"User {lead_facilitator_id} not found")
 
@@ -213,7 +258,11 @@ async def create_cohort(
             user_id = participant.get("user_id")
             role = participant.get("role", "participant")
 
-            user = await session.get(User, user_id)
+            user = (
+                await session.execute(
+                    select(User).where(User.id == user_id, User.tenant_id == tenant_id)
+                )
+            ).scalar_one_or_none()
             if not user:
                 log.warning(
                     "participant_user_not_found",
@@ -269,4 +318,4 @@ async def list_cohorts(
         query = query.where(Cohort.learning_path_id == learning_path_id)
 
     result = await session.execute(query.order_by(Cohort.created_at.desc()))
-    return result.scalars().all()
+    return list(result.scalars().all())
