@@ -12,11 +12,9 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
-
 from src.core.errors import AppError
 from src.models.organisation import Organisation
-from src.models.partner import PartnerProfile, AssessmentLicence
+from src.models.partner import PartnerProfile
 from src.models.user import User
 from src.services import partner as partner_service
 
@@ -57,9 +55,7 @@ async def _enroll_mfa(session, user: User, crypto) -> None:
 class TestPartnerProfileActivationGate:
     """Test partner profile activation gate logic."""
 
-    async def test_activation_requires_operator_agreement(
-        self, tenant_session_factory, crypto
-    ):  # type: ignore[no-untyped-def]
+    async def test_activation_requires_operator_agreement(self, tenant_session_factory, crypto):  # type: ignore[no-untyped-def]
         """Activation fails if operator agreement is not accepted."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -92,9 +88,7 @@ class TestPartnerProfileActivationGate:
                 await partner_service.activate_partner(session, profile=profile, user=user)
             assert profile.status == "onboarding"  # Status unchanged
 
-    async def test_activation_requires_mfa_enrolled(
-        self, tenant_session_factory, crypto
-    ):  # type: ignore[no-untyped-def]
+    async def test_activation_requires_mfa_enrolled(self, tenant_session_factory, crypto):  # type: ignore[no-untyped-def]
         """Activation fails if MFA is not enrolled."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -167,9 +161,7 @@ class TestPartnerProfileActivationGate:
                 await partner_service.activate_partner(session, profile=profile, user=user)
             assert profile.status == "onboarding"
 
-    async def test_activation_succeeds_with_all_gates_cleared(
-        self, tenant_session_factory, crypto
-    ):  # type: ignore[no-untyped-def]
+    async def test_activation_succeeds_with_all_gates_cleared(self, tenant_session_factory, crypto):  # type: ignore[no-untyped-def]
         """Activation succeeds when all gates are met."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -243,9 +235,7 @@ class TestPartnerProfileActivationGate:
 class TestClientOrganisationHierarchy:
     """Test parent/child organisation relationships."""
 
-    async def test_create_client_organisation_under_partner(
-        self, tenant_session_factory
-    ):  # type: ignore[no-untyped-def]
+    async def test_create_client_organisation_under_partner(self, tenant_session_factory):  # type: ignore[no-untyped-def]
         """Client organisations can be created under a partner."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -270,9 +260,7 @@ class TestClientOrganisationHierarchy:
             assert client_org.parent_organisation_id == partner_org.id
             assert client_org.name == "Client Company"
 
-    async def test_create_client_fails_if_parent_is_not_partner(
-        self, tenant_session_factory
-    ):  # type: ignore[no-untyped-def]
+    async def test_create_client_fails_if_parent_is_not_partner(self, tenant_session_factory):  # type: ignore[no-untyped-def]
         """Creating a client under non-partner fails."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -298,9 +286,7 @@ class TestClientOrganisationHierarchy:
                     name="Child Org",
                 )
 
-    async def test_get_partner_clients_lists_only_children(
-        self, tenant_session_factory
-    ):  # type: ignore[no-untyped-def]
+    async def test_get_partner_clients_lists_only_children(self, tenant_session_factory):  # type: ignore[no-untyped-def]
         """Listing partner clients returns only direct children."""
         tenant_id = await _demo_tenant_id(tenant_session_factory)
         async with tenant_session_factory(tenant_id) as session:
@@ -369,7 +355,6 @@ class TestPartnerProfileRLS:
             )
             session.add(profile)
             await session.flush()
-            profile_id = profile.id
 
         # Try to access from different tenant context
         # This test would require separate tenants, which is complex in integration tests
