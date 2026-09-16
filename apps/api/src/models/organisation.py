@@ -2,6 +2,10 @@
 docstring for why seat assignment reuses `entitlements` rather than a
 new join table, and why `organisation_members.relationship` is a
 separate concept from the RBAC `role_assignments` table.
+
+Extends with §4.1 (partner portal design, 2026-09-11):
+  - kind enum ('partner', 'client') for partner org types
+  - parent_organisation_id for client orgs linked to their partner parent
 """
 
 from __future__ import annotations
@@ -32,6 +36,14 @@ class Organisation(Base, TimestampMixin):
     vat_number_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     billing_address_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # §4.1: kind enum for partner organisations ('partner' or 'client')
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="partner")
+    # §4.1: parent_organisation_id for client orgs to link to their partner
+    parent_organisation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
 
 
 class OrganisationMember(Base):
