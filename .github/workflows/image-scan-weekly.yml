@@ -56,14 +56,14 @@ jobs:
           postgres_ignore="$(mktemp)"
           trap 'rm -f "$base_ignore" "$api_ignore" "$web_ignore" "$postgres_ignore"' EXIT
 
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161|76956|76957|87933) ' .trivyignore > "$base_ignore"
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|74860|86145|89161|76956|76957|87933|86138|86139|86142|86143|86144) ' .trivyignore > "$base_ignore"
           { cat "$base_ignore"
             grep -E '^CVE-2026-(76642|78408|78409|78410|76956|76957|87933) ' .trivyignore
           } > "$api_ignore"
           { cat "$base_ignore"
             grep -E '^CVE-2026-(76642|78408|78409|78410) ' .trivyignore
           } > "$web_ignore"
-          grep -Ev '^CVE-2026-(84445|74860|86145|89161|76956|76957|87933) ' .trivyignore > "$postgres_ignore"
+          grep -Ev '^CVE-2026-(84445|74860|86145|89161|76956|76957|87933|86138|86139|86142|86143|86144) ' .trivyignore > "$postgres_ignore"
 
           postgres_image="postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
           for spec in "ttli-api:rescan|ttli-api-rescan" "ttli-web:rescan|ttli-web-rescan" "$postgres_image|postgres-production"; do
