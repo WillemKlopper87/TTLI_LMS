@@ -24,6 +24,11 @@ APP_DIR="${APP_DIR:-/opt/ttli}"
 COMPOSE_FILE="infra/docker-compose.single-vm.yml"
 ENV_FILE="$APP_DIR/.env.prod"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
+# Same variable and default as scripts/backup-production.sh, deliberately —
+# a release manifest written here (BACKLOG T10) is picked up and synced
+# off-host by that script's next run rather than this script also carrying
+# rclone/crypt credentials just to upload one JSON file.
+BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
 
 log()  { printf '\n\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -77,6 +82,12 @@ echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 log "Pulling $API_IMAGE and $WEB_IMAGE"
 docker pull "$API_IMAGE"
 docker pull "$WEB_IMAGE"
+
+# Captured from the pulled reference, not re-derived later from the
+# :latest tag this script is about to move — a digest is what actually
+# proves which registry manifest is running, independent of any local tag.
+API_DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$API_IMAGE" 2>/dev/null || echo unknown)"
+WEB_DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$WEB_IMAGE" 2>/dev/null || echo unknown)"
 
 # Keyless-signed in CI (OIDC via id-token: write — no stored signing key
 # to rotate or leak). Verifying against this exact workflow's identity
@@ -134,29 +145,6 @@ wait_healthy() {
   return 1
 }
 
-wait_running() {
-  # arq has no HTTP healthcheck, so "running" is polled the same way
-  # wait_healthy polls a real health endpoint — over the full timeout
-  # window, not a single flat sleep — and a restart-count bump (Docker's
-  # own crash-loop signal) fails it even if the container happens to be
-  # "running" again at the instant we check.
-  local svc="$1" waited=0 cid restarts_before restarts_now status
-  cid="$(DC ps -q "$svc")"
-  restarts_before="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
-  printf '  waiting for %s to stay running' "$svc"
-  while [ "$waited" -lt "$HEALTH_TIMEOUT" ]; do
-    status="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo missing)"
-    restarts_now="$(docker inspect -f '{{.RestartCount}}' "$cid" 2>/dev/null || echo 0)"
-    if [ "$status" != "running" ] || [ "$restarts_now" -gt "$restarts_before" ]; then
-      echo " NOT RUNNING (state: $status, restarts: $restarts_now)"
-      return 1
-    fi
-    printf '.'; sleep 3; waited=$((waited + 3))
-  done
-  echo " ok"
-  return 0
-}
-
 log "Swapping api"
 DC up -d --no-deps api
 if ! wait_healthy api; then
@@ -169,18 +157,75 @@ fi
 
 log "Swapping worker (same image as api)"
 DC up -d --no-deps worker
-if ! wait_running worker; then
+# BACKLOG T10/F9: wait_healthy, not a "did the process stay running" poll —
+# the compose file's worker healthcheck runs `arq --check`, which fails if
+# the container boots but can never reach Redis, or its event loop hangs
+# without ever crashing the process. A worker that is merely "running" was
+# exactly the false-positive T10 set out to close.
+if ! wait_healthy worker; then
   # api and worker run the same image and share its migration/schema
   # assumptions — treating this as anything less than a full release
   # failure would leave api on the new version and worker on the old one,
   # an unversioned-skew combination nobody tested. Roll BOTH back to the
   # previous image, matching the same "one compatibility unit" the build
   # step already treats them as.
-  warn "New worker container did not stay running — rolling back api and worker together."
+  warn "New worker container failed its health check — rolling back api and worker together."
   [ -n "$PREV_API" ] && docker tag "$PREV_API" ttli-api:latest
   DC up -d --no-deps --force-recreate api worker
-  wait_healthy api || warn "Rollback of api did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs api"
-  wait_running worker || warn "Rollback of worker did not stay running either — check logs by hand: docker compose -f $COMPOSE_FILE logs worker"
+
+  ROLLBACK_API=failed
+  ROLLBACK_WORKER=failed
+  if wait_healthy api; then
+    ROLLBACK_API=ok
+  else
+    warn "Rollback of api did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs api"
+  fi
+  if wait_healthy worker; then
+    ROLLBACK_WORKER=ok
+  else
+    warn "Rollback of worker did not report healthy — check logs by hand: docker compose -f $COMPOSE_FILE logs worker"
+  fi
+
+  # T10's rehearsal requires before/after evidence. A failed worker rollout
+  # used to exit before the normal success manifest was written, making the
+  # rollback itself unverifiable after the fact. Capture the actual restored
+  # container IDs and live checks before exiting; backup-production.sh picks
+  # up this release-*.json file on its next encrypted off-host sync.
+  mkdir -p "$BACKUP_DIR"
+  ROLLBACK_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ROLLBACK_MANIFEST="$BACKUP_DIR/release-rollback-$GIT_SHA.json"
+  ROLLBACK_API_ID="$(DC ps -q api | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_WORKER_ID="$(DC ps -q worker | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_WEB_ID="$(DC ps -q web | xargs -r docker inspect -f '{{.Image}}' 2>/dev/null || echo unknown)"
+  ROLLBACK_APP_VERSION="$(DC exec -T api printenv APP_VERSION 2>/dev/null | tr -d '\r\n' || echo unknown)"
+  if DC exec -T web node -e "require('http').get('http://localhost:3010/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))" >/dev/null 2>&1; then
+    ROLLBACK_WEB=ok
+  else
+    ROLLBACK_WEB=failed
+  fi
+  cat > "$ROLLBACK_MANIFEST" <<EOF
+{
+  "timestamp_utc": "$ROLLBACK_TIMESTAMP",
+  "outcome": "rolled_back_after_worker_failure",
+  "attempted_git_sha": "$GIT_SHA",
+  "running_app_version": "$ROLLBACK_APP_VERSION",
+  "attempted_registry_digests": {
+    "api": "$API_DIGEST",
+    "web": "$WEB_DIGEST"
+  },
+  "running_image_ids": {
+    "api": "$ROLLBACK_API_ID",
+    "worker": "$ROLLBACK_WORKER_ID",
+    "web": "$ROLLBACK_WEB_ID"
+  },
+  "checks": {
+    "api_health": "$ROLLBACK_API",
+    "worker_health": "$ROLLBACK_WORKER",
+    "web_http": "$ROLLBACK_WEB"
+  }
+}
+EOF
+  log "Rollback evidence written: $ROLLBACK_MANIFEST (synced off-host on the next scripts/backup-production.sh run)"
   die "worker rollout failed — api and worker were both rolled back together; web was never touched"
 fi
 
@@ -196,8 +241,71 @@ fi
 
 log "Done — api, worker and web are on the new version. Postgres/Redis/Garage/ClamAV/mail relay were never touched."
 log "Running image IDs (compare against \`git log\` / your CI build record, not just the tag):"
+declare -A IMAGE_IDS
 for svc in api worker web; do
   cid="$(DC ps -q "$svc")"
   image_id="$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || echo unknown)"
+  IMAGE_IDS[$svc]="$image_id"
   printf '  %-8s %s\n' "$svc" "$image_id"
 done
+
+# --------------------------------------------------------------------
+# BACKLOG T10: a release manifest, evidence that this exact deploy
+# actually came up — not merely that this script exited 0 — persisted
+# off-host by riding scripts/backup-production.sh's next run (same
+# BACKUP_DIR, which that script already syncs and prunes). Each check
+# below queries the just-swapped containers directly rather than
+# trusting the health-check verdicts already used to decide whether to
+# roll back; a manifest whose evidence was gathered the same way as the
+# gate that already passed proves nothing new.
+# --------------------------------------------------------------------
+log "Writing release manifest"
+READY_BODY="$(DC exec -T api curl -sf http://localhost:8010/health/ready 2>/dev/null || echo '')"
+if [ -n "$READY_BODY" ]; then API_READY=ok; else API_READY=failed; fi
+
+if DC exec -T worker arq --check src.workers.main.WorkerSettings >/dev/null 2>&1; then
+  WORKER_HEARTBEAT=ok
+else
+  WORKER_HEARTBEAT=failed
+fi
+
+if DC exec -T web node -e "require('http').get('http://localhost:3010/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))" >/dev/null 2>&1; then
+  WEB_HTTP=ok
+else
+  WEB_HTTP=failed
+fi
+
+APP_VERSION_RUNNING="$(DC exec -T api printenv APP_VERSION 2>/dev/null | tr -d '\r\n' || echo unknown)"
+RELEASE_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+mkdir -p "$BACKUP_DIR"
+RELEASE_MANIFEST="$BACKUP_DIR/release-$GIT_SHA.json"
+cat > "$RELEASE_MANIFEST" <<EOF
+{
+  "timestamp_utc": "$RELEASE_TIMESTAMP",
+  "outcome": "deployed",
+  "git_sha": "$GIT_SHA",
+  "app_version": "$APP_VERSION_RUNNING",
+  "registry_digests": {
+    "api": "$API_DIGEST",
+    "web": "$WEB_DIGEST"
+  },
+  "running_image_ids": {
+    "api": "${IMAGE_IDS[api]}",
+    "worker": "${IMAGE_IDS[worker]}",
+    "web": "${IMAGE_IDS[web]}"
+  },
+  "checks": {
+    "api_health_ready": "$API_READY",
+    "worker_heartbeat": "$WORKER_HEARTBEAT",
+    "web_http": "$WEB_HTTP"
+  }
+}
+EOF
+log "Release manifest written: $RELEASE_MANIFEST (synced off-host on the next scripts/backup-production.sh run)"
+
+if [ "$API_READY" != ok ] || [ "$WORKER_HEARTBEAT" != ok ] || [ "$WEB_HTTP" != ok ]; then
+  warn "Release manifest recorded at least one failed check after the swap completed — see $RELEASE_MANIFEST"
+  warn "The deploy itself was not rolled back for this (each service already passed its own health check above);"
+  warn "investigate by hand: docker compose -f $COMPOSE_FILE logs"
+fi

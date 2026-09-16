@@ -56,6 +56,9 @@ test.beforeEach(async ({ request }) => {
   const probe = await request
     .get("/api/bff/public/workshops", { failOnStatusCode: false })
     .catch(() => null);
+  if ((!probe || !probe.ok()) && process.env.REQUIRE_API_E2E === "1") {
+    throw new Error("authenticated E2E requires a healthy API, but its readiness probe failed");
+  }
   test.skip(!probe || !probe.ok(), "no live API and seeded admin account available");
 });
 
