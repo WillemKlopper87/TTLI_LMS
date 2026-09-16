@@ -103,6 +103,12 @@ class AuditAction:
     # session (every booking on it, not just one), the gap REQ-WS-03's
     # "cancellation... rules" left unimplemented until now.
     WORKSHOP_SESSION_CANCELLED = "workshop.session.cancelled"
+    # BACKLOG T12 — POPIA data-subject actions must leave an append-only
+    # record just like payment approvals and role changes do.
+    PRIVACY_DATA_EXPORTED = "privacy.data_exported"
+    PRIVACY_USER_ERASED = "privacy.user_erased"
+    PRIVACY_LEGAL_HOLD_SET = "privacy.legal_hold.set"
+    PRIVACY_LEGAL_HOLD_CLEARED = "privacy.legal_hold.cleared"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]
