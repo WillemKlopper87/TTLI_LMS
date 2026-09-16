@@ -5,6 +5,12 @@ Every model must be imported here. Alembic's autogenerate compares against
 is how `alembic check` starts passing while the schema quietly drifts.
 """
 
+from src.models.analyst import (
+    AssessmentEngagement,
+    Report,
+    ReportAttachment,
+    ReportStatus,
+)
 from src.models.article import Article
 from src.models.assessment import (
     Assignment,
@@ -118,6 +124,7 @@ __all__ = [
     "AccessLevel",
     "Activity",
     "Article",
+    "AssessmentEngagement",
     "Assignment",
     "AssignmentSubmission",
     "AttendanceRecord",
@@ -193,6 +200,9 @@ __all__ = [
     "Recommendation",
     "RefreshToken",
     "Refund",
+    "Report",
+    "ReportAttachment",
+    "ReportStatus",
     "Role",
     "RoleAssignment",
     "RolePermission",
