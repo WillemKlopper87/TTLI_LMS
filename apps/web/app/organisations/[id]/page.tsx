@@ -240,6 +240,9 @@ export default function OrganisationDetailPage() {
         <Link href={`/organisations/${orgId}/buy-seats`} className="btn btn--primary">
           Buy seats
         </Link>
+        <Link href={`/organisations/${orgId}/partner`} className="btn btn--ghost">
+          Partner profile
+        </Link>
       </div>
 
       <section className="mt-10">

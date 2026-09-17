@@ -85,6 +85,45 @@ async def create_partner_profile(
 
 
 @router.get(
+    "/profiles/by-organisation/{organisation_id}",
+    response_model=PartnerProfileResponse | None,
+    summary="Fetch the partner profile for an organisation, if one exists",
+)
+async def get_partner_profile_for_organisation(
+    organisation_id: uuid.UUID,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> PartnerProfileResponse | None:
+    """Look up an organisation's partner profile.
+
+    Returns null rather than 404 when no profile exists yet — the UI's
+    create-vs-manage decision hinges on "does one exist", not on this
+    being an error state.
+    """
+    profile = await partner_service.get_partner_profile(
+        session,
+        tenant_id=principal.tenant_id,
+        organisation_id=organisation_id,
+    )
+    if profile is None:
+        return None
+    return PartnerProfileResponse(
+        id=profile.id,
+        organisation_id=profile.organisation_id,
+        display_name=profile.display_name,
+        bio=profile.bio,
+        logo_object_key=profile.logo_object_key,
+        professional_body=profile.professional_body,
+        status=profile.status,
+        operator_agreement_accepted_at=(
+            profile.operator_agreement_accepted_at.isoformat()
+            if profile.operator_agreement_accepted_at
+            else None
+        ),
+    )
+
+
+@router.get(
     "/profiles/{profile_id}/activation-status",
     response_model=ActivationStatusResponse,
     summary="Check activation status of a partner profile",
