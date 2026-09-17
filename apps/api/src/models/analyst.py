@@ -143,7 +143,17 @@ class Report(Base, TimestampMixin):
         nullable=False,
     )
     status: Mapped[ReportStatus] = mapped_column(
-        SQLEnum(ReportStatus, name="report_status", create_type=False),
+        # values_callable: without it, SQLAlchemy's Enum type binds a
+        # Python enum member's *name* ("DRAFT") to Postgres, not its
+        # *value* ("draft") — but the report_status DB type's labels are
+        # the lowercase values (see migration 0047), so every insert and
+        # every status filter failed with "invalid input value for enum".
+        SQLEnum(
+            ReportStatus,
+            name="report_status",
+            create_type=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         server_default=ReportStatus.DRAFT.value,
     )
@@ -171,6 +181,12 @@ class ReportAttachment(Base):
     __tablename__ = "report_attachments"
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     report_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("reports.id", ondelete="CASCADE"),

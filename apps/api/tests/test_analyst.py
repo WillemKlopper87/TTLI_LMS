@@ -33,7 +33,20 @@ async def admin_user_id(  # type: ignore[no-untyped-def]
     tenant_session_factory,
     tenant_id: uuid.UUID,
 ) -> uuid.UUID:
-    """Get the demo tenant's admin user."""
+    """Get the demo tenant's admin user, creating one if none is seeded.
+
+    A fresh database (migrations only, no seed script) has no users at
+    all for the demo tenant — mirrors analyst_user_id's create-if-missing
+    pattern rather than assuming external seed data exists.
+    """
+    from src.core.config import get_settings
+    from src.core.crypto import CryptoBox
+    from src.models.rbac import RoleAssignment
+    from src.models.user import User
+
+    settings = get_settings()
+    crypto = CryptoBox(settings.encryption_key_bytes(), settings.blind_index_key_bytes())
+
     async with tenant_session_factory(tenant_id) as s:
         row = (
             await s.execute(
@@ -48,8 +61,25 @@ async def admin_user_id(  # type: ignore[no-untyped-def]
                 {"tid": tenant_id},
             )
         ).first()
-    assert row is not None
-    return uuid.UUID(str(row[0]))
+        if row is not None:
+            return uuid.UUID(str(row[0]))
+
+        admin_id = uuid.uuid4()
+        user = User(
+            id=admin_id,
+            tenant_id=tenant_id,
+            email_encrypted=crypto.encrypt("analyst-admin@example.com"),
+            email_blind_index=crypto.blind_index("analyst-admin@example.com"),
+            email_domain="example.com",
+            full_name_encrypted=crypto.encrypt("Admin Name"),
+            status="active",
+            is_guest=False,
+        )
+        s.add(user)
+        await s.flush()
+        s.add(RoleAssignment(tenant_id=tenant_id, user_id=admin_id, role_code="admin"))
+        await s.flush()
+    return admin_id
 
 
 @pytest.fixture
@@ -85,6 +115,7 @@ async def analyst_user_id(  # type: ignore[no-untyped-def]
             tenant_id=tenant_id,
             email_encrypted=crypto.encrypt("analyst@example.com"),
             email_blind_index=crypto.blind_index("analyst@example.com"),
+            email_domain="example.com",
             full_name_encrypted=crypto.encrypt("Analyst Name"),
             status="active",
             is_guest=False,
