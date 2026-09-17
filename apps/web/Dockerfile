@@ -35,6 +35,17 @@ ENV BUILD_STANDALONE=1
 # extra API round-trip just to show a version string.
 ARG GIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_VERSION=$GIT_SHA
+# The base host organisation workspaces hang off (app/login/page.tsx),
+# e.g. `ttli.co.za` in production. Also NEXT_PUBLIC_ and therefore also
+# baked at build time, and also never wired through before now: nothing
+# in ci.yml's `images` job passed this build-arg, so every production
+# build silently fell back to the same `localhost:3010` default a local
+# dev build uses. Sourced from the PRODUCTION_TENANT_BASE_HOST GitHub
+# Actions repository variable, not .env.prod — deploy-single-vm.sh's
+# .env.prod is read on the VM at deploy time, after the image this
+# ARG controls has already been built in CI.
+ARG NEXT_PUBLIC_TENANT_BASE_HOST=""
+ENV NEXT_PUBLIC_TENANT_BASE_HOST=$NEXT_PUBLIC_TENANT_BASE_HOST
 RUN cd apps/web && npm run build
 
 FROM node:24-slim@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e AS runtime

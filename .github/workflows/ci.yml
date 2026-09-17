@@ -510,8 +510,19 @@ jobs:
       - name: Build API image
         run: docker build --build-arg GIT_SHA="$GIT_SHA" -t ttli-api:ci apps/api
 
+      # PRODUCTION_TENANT_BASE_HOST is a GitHub Actions repository
+      # variable (Settings → Secrets and variables → Actions → Variables),
+      # not a secret — it's baked into the client bundle either way, so
+      # there's nothing to protect. Empty until the platform owner sets
+      # it; apps/web/Dockerfile's ARG default and app/login/page.tsx's
+      # `||` fallback both keep an unset value safely defaulting to
+      # `localhost:3010` rather than shipping blank.
       - name: Build web image
-        run: docker build --build-arg GIT_SHA="$GIT_SHA" -f apps/web/Dockerfile -t ttli-web:ci .
+        run: |
+          docker build \
+            --build-arg GIT_SHA="$GIT_SHA" \
+            --build-arg NEXT_PUBLIC_TENANT_BASE_HOST="${{ vars.PRODUCTION_TENANT_BASE_HOST }}" \
+            -f apps/web/Dockerfile -t ttli-web:ci .
 
       # The mail relay is a thin `apk upgrade` over boky/postfix's 5.1.0
       # release (BACKLOG O15). It is built here rather than on the VM
