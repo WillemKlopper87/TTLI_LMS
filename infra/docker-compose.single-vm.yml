@@ -129,7 +129,7 @@ services:
   # those update via freshclam against the ttli-clamav volume at runtime,
   # independent of the image digest, so scanning stays current either way.
   clamav:
-    image: clamav/clamav-debian:stable@sha256:be3cb41d9833ce9ffb98f3d3e1483c35c0d87060c2bda3624d75fd28bbf0b3bd
+    image: clamav/clamav-debian:stable@sha256:cc16781fe005e49de6a8fc1231b63b265f74b18fc2a6347c670c35716914c3b6
     volumes:
       - ttli-clamav:/var/lib/clamav
     healthcheck:
