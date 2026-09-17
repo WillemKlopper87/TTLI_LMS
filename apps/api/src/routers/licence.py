@@ -161,9 +161,9 @@ async def grant_seat(
 )
 async def list_seat_grants(
     organisation_id: str,
+    principal: PrincipalDep,
+    session: SessionDep,
     include_revoked: bool = False,
-    principal: PrincipalDep = None,
-    session: SessionDep = None,
 ) -> ListSeatGrantsResponse:
     """List all seat grants for a licensee organisation.
 
