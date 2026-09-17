@@ -367,7 +367,15 @@ async def reorder_path_courses(
     insertion order, so a race here is learner-facing correctness, not
     cosmetics."""
     rows = await list_path_courses(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
-    _check_permutation([member.course_id for member, _ in rows], ordered_course_ids)
+    # list_path_courses only ever returns kind="course" steps, so course_id
+    # is always set here — LearningPathStep's column type is nullable
+    # because other kinds (workshop, assessment, ...) don't set it.
+    course_ids: list[uuid.UUID] = []
+    for member, _ in rows:
+        if member.course_id is None:
+            raise AppError(f"Course step {member.id} has no course_id")
+        course_ids.append(member.course_id)
+    _check_permutation(course_ids, ordered_course_ids)
     by_course_id = {member.course_id: member for member, _ in rows}
     for index, course_id in enumerate(ordered_course_ids):
         by_course_id[course_id].position = index
