@@ -308,6 +308,13 @@ async def add_course_to_path(
         course_id=course_id,
         position=position,
         kind="course",
+        # title is NOT NULL on learning_path_steps — a non-course step
+        # needs its own title, but a course step's display title has
+        # always come from the joined Course row (list_path_courses
+        # returns (LearningPathStep, Course) tuples), so mirroring the
+        # course's own title here is a sensible default, not new data
+        # the caller has to supply.
+        title=course.title,
     )
     session.add(member)
     await session.flush()

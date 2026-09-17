@@ -99,10 +99,16 @@ def upgrade() -> None:
             sa.ForeignKey("workshops.id", ondelete="RESTRICT"),
             nullable=True,
         ),
+        # TODO: Add FK to assessment_platform.assessment_templates.id once
+        # both branches integrate (same deferred-FK pattern
+        # feat/analyst-workspace uses for its own instance_id column) —
+        # assessment_templates only exists on feat/assessment-platform, an
+        # independent unmerged branch. A hard FK here made this migration
+        # fail on any database that hasn't also applied that branch's
+        # migrations, which every fresh database is.
         sa.Column(
             "assessment_template_id",
             pg.UUID(as_uuid=True),
-            sa.ForeignKey("assessment_templates.id", ondelete="RESTRICT"),
             nullable=True,
         ),
         sa.Column("evaluation_role", sa.String(32), nullable=True),  # 'pre', 'post', or NULL
@@ -120,11 +126,20 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_learning_path_steps_learning_path_id", "learning_path_steps", ["learning_path_id"])
-    op.create_index(
+    # A plain unique index checks each row as it's written, so the classic
+    # position-swap update (two rows exchanging positions in one flush)
+    # always collides on whichever row's UPDATE lands first — pre-existing
+    # `reorder_path_courses` does exactly that "whole permutation in one
+    # transaction" update, unchanged by this migration. A deferrable
+    # constraint checked at commit instead of per-statement is what makes
+    # that pattern actually work; a unique *index* alone can't be deferred
+    # in Postgres, only a unique *constraint* can.
+    op.create_unique_constraint(
         "uq_learning_path_steps_position",
         "learning_path_steps",
         ["learning_path_id", "position"],
-        unique=True,
+        deferrable=True,
+        initially="DEFERRED",
     )
     op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON learning_path_steps TO {APP_ROLE}")
 
@@ -140,7 +155,7 @@ def upgrade() -> None:
         )
     ).fetchall()
 
-    for old_id, path_id, position, course_id, course_title in rows:
+    for _old_id, path_id, position, course_id, course_title in rows:
         conn.execute(
             sa.text(
                 "INSERT INTO learning_path_steps "
@@ -274,6 +289,12 @@ def upgrade() -> None:
     op.create_table(
         "cohort_members",
         sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "tenant_id",
+            pg.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
         sa.Column(
             "cohort_id",
             pg.UUID(as_uuid=True),

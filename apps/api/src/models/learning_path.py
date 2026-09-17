@@ -17,13 +17,29 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base, TimestampMixin, pk
 from src.models.course import ContentState
+
+# Matches migration 0047's `learning_path_step_kind` Postgres enum type
+# exactly — create_type=False because the migration already created it;
+# a model-side create_type=True would try to create it again and fail.
+STEP_KIND_VALUES = ("course", "workshop", "assessment", "one_on_one", "document")
+StepKind = Enum(*STEP_KIND_VALUES, name="learning_path_step_kind", create_type=False)
 
 
 class LearningPath(Base, TimestampMixin):
@@ -57,7 +73,16 @@ class LearningPathStep(Base, TimestampMixin):
 
     __tablename__ = "learning_path_steps"
     __table_args__ = (
-        Index("uq_learning_path_steps_position", "learning_path_id", "position", unique=True),
+        # Deferrable: reorder_path_courses updates a whole permutation of
+        # positions in one flush, which transiently collides row-by-row
+        # under a plain unique index. See migration 0047's own comment.
+        UniqueConstraint(
+            "learning_path_id",
+            "position",
+            name="uq_learning_path_steps_position",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
     )
 
     id: Mapped[uuid.UUID] = pk()
@@ -68,9 +93,7 @@ class LearningPathStep(Base, TimestampMixin):
         index=True,
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[str] = mapped_column(
-        Text, nullable=False
-    )  # course, workshop, assessment, one_on_one, document
+    kind: Mapped[str] = mapped_column(StepKind, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     phase_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     optional: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
@@ -80,10 +103,15 @@ class LearningPathStep(Base, TimestampMixin):
     workshop_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("workshops.id", ondelete="RESTRICT"), nullable=True
     )
+    # TODO: Add FK to assessment_platform.assessment_templates.id once both
+    # branches integrate (same deferred-FK pattern feat/analyst-workspace
+    # uses for its own instance_id column) — assessment_templates only
+    # exists on feat/assessment-platform, an independent unmerged branch.
+    # A real ForeignKey() here made SQLAlchemy's mapper configuration fail
+    # with NoReferencedTableError the moment anything touched this model,
+    # since that table's metadata is never registered on this branch.
     assessment_template_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("assessment_templates.id", ondelete="RESTRICT"),
-        nullable=True,
+        PGUUID(as_uuid=True), nullable=True
     )
     evaluation_role: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'pre' or 'post'
     completion_rules: Mapped[dict[str, Any]] = mapped_column(

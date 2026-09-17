@@ -13,11 +13,22 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base, TimestampMixin, pk
+
+# Matching migration 0047's Postgres enum types exactly — create_type=False
+# because the migration already created them.
+COHORT_STATUS_VALUES = ("planned", "active", "completed", "cancelled")
+CohortStatus = Enum(*COHORT_STATUS_VALUES, name="cohort_status", create_type=False)
+
+COHORT_STEP_STATUS_VALUES = ("pending", "scheduled", "in_progress", "done", "skipped")
+CohortStepStatus = Enum(*COHORT_STEP_STATUS_VALUES, name="cohort_step_status", create_type=False)
+
+COHORT_MEMBER_ROLE_VALUES = ("participant", "observer")
+CohortMemberRole = Enum(*COHORT_MEMBER_ROLE_VALUES, name="cohort_member_role", create_type=False)
 
 
 class Cohort(Base, TimestampMixin):
@@ -61,9 +72,7 @@ class Cohort(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    status: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default="planned"
-    )  # planned, active, completed, cancelled
+    status: Mapped[str] = mapped_column(CohortStatus, nullable=False, server_default="planned")
 
 
 class CohortStep(Base, TimestampMixin):
@@ -88,8 +97,8 @@ class CohortStep(Base, TimestampMixin):
     )
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default="pending"
-    )  # pending, scheduled, in_progress, done, skipped
+        CohortStepStatus, nullable=False, server_default="pending"
+    )
     workshop_session_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("workshop_sessions.id", ondelete="SET NULL"),
@@ -113,6 +122,11 @@ class CohortMember(Base, TimestampMixin):
     )
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     cohort_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("cohorts.id", ondelete="CASCADE"),
@@ -129,8 +143,8 @@ class CohortMember(Base, TimestampMixin):
         nullable=True,
     )
     role: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default="participant"
-    )  # participant, observer
+        CohortMemberRole, nullable=False, server_default="participant"
+    )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

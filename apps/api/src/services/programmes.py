@@ -272,6 +272,7 @@ async def create_cohort(
                 continue
 
             member = CohortMember(
+                tenant_id=tenant_id,
                 cohort_id=cohort.id,
                 user_id=user_id,
                 role=role,

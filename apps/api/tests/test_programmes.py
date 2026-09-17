@@ -99,28 +99,38 @@ async def test_cohort_creation_with_participants(tenant_session_factory):
     demo_tenant_id = uuid.UUID(str(demo_tenant_id_row[0]))
 
     async with tenant_session_factory(demo_tenant_id) as session:
-        # Get or create a learning path with some steps
-        path_row = (await session.execute(sa.text("SELECT id FROM learning_paths LIMIT 1"))).first()
-
-        if not path_row:
-            # If no existing path, create one for testing
-            path_id = uuid.uuid4()
-            await session.execute(
-                sa.text(
-                    """
-                    INSERT INTO learning_paths (id, slug, title, state)
-                    VALUES (:id, :slug, :title, :state)
-                    """
-                ),
-                {
-                    "id": path_id,
-                    "slug": f"test-path-{path_id.hex[:8]}",
-                    "title": "Test Path",
-                    "state": "published",
-                },
-            )
-        else:
-            path_id = uuid.UUID(str(path_row[0]))
+        # Always create a fresh path rather than reusing any existing one:
+        # when the suite runs together (as CI does), an existing
+        # tenant-assigned path may belong to another test module and
+        # already hold steps at position 0/1, colliding with the ones
+        # this test creates below.
+        path_id = uuid.uuid4()
+        await session.execute(
+            sa.text(
+                """
+                INSERT INTO learning_paths (id, slug, title, state)
+                VALUES (:id, :slug, :title, :state)
+                """
+            ),
+            {
+                "id": path_id,
+                "slug": f"test-path-{path_id.hex[:8]}",
+                "title": "Test Path",
+                "state": "published",
+            },
+        )
+        # create_cohort scopes LearningPath lookups through this
+        # assignment table (a global path is invisible to a tenant
+        # without one) — without it, create_cohort correctly 404s.
+        await session.execute(
+            sa.text(
+                """
+                INSERT INTO learning_path_tenant_assignments (id, tenant_id, learning_path_id)
+                VALUES (:id, :tenant_id, :path_id)
+                """
+            ),
+            {"id": uuid.uuid4(), "tenant_id": demo_tenant_id, "path_id": path_id},
+        )
 
         # Create some steps for the path
         step_ids = []
@@ -145,6 +155,10 @@ async def test_cohort_creation_with_participants(tenant_session_factory):
 
         await session.commit()
 
+    # A committed session's transaction is closed; every subsequent
+    # operation needs a session of its own, matching the pattern
+    # test_privacy.py/test_assessment_platform.py already use.
+    async with tenant_session_factory(demo_tenant_id) as session:
         # Get some test users
         users = (
             await session.execute(
@@ -169,16 +183,15 @@ async def test_cohort_creation_with_participants(tenant_session_factory):
             else [{"user_id": participant_ids[0], "role": "participant"}],
         )
         await session.commit()
-
-        # Verify cohort was created
-        assert cohort.id is not None
+        cohort_id = cohort.id
         assert cohort.tenant_id == demo_tenant_id
         assert cohort.learning_path_id == path_id
         assert cohort.status == "planned"
 
+    async with tenant_session_factory(demo_tenant_id) as session:
         # Verify cohort_steps were pre-created for each path step
         cohort_steps = (
-            await session.execute(sa.select(CohortStep).where(CohortStep.cohort_id == cohort.id))
+            await session.execute(sa.select(CohortStep).where(CohortStep.cohort_id == cohort_id))
         ).scalars()
         steps_list = list(cohort_steps)
         assert len(steps_list) == len(
@@ -188,7 +201,7 @@ async def test_cohort_creation_with_participants(tenant_session_factory):
         # Verify cohort_members were created
         members = (
             await session.execute(
-                sa.select(CohortMember).where(CohortMember.cohort_id == cohort.id)
+                sa.select(CohortMember).where(CohortMember.cohort_id == cohort_id)
             )
         ).scalars()
         members_list = list(members)
