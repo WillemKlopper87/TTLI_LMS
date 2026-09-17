@@ -1,22 +1,40 @@
 "use client";
 
 /**
- * `/admin/analyst/reports` — there is no GET /reports list endpoint in
- * this branch's backend (only GET /reports/{id}), so this screen is a
- * "look up a report by ID" form plus a "create draft" form, not a
- * managed list.
+ * `/admin/analyst/reports` — reports list (GET /reports), scoped to the
+ * caller's own reports unless they hold report:review/assessment:run, the
+ * same author-vs-reviewer split GET /reports/{id} enforces. Plus a
+ * "create draft" form.
  */
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAdmin } from "../../admin-context";
-import { readError, sendJson } from "../../courses/wizard-api";
+import { authedFetch, readError, sendJson } from "../../courses/wizard-api";
 
 const REPORT_SUBMIT = "report:submit";
 const REPORT_REVIEW = "report:review";
 const ASSESSMENT_ANALYSE = "assessment:analyse";
 const ASSESSMENT_RUN = "assessment:run";
+
+interface ReportItem {
+  id: string;
+  title: string;
+  status: string;
+  author_user_id: string;
+  version: number;
+  created_at: string;
+}
+
+const STATUS_TAG: Record<string, string> = {
+  draft: "tag--mute",
+  submitted: "tag--live",
+  returned: "tag--warn",
+  accepted: "tag--done",
+  withdrawn: "tag--mute",
+};
 
 export default function AnalystReportsScreen() {
   const router = useRouter();
@@ -28,18 +46,31 @@ export default function AnalystReportsScreen() {
     me.permissions.includes(ASSESSMENT_ANALYSE) ||
     me.permissions.includes(ASSESSMENT_RUN);
 
-  const [lookupId, setLookupId] = useState("");
+  const [reports, setReports] = useState<ReportItem[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   const [engagementId, setEngagementId] = useState("");
   const [title, setTitle] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  function lookup(event: React.FormEvent) {
-    event.preventDefault();
-    if (!lookupId.trim()) return;
-    router.push(`/admin/analyst/reports/${lookupId.trim()}`);
+  async function loadReports() {
+    const resp = await authedFetch("/api/bff/reports");
+    if (!resp.ok) {
+      setListError(await readError(resp, "Reports could not be loaded."));
+      setReports([]);
+      return;
+    }
+    setReports((await resp.json()).items);
+    setListError(null);
   }
+
+  useEffect(() => {
+    if (!canView) return;
+    void (async () => {
+      await loadReports();
+    })();
+  }, [canView]);
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
@@ -75,6 +106,9 @@ export default function AnalystReportsScreen() {
     );
   }
 
+  const isReviewer =
+    me.permissions.includes(REPORT_REVIEW) || me.permissions.includes(ASSESSMENT_RUN);
+
   return (
     <div className="dash">
       <div className="dash-top">
@@ -82,32 +116,72 @@ export default function AnalystReportsScreen() {
           <p className="eyebrow">Assess</p>
           <h1>Reports</h1>
         </div>
-        <a className="btn btn--ghost" href="/admin/analyst">
+        <Link className="btn btn--ghost" href="/admin/analyst">
           Engagements
-        </a>
+        </Link>
       </div>
 
-      <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
-        <b style={{ fontSize: "0.875rem" }}>Open a report</b>
-        <form onSubmit={lookup} className="mt-3">
-          <label className="field">
-            <b>Report ID</b>
-            <input
-              className="input"
-              value={lookupId}
-              onChange={(e) => setLookupId(e.target.value)}
-              placeholder="UUID of the report"
-              required
-            />
-          </label>
-          <button type="submit" className="btn btn--primary mt-3" disabled={!lookupId.trim()}>
-            Open
-          </button>
-        </form>
+      <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+        {isReviewer
+          ? "Every report in this tenant."
+          : "Reports you authored. Reviewers and admins see every report."}
+      </p>
+
+      {listError ? (
+        <div className="callout callout--warn mt-4" role="alert">
+          <p style={{ fontSize: "0.8125rem" }}>{listError}</p>
+        </div>
+      ) : null}
+
+      <div className="tablewrap mt-4">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Title</th>
+              <th scope="col">Status</th>
+              <th scope="col">Version</th>
+              <th scope="col" />
+            </tr>
+          </thead>
+          <tbody>
+            {reports === null ? (
+              <tr>
+                <td colSpan={4} style={{ color: "var(--faint)" }}>
+                  Loading…
+                </td>
+              </tr>
+            ) : null}
+            {reports !== null && reports.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ color: "var(--muted)" }}>
+                  No reports yet.
+                </td>
+              </tr>
+            ) : null}
+            {(reports ?? []).map((report) => (
+              <tr key={report.id}>
+                <td>
+                  <b>{report.title}</b>
+                </td>
+                <td>
+                  <span className={`tag ${STATUS_TAG[report.status] ?? "tag--mute"}`}>
+                    {report.status}
+                  </span>
+                </td>
+                <td style={{ fontSize: "0.8125rem" }}>{report.version}</td>
+                <td>
+                  <Link className="btn btn--ghost" href={`/admin/analyst/reports/${report.id}`}>
+                    Open
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {canCreate ? (
-        <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
+        <div className="card p-4 mt-6" style={{ maxWidth: "32rem" }}>
           <b style={{ fontSize: "0.875rem" }}>Create draft report</b>
           <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
             One open draft is allowed per engagement.

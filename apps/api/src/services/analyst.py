@@ -107,6 +107,47 @@ async def assign_engagement(
     return engagement
 
 
+async def list_engagements(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+) -> list[AssessmentEngagement]:
+    """List all engagements for a tenant, newest first.
+
+    Admin-only (assessment:run) — the UI this backs has no reason to
+    filter by analyst, since assigning/revoking is itself an admin
+    action over every analyst's engagements.
+    """
+    stmt = (
+        select(AssessmentEngagement)
+        .where(AssessmentEngagement.tenant_id == tenant_id)
+        .order_by(AssessmentEngagement.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_reports(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    author_user_id: uuid.UUID | None = None,
+) -> list[Report]:
+    """List reports for a tenant, newest first.
+
+    author_user_id scopes the list to one analyst's own reports — the
+    router passes the caller's own id here unless they hold
+    report:review/assessment:run, mirroring get_report's same
+    author-vs-reviewer visibility split.
+    """
+    stmt = select(Report).where(Report.tenant_id == tenant_id)
+    if author_user_id is not None:
+        stmt = stmt.where(Report.author_user_id == author_user_id)
+    stmt = stmt.order_by(Report.created_at.desc())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def revoke_engagement(
     session: AsyncSession,
     *,
@@ -508,6 +549,8 @@ __all__ = [
     "check_engagement_access",
     "create_report_draft",
     "get_report",
+    "list_engagements",
+    "list_reports",
     "record_analyst_read",
     "release_report",
     "resubmit_returned_report",

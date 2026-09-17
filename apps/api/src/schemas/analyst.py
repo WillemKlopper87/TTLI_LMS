@@ -123,15 +123,29 @@ class ReportWithAttachmentsView(ReportView):
     attachments: list[ReportAttachmentView] = Field(default_factory=list)
 
 
+class EngagementsPageResponse(BaseModel):
+    """A list of engagements."""
+
+    items: list[EngagementView]
+
+
+class ReportsPageResponse(BaseModel):
+    """A list of reports."""
+
+    items: list[ReportView]
+
+
 __all__ = [
     "AcceptReportRequest",
     "AssignEngagementRequest",
     "CreateReportRequest",
     "EngagementView",
+    "EngagementsPageResponse",
     "ReleaseReportRequest",
     "ReportAttachmentView",
     "ReportView",
     "ReportWithAttachmentsView",
+    "ReportsPageResponse",
     "ResubmitReportRequest",
     "ReturnReportRequest",
     "RevokeEngagementRequest",

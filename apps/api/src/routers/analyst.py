@@ -23,8 +23,10 @@ from src.schemas.analyst import (
     AcceptReportRequest,
     AssignEngagementRequest,
     CreateReportRequest,
+    EngagementsPageResponse,
     EngagementView,
     ReleaseReportRequest,
+    ReportsPageResponse,
     ReportView,
     ResubmitReportRequest,
     ReturnReportRequest,
@@ -116,6 +118,41 @@ async def revoke_engagement(
     )
 
 
+@router.get(
+    "/assessments/engagements",
+    response_model=EngagementsPageResponse,
+    summary="List engagements (admin-only)",
+)
+async def list_engagements(
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> EngagementsPageResponse:
+    """List all engagements for the tenant, newest first.
+
+    Requires assessment:run permission — the same gate assignment and
+    revocation already use.
+    """
+    principal.require(ASSESSMENT_RUN)
+
+    engagements = await analyst.list_engagements(session, tenant_id=principal.tenant_id)
+
+    return EngagementsPageResponse(
+        items=[
+            EngagementView(
+                id=e.id,
+                instance_id=e.instance_id,
+                analyst_user_id=e.analyst_user_id,
+                starts_at=e.starts_at,
+                ends_at=e.ends_at,
+                revoked_at=e.revoked_at,
+                purpose=e.purpose,
+                created_at=e.created_at,
+            )
+            for e in engagements
+        ]
+    )
+
+
 @router.post(
     "/reports",
     response_model=ReportView,
@@ -157,6 +194,60 @@ async def create_report(
         released_at=report.released_at,
         created_at=report.created_at,
         updated_at=report.updated_at,
+    )
+
+
+@router.get(
+    "/reports",
+    response_model=ReportsPageResponse,
+    summary="List reports",
+)
+async def list_reports(
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> ReportsPageResponse:
+    """List reports for the tenant, newest first.
+
+    Reviewers (report:review) and admins (assessment:run) see every
+    report in the tenant; anyone with only report:submit sees just
+    their own — the same author-vs-reviewer split get_report enforces.
+    """
+    if not principal.permissions & {
+        REPORT_SUBMIT,
+        REPORT_REVIEW,
+        ASSESSMENT_ANALYSE,
+        ASSESSMENT_RUN,
+    }:
+        raise Forbidden("You do not have access to this resource.")
+
+    is_reviewer = bool(principal.permissions & {REPORT_REVIEW, ASSESSMENT_RUN})
+    reports = await analyst.list_reports(
+        session,
+        tenant_id=principal.tenant_id,
+        author_user_id=None if is_reviewer else principal.user_id,
+    )
+
+    return ReportsPageResponse(
+        items=[
+            ReportView(
+                id=r.id,
+                engagement_id=r.engagement_id,
+                instance_id=r.instance_id,
+                author_user_id=r.author_user_id,
+                status=r.status.value,
+                title=r.title,
+                summary=r.summary,
+                version=r.version,
+                submitted_at=r.submitted_at,
+                decided_at=r.decided_at,
+                decided_by=r.decided_by,
+                decision_note=r.decision_note,
+                released_at=r.released_at,
+                created_at=r.created_at,
+                updated_at=r.updated_at,
+            )
+            for r in reports
+        ]
     )
 
 

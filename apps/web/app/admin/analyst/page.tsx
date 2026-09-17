@@ -2,24 +2,38 @@
 
 /**
  * `/admin/analyst` — assign/revoke analyst engagements on assessment
- * instances. There is no GET /assessments/engagements list endpoint in
- * this branch's backend, so this screen is a standalone "assign" form
- * plus a "revoke by ID" form rather than a managed list — the same
- * shape docs/superpowers/specs/2026-09-11-analyst-workspace-design.md's
- * first slice takes on the backend side (create/revoke, no listing yet).
+ * instances. Backed by GET/POST /assessments/engagements and
+ * POST /assessments/engagements/{id}/revoke, all admin-only
+ * (assessment:run).
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAdmin } from "../admin-context";
-import { readError, sendJson } from "../courses/wizard-api";
+import { authedFetch, readError, sendJson } from "../courses/wizard-api";
 
 const ASSESSMENT_RUN = "assessment:run";
+
+interface EngagementItem {
+  id: string;
+  instance_id: string | null;
+  analyst_user_id: string;
+  starts_at: string;
+  ends_at: string;
+  revoked_at: string | null;
+  purpose: string;
+  created_at: string;
+}
 
 export default function AnalystEngagementsScreen() {
   const { me } = useAdmin();
   const canManage = me.permissions.includes(ASSESSMENT_RUN);
+
+  const [engagements, setEngagements] = useState<EngagementItem[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const [analystUserId, setAnalystUserId] = useState("");
   const [instanceId, setInstanceId] = useState("");
@@ -28,12 +42,24 @@ export default function AnalystEngagementsScreen() {
   const [purpose, setPurpose] = useState("");
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
-  const [assignedId, setAssignedId] = useState<string | null>(null);
 
-  const [revokeId, setRevokeId] = useState("");
-  const [revokeBusy, setRevokeBusy] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [revoked, setRevoked] = useState(false);
+  async function loadEngagements() {
+    const resp = await authedFetch("/api/bff/assessments/engagements");
+    if (!resp.ok) {
+      setListError(await readError(resp, "Engagements could not be loaded."));
+      setEngagements([]);
+      return;
+    }
+    setEngagements((await resp.json()).items);
+    setListError(null);
+  }
+
+  useEffect(() => {
+    if (!canManage) return;
+    void (async () => {
+      await loadEngagements();
+    })();
+  }, [canManage]);
 
   async function assign(event: React.FormEvent) {
     event.preventDefault();
@@ -42,7 +68,6 @@ export default function AnalystEngagementsScreen() {
     }
     setAssignBusy(true);
     setAssignError(null);
-    setAssignedId(null);
     const resp = await sendJson("/api/bff/assessments/engagements", "POST", {
       analyst_user_id: analystUserId.trim(),
       instance_id: instanceId.trim(),
@@ -55,29 +80,24 @@ export default function AnalystEngagementsScreen() {
       setAssignError(await readError(resp, "The engagement could not be assigned."));
       return;
     }
-    const engagement = await resp.json();
-    setAssignedId(engagement.id);
     setAnalystUserId("");
     setInstanceId("");
     setStartsAt("");
     setEndsAt("");
     setPurpose("");
+    await loadEngagements();
   }
 
-  async function revoke(event: React.FormEvent) {
-    event.preventDefault();
-    if (!revokeId.trim()) return;
-    setRevokeBusy(true);
+  async function revoke(engagementId: string) {
+    setRevokeBusyId(engagementId);
     setRevokeError(null);
-    setRevoked(false);
-    const resp = await sendJson(`/api/bff/assessments/engagements/${revokeId.trim()}/revoke`, "POST", {});
-    setRevokeBusy(false);
+    const resp = await sendJson(`/api/bff/assessments/engagements/${engagementId}/revoke`, "POST", {});
+    setRevokeBusyId(null);
     if (!resp.ok) {
       setRevokeError(await readError(resp, "The engagement could not be revoked."));
       return;
     }
-    setRevoked(true);
-    setRevokeId("");
+    await loadEngagements();
   }
 
   if (!canManage) {
@@ -98,6 +118,8 @@ export default function AnalystEngagementsScreen() {
     );
   }
 
+  const activeCount = (engagements ?? []).filter((e) => e.revoked_at === null).length;
+
   return (
     <div className="dash">
       <div className="dash-top">
@@ -116,7 +138,91 @@ export default function AnalystEngagementsScreen() {
         pair is allowed.
       </p>
 
-      <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
+      {listError ? (
+        <div className="callout callout--warn mt-4" role="alert">
+          <p style={{ fontSize: "0.8125rem" }}>{listError}</p>
+        </div>
+      ) : null}
+
+      <dl className="stats mt-4">
+        <div className="stat">
+          <dt>Engagements</dt>
+          <dd>{engagements?.length ?? "—"}</dd>
+        </div>
+        <div className="stat">
+          <dt>Active</dt>
+          <dd>{engagements === null ? "—" : activeCount}</dd>
+        </div>
+      </dl>
+
+      {revokeError ? (
+        <div className="callout callout--warn" role="alert">
+          <p style={{ fontSize: "0.8125rem" }}>{revokeError}</p>
+        </div>
+      ) : null}
+
+      <div className="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Analyst</th>
+              <th scope="col">Instance</th>
+              <th scope="col">Window</th>
+              <th scope="col">Status</th>
+              <th scope="col" />
+            </tr>
+          </thead>
+          <tbody>
+            {engagements === null ? (
+              <tr>
+                <td colSpan={5} style={{ color: "var(--faint)" }}>
+                  Loading…
+                </td>
+              </tr>
+            ) : null}
+            {engagements !== null && engagements.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ color: "var(--muted)" }}>
+                  No engagements yet.
+                </td>
+              </tr>
+            ) : null}
+            {(engagements ?? []).map((engagement) => (
+              <tr key={engagement.id}>
+                <td className="mono" style={{ fontSize: "0.8125rem" }}>
+                  {engagement.analyst_user_id}
+                </td>
+                <td className="mono" style={{ fontSize: "0.8125rem" }}>
+                  {engagement.instance_id ?? "—"}
+                </td>
+                <td style={{ fontSize: "0.8125rem" }}>
+                  {new Date(engagement.starts_at).toLocaleDateString()} –{" "}
+                  {new Date(engagement.ends_at).toLocaleDateString()}
+                </td>
+                <td>
+                  <span className={`tag ${engagement.revoked_at ? "tag--mute" : "tag--live"}`}>
+                    {engagement.revoked_at ? "Revoked" : "Active"}
+                  </span>
+                </td>
+                <td>
+                  {engagement.revoked_at === null ? (
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      disabled={revokeBusyId === engagement.id}
+                      onClick={() => void revoke(engagement.id)}
+                    >
+                      {revokeBusyId === engagement.id ? "Revoking…" : "Revoke"}
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card p-4 mt-6" style={{ maxWidth: "32rem" }}>
         <b style={{ fontSize: "0.875rem" }}>Assign engagement</b>
         <form onSubmit={(e) => void assign(e)} className="mt-3">
           <label className="field">
@@ -175,11 +281,6 @@ export default function AnalystEngagementsScreen() {
               {assignError}
             </p>
           ) : null}
-          {assignedId ? (
-            <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }} className="mt-2">
-              Engagement assigned (ID: {assignedId}).
-            </p>
-          ) : null}
           <button
             type="submit"
             className="btn btn--primary mt-3"
@@ -193,39 +294,6 @@ export default function AnalystEngagementsScreen() {
             }
           >
             {assignBusy ? "Assigning…" : "Assign engagement"}
-          </button>
-        </form>
-      </div>
-
-      <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
-        <b style={{ fontSize: "0.875rem" }}>Revoke engagement</b>
-        <form onSubmit={(e) => void revoke(e)} className="mt-3">
-          <label className="field">
-            <b>Engagement ID</b>
-            <input
-              className="input"
-              value={revokeId}
-              onChange={(e) => setRevokeId(e.target.value)}
-              placeholder="UUID of the engagement to revoke"
-              required
-            />
-          </label>
-          {revokeError ? (
-            <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }} className="mt-2">
-              {revokeError}
-            </p>
-          ) : null}
-          {revoked ? (
-            <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }} className="mt-2">
-              Engagement revoked.
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            className="btn btn--ghost mt-3"
-            disabled={revokeBusy || !revokeId.trim()}
-          >
-            {revokeBusy ? "Revoking…" : "Revoke engagement"}
           </button>
         </form>
       </div>

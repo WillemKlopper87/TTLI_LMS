@@ -77,7 +77,6 @@ class AssessmentEngagement(Base, TimestampMixin):
             "analyst_user_id",
             unique=True,
             postgresql_where=text("revoked_at IS NULL"),
-            name="uq_assessment_engagements_instance_analyst_active",
         ),
     )
 
