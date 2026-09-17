@@ -11,9 +11,11 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import select
 
 from src.core.deps import PrincipalDep, SessionDep
 from src.core.errors import AppError, Forbidden, NotFound
+from src.models.organisation import OrganisationMember
 from src.services import programmes
 
 router = APIRouter(tags=["programmes"])
@@ -139,6 +141,31 @@ async def create_step(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.get(
+    "/learning-paths/{learning_path_id}/steps",
+    response_model=list[dict[str, Any]],
+    summary="List a learning path's typed steps",
+)
+async def list_steps(
+    learning_path_id: uuid.UUID,
+    principal: PrincipalDep,
+    session: SessionDep,
+) -> list[dict[str, Any]]:
+    """List a learning path's typed steps in position order.
+
+    Requires course:edit — the same permission required to add a step,
+    since this is the authoring view, not a learner-facing listing.
+    """
+    principal.require("course:edit")
+    try:
+        steps = await programmes.list_steps(
+            session, tenant_id=principal.tenant_id, learning_path_id=learning_path_id
+        )
+    except NotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return [StepResponse(step).__dict__ for step in steps]
+
+
 @router.post(
     "/cohorts",
     response_model=dict[str, Any],
@@ -196,10 +223,28 @@ async def list_cohorts(
     """List cohorts for the authenticated tenant, optionally filtered by
     organisation or learning path.
 
-    Requires cohort:run or org:admin permission.
+    Requires cohort:run (sees every cohort in the tenant), or admin
+    membership of the specific organisation_id filtered for (sees only
+    that organisation's cohorts) — "org:admin" was never a real
+    permission code; the codebase's actual org-admin check is
+    OrganisationMember.relationship == "admin" on the org in question,
+    same pattern used for the assessment-platform instances list.
     """
-    if not principal.permissions & {"cohort:run", "org:admin"}:
-        raise Forbidden("You do not have access to this resource.")
+    if "cohort:run" not in principal.permissions:
+        if organisation_id is None:
+            raise Forbidden("You do not have access to this resource.")
+        is_org_admin = (
+            await session.execute(
+                select(OrganisationMember).where(
+                    OrganisationMember.tenant_id == principal.tenant_id,
+                    OrganisationMember.organisation_id == organisation_id,
+                    OrganisationMember.user_id == principal.user_id,
+                    OrganisationMember.relationship == "admin",
+                )
+            )
+        ).scalar_one_or_none()
+        if is_org_admin is None:
+            raise Forbidden("You do not have access to this resource.")
     cohorts = await programmes.list_cohorts(
         session,
         tenant_id=principal.tenant_id,

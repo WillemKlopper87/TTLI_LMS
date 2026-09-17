@@ -28,8 +28,12 @@ interface CohortItem {
 export default function CohortsScreen() {
   const { me } = useAdmin();
   const canCreate = me.permissions.includes("cohort:run");
-  const canList =
-    me.permissions.includes("cohort:run") || me.permissions.includes("org:admin");
+  // This is the tenant-wide console (no organisation_id filter), which the
+  // backend only ever allows for cohort:run holders — an org admin's
+  // narrower, org-scoped view (GET /cohorts?organisation_id=...) belongs on
+  // that organisation's own page, the same pattern the partner portal uses,
+  // not this generic list. "org:admin" was never a real permission code.
+  const canList = me.permissions.includes("cohort:run");
 
   const [cohorts, setCohorts] = useState<CohortItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);

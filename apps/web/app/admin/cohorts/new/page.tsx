@@ -24,16 +24,34 @@ export default function NewCohortPage() {
   const [endsAt, setEndsAt] = useState("");
   const [capacity, setCapacity] = useState("");
   const [leadFacilitatorId, setLeadFacilitatorId] = useState("");
+  const [participantsText, setParticipantsText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const targetId = target === "learning_path" ? learningPathId : courseId;
+
+  // One participant per line: "<user id>" (defaults to participant) or
+  // "<user id>:observer". A live member-picker would need
+  // GET /organisations/{id}/members, which 403s unless the caller is
+  // personally a member of that org — not guaranteed for tenant staff
+  // scheduling cohorts across organisations from this console.
+  function parseParticipants(): { user_id: string; role: string }[] {
+    return participantsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [userId, role] = line.split(":").map((part) => part.trim());
+        return { user_id: userId, role: role === "observer" ? "observer" : "participant" };
+      });
+  }
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
     if (!title.trim() || !targetId.trim()) return;
     setBusy(true);
     setError(null);
+    const participants = parseParticipants();
     const body: Record<string, unknown> = {
       title: title.trim(),
       organisation_id: organisationId.trim() || null,
@@ -41,6 +59,7 @@ export default function NewCohortPage() {
       ends_at: endsAt || null,
       capacity: capacity ? parseInt(capacity, 10) : null,
       lead_facilitator_id: leadFacilitatorId.trim() || null,
+      participants: participants.length > 0 ? participants : null,
     };
     if (target === "learning_path") {
       body.learning_path_id = learningPathId.trim();
@@ -167,6 +186,21 @@ export default function NewCohortPage() {
             onChange={(e) => setLeadFacilitatorId(e.target.value)}
             placeholder="Optional — UUID of the facilitator"
           />
+        </label>
+
+        <label className="field mt-3">
+          <b>Participants</b>
+          <textarea
+            className="input"
+            value={participantsText}
+            onChange={(e) => setParticipantsText(e.target.value)}
+            rows={4}
+            placeholder={"One user ID per line\nuuid-here\nuuid-here:observer"}
+          />
+          <small style={{ color: "var(--muted)", display: "block", marginTop: "0.25rem" }}>
+            Optional. One user ID per line; add <code>:observer</code> for an observer seat
+            (defaults to participant).
+          </small>
         </label>
 
         {error ? (

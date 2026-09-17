@@ -9,10 +9,13 @@ endpoint: `Principal.require`/the permission-set check in
 super-admin bypass, so an unregistered permission string is
 unusable by anyone regardless of role.
 
-Granted to admin and super_admin, mirroring 0022's product:manage
-precedent — scheduling a cohort (assigning a facilitator and seats
-for an organisation) is an operational/admin action, not a
-content-authoring one, so not granted to content_author.
+Granted to admin, facilitator and super_admin — the design spec (§4)
+names both Admin and Facilitator as holders of cohort:run (a
+facilitator books their own one-on-ones/workshops for a cohort they
+run), corrected here after a review pass caught the first cut
+granting admin/super_admin only. Not granted to content_author:
+scheduling a cohort is an operational action, not a content-authoring
+one, mirroring 0022's product:manage precedent.
 
 Revision ID: 0048
 Revises: 0047
@@ -32,7 +35,7 @@ depends_on: str | Sequence[str] | None = None
 
 PERMISSION = "cohort:run"
 DESCRIPTION = "Create and manage cohorts (scheduled programme runs)"
-ROLES = ("admin", "super_admin")
+ROLES = ("admin", "facilitator", "super_admin")
 
 
 def upgrade() -> None:

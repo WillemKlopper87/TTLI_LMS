@@ -59,6 +59,28 @@ interface PathTenantAssignmentRow {
   is_bespoke: boolean;
 }
 
+interface StepRow {
+  id: string;
+  learning_path_id: string;
+  kind: string;
+  title: string;
+  position: number;
+  phase_label: string | null;
+  optional: boolean;
+  course_id: string | null;
+  workshop_id: string | null;
+  assessment_template_id: string | null;
+  evaluation_role: string | null;
+}
+
+const STEP_KIND_LABEL: Record<string, string> = {
+  course: "Course",
+  workshop: "Workshop",
+  assessment: "Assessment",
+  one_on_one: "One-on-one",
+  document: "Document",
+};
+
 export default function EditLearningPathPage() {
   const params = useParams<{ pathId: string }>();
   const pathId = params.pathId;
@@ -73,6 +95,7 @@ export default function EditLearningPathPage() {
   const [certificates, setCertificates] = useState<CertificateTemplate[] | null>(null);
   const [product, setProduct] = useState<ProductItem | null>(null);
   const [assignments, setAssignments] = useState<PathTenantAssignmentRow[] | null>(null);
+  const [steps, setSteps] = useState<StepRow[] | null>(null);
 
   const [addCourseId, setAddCourseId] = useState("");
   const [priceAmount, setPriceAmount] = useState("");
@@ -95,16 +118,18 @@ export default function EditLearningPathPage() {
   const [stepEvaluationRole, setStepEvaluationRole] = useState("");
 
   async function loadAll() {
-    const [pathResp, membersResp, readinessResp, assignmentsResp] = await Promise.all([
+    const [pathResp, membersResp, readinessResp, assignmentsResp, stepsResp] = await Promise.all([
       getJson<LearningPathItem>(`/api/bff/learning-paths/${pathId}`),
       getJson<{ items: PathCourseRow[] }>(`/api/bff/learning-paths/${pathId}/courses`),
       getJson<PathReadiness>(`/api/bff/learning-paths/${pathId}/readiness`),
       getJson<{ items: PathTenantAssignmentRow[] }>("/api/bff/tenant-path-assignments"),
+      getJson<StepRow[]>(`/api/bff/learning-paths/${pathId}/steps`),
     ]);
     setPath(pathResp);
     setMembers(membersResp?.items ?? []);
     setReadiness(readinessResp);
     setAssignments(assignmentsResp?.items ?? []);
+    setSteps(stepsResp ?? []);
     if (canManageProducts) {
       const products = await getJson<{ items: ProductItem[] }>("/api/bff/catalogue/products");
       setProduct((products?.items ?? []).find((p) => p.learning_path_id === pathId) ?? null);
@@ -498,6 +523,49 @@ export default function EditLearningPathPage() {
         <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
           Add typed steps (courses, workshops, assessments) to structure this path.
         </p>
+
+        {steps !== null && steps.length > 0 ? (
+          <div className="tablewrap mt-3">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Phase</th>
+                  <th scope="col">Optional</th>
+                </tr>
+              </thead>
+              <tbody>
+                {steps.map((step) => (
+                  <tr key={step.id}>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.position}
+                    </td>
+                    <td>
+                      <span className="tag tag--mute">
+                        {STEP_KIND_LABEL[step.kind] ?? step.kind}
+                      </span>
+                    </td>
+                    <td>{step.title}</td>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.phase_label ?? "—"}
+                    </td>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.optional ? "Yes" : "No"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {steps !== null && steps.length === 0 ? (
+          <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+            No steps yet.
+          </p>
+        ) : null}
+
         {canEdit ? (
           <form
             className="mt-3"

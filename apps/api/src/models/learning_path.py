@@ -28,7 +28,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -115,7 +115,7 @@ class LearningPathStep(Base, TimestampMixin):
     )
     evaluation_role: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'pre' or 'post'
     completion_rules: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, server_default=text("'{}'")
+        JSONB, nullable=False, server_default=text("'{}'")
     )
 
 

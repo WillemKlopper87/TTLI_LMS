@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError, NotFound
+from src.models.course import Course, CourseTenantAssignment
 from src.models.learning_path import LearningPath, LearningPathStep, LearningPathTenantAssignment
 from src.models.organisation import Organisation
 from src.models.programme import Cohort, CohortMember, CohortStep
@@ -91,6 +92,23 @@ async def create_step(
     if kind == "assessment" and not assessment_template_id:
         raise AppError("Assessment steps must specify assessment_template_id")
     # one_on_one and document steps have no required FK at creation time.
+    if evaluation_role is not None and evaluation_role not in ("pre", "post"):
+        raise AppError(f"Invalid evaluation_role {evaluation_role!r}; must be 'pre' or 'post'.")
+
+    # Pre-check rather than letting a duplicate position hit the deferred
+    # unique constraint at commit — that constraint is deferred so
+    # reorder_path_courses' whole-permutation swap works, not so a single
+    # new step's collision should surface as an unhandled 500.
+    existing_position = (
+        await session.execute(
+            select(LearningPathStep.id).where(
+                LearningPathStep.learning_path_id == learning_path_id,
+                LearningPathStep.position == position,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_position is not None:
+        raise AppError(f"Position {position} is already taken on this path.")
 
     step = LearningPathStep(
         learning_path_id=learning_path_id,
@@ -115,6 +133,42 @@ async def create_step(
         position=position,
     )
     return step
+
+
+async def list_steps(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    learning_path_id: uuid.UUID,
+) -> list[LearningPathStep]:
+    """List a learning path's typed steps in position order.
+
+    Same tenant-visibility scoping as create_step — a path this tenant
+    was never assigned to raises NotFound rather than an empty list, so
+    "no steps yet" and "not your path" stay distinguishable.
+    """
+    path = (
+        await session.execute(
+            select(LearningPath)
+            .join(
+                LearningPathTenantAssignment,
+                LearningPathTenantAssignment.learning_path_id == LearningPath.id,
+            )
+            .where(
+                LearningPath.id == learning_path_id,
+                LearningPathTenantAssignment.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not path:
+        raise NotFound(f"Learning path {learning_path_id} not found")
+
+    result = await session.execute(
+        select(LearningPathStep)
+        .where(LearningPathStep.learning_path_id == learning_path_id)
+        .order_by(LearningPathStep.position)
+    )
+    return list(result.scalars().all())
 
 
 async def create_cohort(
@@ -188,8 +242,24 @@ async def create_cohort(
         if not path:
             raise NotFound(f"Learning path {learning_path_id} not found")
     else:
-        # Course existence check deferred if not implementing course model lookup here
-        pass
+        # Same tenant-visibility scoping as the learning_path_id branch
+        # above, mirrored through CourseTenantAssignment — a bare
+        # session.get(Course, id) would accept another tenant's course.
+        course = (
+            await session.execute(
+                select(Course)
+                .join(
+                    CourseTenantAssignment,
+                    CourseTenantAssignment.course_id == Course.id,
+                )
+                .where(
+                    Course.id == course_id,
+                    CourseTenantAssignment.tenant_id == tenant_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not course:
+            raise NotFound(f"Course {course_id} not found")
 
     # Verify organisation and lead facilitator if provided
     if organisation_id:
@@ -257,6 +327,8 @@ async def create_cohort(
         for participant in participants:
             user_id = participant.get("user_id")
             role = participant.get("role", "participant")
+            if role not in ("participant", "observer"):
+                raise AppError(f"Invalid participant role {role!r}.")
 
             user = (
                 await session.execute(
