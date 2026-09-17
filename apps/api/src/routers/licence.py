@@ -11,7 +11,7 @@ import uuid
 from fastapi import APIRouter, status
 
 from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep
-from src.core.errors import NotFound
+from src.core.errors import Forbidden, NotFound
 from src.models.licence import Licence
 from src.schemas.licence import (
     CreateLicenceRequest,
@@ -27,6 +27,16 @@ router = APIRouter(tags=["licences"])
 
 MANAGE_LICENCES = "tenant:manage"
 CREATE_INVOICES = "invoice:create"
+
+
+def _require_licence_manager(principal: PrincipalDep) -> None:
+    """tenant:manage OR invoice:create — this router's own module
+    docstring has always described the permission as an OR of the two
+    (finance staff issuing an invoice-backed licence shouldn't need full
+    tenant:manage), but every call site here only ever checked
+    tenant:manage."""
+    if not principal.permissions & {MANAGE_LICENCES, CREATE_INVOICES}:
+        raise Forbidden("You do not have access to this resource.")
 
 
 def _licence_to_response(licence: Licence) -> LicenceResponse:
@@ -62,7 +72,7 @@ async def create_licence(
     session: AuditedSessionDep,
 ) -> LicenceResponse:
     """Create a licence granting a course or learning path to a licensee organisation."""
-    principal.require(MANAGE_LICENCES)
+    _require_licence_manager(principal)
 
     licence = await licence_service.create_licence(
         session,
@@ -141,7 +151,7 @@ async def grant_seat(
         tenant_id=principal.tenant_id,
         licence_id=uuid.UUID(licence_id),
         learner_user_id=uuid.UUID(body.learner_user_id),
-        entitlement_id=uuid.UUID(body.entitlement_id) if body.entitlement_id else None,
+        actor_user_id=principal.user_id,
     )
 
     return SeatGrantResponse(
@@ -151,6 +161,29 @@ async def grant_seat(
         entitlement_id=str(grant.entitlement_id) if grant.entitlement_id else None,
         granted_at=grant.granted_at.isoformat(),
         revoked_at=grant.revoked_at.isoformat() if grant.revoked_at else None,
+    )
+
+
+@router.post(
+    "/licences/seat-grants/{grant_id}/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Revoke a seat grant",
+)
+async def revoke_seat(
+    grant_id: str,
+    principal: PrincipalDep,
+    session: AuditedSessionDep,
+) -> None:
+    """Revoke a seat grant, immediately withdrawing the learner's access
+    to the licensed course/path and freeing the seat for reassignment."""
+    principal.require(MANAGE_LICENCES)
+
+    await licence_service.revoke_seat(
+        session,
+        tenant_id=principal.tenant_id,
+        grant_id=uuid.UUID(grant_id),
+        actor_user_id=principal.user_id,
     )
 
 

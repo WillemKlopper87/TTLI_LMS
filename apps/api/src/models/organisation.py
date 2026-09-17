@@ -2,6 +2,12 @@
 docstring for why seat assignment reuses `entitlements` rather than a
 new join table, and why `organisation_members.relationship` is a
 separate concept from the RBAC `role_assignments` table.
+
+`kind`/`logo_object_key` were added to the organisations table by
+migration 0047 (facilitator licensing, 2026-09-11-facilitator-
+licensing-xapi-design.md §3) but never mapped onto this model — every
+existing organisation defaults to kind='corporate' at the DB level;
+services/licence.py::create_licence requires kind='licensee'.
 """
 
 from __future__ import annotations
@@ -32,6 +38,10 @@ class Organisation(Base, TimestampMixin):
     vat_number_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     billing_address_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 0047: 'corporate' (default) or 'licensee' — a licensee organisation
+    # is one TTLI has granted facilitator licences to.
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="corporate")
+    logo_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class OrganisationMember(Base):

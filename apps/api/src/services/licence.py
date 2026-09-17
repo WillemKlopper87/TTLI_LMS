@@ -13,9 +13,14 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError
+from src.core.ids import uuid7
 from src.models.audit import AuditAction
+from src.models.commerce import Entitlement
+from src.models.learning_path import PathEnrolment
 from src.models.licence import Licence, LicenceSeatGrant
-from src.services import audit
+from src.models.organisation import Organisation
+from src.services import audit, entitlements
+from src.services import enrolment as enrolment_service
 
 
 async def create_licence(
@@ -37,9 +42,25 @@ async def create_licence(
 ) -> Licence:
     """Create a licence granting a course or learning path to an organisation.
 
-    Raises AppError if both course_id and learning_path_id are set, or neither.
-    The database constraint will also catch this, but we validate early for UX.
+    Raises AppError if both course_id and learning_path_id are set, or neither,
+    or if the organisation is not kind='licensee'.
+    The database constraint will also catch the XOR, but we validate early for UX.
     """
+    organisation = (
+        await session.execute(
+            select(Organisation).where(
+                Organisation.id == organisation_id, Organisation.tenant_id == tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+    if organisation is None:
+        raise AppError("Organisation not found.", {"organisation_id": str(organisation_id)})
+    if organisation.kind != "licensee":
+        raise AppError(
+            "A licence can only be granted to a licensee organisation.",
+            {"organisation_id": str(organisation_id), "kind": organisation.kind},
+        )
+
     if (course_id is None and learning_path_id is None) or (
         course_id is not None and learning_path_id is not None
     ):
@@ -151,16 +172,28 @@ async def grant_seat(
     tenant_id: uuid.UUID,
     licence_id: uuid.UUID,
     learner_user_id: uuid.UUID,
-    entitlement_id: uuid.UUID | None = None,
+    actor_user_id: uuid.UUID | None = None,
 ) -> LicenceSeatGrant:
     """Grant a seat under a licence to a learner.
 
+    Provisions real course/learning-path access — a real Entitlement plus
+    Enrolment (or PathEnrolment), the same shape services/organisations.py
+    ::assign_seat grants for corporate bulk seats — so the seat grant is
+    not just a billing record with no actual access behind it.
+
     Raises AppError if the licence does not exist, is not active/in-window, or has no seats left.
     """
-    # Fetch and lock the licence
+    # Lock the licence row for the duration of this transaction — without
+    # this, two concurrent grant_seat calls both read seats_used before
+    # either writes it back, and both pass the "seats available" check
+    # (the same TOCTOU race services/orders.py, services/refunds.py,
+    # services/workshops/booking.py, and services/quiz.py all guard
+    # against on their own capacity counters).
     licence = (
         await session.execute(
-            select(Licence).where(Licence.id == licence_id, Licence.tenant_id == tenant_id)
+            select(Licence)
+            .where(Licence.id == licence_id, Licence.tenant_id == tenant_id)
+            .with_for_update()
         )
     ).scalar()
     if licence is None:
@@ -193,11 +226,50 @@ async def grant_seat(
     if existing is not None:
         raise AppError("Learner already has a grant under this licence.")
 
+    entitlement = await entitlements.grant(
+        session,
+        tenant_id=tenant_id,
+        user_id=learner_user_id,
+        source_order_id=licence.order_id,
+        kind="course" if licence.course_id else "path",
+        target_id=licence.course_id or licence.learning_path_id,  # type: ignore[arg-type]
+    )
+    entitlement.organisation_id = licence.organisation_id
+
+    if licence.course_id is not None:
+        await enrolment_service.get_or_create_enrolment(
+            session,
+            tenant_id=tenant_id,
+            user_id=learner_user_id,
+            course_id=licence.course_id,
+            entitlement_id=entitlement.id,
+        )
+    else:
+        existing_path_enrolment = (
+            await session.execute(
+                select(PathEnrolment).where(
+                    PathEnrolment.tenant_id == tenant_id,
+                    PathEnrolment.user_id == learner_user_id,
+                    PathEnrolment.learning_path_id == licence.learning_path_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_path_enrolment is None:
+            session.add(
+                PathEnrolment(
+                    id=uuid7(),
+                    tenant_id=tenant_id,
+                    user_id=learner_user_id,
+                    learning_path_id=licence.learning_path_id,
+                    entitlement_id=entitlement.id,
+                )
+            )
+
     grant = LicenceSeatGrant(
         tenant_id=tenant_id,
         licence_id=licence_id,
         learner_user_id=learner_user_id,
-        entitlement_id=entitlement_id,
+        entitlement_id=entitlement.id,
     )
     session.add(grant)
 
@@ -205,6 +277,19 @@ async def grant_seat(
     licence.seats_used += 1
 
     await session.flush()
+
+    if actor_user_id:
+        await audit.record(
+            session,
+            tenant_id=tenant_id,
+            action=AuditAction.SEAT_GRANT_ISSUED,
+            actor_user_id=actor_user_id,
+            entity_type="licence_seat_grant",
+            entity_id=grant.id,
+            after={"licence_id": str(licence_id), "learner_user_id": str(learner_user_id)},
+        )
+        await session.flush()
+
     return grant
 
 
@@ -213,9 +298,13 @@ async def revoke_seat(
     *,
     tenant_id: uuid.UUID,
     grant_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None = None,
 ) -> None:
     """Revoke a seat grant (soft delete via revoked_at).
 
+    Also revokes the underlying Entitlement, the same course-access
+    teardown services/refunds.py uses — otherwise the learner keeps
+    working access to the course/path after their licensed seat is gone.
     Decrements the associated licence's seats_used.
 
     Scoped through a join to Licence.tenant_id — a bare
@@ -237,6 +326,11 @@ async def revoke_seat(
 
     grant.revoked_at = datetime.now(UTC)
 
+    if grant.entitlement_id is not None:
+        entitlement = await session.get(Entitlement, grant.entitlement_id)
+        if entitlement is not None and entitlement.revoked_at is None:
+            entitlement.revoked_at = datetime.now(UTC)
+
     # Decrement seats_used
     licence = (
         await session.execute(
@@ -245,6 +339,16 @@ async def revoke_seat(
     ).scalar()
     if licence is not None:
         licence.seats_used = max(0, licence.seats_used - 1)
+
+    if actor_user_id:
+        await audit.record(
+            session,
+            tenant_id=tenant_id,
+            action=AuditAction.SEAT_GRANT_REVOKED,
+            actor_user_id=actor_user_id,
+            entity_type="licence_seat_grant",
+            entity_id=grant.id,
+        )
 
     await session.flush()
 

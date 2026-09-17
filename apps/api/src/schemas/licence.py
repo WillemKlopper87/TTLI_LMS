@@ -55,11 +55,17 @@ class ListLicencesResponse(BaseModel):
 
 
 class GrantSeatRequest(BaseModel):
-    """Request to grant a seat under a licence to a learner."""
+    """Request to grant a seat under a licence to a learner.
+
+    No client-supplied entitlement_id: grant_seat always derives a real
+    Entitlement itself from the licence, the same way a course purchase
+    or corporate seat assignment does — accepting one from the caller
+    would let a client link a seat grant to an entitlement it has no
+    provenance for.
+    """
 
     licence_id: str = Field(description="UUID of the licence")
     learner_user_id: str = Field(description="UUID of the learner")
-    entitlement_id: str | None = None
 
 
 class SeatGrantResponse(BaseModel):

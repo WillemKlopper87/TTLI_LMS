@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 
-import { authedFetch, readError } from "../../courses/wizard-api";
+import { authedFetch, readError, sendJson } from "../../courses/wizard-api";
 
 interface SeatGrantItem {
   id: string;
@@ -26,16 +26,13 @@ export default function SeatGrantsScreen() {
   const [grants, setGrants] = useState<SeatGrantItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
-  async function search(event: React.FormEvent) {
-    event.preventDefault();
-    if (!organisationId.trim()) return;
-    setLoading(true);
-    setError(null);
+  async function loadGrants() {
     const resp = await authedFetch(
       `/api/bff/organisations/${encodeURIComponent(organisationId.trim())}/licences/seat-grants?include_revoked=${includeRevoked}`,
     );
-    setLoading(false);
     if (!resp.ok) {
       setError(await readError(resp, "Seat grants could not be loaded."));
       setGrants([]);
@@ -43,6 +40,27 @@ export default function SeatGrantsScreen() {
     }
     const data = (await resp.json()) as { items: SeatGrantItem[] };
     setGrants(data.items);
+    setError(null);
+  }
+
+  async function search(event: React.FormEvent) {
+    event.preventDefault();
+    if (!organisationId.trim()) return;
+    setLoading(true);
+    await loadGrants();
+    setLoading(false);
+  }
+
+  async function revoke(grantId: string) {
+    setRevokeBusyId(grantId);
+    setRevokeError(null);
+    const resp = await sendJson(`/api/bff/licences/seat-grants/${grantId}/revoke`, "POST", {});
+    setRevokeBusyId(null);
+    if (!resp.ok) {
+      setRevokeError(await readError(resp, "The seat grant could not be revoked."));
+      return;
+    }
+    await loadGrants();
   }
 
   return (
@@ -90,6 +108,12 @@ export default function SeatGrantsScreen() {
         </button>
       </form>
 
+      {revokeError ? (
+        <div className="callout callout--warn mb-4" role="alert">
+          <p style={{ fontSize: "0.8125rem" }}>{revokeError}</p>
+        </div>
+      ) : null}
+
       {grants !== null ? (
         <div className="tablewrap">
           <table>
@@ -99,12 +123,13 @@ export default function SeatGrantsScreen() {
                 <th scope="col">Licence</th>
                 <th scope="col">Granted</th>
                 <th scope="col">Status</th>
+                <th scope="col" />
               </tr>
             </thead>
             <tbody>
               {grants.length === 0 ? (
                 <tr>
-                  <td colSpan={4} style={{ color: "var(--muted)" }}>
+                  <td colSpan={5} style={{ color: "var(--muted)" }}>
                     No seat grants found for this organisation.
                   </td>
                 </tr>
@@ -124,6 +149,18 @@ export default function SeatGrantsScreen() {
                     <span className={`tag ${grant.revoked_at ? "tag--mute" : "tag--live"}`}>
                       {grant.revoked_at ? "Revoked" : "Active"}
                     </span>
+                  </td>
+                  <td>
+                    {grant.revoked_at === null ? (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        disabled={revokeBusyId === grant.id}
+                        onClick={() => void revoke(grant.id)}
+                      >
+                        {revokeBusyId === grant.id ? "Revoking…" : "Revoke"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

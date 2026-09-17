@@ -29,11 +29,12 @@ async def _demo_tenant_id(tenant_session_factory):  # type: ignore[no-untyped-de
 
 
 async def _make_organisation(session, *, tenant_id: uuid.UUID, name: str) -> Organisation:
-    # No `kind` column on this branch's Organisation model — that field
-    # belongs to feat/partner-portal's own, separate migration.
+    # kind='licensee': create_licence requires it (services/licence.py) —
+    # every organisation this test file creates exists to be licensed.
     org = Organisation(
         tenant_id=tenant_id,
         name=name,
+        kind="licensee",
     )
     session.add(org)
     await session.flush()
@@ -424,6 +425,147 @@ async def test_rls_isolates_licences_between_tenants(tenant_session_factory):  #
             )
         ).first()
         assert row is None, "RLS should hide the licence from a session with no tenant context"
+
+
+async def test_create_licence_rejects_non_licensee_organisation(
+    tenant_session_factory,
+):  # type: ignore[no-untyped-def]
+    """kind='licensee' is required — an ordinary (kind='corporate')
+    organisation cannot be licensed."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(tenant_id) as session:
+        org = Organisation(tenant_id=tenant_id, name="Ordinary Org")  # kind defaults to 'corporate'
+        session.add(org)
+        await session.flush()
+        course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
+
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=365)
+
+        with pytest.raises(AppError, match="licensee organisation"):
+            await licence_service.create_licence(
+                session,
+                tenant_id=tenant_id,
+                organisation_id=org.id,
+                course_id=course_id,
+                seats_purchased=10,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+
+
+async def test_grant_seat_provisions_real_course_entitlement_and_enrolment(
+    tenant_session_factory,
+):  # type: ignore[no-untyped-def]
+    """grant_seat must produce actual course access, not just a billing
+    record — a real Entitlement plus Enrolment, the same shape
+    services/organisations.py::assign_seat grants for corporate seats."""
+    import sqlalchemy as sa
+    from src.models.commerce import Entitlement
+    from src.models.learning import Enrolment
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(tenant_id) as session:
+        org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
+        course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
+
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=365)
+
+        licence = await licence_service.create_licence(
+            session,
+            tenant_id=tenant_id,
+            organisation_id=org.id,
+            course_id=course_id,
+            seats_purchased=10,
+            starts_at=starts_at,
+            ends_at=ends_at,
+        )
+
+        grant = await licence_service.grant_seat(
+            session,
+            tenant_id=tenant_id,
+            licence_id=licence.id,
+            learner_user_id=learner.id,
+        )
+
+        assert grant.entitlement_id is not None
+        entitlement = await session.get(Entitlement, grant.entitlement_id)
+        assert entitlement is not None
+        assert entitlement.user_id == learner.id
+        assert entitlement.kind == "course"
+        assert entitlement.target_id == course_id
+        assert entitlement.organisation_id == org.id
+
+        enrolment = (
+            await session.execute(
+                sa.select(Enrolment).where(
+                    Enrolment.tenant_id == tenant_id,
+                    Enrolment.user_id == learner.id,
+                    Enrolment.course_id == course_id,
+                )
+            )
+        ).scalar_one_or_none()
+        assert enrolment is not None
+        assert enrolment.entitlement_id == entitlement.id
+
+        has_access = await licence_service.has_active_licence(
+            session, tenant_id=tenant_id, learner_user_id=learner.id, course_id=course_id
+        )
+        assert has_access is True
+
+
+async def test_revoke_seat_revokes_entitlement_and_frees_seat(
+    tenant_session_factory,
+):  # type: ignore[no-untyped-def]
+    from src.models.commerce import Entitlement
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    async with tenant_session_factory(tenant_id) as session:
+        org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
+        course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
+
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=365)
+
+        licence = await licence_service.create_licence(
+            session,
+            tenant_id=tenant_id,
+            organisation_id=org.id,
+            course_id=course_id,
+            seats_purchased=1,
+            starts_at=starts_at,
+            ends_at=ends_at,
+        )
+        grant = await licence_service.grant_seat(
+            session,
+            tenant_id=tenant_id,
+            licence_id=licence.id,
+            learner_user_id=learner.id,
+        )
+        entitlement_id = grant.entitlement_id
+        assert entitlement_id is not None
+
+        await licence_service.revoke_seat(session, tenant_id=tenant_id, grant_id=grant.id)
+
+        entitlement = await session.get(Entitlement, entitlement_id)
+        assert entitlement is not None
+        assert entitlement.revoked_at is not None
+
+        licence_refetched = await session.get(Licence, licence.id)
+        assert licence_refetched is not None
+        assert licence_refetched.seats_used == 0
+
+        has_access = await licence_service.has_active_licence(
+            session, tenant_id=tenant_id, learner_user_id=learner.id, course_id=course_id
+        )
+        assert has_access is False
 
 
 __all__ = []

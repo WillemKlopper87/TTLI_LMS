@@ -5,20 +5,23 @@
  * licence to a learner. `POST /licences/{licenceId}/grant-seat` validates
  * its body against GrantSeatRequest, which repeats licence_id even though
  * it's already in the URL — both are sent to satisfy that schema.
+ *
+ * The service derives a real Entitlement + Enrolment itself; there is no
+ * client-supplied entitlement_id field (removed — accepting one from the
+ * caller would let a client link a seat grant to an entitlement it has
+ * no provenance for).
  */
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { readError, sendJson } from "../../../courses/wizard-api";
 
 export default function GrantSeatPage() {
   const params = useParams<{ licenceId: string }>();
-  const router = useRouter();
   const licenceId = params.licenceId;
 
   const [learnerUserId, setLearnerUserId] = useState("");
-  const [entitlementId, setEntitlementId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [granted, setGranted] = useState(false);
@@ -32,7 +35,6 @@ export default function GrantSeatPage() {
     const resp = await sendJson(`/api/bff/licences/${licenceId}/grant-seat`, "POST", {
       licence_id: licenceId,
       learner_user_id: learnerUserId.trim(),
-      entitlement_id: entitlementId.trim() || null,
     });
     setBusy(false);
     if (!resp.ok) {
@@ -41,7 +43,6 @@ export default function GrantSeatPage() {
     }
     setGranted(true);
     setLearnerUserId("");
-    setEntitlementId("");
   }
 
   return (
@@ -69,15 +70,6 @@ export default function GrantSeatPage() {
             placeholder="UUID of the learner"
             required
             autoFocus
-          />
-        </label>
-        <label className="field mt-3">
-          <b>Entitlement ID</b>
-          <input
-            className="input"
-            value={entitlementId}
-            onChange={(e) => setEntitlementId(e.target.value)}
-            placeholder="Optional"
           />
         </label>
         {error ? (
