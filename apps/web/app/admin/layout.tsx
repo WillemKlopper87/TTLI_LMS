@@ -45,6 +45,7 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Surveys", href: "/admin/surveys" },
   { label: "Question bank", href: "/admin/question-bank" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
+  { label: "Licences", href: "/admin/licences", permission: "tenant:manage" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Settings", href: "/admin/settings", permission: "settings:manage" },
   { label: "Platform", href: "/admin/platform", permission: "settings:manage" },
