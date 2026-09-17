@@ -49,6 +49,11 @@ export default function PartnerPortalPage() {
   const [activateBusy, setActivateBusy] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
 
+  const [agreementRef, setAgreementRef] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
+  const [agreementBusy, setAgreementBusy] = useState(false);
+  const [agreementError, setAgreementError] = useState<string | null>(null);
+
   const [clientOrgName, setClientOrgName] = useState("");
   const [createClientBusy, setCreateClientBusy] = useState(false);
   const [createClientError, setCreateClientError] = useState<string | null>(null);
@@ -120,6 +125,31 @@ export default function PartnerPortalPage() {
     setLogoObjectKey("");
     setProfessionalBody("");
     await loadActivationStatus(newProfile.id);
+  }
+
+  async function acceptOperatorAgreement(event: React.FormEvent) {
+    event.preventDefault();
+    if (!profile || !agreementRef.trim()) return;
+    setAgreementBusy(true);
+    setAgreementError(null);
+    const resp = await authedFetch(`/api/bff/partner/profiles/${profile.id}/accept-agreement`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operator_agreement_ref: agreementRef.trim(),
+        registration_number: registrationNumber.trim() || null,
+      }),
+    });
+    setAgreementBusy(false);
+    if (!resp.ok) {
+      setAgreementError(await readError(resp, "The operator agreement could not be accepted."));
+      return;
+    }
+    const updated = await resp.json();
+    setProfile(updated);
+    setAgreementRef("");
+    setRegistrationNumber("");
+    await loadActivationStatus(updated.id);
   }
 
   async function activateProfile() {
@@ -293,6 +323,57 @@ export default function PartnerPortalPage() {
               </dl>
             </div>
 
+            {profile.operator_agreement_accepted_at === null ? (
+              <div className="card p-4">
+                <b style={{ fontSize: "0.875rem" }}>Accept operator agreement</b>
+                <form onSubmit={(e) => void acceptOperatorAgreement(e)} className="mt-3">
+                  <label className="field">
+                    <b>Agreement reference</b>
+                    <input
+                      className="input"
+                      value={agreementRef}
+                      onChange={(e) => setAgreementRef(e.target.value)}
+                      placeholder="e.g. operator-agreement-v1"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  {profile.professional_body ? (
+                    <label className="field mt-3">
+                      <b>Registration number</b>
+                      <input
+                        className="input"
+                        value={registrationNumber}
+                        onChange={(e) => setRegistrationNumber(e.target.value)}
+                        placeholder={`Required for ${profile.professional_body}`}
+                        required
+                      />
+                    </label>
+                  ) : null}
+                  {agreementError ? (
+                    <p
+                      role="alert"
+                      style={{ fontSize: "0.8125rem", color: "var(--stop)" }}
+                      className="mt-2"
+                    >
+                      {agreementError}
+                    </p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    className="btn btn--primary mt-3"
+                    disabled={
+                      agreementBusy ||
+                      !agreementRef.trim() ||
+                      (!!profile.professional_body && !registrationNumber.trim())
+                    }
+                  >
+                    {agreementBusy ? "Accepting…" : "Accept agreement"}
+                  </button>
+                </form>
+              </div>
+            ) : null}
+
             {activationStatus !== null ? (
               <div className="card p-4">
                 <b style={{ fontSize: "0.875rem" }}>Activation</b>
@@ -348,7 +429,7 @@ export default function PartnerPortalPage() {
         )}
       </section>
 
-      {profile !== null ? (
+      {profile !== null && profile.status === "active" ? (
         <section className="mt-10">
           <h2 className="serif" style={{ fontSize: "1.125rem" }}>
             Create client organisation

@@ -32,6 +32,24 @@ class PartnerProfileResponse(BaseModel):
     operator_agreement_accepted_at: str | None = None
 
 
+class AcceptOperatorAgreementRequest(BaseModel):
+    """Request to accept the operator agreement (activation gate 1), and
+    record a registration number for health professionals (gate 3)."""
+
+    operator_agreement_ref: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Version/identifier of the agreement accepted",
+    )
+    registration_number: str | None = Field(
+        None,
+        min_length=1,
+        max_length=200,
+        description="Professional registration number (required if professional_body was set)",
+    )
+
+
 class ActivationStatusResponse(BaseModel):
     """Response indicating whether a partner can be activated and why."""
 

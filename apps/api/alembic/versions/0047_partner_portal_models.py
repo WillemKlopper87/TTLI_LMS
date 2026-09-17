@@ -5,7 +5,13 @@ Revises: 0046
 
 §4.1 Client organisations under a partner:
   - Add parent_organisation_id (self-referential, nullable FK to organisations)
-  - Extend organisations.kind enum with 'partner' and 'client' values
+  - Add organisations.kind enum: 'standard' (default, every ordinary org),
+    'partner', 'client'. Originally defaulted new AND existing rows to
+    'partner', which silently granted every organisation (including via
+    the pre-existing self-service org-creation flow) the ability to create
+    client organisations under itself — corrected to default 'standard';
+    services/partner.py::activate_partner promotes an org to 'partner'
+    only once its partner profile actually clears activation.
 
 §4.2 Assessment licences:
   - assessment_licences table with template_id as unconstrained nullable UUID
@@ -41,7 +47,7 @@ def upgrade() -> None:
     op.execute(
         """
         DO $$ BEGIN
-            CREATE TYPE organisation_kind AS ENUM ('partner', 'client');
+            CREATE TYPE organisation_kind AS ENUM ('standard', 'partner', 'client');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
         """
@@ -58,9 +64,12 @@ def upgrade() -> None:
         ),
     )
 
-    # Add kind column with default value
+    # Add kind column with default value. 'standard' — not 'partner' — so
+    # every pre-existing organisation, and every new one created by the
+    # unrelated self-service org-creation flow, stays a plain org unless
+    # and until it is explicitly promoted (see activate_partner).
     op.execute(
-        "ALTER TABLE organisations ADD COLUMN kind organisation_kind NOT NULL DEFAULT 'partner'"
+        "ALTER TABLE organisations ADD COLUMN kind organisation_kind NOT NULL DEFAULT 'standard'"
     )
 
     # §4.2: Create assessment_licences table

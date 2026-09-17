@@ -4,7 +4,11 @@ new join table, and why `organisation_members.relationship` is a
 separate concept from the RBAC `role_assignments` table.
 
 Extends with §4.1 (partner portal design, 2026-09-11):
-  - kind enum ('partner', 'client') for partner org types
+  - kind enum ('standard', 'partner', 'client') for partner org types —
+    'standard' is the default for every ordinary organisation; a org
+    only becomes 'partner' when services/partner.py::activate_partner
+    promotes it (see migration 0047's docstring for why the default is
+    not 'partner')
   - parent_organisation_id for client orgs linked to their partner parent
 """
 
@@ -25,7 +29,7 @@ RELATIONSHIP_VALUES = ("member", "manager", "admin")
 # — create_type=False because the migration already created it. Mapping
 # this as a plain String let every insert through SQLAlchemy fail with
 # DatatypeMismatchError ("kind" is organisation_kind, not varchar).
-ORGANISATION_KIND_VALUES = ("partner", "client")
+ORGANISATION_KIND_VALUES = ("standard", "partner", "client")
 OrganisationKind = Enum(*ORGANISATION_KIND_VALUES, name="organisation_kind", create_type=False)
 
 
@@ -44,7 +48,7 @@ class Organisation(Base, TimestampMixin):
     billing_address_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     # §4.1: kind enum for partner organisations ('partner' or 'client')
-    kind: Mapped[str] = mapped_column(OrganisationKind, nullable=False, default="partner")
+    kind: Mapped[str] = mapped_column(OrganisationKind, nullable=False, default="standard")
     # §4.1: parent_organisation_id for client orgs to link to their partner
     parent_organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),

@@ -272,6 +272,143 @@ class TestPartnerProfileActivationGate:
             assert profile.status == "active"
 
 
+class TestOrganisationKindDefault:
+    """Test that ordinary organisations never silently become partners."""
+
+    async def test_new_organisation_defaults_to_standard_kind(self, tenant_session_factory):  # type: ignore[no-untyped-def]
+        """An Organisation created without an explicit kind is 'standard',
+        not 'partner' — the column default this branch originally shipped
+        with would have granted every self-service-created org the
+        ability to create client organisations under itself."""
+        tenant_id = await _demo_tenant_id(tenant_session_factory)
+        async with tenant_session_factory(tenant_id) as session:
+            org = Organisation(tenant_id=tenant_id, name="Plain Org")
+            session.add(org)
+            await session.flush()
+            assert org.kind == "standard"
+
+    async def test_activation_promotes_organisation_to_partner_kind(
+        self, tenant_session_factory, crypto
+    ):  # type: ignore[no-untyped-def]
+        """activate_partner promotes the org from 'standard' to 'partner'
+        only once every gate clears — this is what makes
+        get_admin_partner_organisation (and client-org creation) start
+        seeing it."""
+        tenant_id = await _demo_tenant_id(tenant_session_factory)
+        async with tenant_session_factory(tenant_id) as session:
+            org = Organisation(tenant_id=tenant_id, name="Soon Partner")
+            session.add(org)
+            await session.flush()
+            assert org.kind == "standard"
+
+            profile = PartnerProfile(
+                tenant_id=tenant_id,
+                organisation_id=org.id,
+                display_name="Soon Partner",
+                status="onboarding",
+                operator_agreement_ref="agreement-123",
+                operator_agreement_accepted_at=datetime.now(UTC),
+            )
+            session.add(profile)
+            await session.flush()
+
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
+            await _enroll_mfa(session, user, crypto)
+
+            await partner_service.activate_partner(session, profile=profile, user=user)
+            assert org.kind == "partner"
+
+
+class TestAcceptOperatorAgreement:
+    """Test recording operator agreement acceptance via the real API path."""
+
+    async def test_accept_operator_agreement_sets_fields(self, tenant_session_factory, crypto):  # type: ignore[no-untyped-def]
+        tenant_id = await _demo_tenant_id(tenant_session_factory)
+        async with tenant_session_factory(tenant_id) as session:
+            org = Organisation(tenant_id=tenant_id, name="Test Partner")
+            session.add(org)
+            await session.flush()
+
+            profile = PartnerProfile(
+                tenant_id=tenant_id,
+                organisation_id=org.id,
+                display_name="Test Partner",
+                status="invited",
+            )
+            session.add(profile)
+            await session.flush()
+
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
+
+            await partner_service.accept_operator_agreement(
+                session,
+                crypto,
+                profile=profile,
+                accepted_by_user_id=user.id,
+                operator_agreement_ref="agreement-v1",
+            )
+            assert profile.operator_agreement_ref == "agreement-v1"
+            assert profile.operator_agreement_accepted_at is not None
+            assert profile.accepted_by_user_id == user.id
+            assert profile.status == "onboarding"
+
+    async def test_accept_operator_agreement_requires_registration_for_health_professional(
+        self, tenant_session_factory, crypto
+    ):  # type: ignore[no-untyped-def]
+        tenant_id = await _demo_tenant_id(tenant_session_factory)
+        async with tenant_session_factory(tenant_id) as session:
+            org = Organisation(tenant_id=tenant_id, name="Health Partner")
+            session.add(org)
+            await session.flush()
+
+            profile = PartnerProfile(
+                tenant_id=tenant_id,
+                organisation_id=org.id,
+                display_name="Health Partner",
+                professional_body="HPCSA",
+                status="invited",
+            )
+            session.add(profile)
+            await session.flush()
+
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
+
+            with pytest.raises(AppError, match="registration number is required"):
+                await partner_service.accept_operator_agreement(
+                    session,
+                    crypto,
+                    profile=profile,
+                    accepted_by_user_id=user.id,
+                    operator_agreement_ref="agreement-v1",
+                )
+
+            await partner_service.accept_operator_agreement(
+                session,
+                crypto,
+                profile=profile,
+                accepted_by_user_id=user.id,
+                operator_agreement_ref="agreement-v1",
+                registration_number="HP123456",
+            )
+            assert profile.registration_number_encrypted is not None
+            assert crypto.decrypt(profile.registration_number_encrypted) == "HP123456"
+
+
 class TestClientOrganisationHierarchy:
     """Test parent/child organisation relationships."""
 

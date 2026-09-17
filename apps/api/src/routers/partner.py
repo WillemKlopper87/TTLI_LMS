@@ -16,10 +16,11 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep
+from src.core.deps import AuditedSessionDep, CryptoDep, PrincipalDep, SessionDep
 from src.core.errors import AppError, NotFound
 from src.models.partner import PartnerProfile
 from src.schemas.partner import (
+    AcceptOperatorAgreementRequest,
     ActivationStatusResponse,
     ClientOrgResponse,
     CreateClientOrgRequest,
@@ -99,7 +100,17 @@ async def get_partner_profile_for_organisation(
     Returns null rather than 404 when no profile exists yet — the UI's
     create-vs-manage decision hinges on "does one exist", not on this
     being an error state.
+
+    Requires the caller to be an admin member of the organisation — a
+    partner profile holds encrypted registration/bio data that must not
+    be readable by an arbitrary authenticated tenant user.
     """
+    await partner_service.require_organisation_admin(
+        session,
+        tenant_id=principal.tenant_id,
+        organisation_id=organisation_id,
+        user_id=principal.user_id,
+    )
     profile = await partner_service.get_partner_profile(
         session,
         tenant_id=principal.tenant_id,
@@ -138,6 +149,8 @@ async def check_activation_status(
     Returns:
         - can_activate: True if all gates are met
         - missing_gates: List of gates that are not yet cleared
+
+    Requires the caller to be an admin member of the profile's organisation.
     """
     profile = (
         await session.execute(
@@ -150,6 +163,13 @@ async def check_activation_status(
 
     if profile is None:
         raise NotFound("Partner profile not found")
+
+    await partner_service.require_organisation_admin(
+        session,
+        tenant_id=principal.tenant_id,
+        organisation_id=profile.organisation_id,
+        user_id=principal.user_id,
+    )
 
     # Get the user to check MFA
     user = await get_user(session, tenant_id=principal.tenant_id, user_id=principal.user_id)
@@ -166,6 +186,69 @@ async def check_activation_status(
 
     can_activate = len(missing_gates) == 0
     return ActivationStatusResponse(can_activate=can_activate, missing_gates=missing_gates)
+
+
+@router.post(
+    "/profiles/{profile_id}/accept-agreement",
+    response_model=PartnerProfileResponse,
+    summary="Accept the operator agreement for a partner profile",
+)
+async def accept_operator_agreement(
+    profile_id: uuid.UUID,
+    body: AcceptOperatorAgreementRequest,
+    principal: PrincipalDep,
+    session: AuditedSessionDep,
+    crypto: CryptoDep,
+) -> PartnerProfileResponse:
+    """Accept the operator agreement (activation gate 1) and, for health
+    professionals, record a registration number (gate 3). Requires the
+    caller to be an admin member of the profile's organisation.
+    """
+    profile = (
+        await session.execute(
+            select(PartnerProfile).where(
+                PartnerProfile.id == profile_id,
+                PartnerProfile.tenant_id == principal.tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if profile is None:
+        raise NotFound("Partner profile not found")
+
+    await partner_service.require_organisation_admin(
+        session,
+        tenant_id=principal.tenant_id,
+        organisation_id=profile.organisation_id,
+        user_id=principal.user_id,
+    )
+
+    try:
+        await partner_service.accept_operator_agreement(
+            session,
+            crypto,
+            profile=profile,
+            accepted_by_user_id=principal.user_id,
+            operator_agreement_ref=body.operator_agreement_ref,
+            registration_number=body.registration_number,
+        )
+    except AppError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return PartnerProfileResponse(
+        id=profile.id,
+        organisation_id=profile.organisation_id,
+        display_name=profile.display_name,
+        bio=profile.bio,
+        logo_object_key=profile.logo_object_key,
+        professional_body=profile.professional_body,
+        status=profile.status,
+        operator_agreement_accepted_at=(
+            profile.operator_agreement_accepted_at.isoformat()
+            if profile.operator_agreement_accepted_at
+            else None
+        ),
+    )
 
 
 @router.post(

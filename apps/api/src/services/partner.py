@@ -9,10 +9,12 @@ Core operations:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.crypto import CryptoBox
 from src.core.errors import AppError, Forbidden
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.partner import PartnerProfile
@@ -144,6 +146,37 @@ def can_activate_partner(profile: PartnerProfile, user: User) -> bool:
     return True
 
 
+async def accept_operator_agreement(
+    session: AsyncSession,
+    crypto: CryptoBox,
+    *,
+    profile: PartnerProfile,
+    accepted_by_user_id: uuid.UUID,
+    operator_agreement_ref: str,
+    registration_number: str | None = None,
+) -> None:
+    """Record operator agreement acceptance, and a registration number for
+    health professionals, so activate_partner's gates 1 and 3 become
+    satisfiable through the real API rather than only directly in the DB.
+
+    Raises:
+        AppError: If a health professional's profile is missing a
+            registration number (professional_body was set at profile
+            creation, so this is the one remaining piece of gate 3).
+    """
+    if profile.professional_body is not None and not registration_number:
+        raise AppError("A registration number is required for health professionals.")
+
+    profile.operator_agreement_ref = operator_agreement_ref
+    profile.operator_agreement_accepted_at = datetime.now(UTC)
+    profile.accepted_by_user_id = accepted_by_user_id
+    if registration_number:
+        profile.registration_number_encrypted = crypto.encrypt(registration_number)
+    if profile.status == "invited":
+        profile.status = "onboarding"
+    await session.flush()
+
+
 async def activate_partner(
     session: AsyncSession,
     *,
@@ -168,6 +201,19 @@ async def activate_partner(
         )
 
     profile.status = "active"
+
+    # Promote the organisation to kind='partner' only now that its profile
+    # has genuinely cleared every activation gate — this is what makes
+    # get_admin_partner_organisation (and therefore client-org creation)
+    # start seeing it. Never touches an org already kind='client'.
+    org = (
+        await session.execute(
+            select(Organisation).where(Organisation.id == profile.organisation_id)
+        )
+    ).scalar_one_or_none()
+    if org is not None and org.kind == "standard":
+        org.kind = "partner"
+
     await session.flush()
 
 
@@ -272,6 +318,7 @@ async def get_partner_clients(
 
 
 __all__ = [
+    "accept_operator_agreement",
     "activate_partner",
     "can_activate_partner",
     "create_client_organisation",
