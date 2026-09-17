@@ -15,7 +15,7 @@ export default function NewTemplateModal() {
   const router = useRouter();
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("quiz");
+  const [kind, setKind] = useState("org_survey");
   const [description, setDescription] = useState("");
   const [responseMode, setResponseMode] = useState("identified");
   const [minimumGroupSize, setMinimumGroupSize] = useState(5);
@@ -90,8 +90,10 @@ export default function NewTemplateModal() {
             value={kind}
             onChange={(e) => setKind(e.target.value)}
           >
-            <option value="quiz">Quiz</option>
-            <option value="survey">Survey</option>
+            <option value="org_survey">Organisation survey</option>
+            <option value="multi_rater">Multi-rater (360)</option>
+            <option value="individual">Individual</option>
+            <option value="external_instrument">External instrument</option>
           </select>
         </label>
 

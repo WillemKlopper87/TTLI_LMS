@@ -15,9 +15,11 @@ import uuid
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from src.core.deps import PrincipalDep, SessionDep
 from src.core.errors import Forbidden, NotFound
+from src.models.organisation import OrganisationMember
 from src.services import assessment_template as assessment_service
 
 router = APIRouter(prefix="/assessment-platform", tags=["assessment-platform"])
@@ -60,6 +62,7 @@ class InstanceCreateRequest(BaseModel):
     organisation_id: str
     title: str
     evaluation_role: str = "standalone"
+    pair_id: str | None = None
     levels_enabled: bool = False
 
 
@@ -152,8 +155,9 @@ async def create_instance(
     try:
         template_uuid = uuid.UUID(body.template_id)
         organisation_uuid = uuid.UUID(body.organisation_id)
+        pair_uuid = uuid.UUID(body.pair_id) if body.pair_id else None
     except ValueError as exc:
-        raise NotFound("Invalid template or organisation ID.") from exc
+        raise NotFound("Invalid template, organisation, or pair ID.") from exc
 
     instance = await assessment_service.create_instance(
         session,
@@ -162,6 +166,7 @@ async def create_instance(
         organisation_id=organisation_uuid,
         title=body.title,
         evaluation_role=body.evaluation_role,
+        pair_id=pair_uuid,
         levels_enabled=body.levels_enabled,
         created_by=principal.user_id,
     )
@@ -177,13 +182,44 @@ async def create_instance(
 
 
 @router.get("/instances", response_model=InstancesPageResponse)
-async def list_instances(principal: PrincipalDep, session: SessionDep) -> InstancesPageResponse:
+async def list_instances(
+    principal: PrincipalDep,
+    session: SessionDep,
+    organisation_id: str | None = None,
+) -> InstancesPageResponse:
     """List assessment instances accessible to the caller.
 
-    Requires assessment:run permission or org membership.
+    Requires assessment:run permission (sees every instance in the tenant),
+    or admin membership of the specific organisation_id filtered for (sees
+    only that organisation's instances) — an org admin's own "Assessments"
+    tab, per the design spec's dual-access rule for this endpoint.
     """
-    principal.require("assessment:run")
-    instances = await assessment_service.list_instances(session, tenant_id=principal.tenant_id)
+    org_uuid: uuid.UUID | None = None
+    if organisation_id is not None:
+        try:
+            org_uuid = uuid.UUID(organisation_id)
+        except ValueError as exc:
+            raise NotFound("Invalid organisation ID.") from exc
+
+    if "assessment:run" not in principal.permissions:
+        if org_uuid is None:
+            raise Forbidden("You do not have access to this resource.")
+        is_org_admin = (
+            await session.execute(
+                select(OrganisationMember).where(
+                    OrganisationMember.tenant_id == principal.tenant_id,
+                    OrganisationMember.organisation_id == org_uuid,
+                    OrganisationMember.user_id == principal.user_id,
+                    OrganisationMember.relationship == "admin",
+                )
+            )
+        ).scalar_one_or_none()
+        if is_org_admin is None:
+            raise Forbidden("You do not have access to this resource.")
+
+    instances = await assessment_service.list_instances(
+        session, tenant_id=principal.tenant_id, organisation_id=org_uuid
+    )
     return InstancesPageResponse(
         items=[
             InstanceResponse(

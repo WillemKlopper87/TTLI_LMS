@@ -80,6 +80,12 @@ class AssessmentTemplateQuestion(Base):
     __tablename__ = "assessment_template_questions"
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     template_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("assessment_templates.id", ondelete="CASCADE"),
@@ -163,6 +169,12 @@ class AssessmentSubject(Base, TimestampMixin):
     __tablename__ = "assessment_subjects"
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     instance_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("assessment_instances.id", ondelete="CASCADE"),
@@ -185,6 +197,12 @@ class AssessmentInvitation(Base):
     __tablename__ = "assessment_invitations"
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     instance_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("assessment_instances.id", ondelete="CASCADE"),
@@ -261,6 +279,12 @@ class AssessmentSubjectResult(Base, TimestampMixin):
     __tablename__ = "assessment_subject_results"
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     subject_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("assessment_subjects.id", ondelete="CASCADE"),

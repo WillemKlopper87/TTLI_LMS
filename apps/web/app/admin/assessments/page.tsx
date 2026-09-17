@@ -201,16 +201,7 @@ export default function AssessmentsScreen() {
                           {template.status}
                         </span>
                       </td>
-                      <td>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <a
-                            className="btn btn--ghost"
-                            href={`/admin/assessments/template/${template.id}`}
-                          >
-                            View
-                          </a>
-                        </div>
-                      </td>
+                      <td />
                     </tr>
                   ))}
                 </tbody>
@@ -256,16 +247,7 @@ export default function AssessmentsScreen() {
                           {instance.status}
                         </span>
                       </td>
-                      <td>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <a
-                            className="btn btn--ghost"
-                            href={`/admin/assessments/instance/${instance.id}`}
-                          >
-                            View
-                          </a>
-                        </div>
-                      </td>
+                      <td />
                     </tr>
                   ))}
                 </tbody>
