@@ -338,6 +338,15 @@ async def submit_report(
 
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = datetime.now(UTC)
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_SUBMITTED,
+        actor_user_id=author_user_id,
+        entity_type="report",
+        entity_id=report.id,
+        after={"version": report.version},
+    )
     await session.flush()
     return report
 
@@ -376,6 +385,15 @@ async def return_report(
     report.decided_at = datetime.now(UTC)
     report.decided_by = reviewer_user_id
     report.decision_note = decision_note
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_RETURNED,
+        actor_user_id=reviewer_user_id,
+        entity_type="report",
+        entity_id=report.id,
+        after={"decision_note": decision_note},
+    )
     await session.flush()
     return report
 
@@ -425,6 +443,15 @@ async def resubmit_returned_report(
     report.status = ReportStatus.SUBMITTED
     report.submitted_at = datetime.now(UTC)
     report.version += 1
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_RESUBMITTED,
+        actor_user_id=author_user_id,
+        entity_type="report",
+        entity_id=report.id,
+        after={"version": report.version},
+    )
     await session.flush()
     return report
 
@@ -457,6 +484,14 @@ async def accept_report(
     report.status = ReportStatus.ACCEPTED
     report.decided_at = datetime.now(UTC)
     report.decided_by = reviewer_user_id
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_ACCEPTED,
+        actor_user_id=reviewer_user_id,
+        entity_type="report",
+        entity_id=report.id,
+    )
     await session.flush()
     return report
 
@@ -488,6 +523,14 @@ async def withdraw_report(
         )
 
     report.status = ReportStatus.WITHDRAWN
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_WITHDRAWN,
+        actor_user_id=author_user_id,
+        entity_type="report",
+        entity_id=report.id,
+    )
     await session.flush()
     return report
 
@@ -518,8 +561,106 @@ async def release_report(
         )
 
     report.released_at = datetime.now(UTC)
+    await audit.record(
+        session,
+        tenant_id=tenant_id,
+        action=AuditAction.REPORT_RELEASED,
+        actor_user_id=reviewer_user_id,
+        entity_type="report",
+        entity_id=report.id,
+    )
     await session.flush()
     return report
+
+
+async def update_report_summary(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    report_id: uuid.UUID,
+    author_user_id: uuid.UUID,
+    summary: str,
+) -> Report:
+    """Set a report's summary. Author-only, and only while the report is
+    still editable — draft, or returned (so the analyst can revise before
+    resubmitting; there is no separate returned-to-draft transition,
+    editing in place is the returned state's whole purpose)."""
+    stmt = select(Report).where(
+        Report.id == report_id,
+        Report.tenant_id == tenant_id,
+        Report.author_user_id == author_user_id,
+    )
+    report = (await session.execute(stmt)).scalar_one_or_none()
+    if report is None:
+        raise ReportNotFound("Report not found or you are not the author.")
+
+    if report.status not in (ReportStatus.DRAFT, ReportStatus.RETURNED):
+        raise ReportImmutable(
+            f"Cannot edit a report in {report.status.value} status."
+        )
+
+    report.summary = summary
+    await session.flush()
+    return report
+
+
+async def add_report_attachment(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    report_id: uuid.UUID,
+    author_user_id: uuid.UUID,
+    object_key: str,
+    filename: str,
+    content_type: str,
+    size_bytes: int,
+) -> ReportAttachment:
+    """Attach a virus-scanned file to a report. Author-only, and only
+    while the report is still editable (draft or returned) — same rule
+    as update_report_summary, and the model docstring's "immutable after
+    acceptance" guarantee for attachments."""
+    stmt = select(Report).where(
+        Report.id == report_id,
+        Report.tenant_id == tenant_id,
+        Report.author_user_id == author_user_id,
+    )
+    report = (await session.execute(stmt)).scalar_one_or_none()
+    if report is None:
+        raise ReportNotFound("Report not found or you are not the author.")
+
+    if report.status not in (ReportStatus.DRAFT, ReportStatus.RETURNED):
+        raise ReportImmutable(
+            f"Cannot attach a file to a report in {report.status.value} status."
+        )
+
+    attachment = ReportAttachment(
+        tenant_id=tenant_id,
+        report_id=report_id,
+        object_key=object_key,
+        filename=filename,
+        content_type=content_type,
+        size_bytes=size_bytes,
+        scanned_at=datetime.now(UTC),
+        scan_result="clean",
+    )
+    session.add(attachment)
+    await session.flush()
+    return attachment
+
+
+async def list_report_attachments(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    report_id: uuid.UUID,
+) -> list[ReportAttachment]:
+    """List a report's attachments, oldest first."""
+    stmt = (
+        select(ReportAttachment)
+        .where(ReportAttachment.report_id == report_id, ReportAttachment.tenant_id == tenant_id)
+        .order_by(ReportAttachment.uploaded_at)
+    )
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def get_report(
@@ -545,11 +686,13 @@ __all__ = [
     "ReportAttachment",
     "ReportStatus",
     "accept_report",
+    "add_report_attachment",
     "assign_engagement",
     "check_engagement_access",
     "create_report_draft",
     "get_report",
     "list_engagements",
+    "list_report_attachments",
     "list_reports",
     "record_analyst_read",
     "release_report",
@@ -557,5 +700,6 @@ __all__ = [
     "return_report",
     "revoke_engagement",
     "submit_report",
+    "update_report_summary",
     "withdraw_report",
 ]

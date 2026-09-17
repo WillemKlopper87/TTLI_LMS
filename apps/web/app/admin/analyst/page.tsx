@@ -14,6 +14,8 @@ import { useAdmin } from "../admin-context";
 import { authedFetch, readError, sendJson } from "../courses/wizard-api";
 
 const ASSESSMENT_RUN = "assessment:run";
+const REPORT_SUBMIT = "report:submit";
+const REPORT_REVIEW = "report:review";
 
 interface EngagementItem {
   id: string;
@@ -29,6 +31,8 @@ interface EngagementItem {
 export default function AnalystEngagementsScreen() {
   const { me } = useAdmin();
   const canManage = me.permissions.includes(ASSESSMENT_RUN);
+  const canSeeReports =
+    canManage || me.permissions.includes(REPORT_SUBMIT) || me.permissions.includes(REPORT_REVIEW);
 
   const [engagements, setEngagements] = useState<EngagementItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -108,10 +112,17 @@ export default function AnalystEngagementsScreen() {
             <p className="eyebrow">Assess</p>
             <h1>Analyst engagements</h1>
           </div>
+          {canSeeReports ? (
+            <Link className="btn btn--ghost" href="/admin/analyst/reports">
+              Reports
+            </Link>
+          ) : null}
         </div>
         <div className="callout callout--warn" role="alert">
           <p style={{ fontSize: "0.8125rem" }}>
-            You do not have permission to manage analyst engagements.
+            {canSeeReports
+              ? "You do not have permission to assign or revoke analyst engagements — use Reports to author or review your reports."
+              : "You do not have permission to manage analyst engagements."}
           </p>
         </div>
       </div>

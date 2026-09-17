@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, File, UploadFile, status
 
-from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep
-from src.core.errors import Forbidden
+from src.core.deps import AuditedSessionDep, PrincipalDep, SessionDep, SettingsDep, StorageDep
+from src.core.errors import AppError, Forbidden, ServiceUnavailable
+from src.core.object_keys import build_object_key
 from src.schemas.analyst import (
     AcceptReportRequest,
     AssignEngagementRequest,
@@ -26,15 +27,19 @@ from src.schemas.analyst import (
     EngagementsPageResponse,
     EngagementView,
     ReleaseReportRequest,
+    ReportAttachmentView,
     ReportsPageResponse,
     ReportView,
+    ReportWithAttachmentsView,
     ResubmitReportRequest,
     ReturnReportRequest,
     RevokeEngagementRequest,
     SubmitReportRequest,
+    UpdateReportSummaryRequest,
     WithdrawReportRequest,
 )
-from src.services import analyst
+from src.services import analyst, antivirus
+from src.services.storage import Container
 
 router = APIRouter(tags=["analyst"])
 
@@ -253,14 +258,14 @@ async def list_reports(
 
 @router.get(
     "/reports/{report_id}",
-    response_model=ReportView,
-    summary="Fetch a report by ID",
+    response_model=ReportWithAttachmentsView,
+    summary="Fetch a report by ID, with its attachments",
 )
 async def get_report(
     report_id: uuid.UUID,
     principal: PrincipalDep,
     session: SessionDep,
-) -> ReportView:
+) -> ReportWithAttachmentsView:
     """Fetch a report for reading.
 
     Analyst can read their own reports; reviewers/admins can read any report
@@ -284,6 +289,65 @@ async def get_report(
     if not is_reviewer and report.author_user_id != principal.user_id:
         raise Forbidden("You do not have access to this report.")
 
+    attachments = await analyst.list_report_attachments(
+        session, tenant_id=principal.tenant_id, report_id=report_id
+    )
+
+    return ReportWithAttachmentsView(
+        id=report.id,
+        engagement_id=report.engagement_id,
+        instance_id=report.instance_id,
+        author_user_id=report.author_user_id,
+        status=report.status.value,
+        title=report.title,
+        summary=report.summary,
+        version=report.version,
+        submitted_at=report.submitted_at,
+        decided_at=report.decided_at,
+        decided_by=report.decided_by,
+        decision_note=report.decision_note,
+        released_at=report.released_at,
+        created_at=report.created_at,
+        updated_at=report.updated_at,
+        attachments=[
+            ReportAttachmentView(
+                id=a.id,
+                filename=a.filename,
+                content_type=a.content_type,
+                size_bytes=a.size_bytes,
+                uploaded_at=a.uploaded_at,
+                scanned_at=a.scanned_at,
+                scan_result=a.scan_result,
+            )
+            for a in attachments
+        ],
+    )
+
+
+@router.patch(
+    "/reports/{report_id}",
+    response_model=ReportView,
+    summary="Update a report's summary",
+)
+async def update_report_summary(
+    report_id: uuid.UUID,
+    body: UpdateReportSummaryRequest,
+    principal: PrincipalDep,
+    session: AuditedSessionDep,
+) -> ReportView:
+    """Analyst sets a report's summary. Author-only; only while the
+    report is draft or returned — the summary/attachment gate submit
+    and resubmit already require."""
+    principal.require(REPORT_SUBMIT)
+
+    report = await analyst.update_report_summary(
+        session,
+        tenant_id=principal.tenant_id,
+        report_id=report_id,
+        author_user_id=principal.user_id,
+        summary=body.summary,
+    )
+
     return ReportView(
         id=report.id,
         engagement_id=report.engagement_id,
@@ -300,6 +364,73 @@ async def get_report(
         released_at=report.released_at,
         created_at=report.created_at,
         updated_at=report.updated_at,
+    )
+
+
+@router.post(
+    "/reports/{report_id}/attachments",
+    response_model=ReportAttachmentView,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload an attachment to a report",
+)
+async def upload_report_attachment(
+    report_id: uuid.UUID,
+    principal: PrincipalDep,
+    session: AuditedSessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    file: UploadFile = File(...),
+) -> ReportAttachmentView:
+    """Analyst attaches a PDF/PPTX to a report. Author-only, and only
+    while the report is draft or returned (enforced by the service layer,
+    the same states update_report_summary allows edits in).
+
+    Same fail-closed sequence as every other upload in this app
+    (REQ-BYPASS-08): scanned before storage ever sees the bytes.
+    """
+    principal.require(REPORT_SUBMIT)
+
+    data = await file.read()
+    try:
+        result = await antivirus.scan(data, settings=settings)
+    except antivirus.ScanUnavailable as exc:
+        raise ServiceUnavailable("The virus scanner is unavailable. Try again shortly.") from exc
+    if not result.clean:
+        raise AppError(
+            "That file was rejected by the virus scanner and was not stored.",
+            {"signature": result.signature},
+        )
+
+    key = build_object_key(
+        principal.tenant_id,
+        "report-attachments",
+        report_id,
+        uuid.uuid4().hex,
+        filename=file.filename,
+        fallback="attachment",
+    )
+    await storage.ensure_container(Container.USER_UPLOADS)
+    await storage.upload_object(Container.USER_UPLOADS, key, data, content_type=file.content_type)
+
+    attachment = await analyst.add_report_attachment(
+        session,
+        tenant_id=principal.tenant_id,
+        report_id=report_id,
+        author_user_id=principal.user_id,
+        object_key=key,
+        filename=file.filename or "attachment",
+        content_type=file.content_type or "application/octet-stream",
+        size_bytes=len(data),
+    )
+
+    return ReportAttachmentView(
+        id=attachment.id,
+        filename=attachment.filename,
+        content_type=attachment.content_type,
+        size_bytes=attachment.size_bytes,
+        uploaded_at=attachment.uploaded_at,
+        scanned_at=attachment.scanned_at,
+        scan_result=attachment.scan_result,
     )
 
 

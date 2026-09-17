@@ -25,7 +25,7 @@ import { AdminContext, type Me } from "./admin-context";
 // click — the distinction the super_admin-only "Platform" section needs
 // (deploy/maintenance/system-health concerns a business admin shouldn't
 // even see exist, not just can't open).
-const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] = [
+const WORKING_SECTIONS: { label: string; href: string; permission?: string | string[] }[] = [
   { label: "Leads", href: "/admin/leads" },
   { label: "Deals", href: "/admin/deals" },
   { label: "Campaigns", href: "/admin/campaigns" },
@@ -42,7 +42,15 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Articles", href: "/admin/articles" },
   { label: "Recommendations", href: "/admin/recommendations" },
   { label: "Grading", href: "/admin/grading", permission: "quiz:grade" },
-  { label: "Analyst workspace", href: "/admin/analyst", permission: "assessment:run" },
+  {
+    label: "Analyst workspace",
+    href: "/admin/analyst",
+    // assessment:run (assign/revoke engagements) or report:submit/
+    // report:review (the analyst/reviewer roles) — any of the three
+    // means there's something for this caller to do in here, even
+    // though only assessment:run can see the engagements screen itself.
+    permission: ["assessment:run", "report:submit", "report:review"],
+  },
   { label: "Surveys", href: "/admin/surveys" },
   { label: "Question bank", href: "/admin/question-bank" },
   { label: "Subscriptions", href: "/admin/subscriptions" },
@@ -276,9 +284,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           )}
         </Link>
         <nav className="mt-16 space-y-1 md:mt-0">
-          {WORKING_SECTIONS.filter(
-            (section) => !section.permission || me.permissions.includes(section.permission),
-          ).map((section) => (
+          {WORKING_SECTIONS.filter((section) => {
+            if (!section.permission) return true;
+            const required = Array.isArray(section.permission)
+              ? section.permission
+              : [section.permission];
+            return required.some((p) => me.permissions.includes(p));
+          }).map((section) => (
             <Link
               key={section.href}
               href={section.href}

@@ -834,3 +834,312 @@ class TestReportStateMachine:
             )
 
             assert released.released_at is not None
+
+
+class TestReportSummaryAndAttachments:
+    """Test the real-API path for satisfying submit's summary/attachment gate."""
+
+    async def test_update_report_summary_then_submit(
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
+        tenant_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        analyst_user_id: uuid.UUID,
+    ) -> None:
+        """update_report_summary lets the analyst set a summary through
+        the service layer (not by writing to the ORM object directly, as
+        every other test in this file does) and then submit succeeds."""
+        from src.services import analyst
+
+        instance_id = uuid.uuid4()
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=7)
+
+        async with tenant_session_factory(tenant_id) as s:
+            engagement = await analyst.assign_engagement(
+                s,
+                tenant_id=tenant_id,
+                analyst_user_id=analyst_user_id,
+                instance_id=instance_id,
+                assigned_by=admin_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                purpose="Assessment review",
+            )
+            report = await analyst.create_report_draft(
+                s,
+                tenant_id=tenant_id,
+                engagement_id=engagement.id,
+                author_user_id=analyst_user_id,
+                title="Psychology Assessment Report",
+            )
+
+            updated = await analyst.update_report_summary(
+                s,
+                tenant_id=tenant_id,
+                report_id=report.id,
+                author_user_id=analyst_user_id,
+                summary="Client shows signs of attention deficit.",
+            )
+            assert updated.summary == "Client shows signs of attention deficit."
+
+            submitted = await analyst.submit_report(
+                s,
+                tenant_id=tenant_id,
+                report_id=report.id,
+                author_user_id=analyst_user_id,
+            )
+            assert submitted.status.value == "submitted"
+
+    async def test_update_report_summary_rejects_non_author(
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
+        tenant_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        analyst_user_id: uuid.UUID,
+    ) -> None:
+        from src.services import analyst
+
+        instance_id = uuid.uuid4()
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=7)
+
+        async with tenant_session_factory(tenant_id) as s:
+            engagement = await analyst.assign_engagement(
+                s,
+                tenant_id=tenant_id,
+                analyst_user_id=analyst_user_id,
+                instance_id=instance_id,
+                assigned_by=admin_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                purpose="Assessment review",
+            )
+            report = await analyst.create_report_draft(
+                s,
+                tenant_id=tenant_id,
+                engagement_id=engagement.id,
+                author_user_id=analyst_user_id,
+                title="Psychology Assessment Report",
+            )
+
+            with pytest.raises(analyst.ReportNotFound):
+                await analyst.update_report_summary(
+                    s,
+                    tenant_id=tenant_id,
+                    report_id=report.id,
+                    author_user_id=admin_user_id,
+                    summary="Not my report.",
+                )
+
+    async def test_update_report_summary_rejects_accepted_report(
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
+        tenant_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        analyst_user_id: uuid.UUID,
+    ) -> None:
+        from src.services import analyst
+
+        instance_id = uuid.uuid4()
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=7)
+
+        async with tenant_session_factory(tenant_id) as s:
+            engagement = await analyst.assign_engagement(
+                s,
+                tenant_id=tenant_id,
+                analyst_user_id=analyst_user_id,
+                instance_id=instance_id,
+                assigned_by=admin_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                purpose="Assessment review",
+            )
+            report = await analyst.create_report_draft(
+                s,
+                tenant_id=tenant_id,
+                engagement_id=engagement.id,
+                author_user_id=analyst_user_id,
+                title="Psychology Assessment Report",
+            )
+            report.summary = "Initial summary."
+            await s.flush()
+            submitted = await analyst.submit_report(
+                s, tenant_id=tenant_id, report_id=report.id, author_user_id=analyst_user_id
+            )
+            await analyst.accept_report(
+                s, tenant_id=tenant_id, report_id=submitted.id, reviewer_user_id=admin_user_id
+            )
+
+            with pytest.raises(analyst.ReportImmutable):
+                await analyst.update_report_summary(
+                    s,
+                    tenant_id=tenant_id,
+                    report_id=report.id,
+                    author_user_id=analyst_user_id,
+                    summary="Trying to edit after acceptance.",
+                )
+
+    async def test_add_report_attachment_then_submit_without_summary(
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
+        tenant_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        analyst_user_id: uuid.UUID,
+    ) -> None:
+        """A clean attachment alone (no summary) satisfies the submit gate."""
+        from src.services import analyst
+
+        instance_id = uuid.uuid4()
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=7)
+
+        async with tenant_session_factory(tenant_id) as s:
+            engagement = await analyst.assign_engagement(
+                s,
+                tenant_id=tenant_id,
+                analyst_user_id=analyst_user_id,
+                instance_id=instance_id,
+                assigned_by=admin_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                purpose="Assessment review",
+            )
+            report = await analyst.create_report_draft(
+                s,
+                tenant_id=tenant_id,
+                engagement_id=engagement.id,
+                author_user_id=analyst_user_id,
+                title="Psychology Assessment Report",
+            )
+
+            attachment = await analyst.add_report_attachment(
+                s,
+                tenant_id=tenant_id,
+                report_id=report.id,
+                author_user_id=analyst_user_id,
+                object_key="reports/test/report.pdf",
+                filename="report.pdf",
+                content_type="application/pdf",
+                size_bytes=1024,
+            )
+            assert attachment.scan_result == "clean"
+
+            attachments = await analyst.list_report_attachments(
+                s, tenant_id=tenant_id, report_id=report.id
+            )
+            assert len(attachments) == 1
+
+            submitted = await analyst.submit_report(
+                s, tenant_id=tenant_id, report_id=report.id, author_user_id=analyst_user_id
+            )
+            assert submitted.status.value == "submitted"
+
+
+class TestReportAuditTrail:
+    """Every report transition leaves an audit event, not just analyst reads."""
+
+    async def test_full_lifecycle_leaves_audit_events_for_every_transition(
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
+        tenant_id: uuid.UUID,
+        admin_user_id: uuid.UUID,
+        analyst_user_id: uuid.UUID,
+    ) -> None:
+        from src.models.audit import AuditAction, AuditEvent
+        from src.services import analyst
+
+        instance_id = uuid.uuid4()
+        starts_at = datetime.now(UTC)
+        ends_at = starts_at + timedelta(days=7)
+
+        async with tenant_session_factory(tenant_id) as s:
+            engagement = await analyst.assign_engagement(
+                s,
+                tenant_id=tenant_id,
+                analyst_user_id=analyst_user_id,
+                instance_id=instance_id,
+                assigned_by=admin_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                purpose="Assessment review",
+            )
+            report = await analyst.create_report_draft(
+                s,
+                tenant_id=tenant_id,
+                engagement_id=engagement.id,
+                author_user_id=analyst_user_id,
+                title="Psychology Assessment Report",
+            )
+            report.summary = "Initial summary."
+            await s.flush()
+
+            submitted = await analyst.submit_report(
+                s, tenant_id=tenant_id, report_id=report.id, author_user_id=analyst_user_id
+            )
+            returned = await analyst.return_report(
+                s,
+                tenant_id=tenant_id,
+                report_id=submitted.id,
+                reviewer_user_id=admin_user_id,
+                decision_note="Please add more detail.",
+            )
+            resubmitted = await analyst.resubmit_returned_report(
+                s, tenant_id=tenant_id, report_id=returned.id, author_user_id=analyst_user_id
+            )
+            accepted = await analyst.accept_report(
+                s, tenant_id=tenant_id, report_id=resubmitted.id, reviewer_user_id=admin_user_id
+            )
+            await analyst.release_report(
+                s, tenant_id=tenant_id, report_id=accepted.id, reviewer_user_id=admin_user_id
+            )
+
+            events = (
+                await s.execute(
+                    sa.select(AuditEvent.action).where(
+                        AuditEvent.tenant_id == tenant_id,
+                        AuditEvent.entity_type == "report",
+                        AuditEvent.entity_id == report.id,
+                    )
+                )
+            ).scalars().all()
+
+            assert set(events) == {
+                AuditAction.REPORT_SUBMITTED,
+                AuditAction.REPORT_RETURNED,
+                AuditAction.REPORT_RESUBMITTED,
+                AuditAction.REPORT_ACCEPTED,
+                AuditAction.REPORT_RELEASED,
+            }
+
+
+class TestAnalystReviewerRoles:
+    """0049's dedicated analyst/reviewer roles grant exactly the split
+    permissions the spec describes, without needing full admin."""
+
+    async def test_analyst_role_grants_exactly_analyse_and_submit(
+        self, tenant_session_factory  # type: ignore[no-untyped-def]
+    ) -> None:
+        async with tenant_session_factory(None) as s:
+            perms = (
+                await s.execute(
+                    sa.text(
+                        "SELECT permission_code FROM role_permissions WHERE role_code = 'analyst'"
+                    )
+                )
+            ).scalars().all()
+        assert set(perms) == {"assessment:analyse", "report:submit"}
+
+    async def test_reviewer_role_grants_exactly_report_review(
+        self, tenant_session_factory  # type: ignore[no-untyped-def]
+    ) -> None:
+        async with tenant_session_factory(None) as s:
+            perms = (
+                await s.execute(
+                    sa.text(
+                        "SELECT permission_code FROM role_permissions WHERE role_code = 'reviewer'"
+                    )
+                )
+            ).scalars().all()
+        assert set(perms) == {"report:review"}

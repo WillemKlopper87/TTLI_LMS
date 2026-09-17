@@ -18,6 +18,16 @@ import { authedFetch, readError, sendJson } from "../../../courses/wizard-api";
 const REPORT_SUBMIT = "report:submit";
 const REPORT_REVIEW = "report:review";
 
+interface ReportAttachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+  scanned_at: string | null;
+  scan_result: string | null;
+}
+
 interface ReportView {
   id: string;
   engagement_id: string;
@@ -34,6 +44,7 @@ interface ReportView {
   released_at: string | null;
   created_at: string;
   updated_at: string;
+  attachments: ReportAttachment[];
 }
 
 const STATUS_TAG: Record<string, string> = {
@@ -57,13 +68,22 @@ export default function ReportDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
 
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   async function load() {
     const resp = await authedFetch(`/api/bff/reports/${reportId}`);
     if (!resp.ok) {
       setError(await readError(resp, "This report could not be loaded."));
       return;
     }
-    setReport(await resp.json());
+    const body = (await resp.json()) as ReportView;
+    setReport(body);
+    setSummaryDraft(body.summary ?? "");
     setError(null);
   }
 
@@ -88,6 +108,44 @@ export default function ReportDetailPage() {
   }
 
   const isAuthor = report !== null && report.author_user_id === me.user_id;
+  const canEditNow =
+    canSubmit && isAuthor && (report?.status === "draft" || report?.status === "returned");
+
+  async function saveSummary(event: React.FormEvent) {
+    event.preventDefault();
+    if (!summaryDraft.trim()) return;
+    setSummaryBusy(true);
+    setSummaryError(null);
+    const resp = await sendJson(`/api/bff/reports/${reportId}`, "PATCH", {
+      summary: summaryDraft.trim(),
+    });
+    setSummaryBusy(false);
+    if (!resp.ok) {
+      setSummaryError(await readError(resp, "The summary could not be saved."));
+      return;
+    }
+    await load();
+  }
+
+  async function uploadAttachment(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadBusy(true);
+    setUploadError(null);
+    const form = new FormData();
+    form.append("file", file);
+    const resp = await authedFetch(`/api/bff/reports/${reportId}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    setUploadBusy(false);
+    if (!resp.ok) {
+      setUploadError(await readError(resp, "The file could not be uploaded."));
+      return;
+    }
+    await load();
+  }
 
   if (error) {
     return (
@@ -154,7 +212,7 @@ export default function ReportDetailPage() {
             <dt style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>Engagement</dt>
             <dd className="mono" style={{ fontSize: "0.8125rem" }}>{report.engagement_id}</dd>
           </div>
-          {report.summary ? (
+          {report.summary && !canEditNow ? (
             <div className="flex justify-between">
               <dt style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>Summary</dt>
               <dd style={{ fontSize: "0.8125rem" }}>{report.summary}</dd>
@@ -167,6 +225,73 @@ export default function ReportDetailPage() {
             </div>
           ) : null}
         </dl>
+      </div>
+
+      {canEditNow ? (
+        <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
+          <b style={{ fontSize: "0.875rem" }}>Summary</b>
+          <form onSubmit={(e) => void saveSummary(e)} className="mt-3">
+            <textarea
+              className="input"
+              value={summaryDraft}
+              onChange={(e) => setSummaryDraft(e.target.value)}
+              rows={5}
+              placeholder="Write the report summary here — a non-empty summary or at least one clean attachment is required to submit."
+            />
+            {summaryError ? (
+              <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }} className="mt-2">
+                {summaryError}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="btn btn--primary mt-3"
+              disabled={summaryBusy || !summaryDraft.trim() || summaryDraft === (report.summary ?? "")}
+            >
+              {summaryBusy ? "Saving…" : "Save summary"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      <div className="card p-4 mt-4" style={{ maxWidth: "32rem" }}>
+        <b style={{ fontSize: "0.875rem" }}>Attachments</b>
+        {report.attachments.length === 0 ? (
+          <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }} className="mt-2">
+            No attachments yet.
+          </p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1">
+            {report.attachments.map((a) => (
+              <li key={a.id} style={{ fontSize: "0.8125rem" }} className="flex justify-between">
+                <span>{a.filename}</span>
+                <span style={{ color: "var(--muted)" }}>
+                  {a.scan_result === "clean" ? "Clean" : (a.scan_result ?? "Pending scan")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {canEditNow ? (
+          <div className="mt-3">
+            <input
+              type="file"
+              accept=".pdf,.ppt,.pptx"
+              disabled={uploadBusy}
+              onChange={(e) => void uploadAttachment(e)}
+            />
+            {uploadBusy ? (
+              <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }} className="mt-2">
+                Uploading and scanning…
+              </p>
+            ) : null}
+            {uploadError ? (
+              <p role="alert" style={{ fontSize: "0.8125rem", color: "var(--stop)" }} className="mt-2">
+                {uploadError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {actionError ? (

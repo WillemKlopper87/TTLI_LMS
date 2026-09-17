@@ -69,6 +69,12 @@ class ReportView(BaseModel):
     updated_at: datetime
 
 
+class UpdateReportSummaryRequest(BaseModel):
+    """Analyst sets a report's summary. Author-only, draft/returned only."""
+
+    summary: str = Field(min_length=1, max_length=20000)
+
+
 class SubmitReportRequest(BaseModel):
     """Analyst submits a draft report for review."""
 
@@ -150,5 +156,6 @@ __all__ = [
     "ReturnReportRequest",
     "RevokeEngagementRequest",
     "SubmitReportRequest",
+    "UpdateReportSummaryRequest",
     "WithdrawReportRequest",
 ]
