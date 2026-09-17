@@ -29,10 +29,11 @@ async def _demo_tenant_id(tenant_session_factory):  # type: ignore[no-untyped-de
 
 
 async def _make_organisation(session, *, tenant_id: uuid.UUID, name: str) -> Organisation:
+    # No `kind` column on this branch's Organisation model — that field
+    # belongs to feat/partner-portal's own, separate migration.
     org = Organisation(
         tenant_id=tenant_id,
         name=name,
-        kind="licensee",
     )
     session.add(org)
     await session.flush()
@@ -40,11 +41,17 @@ async def _make_organisation(session, *, tenant_id: uuid.UUID, name: str) -> Org
 
 
 async def _make_user(session, *, tenant_id: uuid.UUID, email: str) -> User:
+    # email_blind_index must actually vary with `email` — a hardcoded
+    # value here made uq_users_tenant_email collide on the second call
+    # regardless of what different `email` a caller passed, since that's
+    # the column the constraint actually checks.
+    import hashlib
+
     user = User(
         tenant_id=tenant_id,
-        email_encrypted=b"encrypted",
-        email_blind_index=b"blind_index",
-        email_domain="example.com",
+        email_encrypted=email.encode(),
+        email_blind_index=hashlib.sha256(email.encode()).digest(),
+        email_domain=email.split("@", 1)[-1],
     )
     session.add(user)
     await session.flush()
@@ -52,7 +59,14 @@ async def _make_user(session, *, tenant_id: uuid.UUID, email: str) -> User:
 
 
 async def _make_course(session, *, tenant_id: uuid.UUID, title: str) -> tuple[uuid.UUID, str]:
-    """Create a course and return (course_id, course_id_str) for testing."""
+    """Create a course and return (course_id, course_id_str) for testing.
+
+    courses has no tenant_id column — courses are deliberately global,
+    not tenant-scoped (see Course model's own docstring); tenant_id here
+    is only used as created_by_tenant_id, and only for provenance, not
+    visibility. licence.create_licence never validates course_id against
+    course_tenant_assignments, so a bare row satisfying the FK is enough.
+    """
     import sqlalchemy as sa
 
     course_id = uuid.uuid4()
@@ -60,15 +74,16 @@ async def _make_course(session, *, tenant_id: uuid.UUID, title: str) -> tuple[uu
         sa.text(
             """
             INSERT INTO courses
-            (id, tenant_id, title, description, status, created_at, updated_at)
-            VALUES (:id, :tenant_id, :title, :desc, 'published', now(), now())
+            (id, slug, title, description, state, created_by_tenant_id, created_at, updated_at)
+            VALUES (:id, :slug, :title, :desc, 'published', :tenant_id, now(), now())
             """
         ),
         {
             "id": course_id,
-            "tenant_id": tenant_id,
+            "slug": f"test-course-{course_id.hex[:8]}",
             "title": title,
             "desc": "Test course",
+            "tenant_id": tenant_id,
         },
     )
     await session.flush()
@@ -177,7 +192,9 @@ async def test_grant_seat_succeeds_and_increments_seats_used(
     async with tenant_session_factory(tenant_id) as session:
         org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
         course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
-        learner = await _make_user(session, tenant_id=tenant_id, email="learner@example.com")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
 
         starts_at = datetime.now(UTC)
         ends_at = starts_at + timedelta(days=365)
@@ -257,7 +274,9 @@ async def test_grant_seat_rejects_outside_validity_window(
     async with tenant_session_factory(tenant_id) as session:
         org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
         course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
-        learner = await _make_user(session, tenant_id=tenant_id, email="learner@example.com")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
 
         now = datetime.now(UTC)
         # Licence expired yesterday
@@ -290,7 +309,9 @@ async def test_has_active_licence_returns_true_for_valid_grant(
     async with tenant_session_factory(tenant_id) as session:
         org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
         course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
-        learner = await _make_user(session, tenant_id=tenant_id, email="learner@example.com")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
 
         starts_at = datetime.now(UTC)
         ends_at = starts_at + timedelta(days=365)
@@ -328,7 +349,9 @@ async def test_has_active_licence_returns_false_for_revoked_grant(
     async with tenant_session_factory(tenant_id) as session:
         org = await _make_organisation(session, tenant_id=tenant_id, name="Test Licensee")
         course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
-        learner = await _make_user(session, tenant_id=tenant_id, email="learner@example.com")
+        learner = await _make_user(
+            session, tenant_id=tenant_id, email=f"learner-{uuid.uuid4().hex[:8]}@example.com"
+        )
 
         starts_at = datetime.now(UTC)
         ends_at = starts_at + timedelta(days=365)
@@ -387,18 +410,20 @@ async def test_rls_isolates_licences_between_tenants(tenant_session_factory):  #
         )
         licence_id = licence.id
 
-    # Try to query it from a different tenant (mock via direct SQL)
-    # In a real multi-tenant scenario, the RLS policy would block access.
-    # This test verifies the policy exists and columns are set correctly.
+    # A session with no tenant context sets app.tenant_id to '' (core/db.py::
+    # set_tenant), which the RLS policy's `tenant_id = NULLIF(..., '')::uuid`
+    # normalises to NULL — matching no row's tenant_id, ever. The previous
+    # version of this test asserted the opposite (row is not None), which
+    # can only pass if RLS is failing to isolate tenants; this was never
+    # actually run against real Postgres before now.
     async with tenant_session_factory(None) as session:
-        # Verify the licence was created
         row = (
             await session.execute(
                 sa.text("SELECT id FROM licences WHERE id = :id"),
                 {"id": licence_id},
             )
         ).first()
-        assert row is not None, "Licence was created in the database"
+        assert row is None, "RLS should hide the licence from a session with no tenant context"
 
 
 __all__ = []

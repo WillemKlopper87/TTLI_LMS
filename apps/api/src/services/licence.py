@@ -194,6 +194,7 @@ async def grant_seat(
         raise AppError("Learner already has a grant under this licence.")
 
     grant = LicenceSeatGrant(
+        tenant_id=tenant_id,
         licence_id=licence_id,
         learner_user_id=learner_user_id,
         entitlement_id=entitlement_id,

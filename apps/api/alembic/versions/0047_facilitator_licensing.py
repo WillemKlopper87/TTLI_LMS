@@ -154,6 +154,13 @@ def upgrade() -> None:
         "licence_seat_grants",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="RESTRICT"),
+            nullable=False,
+            index=True,
+        ),
+        sa.Column(
             "licence_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("licences.id", ondelete="CASCADE"),

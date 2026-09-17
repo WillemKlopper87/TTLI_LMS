@@ -75,6 +75,12 @@ class LicenceSeatGrant(Base):
     )
 
     id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     licence_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("licences.id", ondelete="CASCADE"),
