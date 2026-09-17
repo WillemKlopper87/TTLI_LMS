@@ -80,7 +80,15 @@ class TestPartnerProfileActivationGate:
             await session.flush()
 
             # Create user with MFA
-            user = await _make_user(session, crypto, tenant_id=tenant_id, email="test@example.com")
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                # Unique per call: tests share one demo tenant against one
+                # unreset Postgres test DB, and uq_users_tenant_email
+                # rejects two users in the same tenant with the same email.
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
             await _enroll_mfa(session, user, crypto)
 
             # Activation should fail
@@ -114,7 +122,15 @@ class TestPartnerProfileActivationGate:
             await session.flush()
 
             # Create user WITHOUT MFA
-            user = await _make_user(session, crypto, tenant_id=tenant_id, email="test@example.com")
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                # Unique per call: tests share one demo tenant against one
+                # unreset Postgres test DB, and uq_users_tenant_email
+                # rejects two users in the same tenant with the same email.
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
             # Note: NOT calling _enroll_mfa
 
             # Activation should fail
@@ -153,7 +169,15 @@ class TestPartnerProfileActivationGate:
             await session.flush()
 
             # Create user with MFA
-            user = await _make_user(session, crypto, tenant_id=tenant_id, email="test@example.com")
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                # Unique per call: tests share one demo tenant against one
+                # unreset Postgres test DB, and uq_users_tenant_email
+                # rejects two users in the same tenant with the same email.
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
             await _enroll_mfa(session, user, crypto)
 
             # Activation should fail
@@ -187,7 +211,15 @@ class TestPartnerProfileActivationGate:
             await session.flush()
 
             # Create user with MFA
-            user = await _make_user(session, crypto, tenant_id=tenant_id, email="test@example.com")
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                # Unique per call: tests share one demo tenant against one
+                # unreset Postgres test DB, and uq_users_tenant_email
+                # rejects two users in the same tenant with the same email.
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
             await _enroll_mfa(session, user, crypto)
 
             # Activation should succeed
@@ -224,7 +256,15 @@ class TestPartnerProfileActivationGate:
             await session.flush()
 
             # Create user with MFA
-            user = await _make_user(session, crypto, tenant_id=tenant_id, email="test@example.com")
+            user = await _make_user(
+                session,
+                crypto,
+                tenant_id=tenant_id,
+                # Unique per call: tests share one demo tenant against one
+                # unreset Postgres test DB, and uq_users_tenant_email
+                # rejects two users in the same tenant with the same email.
+                email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+            )
             await _enroll_mfa(session, user, crypto)
 
             # Activation should succeed
