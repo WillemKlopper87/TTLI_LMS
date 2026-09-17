@@ -261,19 +261,14 @@ async def get_partner_clients(
 
     Returns organisations with kind='client' and parent_organisation_id=partner_id.
     """
-    return (
-        (
-            await session.execute(
-                select(Organisation).where(
-                    Organisation.tenant_id == tenant_id,
-                    Organisation.kind == "client",
-                    Organisation.parent_organisation_id == partner_id,
-                )
-            )
+    result = await session.execute(
+        select(Organisation).where(
+            Organisation.tenant_id == tenant_id,
+            Organisation.kind == "client",
+            Organisation.parent_organisation_id == partner_id,
         )
-        .scalars()
-        .all()
     )
+    return list(result.scalars().all())
 
 
 __all__ = [
