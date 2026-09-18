@@ -367,6 +367,29 @@ CVE-2026-84445 exp:2026-12-08
 CVE-2026-76956 exp:2026-12-08
 CVE-2026-76957 exp:2026-12-08
 
+# --- clamav/clamav-debian@sha256:4c975c43...: the pinned digest hit a new
+# HIGH on 2026-09-18, CVE-2026-89157, an out-of-bounds write in
+# `pcre2_pattern_convert` on 32-bit platforms (GHSA-q8g2-wprr-34m9) -- moot
+# on this linux/amd64 image regardless, and libclamav never imports that
+# symbol either (checked the same way as the 86145/89161 entries below:
+# `pcre2_compile_8`/`pcre2_match_8` only). Rather than add a ninth entry,
+# re-checked `clamav/clamav-debian:stable` directly: it has rebuilt (new
+# digest `sha256:cc16781f...`, libpcre2 now 10.46-1~deb13u2) and ci.yml's
+# CLAMAV_IMAGE is bumped to it.
+#
+# `dpkg -s` on the new digest shows libpcre2-8-0 is the *only* package that
+# actually moved version -- libxml2 is still exactly
+# 2.12.7+dfsg+really2.9.14-2.1+deb13u3, the same build the 74860/86138-
+# 86144 entries below were reasoned against, and the bundled util-linux
+# family is untouched too. So only the two other libpcre2 findings clear
+# with this bump, CVE-2026-86145 (`pcre2_dfa_match`) and CVE-2026-89161
+# (`pcre2_jit_match`) -- both removed below, on the same never-imported
+# argument as 89157 above. Confirmed with a plain `trivy image` against
+# the new digest, no ignorefile at all: reports the same six libxml2
+# findings below and nothing pcre2-related. `clamav_ignore` in ci.yml
+# keeps granting clamav the four util-linux IDs and the six libxml2 IDs
+# below; it drops only 86145/89161.
+
 # --- clamav/clamav-debian: Debian 13 libxml2 2.12.7+dfsg+really2.9.14-2.1+deb13u3.
 # Trivy first reported CVE-2026-74860 on 2026-09-11 and Debian publishes no
 # fixed version. The advisory is a double-free/use-after-free in libxml2's
@@ -379,41 +402,11 @@ CVE-2026-76957 exp:2026-12-08
 # fix, or re-verify package absence at expiry.
 CVE-2026-74860 exp:2026-12-11
 
-# --- clamav/clamav-debian@sha256:4c975c43... two libpcre2-8-0 findings
-# Trivy first reported on 2026-09-13. Debian has published a fix
-# (10.46-1~deb13u2), but `clamav/clamav-debian:stable` has not rebuilt
-# with it as of the same date (re-pulled and re-resolved the `stable` tag
-# directly: it is still the exact digest already pinned here, still
-# shipping 10.46-1~deb13u1) -- nothing to bump to.
-#
-# CVE-2026-86145 is an out-of-bounds write in `pcre2_dfa_match`, and its
-# own advisory text says it "requires an attacker-controlled regular
-# expression, or a recursive pattern in conjunction with a small heap
-# limit" -- either way, control over the *pattern*, not the data being
-# matched. CVE-2026-89161 is a use-after-free in `pcre2_jit_match`.
-# Verified against the pinned digest by dynamic-symbol inspection
-# (`objdump -T`), the same method already used for the libxml2 entry
-# above: `libclamav.so.12.1.0` imports only `pcre2_compile_8` and
-# `pcre2_match_8` from libpcre2 -- never `pcre2_dfa_match_8`,
-# `pcre2_jit_compile_8`, or `pcre2_jit_match_8`. Swept every binary in the
-# image that links libpcre2 (`clamd`, `clamscan`, `clamdscan`,
-# `freshclam`, `libclamav.so`), and none imports either vulnerable
-# function -- so both are unreachable regardless of where the regex
-# pattern comes from. ci.yml grants both entries to the clamav image
-# only; every other image keeps them blocking. Remove as soon as Debian's
-# fix reaches the image, or re-verify the symbol table at expiry if
-# libclamav is rebuilt against a newer libpcre2 (JIT could be compiled in
-# then, even if unused today).
-CVE-2026-86145 exp:2026-12-12
-CVE-2026-89161 exp:2026-12-12
-
-# --- clamav/clamav-debian@sha256:4c975c43... five more libxml2 findings,
-# first reported 2026-09-16, all `affected` on Debian trixie with no
-# patched package yet (still 2.12.7+dfsg+really2.9.14-2.1+deb13u3, same
-# version as the 74860/86140 entries above). Checked with the same
-# dynamic-symbol method used there: `objdump -T` against
-# libclamav.so.12.1.0 extracted from the pinned digest. The full set of
-# libxml2 symbols it imports is the streaming xmlTextReader API
+# --- clamav/clamav-debian: five more libxml2 findings, first reported
+# 2026-09-16, all `affected` on Debian trixie with no patched package yet.
+# Checked with the same dynamic-symbol method used above: `objdump -T`
+# against libclamav.so.12.1.0 extracted from the pinned digest. The full
+# set of libxml2 symbols it imports is the streaming xmlTextReader API
 # (xmlReaderForMemory/ForFd/ForIO/Walker, xmlTextReaderRead and its
 # accessors), htmlGetMetaEncoding/htmlReadMemory, xmlFreeDoc,
 # xmlInitParser, xmlGetDocCompressMode, and the xmlStr*/xmlFree
@@ -424,9 +417,9 @@ CVE-2026-89161 exp:2026-12-12
 # (xmlOutputWriteCallback/xmlBufUse, xmlIO.c -- the *serialization* path;
 # clamd only ever reads XML, never writes it back out) and CVE-2026-86144
 # (xmlXIncludeProcess/xmlXIncludeProcessTree, xinclude.c) are each a
-# top-level libxml2 entry point absent from that import list, the same
-# argument as 86140 above: unreachable regardless of what's inside a
-# scanned document, because nothing in libclamav ever calls in.
+# top-level libxml2 entry point absent from that import list: unreachable
+# regardless of what's inside a scanned document, because nothing in
+# libclamav ever calls in.
 CVE-2026-86139 exp:2026-12-15
 CVE-2026-86142 exp:2026-12-15
 CVE-2026-86143 exp:2026-12-15
