@@ -337,7 +337,7 @@ jobs:
 
           base_ignore="$(mktemp)"
           trap 'rm -f "$base_ignore" "$base_ignore".*' EXIT
-          grep -Ev '^CVE-2026-(76642|78408|78409|78410|84445|87933|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
+          grep -Ev '^CVE-2026-(76642|78408|78409|78410|74860|86138|86139|86142|86143|86144|84445|87933|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore"
 
           # Grant a named image back a named subset. The IDs are re-read
           # from .trivyignore rather than restated here, so the `exp:`
@@ -352,11 +352,18 @@ jobs:
           # mount/umount/nsenter are BusyBox. Three IDs, and NOT 78409,
           # which stays blocking for it.
           redis_ignore="$(scoped_ignore redis '^CVE-2026-(76642|78408|78410) ')"
-          # clamav-debian needed a scoped grant here (util-linux CAP_SYS_ADMIN
-          # reachability, plus libxml2/libpcre2 import-table absence) through
-          # the digest bumped 2026-09-18 above; the new digest scans clean
-          # with zero exceptions, so it now falls through to $base_ignore
-          # like garage/mailpit below.
+          # clamav-debian, digest bumped 2026-09-18 (below) for CVE-2026-89157
+          # (see .trivyignore): `dpkg -s` on the new digest shows only
+          # libpcre2-8-0 actually moved version (10.46-1~deb13u2), so only
+          # its three CVEs (86145 dfa_match, 89161 jit_match, 89157
+          # pattern_convert) are gone -- confirmed by a plain `trivy image`
+          # with no ignorefile at all reporting zero pcre2 findings.
+          # libxml2 is byte-for-byte the same package
+          # (2.12.7+dfsg+really2.9.14-2.1+deb13u3) it always was, and the
+          # four bundled util-linux CVEs are untouched by any of this
+          # (CAP_SYS_ADMIN reachability, not absence) -- both grants below
+          # are unchanged from before the bump.
+          clamav_ignore="$(scoped_ignore clamav '^CVE-2026-(76642|78408|78409|78410|74860|86138|86139|86142|86143|86144) ')"
           # Caddy 2.11.4 vendors gRPC, but this deployment does not build or
           # configure the vulnerable xDS server surface. Keep that exception
           # from suppressing the same CVE in any other image.
@@ -394,10 +401,9 @@ jobs:
           # never an xDS server, and nothing here configures clustering.
           alloy_ignore="$(scoped_ignore alloy '^CVE-2026-(41567|42306|84445) ')"
           # PostgreSQL retains the complete historical baseline, except for
-          # Caddy-, Prometheus-, Grafana-, Loki-, Alloy- and API-only
-          # dispositions above (ClamAV's are gone with its 2026-09-18 digest
-          # bump above).
-          grep -Ev '^CVE-2026-(84445|87933|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
+          # Caddy-, ClamAV-, Prometheus-, Grafana-, Loki-, Alloy- and
+          # API-only dispositions above.
+          grep -Ev '^CVE-2026-(74860|86138|86139|86142|86143|86144|84445|87933|41567|42306|29181|24051|39883|39828|39829|39830|39831|39832|39835|42508|46595|46597|25681|27136|33186|21728|28377|43871) ' "$GITHUB_WORKSPACE/.trivyignore" > "$base_ignore.postgres"
           postgres_ignore="$base_ignore.postgres"
 
           for img in "$POSTGRES_IMAGE" "$REDIS_IMAGE" "$GARAGE_IMAGE" axllent/mailpit:v1.31.0 "$CLAMAV_IMAGE" "$CADDY_IMAGE" "$PROMETHEUS_IMAGE" "$GRAFANA_IMAGE" "$LOKI_IMAGE" "$ALLOY_IMAGE"; do
@@ -405,6 +411,7 @@ jobs:
             case "$img" in
               "$POSTGRES_IMAGE")   ignorefile="$postgres_ignore" ;;
               "$REDIS_IMAGE")      ignorefile="$redis_ignore" ;;
+              "$CLAMAV_IMAGE")     ignorefile="$clamav_ignore" ;;
               "$CADDY_IMAGE")      ignorefile="$caddy_ignore" ;;
               "$PROMETHEUS_IMAGE") ignorefile="$prometheus_ignore" ;;
               "$GRAFANA_IMAGE")    ignorefile="$grafana_ignore" ;;
