@@ -270,6 +270,8 @@ acceptance and whether redacted AI prompt data may leave South Africa.
 | [Operations](docs/06_OPERATIONS.md) | Runtime topology, storage, media, monitoring, backups, recovery and runbooks |
 | [Current backlog](docs/BACKLOG.md) | Authoritative ordered work queue |
 | [Engineering handoff](docs/NEXT_AGENT_BRIEF.md) | Engineering context and known-gap inventory |
+| [How-to guide](docs/HOWTO.md) | Task-oriented engineering recipes: migrations, endpoints, troubleshooting |
+| [User guide](docs/USER_GUIDE.md) | Non-engineering walkthrough for learners, organisation admins and facilitators |
 | [Remediation ledger](docs/REMEDIATION_LEDGER.md) | Security and quality finding disposition |
 | [Owner decision pack](docs/PLATFORM_OWNER_DECISION_PACK.md) | Launch questions and required evidence |
 | [Owner recommended defaults](docs/PLATFORM_OWNER_RECOMMENDED_DEFAULTS.md) | Proposed market- and standards-aligned answers |
