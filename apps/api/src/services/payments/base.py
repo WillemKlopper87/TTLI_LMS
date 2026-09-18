@@ -56,6 +56,14 @@ class WebhookResult:
 
 class PaymentProvider(Protocol):
     name: str
+    # Checked by services/orders.py::checkout_card before a Payment is
+    # ever created against this provider. Payfast settles in ZAR only
+    # (payfast.py's own docstring) and parse_webhook accordingly always
+    # reports "ZAR" regardless of what the order was actually priced in
+    # — so an order in any other currency reaching Payfast checkout was
+    # previously fulfilled purely on amount matching a webhook that
+    # never actually said what currency it settled in.
+    supported_currencies: frozenset[str]
 
     async def initiate_checkout(
         self,
