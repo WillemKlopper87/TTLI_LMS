@@ -103,6 +103,7 @@ def _signature_string(fields: Mapping[str, str], *, passphrase: str) -> str:
 
 class PayfastProvider:
     name = "payfast"
+    supported_currencies = frozenset({"ZAR"})
 
     def __init__(
         self, *, merchant_id: str, merchant_key: str, passphrase: str, sandbox: bool
