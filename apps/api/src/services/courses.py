@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.errors import AppError, NotFound
@@ -553,24 +553,20 @@ async def list_lessons(
 async def assign_course_to_tenant(
     session: AsyncSession, *, course_id: uuid.UUID, tenant_id: uuid.UUID, is_bespoke: bool
 ) -> CourseTenantAssignment:
-    """Self-assignment is intentionally *not* gated by whether the course
-    is already bespoke to a different tenant. `course_tenant_assignments`
-    carries FORCE ROW LEVEL SECURITY (0011): a query run inside tenant
-    B's request transaction cannot see tenant A's row at all, bespoke or
-    not, so there is no query this function could run to tell "already
-    exclusively claimed elsewhere" apart from "unclaimed" — attempting
-    that check (an earlier version of this fix did) silently always
-    evaluates false, which is worse than no check: it looks like a
-    boundary without being one. A course that is already bespoke to one
-    tenant is not, in practice, reachable by another (its id is never
-    listed or otherwise surfaced to anyone but the assigned tenant once
-    `get_course`/`list_courses`/... apply this same boundary), so the
-    residual risk is a caller that already knows another tenant's
-    course_id out of band — closing that fully needs either a
-    SECURITY DEFINER function that can see across tenants for this one
-    existence check, or moving tenant-assignment off self-service
-    entirely; both are out of scope here and are called out in the
-    fix's own report rather than papered over."""
+    """`course_tenant_assignments` carries FORCE ROW LEVEL SECURITY
+    (0011): a query run inside tenant B's request transaction cannot see
+    tenant A's row at all, bespoke or not, so this function has no query
+    of its own that can tell "already exclusively claimed elsewhere"
+    apart from "unclaimed" — checking `existing`/`CourseTenantAssignment`
+    directly always reads as the latter for another tenant's row.
+
+    Migration 0047's `course_claimed_bespoke_by_other_tenant` closes
+    that: a SECURITY DEFINER function, owned by the migration role (a
+    superuser, exempt from RLS regardless of FORCE), that answers only
+    the one yes/no question this needs — never which tenant, never any
+    other row data — so it cannot become a disclosure channel the way a
+    general cross-tenant SELECT would.
+    """
     course = await session.get(Course, course_id)
     if course is None:
         raise NotFound("No such course.")
@@ -589,6 +585,16 @@ async def assign_course_to_tenant(
         existing.is_bespoke = is_bespoke
         await session.flush()
         return existing
+
+    if is_bespoke:
+        claimed_elsewhere = (
+            await session.execute(
+                text("SELECT course_claimed_bespoke_by_other_tenant(:course_id, :tenant_id)"),
+                {"course_id": course_id, "tenant_id": tenant_id},
+            )
+        ).scalar_one()
+        if claimed_elsewhere:
+            raise CourseAuthoringError("This course is already bespoke to another organisation.")
 
     assignment = CourseTenantAssignment(
         id=uuid7(), tenant_id=tenant_id, course_id=course_id, is_bespoke=is_bespoke

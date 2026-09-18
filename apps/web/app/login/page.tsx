@@ -6,8 +6,11 @@ import { AccountTypeSignIn } from "./account-type";
 
 /** The base host organisation workspaces hang off. Configurable because
  * it differs per deployment (localhost in dev, ttli.co.za in production);
- * `core/tenancy.py` resolves the tenant from whatever hostname arrives. */
-const BASE_HOST = process.env.NEXT_PUBLIC_TENANT_BASE_HOST ?? "localhost:3010";
+ * `core/tenancy.py` resolves the tenant from whatever hostname arrives.
+ * `||`, not `??`: an unset build-arg (apps/web/Dockerfile) bakes this in
+ * as an empty string, not `undefined` — `??` would silently ship an
+ * empty base host instead of falling back. */
+const BASE_HOST = process.env.NEXT_PUBLIC_TENANT_BASE_HOST || "localhost:3010";
 
 export const metadata = {
   title: "Sign in",
