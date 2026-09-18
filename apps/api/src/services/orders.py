@@ -335,6 +335,14 @@ async def checkout_card(
     """
     if order.status != "pending_payment":
         raise OrderError(f"Order is {order.status!r}, not ready for card checkout.")
+    if order.currency not in provider.supported_currencies:
+        # Checked here, not only trusted from what parse_webhook reports
+        # later: Payfast settles in ZAR only and always reports "ZAR"
+        # regardless of what the order was actually priced in, so a
+        # non-ZAR order reaching this point would otherwise be fulfilled
+        # purely on amount matching a webhook whose currency claim was
+        # never true in the first place.
+        raise OrderError(f"{provider.name} does not support {order.currency} orders.")
 
     buyer = await session.get(User, order.user_id)
     if buyer is None:
