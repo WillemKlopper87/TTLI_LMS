@@ -131,7 +131,16 @@ async def payfast_webhook(
         # server-side-validation requirement) — checked against what this
         # system itself recorded as owed, the same discipline
         # services/orders.py::create_order already applies to prices.
-        amount_matches = event.amount == payment.amount
+        #
+        # Currency too: services/orders.py::checkout_card now refuses to
+        # start a non-ZAR order against Payfast in the first place, but
+        # this is the second, independent check on the money-moving path
+        # itself — the same "never trust one gate" posture the amount
+        # check above already has. Without it, a stray non-ZAR payment
+        # row (a bug elsewhere, a future provider change) would still be
+        # fulfilled purely on amount, since Payfast's own webhook always
+        # reports "ZAR" regardless of what actually settled.
+        amount_matches = event.amount == payment.amount and event.currency == payment.currency
 
         if event.succeeded and amount_matches:
             try:
