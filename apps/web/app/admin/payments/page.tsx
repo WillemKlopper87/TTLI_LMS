@@ -135,7 +135,9 @@ export default function PaymentsScreen() {
     }
     const body = await resp.json();
     setRefundResult(
-      `Refunded ${body.currency} ${body.amount} — credit note ${body.credit_note_number}.`
+      `Recorded: ${body.currency} ${body.amount} credited on invoice, credit note ` +
+        `${body.credit_note_number}. If this was a card order, also process the refund in ` +
+        `the Payfast merchant dashboard — that has not happened automatically.`
     );
     setRefundOrderId("");
     setRefundReason("");
@@ -258,6 +260,16 @@ export default function PaymentsScreen() {
           Full refund only — credits the order&rsquo;s invoice in full, revokes the access it
           granted, and records the refund. Pick the invoice below to fill in its order id, or
           paste one you already have.
+        </p>
+        <p
+          className="mt-2"
+          role="alert"
+          style={{ fontSize: "0.8125rem", color: "var(--stop)" }}
+        >
+          This only records the refund in TTLI&rsquo;s own accounting — it does not move money.
+          For an EFT/PO order that&rsquo;s the whole refund; for a <b>card</b> order, you must
+          also process the actual refund yourself through the Payfast merchant dashboard, or the
+          customer is never paid back.
         </p>
 
         {invoices && invoices.length > 0 ? (
