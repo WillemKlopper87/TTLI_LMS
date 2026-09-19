@@ -534,3 +534,22 @@ async def test_video_playback_succeeds_for_public_lesson_without_enrolment(
         f"/api/v1/media/{asset_id}/playback", headers={"Authorization": f"Bearer {stranger_token}"}
     )
     assert allowed.status_code == 200, allowed.text
+
+
+async def test_public_reads_ignore_the_web_tier_tenant_cache_key(client) -> None:  # type: ignore[no-untyped-def]
+    """F18: the web app's data cache is keyed by URL, so server-side
+    storefront reads add a `_tenant=<host>` query parameter to keep one
+    tenant's cached catalogue from being served to another. That is only
+    safe if the API ignores it — tenancy still comes from X-Tenant-Host
+    alone — so pin that an unknown parameter changes neither status nor
+    body."""
+    plain = await client.get("/api/v1/public/courses")
+    keyed = await client.get("/api/v1/public/courses", params={"_tenant": "localhost"})
+    forged = await client.get("/api/v1/public/courses", params={"_tenant": "some-other-tenant"})
+
+    assert plain.status_code == 200, plain.text
+    assert keyed.status_code == 200, keyed.text
+    assert forged.status_code == 200, forged.text
+    assert keyed.json() == plain.json()
+    # A caller-supplied value must never select a tenant.
+    assert forged.json() == plain.json()
