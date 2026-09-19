@@ -33,10 +33,11 @@ import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from src.core.db import dispose_engine, init_engine
 from src.core.deps import get_payment_provider
+from src.core.ids import uuid7
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
-from src.models.commerce import Order
+from src.models.commerce import Order, Payment
 from src.models.rbac import RoleAssignment
 from src.services import identity
 from src.services import orders as orders_service
@@ -599,6 +600,103 @@ async def test_amount_mismatch_is_not_fulfilled(  # type: ignore[no-untyped-def]
         }
     )
 
+    app.dependency_overrides[get_payment_provider] = lambda: provider
+    resp = await client.post("/api/v1/webhooks/payfast", data=signed)
+    assert resp.status_code == 200  # signature/source were genuine — just a data anomaly
+
+    async with tenant_session_factory(tenant_id) as s:
+        order_row = (
+            await s.execute(sa.text("SELECT status FROM orders WHERE id = :o"), {"o": order_id})
+        ).first()
+        assert order_row is not None and order_row.status == "pending_payment"
+
+
+async def test_checkout_card_refuses_a_non_zar_order(  # type: ignore[no-untyped-def]
+    tenant_session_factory, crypto
+) -> None:
+    """Payfast settles in ZAR only (payfast.py's own docstring) and
+    parse_webhook always reports "ZAR" regardless of what the order was
+    actually priced in — so a non-ZAR order must never reach card
+    checkout in the first place, or its webhook would be fulfillable
+    purely on amount matching a currency claim that was never true."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    provider = _ScriptedProvider(confirmed=True)
+    async with tenant_session_factory(tenant_id) as s:
+        user = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=f"usd-{uuid.uuid4().hex[:8]}@example.com"
+        )
+        order = Order(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            status="pending_payment",
+            currency="USD",
+            grand_total="100.00",
+        )
+        s.add(order)
+        await s.flush()
+
+        with pytest.raises(orders_service.OrderError, match="does not support USD"):
+            await orders_service.checkout_card(
+                s,
+                crypto,
+                tenant_id=tenant_id,
+                order=order,
+                provider=provider,
+                return_url="https://example.com/return",
+                cancel_url="https://example.com/cancel",
+                notify_url="https://example.com/notify",
+            )
+
+
+async def test_currency_mismatch_is_not_fulfilled(  # type: ignore[no-untyped-def]
+    app_and_client, tenant_session_factory, crypto
+) -> None:
+    """Defense in depth for the same gap as the checkout_card guard
+    above: even if a Payment row somehow ends up non-ZAR (a bug
+    elsewhere, a future provider), a webhook whose amount happens to
+    match must still not fulfil it, since parse_webhook's "ZAR" claim
+    was never actually true for this payment."""
+    app, client = app_and_client
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin"
+    )
+    buyer_token = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="learner"
+    )
+    _, _, price_id = await _sellable_course_and_price(client, admin_token)
+    order_id = await _create_pending_order(client, buyer_token, price_id)
+    provider = _ScriptedProvider(confirmed=True)
+
+    # A stray non-ZAR Payment row on an otherwise-ZAR order — exactly
+    # the scenario the router-level currency check exists to catch,
+    # constructed directly rather than through checkout_card (which now
+    # refuses to create one) to isolate the defense-in-depth check.
+    async with tenant_session_factory(tenant_id) as s:
+        order = await s.get(Order, uuid.UUID(order_id))
+        assert order is not None
+        payment_id = uuid7()
+        s.add(
+            Payment(
+                id=payment_id,
+                tenant_id=tenant_id,
+                order_id=order.id,
+                provider="card",
+                amount=order.grand_total,
+                currency="USD",
+                status="pending",
+            )
+        )
+        await s.flush()
+
+    signed = _sign(
+        {
+            "m_payment_id": str(payment_id),
+            "pf_payment_id": f"currency-mismatch-{uuid.uuid4().hex[:10]}",
+            "payment_status": "COMPLETE",
+            "amount_gross": str(order.grand_total),
+        }
+    )
     app.dependency_overrides[get_payment_provider] = lambda: provider
     resp = await client.post("/api/v1/webhooks/payfast", data=signed)
     assert resp.status_code == 200  # signature/source were genuine — just a data anomaly

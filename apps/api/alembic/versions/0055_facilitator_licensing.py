@@ -1,7 +1,7 @@
 """Facilitator licensing: licences and seat grants (2026-09-11-facilitator-licensing-xapi-design.md §3).
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0055
+Revises: 0054
 
 Creates the core licensing data model: facilitators (as Organisation kind='licensee')
 license courses/learning paths for their own clients with seat pools. Every licensee's
@@ -16,6 +16,14 @@ UNIQUE (organisation_id, course_id) WHERE status = 'active' prevents two active
 licences on the same course for the same licensee. Renewal creates a new licence row;
 the old one expires and its existing learners retain access until their entitlement
 expiry, no new seats.
+
+`organisations.kind` is shared with the partner portal (0054), which created the
+`organisation_kind` enum ('standard', 'partner', 'client'). This migration originally
+added its own `kind` varchar ('corporate'/'licensee'); the two are one column, so it
+now extends the enum with 'licensee' instead. 'standard' replaces 'corporate' as the
+default for ordinary organisations. Downgrade cannot remove an enum value in
+PostgreSQL, so 'licensee' stays in the type — harmless, and re-upgrading is idempotent
+(ADD VALUE IF NOT EXISTS).
 """
 
 from __future__ import annotations
@@ -26,8 +34,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0047"
-down_revision: str | None = "0046"
+revision: str = "0055"
+down_revision: str | None = "0054"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -36,16 +44,9 @@ APP_ROLE = "app_user"
 
 
 def upgrade() -> None:
-    # Extend organisations with kind and logo_object_key for licensees
-    op.add_column(
-        "organisations",
-        sa.Column(
-            "kind",
-            sa.String(20),
-            nullable=False,
-            server_default=sa.text("'corporate'"),
-        ),
-    )
+    # 'licensee' joins the enum 0054 created; the new value is not used within
+    # this transaction, which is what PostgreSQL requires of ADD VALUE.
+    op.execute("ALTER TYPE organisation_kind ADD VALUE IF NOT EXISTS 'licensee'")
     op.add_column(
         "organisations",
         sa.Column("logo_object_key", sa.Text(), nullable=True),
@@ -225,4 +226,4 @@ def downgrade() -> None:
 
     # Remove columns from organisations
     op.drop_column("organisations", "logo_object_key")
-    op.drop_column("organisations", "kind")
+    # organisations.kind belongs to 0054; the 'licensee' enum value stays (see docstring).

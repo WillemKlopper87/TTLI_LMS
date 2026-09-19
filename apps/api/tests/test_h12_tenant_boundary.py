@@ -457,17 +457,36 @@ async def test_lesson_block_write_denied_across_tenant(
     _assert_not_found(await client.delete(f"/api/v1/lessons/{rig.lesson_id}", headers=h))
 
 
-# NOTE on a related but unfixed vector: `POST /courses/{id}/tenant-
-# assignments` (`assign_course_to_tenant`) does not refuse `acme` self-
-# assigning onto a course already bespoke to `demo`. `course_tenant_
-# assignments` carries FORCE ROW LEVEL SECURITY, so no query issued
-# inside `acme`'s request transaction can ever see `demo`'s row to
-# refuse it against — see that function's own docstring. The read/write
-# boundary this file otherwise tests holds regardless (a course_id
-# `acme` was never handed cannot be discovered through any listing this
-# fix touches), so exploiting this residual gap needs the id already
-# known out of band; closing it fully needs either a SECURITY DEFINER
-# cross-tenant existence check or moving assignment off self-service.
+async def test_tenant_assignment_refuses_a_course_already_bespoke_elsewhere(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """`POST /courses/{id}/tenant-assignments` used to let `acme` self-
+    assign onto a course already bespoke to `demo` — no query issued
+    inside `acme`'s FORCE-RLS-scoped request transaction could ever see
+    `demo`'s row to refuse it against. Migration 0047's SECURITY DEFINER
+    `course_claimed_bespoke_by_other_tenant` closes it: this is the
+    concrete reproduction that residual gap named, now asserting the fix
+    instead of just documenting the hole.
+
+    The read/write boundary the rest of this file tests still holds
+    regardless (a course_id `acme` was never handed cannot be discovered
+    through any listing), so this needs the id already known out of
+    band — which is exactly the scenario this test sets up."""
+    demo_id = await _tenant_id(tenant_session_factory, "demo")
+    acme_id = await _tenant_id(tenant_session_factory, "acme")
+    rig = await _build_bespoke_rig(client, tenant_session_factory, crypto, demo_id=demo_id)
+    acme_admin = await _login(
+        client, tenant_session_factory, crypto, slug="acme", tenant_id=acme_id, role="admin"
+    )
+    h = _auth(acme_admin, "acme")
+
+    resp = await client.post(
+        f"/api/v1/courses/{rig.course_id}/tenant-assignments",
+        json={"is_bespoke": True},
+        headers=h,
+    )
+    assert resp.status_code == 400, resp.text
+    assert "already bespoke" in resp.text
 
 
 # ============================================================== Quiz ===

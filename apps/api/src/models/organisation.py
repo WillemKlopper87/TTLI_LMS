@@ -3,11 +3,18 @@ docstring for why seat assignment reuses `entitlements` rather than a
 new join table, and why `organisation_members.relationship` is a
 separate concept from the RBAC `role_assignments` table.
 
-`kind`/`logo_object_key` were added to the organisations table by
-migration 0047 (facilitator licensing, 2026-09-11-facilitator-
-licensing-xapi-design.md §3) but never mapped onto this model — every
-existing organisation defaults to kind='corporate' at the DB level;
-services/licence.py::create_licence requires kind='licensee'.
+Two features extend this table with `kind` (a single column, so a single
+enum — reconciled when partner portal and facilitator licensing were
+integrated):
+  - partner portal (§4.1, 2026-09-11): 'standard' (default, every ordinary
+    organisation), 'partner' (promoted by services/partner.py::
+    activate_partner) and 'client' (linked to a partner parent via
+    `parent_organisation_id`). See migration 0054 for why the default is
+    'standard', not 'partner'.
+  - facilitator licensing (2026-09-11-facilitator-licensing-xapi-design.md
+    §3): 'licensee' — an organisation TTLI has granted facilitator
+    licences to. services/licence.py::create_licence requires it. Added to
+    the enum by migration 0055, which also adds `logo_object_key`.
 """
 
 from __future__ import annotations
@@ -15,13 +22,21 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, LargeBinary, String, Text, text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, LargeBinary, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base, TimestampMixin, pk
 
 RELATIONSHIP_VALUES = ("member", "manager", "admin")
+
+# Matches the `organisation_kind` Postgres enum type exactly — created by
+# migration 0054 and extended with 'licensee' by 0055; create_type=False
+# because the migrations own it. Mapping this as a plain String let every
+# insert through SQLAlchemy fail with DatatypeMismatchError ("kind" is
+# organisation_kind, not varchar).
+ORGANISATION_KIND_VALUES = ("standard", "partner", "client", "licensee")
+OrganisationKind = Enum(*ORGANISATION_KIND_VALUES, name="organisation_kind", create_type=False)
 
 
 class Organisation(Base, TimestampMixin):
@@ -38,9 +53,17 @@ class Organisation(Base, TimestampMixin):
     vat_number_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     billing_address_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 0047: 'corporate' (default) or 'licensee' — a licensee organisation
-    # is one TTLI has granted facilitator licences to.
-    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="corporate")
+    # 'standard' (default), 'partner', 'client' (partner portal, migration
+    # 0054) or 'licensee' (facilitator licensing, migration 0055).
+    kind: Mapped[str] = mapped_column(OrganisationKind, nullable=False, default="standard")
+    # Client organisations link to their partner parent (partner portal §4.1).
+    parent_organisation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organisations.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    # A licensee's branding on licensed content (facilitator licensing,
+    # migration 0055).
     logo_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

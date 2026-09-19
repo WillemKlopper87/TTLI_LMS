@@ -33,7 +33,7 @@ interface EftCheckoutResponse {
   currency: string;
 }
 
-function EftPanel({ orderId, onDone }: { orderId: string; onDone: () => void }) {
+function EftPanel({ orderId }: { orderId: string }) {
   const [eft, setEft] = useState<EftCheckoutResponse | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,9 +55,14 @@ function EftPanel({ orderId, onDone }: { orderId: string; onDone: () => void }) 
       body: form,
     });
     setBusy(false);
+    // Deliberately does not clear `pendingOrderId` in the parent: doing
+    // so unmounts this component in the same render as `setSubmitted`,
+    // so the confirmation message below was set only to be torn down
+    // before ever painting — the learner never actually saw it. Showing
+    // it is this component's whole job once the proof is in; there's
+    // nothing further for the parent to do with pendingOrderId now.
     if (resp.ok) {
       setSubmitted(true);
-      onDone();
     }
   }
 
@@ -253,7 +258,7 @@ export default function SubscriptionAccountPage() {
         </div>
       )}
 
-      {pendingOrderId ? <EftPanel orderId={pendingOrderId} onDone={() => setPendingOrderId(null)} /> : null}
+      {pendingOrderId ? <EftPanel orderId={pendingOrderId} /> : null}
     </main>
   );
 }

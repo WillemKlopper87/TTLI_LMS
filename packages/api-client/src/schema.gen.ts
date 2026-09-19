@@ -746,6 +746,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/partner/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a partner profile for an organisation
+         * @description Create a new partner profile.
+         *
+         *     Initial status is 'invited'. Activation requires MFA, operator agreement,
+         *     and (for health professionals) registration number.
+         *
+         *     Requires the caller to be an admin member of the target organisation.
+         */
+        post: operations["create_partner_profile_api_v1_partner_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/by-organisation/{organisation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the partner profile for an organisation, if one exists
+         * @description Look up an organisation's partner profile.
+         *
+         *     Returns null rather than 404 when no profile exists yet — the UI's
+         *     create-vs-manage decision hinges on "does one exist", not on this
+         *     being an error state.
+         *
+         *     Requires the caller to be an admin member of the organisation — a
+         *     partner profile holds encrypted registration/bio data that must not
+         *     be readable by an arbitrary authenticated tenant user.
+         */
+        get: operations["get_partner_profile_for_organisation_api_v1_partner_profiles_by_organisation__organisation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/activation-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check activation status of a partner profile
+         * @description Check whether a partner profile can be activated.
+         *
+         *     Returns:
+         *         - can_activate: True if all gates are met
+         *         - missing_gates: List of gates that are not yet cleared
+         *
+         *     Requires the caller to be an admin member of the profile's organisation.
+         */
+        get: operations["check_activation_status_api_v1_partner_profiles__profile_id__activation_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/accept-agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept the operator agreement for a partner profile
+         * @description Accept the operator agreement (activation gate 1) and, for health
+         *     professionals, record a registration number (gate 3). Requires the
+         *     caller to be an admin member of the profile's organisation.
+         */
+        post: operations["accept_operator_agreement_api_v1_partner_profiles__profile_id__accept_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate a partner profile
+         * @description Activate a partner profile if all gates are cleared.
+         *
+         *     Raises AppError if any gate is not met.
+         */
+        post: operations["activate_profile_api_v1_partner_profiles__profile_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a client organisation under the authenticated partner
+         * @description Create a new client organisation under a partner.
+         *
+         *     The partner organisation is resolved from the caller's own admin
+         *     membership — a caller who does not administer any partner organisation
+         *     cannot create client organisations. Future versions will support
+         *     explicit parent selection among multiple partners.
+         */
+        post: operations["create_client_org_api_v1_partner_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/subscription-plans": {
         parameters: {
             query?: never;
@@ -1706,6 +1854,74 @@ export interface paths {
         get: operations["get_path_enrolment_progress_api_v1_path_enrolments__path_enrolment_id__progress_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/learning-paths/{learning_path_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a learning path's typed steps
+         * @description List a learning path's typed steps in position order.
+         *
+         *     Requires course:edit — the same permission required to add a step,
+         *     since this is the authoring view, not a learner-facing listing.
+         */
+        get: operations["list_steps_api_v1_learning_paths__learning_path_id__steps_get"];
+        put?: never;
+        /**
+         * Create a typed step on a learning path
+         * @description Create a typed step (course, workshop, assessment, one_on_one, document)
+         *     on a learning path.
+         *
+         *     Requires course:edit permission.
+         */
+        post: operations["create_step_api_v1_learning_paths__learning_path_id__steps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cohorts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List cohorts
+         * @description List cohorts for the authenticated tenant, optionally filtered by
+         *     organisation or learning path.
+         *
+         *     Requires cohort:run (sees every cohort in the tenant), or admin
+         *     membership of the specific organisation_id filtered for (sees only
+         *     that organisation's cohorts) — "org:admin" was never a real
+         *     permission code; the codebase's actual org-admin check is
+         *     OrganisationMember.relationship == "admin" on the org in question,
+         *     same pattern used for the assessment-platform instances list.
+         */
+        get: operations["list_cohorts_api_v1_cohorts_get"];
+        put?: never;
+        /**
+         * Create a cohort (programme run)
+         * @description Create a cohort (scheduled run of a learning path or course) for
+         *     an organisation with participants.
+         *
+         *     Pre-creates CohortStep rows for every path step and adds participants
+         *     as CohortMember rows.
+         *
+         *     Requires cohort:run permission.
+         */
+        post: operations["create_cohort_api_v1_cohorts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3204,6 +3420,337 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/engagements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List engagements (admin-only)
+         * @description List all engagements for the tenant, newest first.
+         *
+         *     Requires assessment:run permission — the same gate assignment and
+         *     revocation already use.
+         */
+        get: operations["list_engagements_api_v1_assessments_engagements_get"];
+        put?: never;
+        /**
+         * Assign an analyst to an assessment instance (admin-only)
+         * @description Admin assigns an analyst to an assessment instance with a time window.
+         *
+         *     The partial unique index ensures only one active engagement per analyst/instance.
+         *     If an engagement already exists, this will fail with a unique constraint violation.
+         */
+        post: operations["assign_engagement_api_v1_assessments_engagements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/engagements/{engagement_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke an engagement (admin-only)
+         * @description Admin revokes an engagement, immediately terminating the analyst's access.
+         */
+        post: operations["revoke_engagement_api_v1_assessments_engagements__engagement_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List reports
+         * @description List reports for the tenant, newest first.
+         *
+         *     Reviewers (report:review) and admins (assessment:run) see every
+         *     report in the tenant; anyone with only report:submit sees just
+         *     their own — the same author-vs-reviewer split get_report enforces.
+         */
+        get: operations["list_reports_api_v1_reports_get"];
+        put?: never;
+        /**
+         * Create a draft report on an assessment
+         * @description Analyst creates a draft report for an engagement.
+         *
+         *     One open draft per engagement is enforced. Returns 409 if a draft already exists.
+         */
+        post: operations["create_report_api_v1_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch a report by ID, with its attachments
+         * @description Fetch a report for reading.
+         *
+         *     Analyst can read their own reports; reviewers/admins can read any report
+         *     in the tenant.
+         */
+        get: operations["get_report_api_v1_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a report's summary
+         * @description Analyst sets a report's summary. Author-only; only while the
+         *     report is draft or returned — the summary/attachment gate submit
+         *     and resubmit already require.
+         */
+        patch: operations["update_report_summary_api_v1_reports__report_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an attachment to a report
+         * @description Analyst attaches a PDF/PPTX to a report. Author-only, and only
+         *     while the report is draft or returned (enforced by the service layer,
+         *     the same states update_report_summary allows edits in).
+         *
+         *     Same fail-closed sequence as every other upload in this app
+         *     (REQ-BYPASS-08): scanned before storage ever sees the bytes.
+         */
+        post: operations["upload_report_attachment_api_v1_reports__report_id__attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a draft report for review
+         * @description Analyst submits a draft report for review.
+         *
+         *     Requires at least one clean-scanned attachment or non-empty summary.
+         *     Author-only action.
+         */
+        post: operations["submit_report_api_v1_reports__report_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a report to the analyst for revision
+         * @description Reviewer returns a submitted report to the analyst.
+         *
+         *     Analyst can then resubmit as a new version. Requires a decision_note.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["return_report_api_v1_reports__report_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/resubmit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resubmit a returned report as a new version
+         * @description Analyst resubmits a returned report as a new version.
+         *
+         *     Previous attachments are kept. Version is incremented.
+         *     Author-only action. Same submission requirements as initial submit.
+         */
+        post: operations["resubmit_report_api_v1_reports__report_id__resubmit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a report (makes it immutable)
+         * @description Reviewer accepts a submitted report.
+         *
+         *     Report becomes immutable. Attachments become the release package.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["accept_report_api_v1_reports__report_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw a report (terminal)
+         * @description Analyst withdraws a draft or returned report.
+         *
+         *     Withdrawal is terminal; no further editing. Author-only action.
+         */
+        post: operations["withdraw_report_api_v1_reports__report_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release an accepted report to the organisation
+         * @description Reviewer releases an accepted report to the organisation.
+         *
+         *     Released reports become visible to organisation admins in the "Assessments" tab.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["release_report_api_v1_reports__report_id__release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessment-platform/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Templates
+         * @description List all assessment templates for the tenant.
+         *
+         *     Requires assessment:author or assessment:analyse permission.
+         */
+        get: operations["list_templates_api_v1_assessment_platform_templates_get"];
+        put?: never;
+        /**
+         * Create Template
+         * @description Create a new assessment template in draft status.
+         *
+         *     Requires assessment:author permission.
+         */
+        post: operations["create_template_api_v1_assessment_platform_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessment-platform/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Instances
+         * @description List assessment instances accessible to the caller.
+         *
+         *     Requires assessment:run permission (sees every instance in the tenant),
+         *     or admin membership of the specific organisation_id filtered for (sees
+         *     only that organisation's instances) — an org admin's own "Assessments"
+         *     tab, per the design spec's dual-access rule for this endpoint.
+         */
+        get: operations["list_instances_api_v1_assessment_platform_instances_get"];
+        put?: never;
+        /**
+         * Create Instance
+         * @description Create a new assessment instance for an organisation.
+         *
+         *     Starts in draft status. Admin must populate questions and set window before opening.
+         *     Requires assessment:run permission.
+         */
+        post: operations["create_instance_api_v1_assessment_platform_instances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enrolments/{enrolment_id}/credentials": {
         parameters: {
             query?: never;
@@ -4625,6 +5172,38 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcceptOperatorAgreementRequest
+         * @description Request to accept the operator agreement (activation gate 1), and
+         *     record a registration number for health professionals (gate 3).
+         */
+        AcceptOperatorAgreementRequest: {
+            /**
+             * Operator Agreement Ref
+             * @description Version/identifier of the agreement accepted
+             */
+            operator_agreement_ref: string;
+            /**
+             * Registration Number
+             * @description Professional registration number (required if professional_body was set)
+             */
+            registration_number?: string | null;
+        };
+        /**
+         * AcceptReportRequest
+         * @description Reviewer accepts a report (makes it immutable).
+         */
+        AcceptReportRequest: Record<string, never>;
+        /**
+         * ActivationStatusResponse
+         * @description Response indicating whether a partner can be activated and why.
+         */
+        ActivationStatusResponse: {
+            /** Can Activate */
+            can_activate: boolean;
+            /** Missing Gates */
+            missing_gates?: string[];
+        };
         /** ActivityResponse */
         ActivityResponse: {
             /** Id */
@@ -4789,6 +5368,34 @@ export interface components {
         ArticlesPageResponse: {
             /** Items */
             items: components["schemas"]["ArticleResponse"][];
+        };
+        /**
+         * AssignEngagementRequest
+         * @description Admin assigns an analyst to an assessment instance.
+         */
+        AssignEngagementRequest: {
+            /**
+             * Analyst User Id
+             * Format: uuid
+             */
+            analyst_user_id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Purpose */
+            purpose: string;
         };
         /** AssignSeatsRequest */
         AssignSeatsRequest: {
@@ -5211,6 +5818,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_report_attachment_api_v1_reports__report_id__attachments_post */
+        Body_upload_report_attachment_api_v1_reports__report_id__attachments_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_video_asset_api_v1_video_assets_post */
         Body_upload_video_asset_api_v1_video_assets_post: {
             /** File */
@@ -5434,6 +6046,23 @@ export interface components {
              * @default false
              */
             badge: boolean;
+        };
+        /**
+         * ClientOrgResponse
+         * @description Response containing created client organisation.
+         */
+        ClientOrgResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Parent Organisation Id */
+            parent_organisation_id?: string | null;
         };
         /**
          * CoachingFacilitatorResponse
@@ -5665,6 +6294,17 @@ export interface components {
             /** Segment Id */
             segment_id: string;
         };
+        /**
+         * CreateClientOrgRequest
+         * @description Request to create a client organisation under a partner.
+         */
+        CreateClientOrgRequest: {
+            /**
+             * Name
+             * @description Client organisation name
+             */
+            name: string;
+        };
         /** CreateDealRequest */
         CreateDealRequest: {
             /** Email */
@@ -5707,6 +6347,19 @@ export interface components {
         CreateOrganisationRequest: {
             /** Name */
             name: string;
+        };
+        /**
+         * CreateReportRequest
+         * @description Analyst creates a draft report.
+         */
+        CreateReportRequest: {
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Title */
+            title: string;
         };
         /** CreateSegmentRequest */
         CreateSegmentRequest: {
@@ -5958,6 +6611,51 @@ export interface components {
             currency: string;
         };
         /**
+         * EngagementView
+         * @description An analyst's engagement on an assessment instance.
+         */
+        EngagementView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Analyst User Id
+             * Format: uuid
+             */
+            analyst_user_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * EngagementsPageResponse
+         * @description A list of engagements.
+         */
+        EngagementsPageResponse: {
+            /** Items */
+            items: components["schemas"]["EngagementView"][];
+        };
+        /**
          * EnrolmentCredentialsResponse
          * @description `GET /enrolments/{id}/credentials` — how a learner's own client
          *     discovers the certificate/badge IDs it needs for every other endpoint
@@ -6116,6 +6814,58 @@ export interface components {
             required_percentage?: number | null;
             /** Duration Seconds */
             duration_seconds?: number | null;
+        };
+        /**
+         * InstanceCreateRequest
+         * @description Create a new assessment instance.
+         */
+        InstanceCreateRequest: {
+            /** Template Id */
+            template_id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Evaluation Role
+             * @default standalone
+             */
+            evaluation_role: string;
+            /** Pair Id */
+            pair_id?: string | null;
+            /**
+             * Levels Enabled
+             * @default false
+             */
+            levels_enabled: boolean;
+        };
+        /**
+         * InstanceResponse
+         * @description Assessment instance response.
+         */
+        InstanceResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Template Id */
+            template_id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Evaluation Role */
+            evaluation_role: string;
+        };
+        /**
+         * InstancesPageResponse
+         * @description List of instances.
+         */
+        InstancesPageResponse: {
+            /** Items */
+            items: components["schemas"]["InstanceResponse"][];
         };
         /** InviteUserRequest */
         InviteUserRequest: {
@@ -7019,6 +7769,66 @@ export interface components {
             did_not_convert: number;
             /** Total Users */
             total_users: number;
+        };
+        /**
+         * PartnerProfileCreateRequest
+         * @description Request to create a partner profile.
+         */
+        PartnerProfileCreateRequest: {
+            /**
+             * Organisation Id
+             * Format: uuid
+             * @description Organisation ID for the partner
+             */
+            organisation_id: string;
+            /**
+             * Display Name
+             * @description Display name
+             */
+            display_name: string;
+            /**
+             * Bio
+             * @description Partner bio/description
+             */
+            bio?: string | null;
+            /**
+             * Logo Object Key
+             * @description S3 object key for partner logo
+             */
+            logo_object_key?: string | null;
+            /**
+             * Professional Body
+             * @description Professional body for health professionals
+             */
+            professional_body?: string | null;
+        };
+        /**
+         * PartnerProfileResponse
+         * @description Response containing partner profile data.
+         */
+        PartnerProfileResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Organisation Id
+             * Format: uuid
+             */
+            organisation_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Bio */
+            bio?: string | null;
+            /** Logo Object Key */
+            logo_object_key?: string | null;
+            /** Professional Body */
+            professional_body?: string | null;
+            /** Status */
+            status: string;
+            /** Operator Agreement Accepted At */
+            operator_agreement_accepted_at?: string | null;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -8299,6 +9109,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * ReleaseReportRequest
+         * @description Reviewer releases an accepted report to the organisation.
+         */
+        ReleaseReportRequest: Record<string, never>;
         /** RenewRequest */
         RenewRequest: {
             /** Currency */
@@ -8323,10 +9138,161 @@ export interface components {
             /** Ordered Ids */
             ordered_ids: string[];
         };
+        /**
+         * ReportAttachmentView
+         * @description Metadata for a report attachment.
+         */
+        ReportAttachmentView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Scanned At */
+            scanned_at?: string | null;
+            /** Scan Result */
+            scan_result?: string | null;
+        };
+        /**
+         * ReportView
+         * @description A report at any stage in its lifecycle.
+         */
+        ReportView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            author_user_id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /** Version */
+            version: number;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ReportWithAttachmentsView
+         * @description A report with its attachments.
+         */
+        ReportWithAttachmentsView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            author_user_id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /** Version */
+            version: number;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Attachments */
+            attachments?: components["schemas"]["ReportAttachmentView"][];
+        };
+        /**
+         * ReportsPageResponse
+         * @description A list of reports.
+         */
+        ReportsPageResponse: {
+            /** Items */
+            items: components["schemas"]["ReportView"][];
+        };
         /** RescheduleBookingRequest */
         RescheduleBookingRequest: {
             /** Target Session Id */
             target_session_id: string;
+        };
+        /**
+         * ResubmitReportRequest
+         * @description Analyst resubmits a returned report as a new version.
+         */
+        ResubmitReportRequest: Record<string, never>;
+        /**
+         * ReturnReportRequest
+         * @description Reviewer returns a report to the analyst.
+         */
+        ReturnReportRequest: {
+            /** Decision Note */
+            decision_note: string;
         };
         /**
          * RevenuePoint
@@ -8383,6 +9349,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * RevokeEngagementRequest
+         * @description Admin revokes an engagement.
+         */
+        RevokeEngagementRequest: Record<string, never>;
         /** RoleChangeRequest */
         RoleChangeRequest: {
             /** Role Code */
@@ -8679,6 +9650,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * SubmitReportRequest
+         * @description Analyst submits a draft report for review.
+         */
+        SubmitReportRequest: Record<string, never>;
         /** SubscribeRequest */
         SubscribeRequest: {
             /** Plan Id */
@@ -9005,21 +9981,42 @@ export interface components {
             /** Completed At */
             completed_at: string | null;
         };
-        /** TemplateResponse */
-        TemplateResponse: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Subject */
-            subject: string;
-            /** Body Text */
-            body_text: string;
+        /**
+         * TemplateCreateRequest
+         * @description Create a new assessment template.
+         */
+        TemplateCreateRequest: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Kind */
+            kind: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Response Mode
+             * @default identified
+             */
+            response_mode: string;
+            /**
+             * Minimum Group Size
+             * @default 5
+             */
+            minimum_group_size: number;
         };
         /** TemplatesPage */
         TemplatesPage: {
             /** Items */
-            items: components["schemas"]["TemplateResponse"][];
+            items: components["schemas"]["src__schemas__campaigns__TemplateResponse"][];
+        };
+        /**
+         * TemplatesPageResponse
+         * @description List of templates.
+         */
+        TemplatesPageResponse: {
+            /** Items */
+            items: components["schemas"]["src__routers__assessment_platform__TemplateResponse"][];
         };
         /** TenantAssignmentCreateRequest */
         TenantAssignmentCreateRequest: {
@@ -9259,6 +10256,14 @@ export interface components {
             /** Manager Visibility */
             manager_visibility: string;
         };
+        /**
+         * UpdateReportSummaryRequest
+         * @description Analyst sets a report's summary. Author-only, draft/returned only.
+         */
+        UpdateReportSummaryRequest: {
+            /** Summary */
+            summary: string;
+        };
         /** UpdateVideoSettingsRequest */
         UpdateVideoSettingsRequest: {
             /** Rungs */
@@ -9435,6 +10440,11 @@ export interface components {
             /** Opacity */
             opacity: number;
         };
+        /**
+         * WithdrawReportRequest
+         * @description Analyst withdraws a draft or returned report.
+         */
+        WithdrawReportRequest: Record<string, never>;
         /** WorkshopResponse */
         WorkshopResponse: {
             /** Id */
@@ -9462,6 +10472,39 @@ export interface components {
             zoom_configured: boolean;
             /** Meet Configured */
             meet_configured: boolean;
+        };
+        /**
+         * TemplateResponse
+         * @description Assessment template response.
+         */
+        src__routers__assessment_platform__TemplateResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Kind */
+            kind: string;
+            /** Response Mode */
+            response_mode: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /** TemplateResponse */
+        src__schemas__campaigns__TemplateResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Subject */
+            subject: string;
+            /** Body Text */
+            body_text: string;
         };
     };
     responses: never;
@@ -10731,6 +11774,198 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_partner_profile_api_v1_partner_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_partner_profile_for_organisation_api_v1_partner_profiles_by_organisation__organisation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_activation_status_api_v1_partner_profiles__profile_id__activation_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivationStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_operator_agreement_api_v1_partner_profiles__profile_id__accept_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptOperatorAgreementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_profile_api_v1_partner_profiles__profile_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_client_org_api_v1_partner_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateClientOrgRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientOrgResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -12806,6 +14041,149 @@ export interface operations {
             };
         };
     };
+    list_steps_api_v1_learning_paths__learning_path_id__steps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_step_api_v1_learning_paths__learning_path_id__steps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cohorts_api_v1_cohorts_get: {
+        parameters: {
+            query?: {
+                organisation_id?: string | null;
+                learning_path_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cohort_api_v1_cohorts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_facilitators_api_v1_facilitators_get: {
         parameters: {
             query?: never;
@@ -13869,7 +15247,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TemplateResponse"];
+                    "application/json": components["schemas"]["src__schemas__campaigns__TemplateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15718,6 +17096,575 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engagements_api_v1_assessments_engagements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementsPageResponse"];
+                };
+            };
+        };
+    };
+    assign_engagement_api_v1_assessments_engagements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignEngagementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_engagement_api_v1_assessments_engagements__engagement_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeEngagementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_api_v1_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsPageResponse"];
+                };
+            };
+        };
+    };
+    create_report_api_v1_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_api_v1_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWithAttachmentsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_report_summary_api_v1_reports__report_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReportSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_report_attachment_api_v1_reports__report_id__attachments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_report_attachment_api_v1_reports__report_id__attachments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportAttachmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_report_api_v1_reports__report_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    return_report_api_v1_reports__report_id__return_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resubmit_report_api_v1_reports__report_id__resubmit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResubmitReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_report_api_v1_reports__report_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_report_api_v1_reports__report_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_report_api_v1_reports__report_id__release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_assessment_platform_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatesPageResponse"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_assessment_platform_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["src__routers__assessment_platform__TemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_instances_api_v1_assessment_platform_instances_get: {
+        parameters: {
+            query?: {
+                organisation_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstancesPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_instance_api_v1_assessment_platform_instances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceResponse"];
                 };
             };
             /** @description Validation Error */

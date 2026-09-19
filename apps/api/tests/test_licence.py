@@ -430,11 +430,11 @@ async def test_rls_isolates_licences_between_tenants(tenant_session_factory):  #
 async def test_create_licence_rejects_non_licensee_organisation(
     tenant_session_factory,
 ):  # type: ignore[no-untyped-def]
-    """kind='licensee' is required — an ordinary (kind='corporate')
+    """kind='licensee' is required — an ordinary (kind='standard')
     organisation cannot be licensed."""
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(tenant_id) as session:
-        org = Organisation(tenant_id=tenant_id, name="Ordinary Org")  # kind defaults to 'corporate'
+        org = Organisation(tenant_id=tenant_id, name="Ordinary Org")  # kind defaults to 'standard'
         session.add(org)
         await session.flush()
         course_id, _ = await _make_course(session, tenant_id=tenant_id, title="Test Course")
