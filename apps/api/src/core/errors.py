@@ -73,6 +73,11 @@ class ServiceUnavailable(AppError):
     code = "SERVICE_UNAVAILABLE"
 
 
+class PayloadTooLarge(AppError):
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    code = "PAYLOAD_TOO_LARGE"
+
+
 def error_envelope(
     *, code: str, message: str, details: dict[str, Any], request: Request, status_code: int
 ) -> JSONResponse:
@@ -142,6 +147,7 @@ __all__ = [
     "Forbidden",
     "LessonLocked",
     "NotFound",
+    "PayloadTooLarge",
     "ServiceUnavailable",
     "TenantUnresolved",
     "TooManyAttempts",

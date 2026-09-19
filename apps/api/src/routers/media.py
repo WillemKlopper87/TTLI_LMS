@@ -24,7 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.deps import CryptoDep, PrincipalDep, RedisDep, SessionDep, SettingsDep, StorageDep
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
+from src.core.net import client_ip
 from src.core.object_keys import build_object_key
+from src.core.uploads import read_upload_within_limit
 from src.core.queue import get_queue
 from src.models.course import Course, Lesson, LessonBlock, Module
 from src.models.media import AudioAsset, VideoAsset
@@ -60,8 +62,24 @@ def _parse_uuid(value: str) -> uuid.UUID:
         raise NotFound("No such resource.") from exc
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+def _assert_declared_media_type(content_type: str | None, *, prefix: str, kind: str) -> None:
+    """M4: `get_original_file`/`get_audio_original_file` serve this
+    value back *inline* — real progressive playback needs that (forcing
+    `Content-Disposition: attachment`, `assessment.py::download_
+    assignment_submission`'s own defense, would break the `<video>`/
+    `<audio>` tag playing it) — so unlike an arbitrary-file download,
+    the safe fix here is at the other end: refuse to *store* a claimed
+    type this route could ever be asked to reflect unsafely. ffprobe
+    (called right after this) validates the bytes are real media, not
+    the claim, so a `text/html`-declared upload of genuine video bytes
+    would otherwise sail through untouched and be served back as
+    `text/html` verbatim. The stored object key's own filename is no
+    safer to derive from: `build_object_key` keeps the caller's
+    filename, so an attacker controls that exactly as much as the
+    header. An honest client always sends a real `video/*`/`audio/*`
+    type for this endpoint; this simply refuses anything else."""
+    if not content_type or not content_type.startswith(prefix):
+        raise AppError(f"That file is not a valid {kind} upload.")
 
 
 async def _assert_asset_course_authorable(
@@ -173,7 +191,9 @@ async def upload_video_asset(
     decided, and is re-checked at finalize time for the same reason.
     """
     principal.require("course:edit")
-    data = await file.read()
+    _assert_declared_media_type(file.content_type, prefix="video/", kind="video")
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.bypass_max_size_bytes)
 
     # Same fail-closed virus-scanning rule as the payment-proof upload
     # (REQ-BYPASS-08) — a source video is exactly the kind of upload it
@@ -306,6 +326,7 @@ async def upload_captions(
     principal: PrincipalDep,
     session: SessionDep,
     storage: StorageDep,
+    settings: SettingsDep,
     file: UploadFile = File(...),
 ) -> None:
     # Human-authored WebVTT upload, not automatic transcription — no ASR
@@ -318,9 +339,23 @@ async def upload_captions(
     await _assert_asset_course_authorable(
         session, course_id=asset.course_id, tenant_id=principal.tenant_id
     )
-    data = await file.read()
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.max_document_upload_bytes)
     if not data.lstrip().startswith(b"WEBVTT"):
         raise AppError("That file is not a valid WebVTT (.vtt) caption track.")
+
+    # L6: every other upload in this router (video, audio) scans fail-
+    # closed before storing — this was the one inconsistent path,
+    # checked only for a WEBVTT prefix.
+    try:
+        result = await antivirus.scan(data, settings=settings)
+    except antivirus.ScanUnavailable as exc:
+        raise ServiceUnavailable("The virus scanner is unavailable. Try again shortly.") from exc
+    if not result.clean:
+        raise AppError(
+            "That file was rejected by the virus scanner and was not stored.",
+            {"signature": result.signature},
+        )
 
     key = f"video-assets/{video_asset_id}/captions.vtt"
     await storage.ensure_container(Container.PRIVATE_CONTENT)
@@ -447,7 +482,9 @@ async def upload_audio_asset(
     own docstring), so scan, store and probe happen here and the asset is
     immediately `state="ready"`."""
     principal.require("course:edit")
-    data = await file.read()
+    _assert_declared_media_type(file.content_type, prefix="audio/", kind="audio")
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.bypass_max_size_bytes)
 
     try:
         result = await antivirus.scan(data, settings=settings)
@@ -609,7 +646,13 @@ async def get_playback(
     watermark_text = (
         f"SAMPLE · GUEST ACCESS · {email}"
         if user is not None and user.is_guest
-        else f"{email} · {_client_ip(request)}"
+        # L7: was request.client.host directly — every request into this
+        # API arrives through the BFF (main.py's own TRUST_X_FORWARDED_FOR
+        # docstring), so that is always the BFF's own address, never the
+        # viewer's, defeating this watermark's leak-tracing purpose
+        # (REQ-LEAD-05). core.net.client_ip is the one helper that
+        # honours X-Forwarded-For per the deployment's own trust setting.
+        else f"{email} · {client_ip(request, trust_x_forwarded_for=settings.trust_x_forwarded_for)}"
     )
 
     # 0040's as-is bypass: a progressive asset has no HLS manifest at
@@ -665,8 +708,14 @@ async def get_original_file(
     except ObjectNotFound as exc:
         raise NotFound("No such file.") from exc
 
+    # M4: source_content_type is now trustworthy — upload_video_asset
+    # refuses to store anything but a real video/* claim. nosniff stays
+    # regardless, as defense-in-depth against a browser reinterpreting
+    # a technically-honest-but-unusual video subtype.
     media_type = asset.source_content_type or "application/octet-stream"
-    return Response(content=data, media_type=media_type)
+    return Response(
+        content=data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"}
+    )
 
 
 @router.get("/media/{video_asset_id}/hls/{filename}", summary="Serve one HLS manifest or segment")
@@ -770,8 +819,11 @@ async def get_audio_original_file(
     except ObjectNotFound as exc:
         raise NotFound("No such file.") from exc
 
+    # M4: same reasoning as get_original_file above.
     media_type = asset.source_content_type or "application/octet-stream"
-    return Response(content=data, media_type=media_type)
+    return Response(
+        content=data, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"}
+    )
 
 
 __all__ = ["router"]

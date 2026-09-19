@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.core.config import check_production_safety, get_settings
-from src.core.db import dispose_engine, init_engine
+from src.core.db import assert_app_role_cannot_bypass_rls, dispose_engine, init_engine
 from src.core.errors import (
     AppError,
     app_error_handler,
@@ -88,7 +88,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     init_sentry(settings)
-    init_engine(settings)
+    engine = init_engine(settings)
+    # L2: the one silent fail-open path in the isolation model — nothing
+    # previously verified that DATABASE_URL isn't (mis)configured to a
+    # role RLS doesn't bind. See core/db.py's own docstring.
+    await assert_app_role_cannot_bypass_rls(engine)
     init_redis(settings)
     await init_queue(settings)
     start_metrics_server(API_METRICS_PORT)
@@ -114,7 +118,12 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs" if not settings.is_production else None,
         redoc_url=None,
-        openapi_url="/openapi.json",
+        # L1: gated the same as docs_url — the interactive UI being off
+        # in production while the schema it renders stayed reachable at
+        # this fixed path disclosed the full route/shape inventory
+        # (every admin/finance/privacy endpoint) to an unauthenticated
+        # caller regardless of docs_url above.
+        openapi_url="/openapi.json" if not settings.is_production else None,
         lifespan=lifespan,
     )
 

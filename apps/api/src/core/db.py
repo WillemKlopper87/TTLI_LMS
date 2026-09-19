@@ -123,6 +123,33 @@ async def database_runtime_stats() -> DatabaseRuntimeStats:
     )
 
 
+async def assert_app_role_cannot_bypass_rls(engine: AsyncEngine) -> None:
+    """L2: every RLS policy this module's docstring describes depends on
+    the app connecting as a role RLS actually binds — not a superuser,
+    not BYPASSRLS. `ALTER TABLE ... FORCE ROW LEVEL SECURITY` (see the
+    baseline migration) only forces the table *owner*; a superuser is
+    exempt from RLS unconditionally regardless of FORCE. Nothing
+    previously checked this at boot: a DATABASE_URL misconfigured to a
+    privileged role would silently collapse every RLS policy onto the
+    application's own `.where(tenant_id == ...)` filters alone, with no
+    error anywhere — the one genuinely silent fail-open path in the
+    isolation model. Raises RuntimeError if the connected role is
+    unsafe.
+    """
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+            )
+        ).one()
+    if row.rolsuper or row.rolbypassrls:
+        raise RuntimeError(
+            "Refusing to start: the database role this app connects as "
+            f"(rolsuper={row.rolsuper}, rolbypassrls={row.rolbypassrls}) can bypass "
+            "row-level security. DATABASE_URL must use a non-superuser, non-BYPASSRLS role."
+        )
+
+
 async def dispose_engine() -> None:
     global _engine, _sessionmaker
     if _engine is not None:
@@ -161,6 +188,7 @@ __all__ = [
     "TENANT_GUC",
     "DatabasePoolStats",
     "DatabaseRuntimeStats",
+    "assert_app_role_cannot_bypass_rls",
     "database_pool_stats",
     "database_runtime_stats",
     "dispose_engine",

@@ -235,6 +235,40 @@ def _access_denylist_key(user_id: uuid.UUID) -> str:
     return f"denylist:user:{user_id}"
 
 
+def _permission_generation_key(user_id: uuid.UUID) -> str:
+    return f"pgen:user:{user_id}"
+
+
+async def permission_generation(redis: Redis, *, user_id: uuid.UUID) -> int:
+    """The current permission generation for this user — embedded in
+    every access token minted from here on (`core/security.issue_
+    access_token`'s `pgen` claim) and compared exactly, not by
+    timestamp, in `core/deps.get_principal`. 0 for a user nothing has
+    ever bumped, so a token minted before this feature existed (no
+    `pgen` claim, defaulted to 0 there too) keeps working rather than
+    being refused outright."""
+    raw = await redis.get(_permission_generation_key(user_id))
+    return int(raw) if raw is not None else 0
+
+
+async def bump_permission_generation(redis: Redis, *, user_id: uuid.UUID) -> int:
+    """Called by `services/tenant_users.py::revoke_role`. Deliberately
+    not a cutoff timestamp like `revoke_access_tokens_for_user`: that
+    mechanism compares whole-second `iat` to a cutoff
+    (`is_access_token_revoked`), so a token minted in the very same
+    second as the revocation — exactly what an immediately-following
+    refresh produces — would be caught by it too. An exact integer
+    counter has no such collision: any token minted after this call
+    (refresh or fresh login, same second or not) is stamped with the
+    new value by construction, so only a token that already existed
+    before the bump is ever caught. No TTL: unlike the suspension
+    denylist there is no future point at which every pre-bump token is
+    provably dead (a role can be revoked long before a token's natural
+    expiry), so the counter is kept indefinitely per user — one integer,
+    not one key per revocation."""
+    return int(await redis.incr(_permission_generation_key(user_id)))
+
+
 async def revoke_access_tokens_for_user(
     redis: Redis, *, user_id: uuid.UUID, ttl_seconds: int
 ) -> None:
@@ -307,9 +341,11 @@ __all__ = [
     "IssuedRefreshToken",
     "RefreshTokenReused",
     "access_tokens_revoked_at",
+    "bump_permission_generation",
     "clear_access_token_revocation",
     "is_access_token_revoked",
     "issue_family",
+    "permission_generation",
     "revoke_access_tokens_for_user",
     "revoke_all_for_user",
     "revoke_family_for_token",

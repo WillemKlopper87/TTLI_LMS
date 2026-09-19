@@ -6,6 +6,7 @@ DDL privileges of their own.
 
 from __future__ import annotations
 
+import base64
 import socket
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -642,6 +643,63 @@ async def test_send_eft_ageing_alerts_flags_stale_orders_once_and_audits(
     # fresh_id is still too young.
     second_run = await send_eft_ageing_alerts({})
     assert second_run == 0
+
+
+async def test_startup_refuses_to_run_in_production_when_unsafe(monkeypatch) -> None:
+    """M1: `main.py`'s lifespan refuses to boot the API in production
+    with an unsafe config (`check_production_safety`) — the worker's own
+    `startup()` opens the same database and does the same field-
+    encryption/PII work but, until now, called none of it. On any
+    deployment path that isn't `docker-compose.prod.yml`'s `${VAR:?}`
+    guards, the worker could come up unsafe and silently."""
+    from src.workers import main as worker_main
+
+    good_key = base64.b64encode(b"A" * 32).decode()
+    other_key = base64.b64encode(b"B" * 32).decode()
+    unsafe = Settings(
+        environment="production",
+        debug=True,
+        secret_key="x" * 48,
+        database_url="postgresql+asyncpg://u:p@localhost:5432/ttli",
+        database_url_sync="postgresql+psycopg2://u:p@localhost:5432/ttli",
+        app_db_password="K9mP2xQ7vN4wZ8bR",
+        field_encryption_key=good_key,
+        blind_index_key=other_key,
+    )
+    monkeypatch.setattr(worker_main, "get_settings", lambda: unsafe)
+
+    engine_calls = []
+    monkeypatch.setattr(worker_main, "init_engine", lambda settings: engine_calls.append(settings))
+
+    with pytest.raises(RuntimeError, match="unsafe settings"):
+        await worker_main.startup({})
+
+    # Refused before doing anything with the database — mirroring
+    # main.py's lifespan, which checks first and initialises nothing on
+    # a refusal.
+    assert engine_calls == []
+
+
+async def test_startup_refuses_when_the_db_role_can_bypass_rls(
+    monkeypatch, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """L2 wiring: `startup()` must actually call the guard added in
+    core/db.py, the same as main.py's lifespan. Faking the check is
+    enough to prove the wiring — its real behaviour against a live
+    connection is tests/test_db.py's job."""
+    from src.workers import main as worker_main
+
+    async def _fake_assert(engine: object) -> None:
+        raise RuntimeError(
+            "Refusing to start: the database role this app connects as "
+            "(rolsuper=True, rolbypassrls=True) can bypass row-level security."
+        )
+
+    monkeypatch.setattr(worker_main, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker_main, "assert_app_role_cannot_bypass_rls", _fake_assert)
+
+    with pytest.raises(RuntimeError, match="bypass row-level security"):
+        await worker_main.startup({})
 
 
 def test_send_sync_raises_on_unreachable_smtp_host() -> None:

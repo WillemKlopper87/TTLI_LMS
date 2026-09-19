@@ -122,6 +122,61 @@ async def test_magic_link_consume_issues_tokens(
     assert replay.status_code == 401
 
 
+@pytest.mark.parametrize(
+    "requester",
+    [identity.create_magic_link, identity.create_password_reset],
+    ids=["create_magic_link", "create_password_reset"],
+)
+async def test_link_request_costs_the_same_argon2_calls_for_a_real_and_a_missing_account(
+    tenant_session_factory, crypto, settings, monkeypatch, requester
+) -> None:  # type: ignore[no-untyped-def]
+    """M5: the 'no such account' branch ran a ~250ms dummy Argon2 verify
+    that the real-account branch never did — inverting and amplifying
+    timing into a clean existence oracle for exactly the two endpoints
+    whose whole purpose (per this module's own docstring) is not
+    disclosing whether an address has an account.
+
+    Asserted on call counts rather than wall-clock time: a real timing
+    measurement is what an attacker would do, but it is also what makes
+    CI flaky. The number of Argon2 calls each branch makes is the actual
+    mechanism, and pinning it at zero-for-both is what removing the
+    asymmetry (rather than trying to match its cost some other way)
+    means.
+    """
+    calls: list[str] = []
+
+    async def _counting_verify(password: str, stored_hash: str) -> bool:  # type: ignore[no-untyped-def]
+        calls.append(password)
+        return False
+
+    monkeypatch.setattr(identity, "verify_password_async", _counting_verify)
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    real_email = _unique_email()
+    await _create_user(tenant_session_factory, crypto, tenant_id=tenant_id, email=real_email)
+
+    async with tenant_session_factory(tenant_id) as s:
+        found = await requester(
+            s, crypto, tenant_id=tenant_id, email=real_email, minutes=settings.magic_link_minutes
+        )
+    assert found is not None
+    calls_for_real_account = len(calls)
+
+    calls.clear()
+    async with tenant_session_factory(tenant_id) as s:
+        missing = await requester(
+            s,
+            crypto,
+            tenant_id=tenant_id,
+            email=_unique_email(),
+            minutes=settings.magic_link_minutes,
+        )
+    assert missing is None
+    calls_for_missing_account = len(calls)
+
+    assert calls_for_real_account == calls_for_missing_account == 0
+
+
 async def test_magic_link_request_always_returns_204_for_unknown_address(client) -> None:  # type: ignore[no-untyped-def]
     resp = await client.post("/api/v1/auth/magic-link", json={"email": _unique_email()})
     assert resp.status_code == 204

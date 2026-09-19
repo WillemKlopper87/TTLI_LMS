@@ -130,7 +130,13 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:support@example.com"
 
     break_glass_admin_enabled: bool = False
-    break_glass_admin_email: str = "admin@ttli.local"
+    # L12: `.local` is an IANA special-use domain (mDNS, RFC 6762) that
+    # `EmailStr` (schemas/auth.py::LoginRequest) refuses outright — the
+    # break-glass account could never log in through the normal endpoint
+    # it exists to unlock access via. `.example` (RFC 2606) is reserved
+    # for exactly this — a real, valid-shaped address guaranteed never
+    # to be a deliverable one.
+    break_glass_admin_email: str = "admin@ttli.example"
     break_glass_admin_password: str = ""
 
     # --- Field encryption ---
@@ -167,6 +173,14 @@ class Settings(BaseSettings):
     # all-three-adapters change, left as a follow-up) — above this size
     # the admin UI simply doesn't offer the as-is toggle.
     bypass_max_size_bytes: int = 500_000_000
+    # M3: streaming caps enforced by core/uploads.py::read_upload_within_
+    # limit, at every upload endpoint — before this, every one of them
+    # (video/audio/captions/PO/payment-proof/assignment) buffered the
+    # whole request body into memory via a bare `await file.read()`
+    # before any size check ever ran. Video/audio share
+    # bypass_max_size_bytes above (the existing "how big can a real
+    # source file get" ceiling); the rest are small documents by nature.
+    max_document_upload_bytes: int = 10_000_000
     # 03 §6.7's signed playback URL — short-lived, bound to user and
     # session, re-minted per playback attempt rather than cached.
     playback_url_expiry_seconds: int = 300
@@ -255,39 +269,54 @@ class Settings(BaseSettings):
         return base64.b64decode(self.blind_index_key)
 
 
-def check_production_safety(settings: Settings) -> list[str]:
-    """Return every reason this configuration must not run in production.
+# L4: values published in this repo's own .env.example/docker-compose.yml
+# as local-dev-only — real, working credentials for nothing but the dev
+# stack, but denylisted by literal value so an operator who reused one of
+# them by accident (or forgot to rotate it) doesn't pass the gate.
+_KNOWN_DEV_SECRET_KEYS = {"test-secret-key-at-least-32-characters-long"}
+_KNOWN_DEV_S3_ACCESS_KEYS = {"ttli_dev", "minioadmin", "GKb9c32ff7b3db35e902fd29f7"}
+_KNOWN_DEV_S3_SECRET_KEYS = {
+    "43e555c82c4dd74d5d783f61510d2badd718f9937d9e4c326c25628527d5280c"
+}
 
-    A list rather than a boolean, so the startup log names all the problems at
-    once instead of revealing them one redeploy at a time.
-    """
+
+def _crypto_key_problems(settings: Settings) -> list[str]:
+    """L4: FIELD_ENCRYPTION_KEY/BLIND_INDEX_KEY were checked for presence
+    only — a malformed value (bad base64, wrong decoded length) passed
+    boot cleanly and only surfaced as a 500 on the first request that
+    touched PII (`CryptoBox.__init__` raising ValueError). Validates the
+    same constraints CryptoBox itself enforces, so a boot-time refusal
+    replaces that first-request crash. Applied to both production and
+    staging (L5) — shared because neither environment should ever run
+    on a key that can't actually decrypt anything."""
     problems: list[str] = []
+    if settings.secret_key in _KNOWN_DEV_SECRET_KEYS:
+        problems.append("SECRET_KEY is a known example/test value")
+    for label, value, min_len in (
+        ("FIELD_ENCRYPTION_KEY", settings.field_encryption_key, 32),
+        ("BLIND_INDEX_KEY", settings.blind_index_key, 32),
+    ):
+        if not value:
+            problems.append(f"{label} is not set")
+            continue
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except Exception:
+            problems.append(f"{label} is not valid base64")
+            continue
+        if len(decoded) < min_len:
+            problems.append(f"{label} decodes to fewer than {min_len} bytes")
+    return problems
 
-    if not settings.is_production:
-        return problems
 
+def _database_and_debug_problems(settings: Settings) -> list[str]:
+    """The subset of checks L5 extends to staging as well as production —
+    a config that can't be trusted with real data in either."""
+    problems: list[str] = []
     if settings.debug:
         problems.append("DEBUG is enabled")
-    if settings.break_glass_admin_enabled:
-        problems.append("BREAK_GLASS_ADMIN_ENABLED is on")
     if len(settings.secret_key) < 32:
         problems.append("SECRET_KEY is missing or shorter than 32 characters")
-    if not settings.field_encryption_key:
-        problems.append("FIELD_ENCRYPTION_KEY is not set")
-    if not settings.blind_index_key:
-        problems.append("BLIND_INDEX_KEY is not set")
-    if not settings.app_db_password:
-        problems.append("APP_DB_PASSWORD is not set")
-    if settings.app_db_password in {"app_user_local_dev", "app_user_ci"}:
-        problems.append("APP_DB_PASSWORD is a development credential")
-    if settings.field_encryption_key == settings.blind_index_key:
-        problems.append("FIELD_ENCRYPTION_KEY and BLIND_INDEX_KEY are the same value")
-    if settings.storage_backend == "local":
-        problems.append("STORAGE_BACKEND is 'local'")
-    if settings.s3_access_key in {"ttli_dev", "minioadmin"}:
-        problems.append("S3_ACCESS_KEY is a development credential")
-    if not settings.sentry_dsn:
-        problems.append("SENTRY_DSN is not set")
     if "localhost" in settings.database_url or "127.0.0.1" in settings.database_url:
         problems.append("DATABASE_URL points at localhost")
     if "sslmode=disable" in settings.database_url:
@@ -296,6 +325,47 @@ def check_production_safety(settings: Settings) -> list[str]:
         # Tenant resolution and login rate limiting both depend on Redis now
         # (core/tenancy.py, services/rate_limit.py) — not just a cache.
         problems.append("REDIS_URL points at localhost")
+    return problems
+
+
+def check_production_safety(settings: Settings) -> list[str]:
+    """Return every reason this configuration must not run in production
+    — and, for the checks in `_database_and_debug_problems`/`_crypto_key_
+    problems` above, staging too (L5): staging can hold real customer
+    data, unlike local/dev, where a placeholder secret is expected and
+    this returns cleanly.
+
+    A list rather than a boolean, so the startup log names all the problems at
+    once instead of revealing them one redeploy at a time.
+    """
+    if settings.environment not in ("production", "staging"):
+        return []
+
+    problems = _database_and_debug_problems(settings) + _crypto_key_problems(settings)
+
+    if not settings.is_production:
+        return problems
+
+    if settings.break_glass_admin_enabled:
+        problems.append("BREAK_GLASS_ADMIN_ENABLED is on")
+    if not settings.app_db_password:
+        problems.append("APP_DB_PASSWORD is not set")
+    if settings.app_db_password in {"app_user_local_dev", "app_user_ci"}:
+        problems.append("APP_DB_PASSWORD is a development credential")
+    if settings.field_encryption_key == settings.blind_index_key:
+        problems.append("FIELD_ENCRYPTION_KEY and BLIND_INDEX_KEY are the same value")
+    if settings.storage_backend == "local":
+        problems.append("STORAGE_BACKEND is 'local'")
+    if settings.s3_access_key in _KNOWN_DEV_S3_ACCESS_KEYS:
+        problems.append("S3_ACCESS_KEY is a development credential")
+    if settings.s3_secret_key in _KNOWN_DEV_S3_SECRET_KEYS:
+        problems.append("S3_SECRET_KEY is a development credential")
+    if settings.storage_backend != "local" and (
+        "localhost" in settings.s3_endpoint_url or "127.0.0.1" in settings.s3_endpoint_url
+    ):
+        problems.append("S3_ENDPOINT_URL points at localhost")
+    if not settings.sentry_dsn:
+        problems.append("SENTRY_DSN is not set")
 
     return problems
 

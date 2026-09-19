@@ -61,6 +61,29 @@ async def test_initiate_checkout_refuses_with_no_credentials() -> None:
         )
 
 
+async def test_initiate_checkout_refuses_a_merchant_id_with_no_passphrase() -> None:
+    """M8: `verify_signature`/`_signature_string` silently omit the
+    passphrase from the signed string when it's empty (`if passphrase:`)
+    — a merchant account configured with an empty passphrase reduces
+    the ITN signature to a plain, keyless MD5 over attacker-controlled
+    fields, collapsing Payfast's own documented four-check defense
+    toward one. Treated the same as a missing merchant_id/merchant_key:
+    a merchant configured without a passphrase is misconfigured, not
+    enabled."""
+    no_passphrase = PayfastProvider(
+        merchant_id="10000100", merchant_key="46f0cd694581a", passphrase="", sandbox=True
+    )
+    with pytest.raises(PaymentProviderUnavailable):
+        await no_passphrase.initiate_checkout(
+            order=_order(),
+            payment_id=uuid.uuid4(),
+            return_url="https://example.com/return",
+            cancel_url="https://example.com/cancel",
+            notify_url="https://example.com/notify",
+            buyer_email="buyer@example.com",
+        )
+
+
 async def test_initiate_checkout_signs_the_redirect(provider: PayfastProvider) -> None:
     redirect = await provider.initiate_checkout(
         order=_order(),
@@ -83,7 +106,7 @@ async def test_initiate_checkout_signs_the_redirect(provider: PayfastProvider) -
 
 
 async def test_production_host_when_not_sandbox() -> None:
-    live = PayfastProvider(merchant_id="x", merchant_key="y", passphrase="", sandbox=False)
+    live = PayfastProvider(merchant_id="x", merchant_key="y", passphrase="z", sandbox=False)
     redirect = await live.initiate_checkout(
         order=_order(),
         payment_id=uuid.uuid4(),

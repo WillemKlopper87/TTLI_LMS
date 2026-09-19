@@ -109,16 +109,42 @@ def issue_access_token(
     tenant_id: uuid.UUID,
     permissions: list[str],
     minutes: int,
+    perm_generation: int = 0,
+    guest_expires_at: datetime | None = None,
 ) -> str:
+    """`perm_generation` (M6) stamps the permission-generation the caller
+    read `permissions` at — 0 for any caller not tracking one, which
+    also matches `tokens.permission_generation`'s own default for a user
+    nothing has ever bumped, so an old token minted before this claim
+    existed and a fresh one for an untouched user compare equal against
+    a never-bumped counter. `core/deps.get_principal` refuses a token
+    whose stamped generation is behind the current one.
+
+    `guest_expires_at` (L9), set only when the caller is a guest, stamps
+    the `gexp` claim `get_principal` compares to wall-clock `now()` on
+    every request — the same shape this function's own `exp` claim
+    already uses, and deliberately not a live database re-read: unlike
+    `/auth/refresh` (which re-reads `guest_expires_at` fresh as part of
+    a DB round-trip it needs anyway — `services/tokens.py::rotate`),
+    `get_principal` runs on every authenticated request in the app, and
+    a claim comparison is the low-risk way to close "an already-issued
+    access token outlives the guest window it was minted inside," at
+    the cost of not reflecting a guest's `guest_expires_at` changing
+    again after this token was minted — the same residual a JWT's own
+    `exp` always has by nature.
+    """
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "tid": str(tenant_id),
         "perms": permissions,
+        "pgen": perm_generation,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=minutes)).timestamp()),
         "jti": secrets.token_urlsafe(12),
     }
+    if guest_expires_at is not None:
+        payload["gexp"] = int(guest_expires_at.timestamp())
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
 

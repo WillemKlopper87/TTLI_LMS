@@ -206,8 +206,38 @@ async def assign_role(
 
 
 async def revoke_role(
-    session: AsyncSession, *, tenant_id: uuid.UUID, user: User, role_code: str
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    user: User,
+    role_code: str,
+    redis: Redis,
 ) -> bool:
+    """M6: permissions are baked into the access token's `perms` claim at
+    issue time (`core/deps.get_principal` reads the claim, never the
+    database), so until now this only edited `role_assignments` — a
+    user's already-issued token kept every permission the revoked role
+    granted for up to its remaining lifetime.
+
+    Bumps the user's permission generation (`tokens.bump_permission_
+    generation`) rather than reusing `set_status`'s cutoff-timestamp
+    denylist: that mechanism compares whole-second `iat` to a cutoff
+    (`is_access_token_revoked`), so a token minted in the very same
+    second as the revocation — exactly what a refresh performed right
+    afterwards produces — would be caught by it too, contradicting
+    `test_role_revocation_is_reflected_on_the_next_refresh`'s existing,
+    deliberate contract that the very next refresh must succeed. A
+    generation counter has no such collision: `get_principal` compares
+    the token's stamped generation to the current one exactly, not by
+    timestamp, so a token minted after the bump (any refresh from this
+    point on, same second or not) always carries the new generation and
+    is never caught by it — only the specific token(s) minted before the
+    bump are.
+
+    Not applied to granting a role — a token that predates a new grant
+    simply has fewer permissions than the database now allows, which is
+    the safe direction and resolves itself at the token's own next
+    refresh."""
     # Read first rather than trusting DELETE's rowcount: the caller only
     # writes an audit row for a real change, and SQLAlchemy's typed
     # Result does not promise rowcount on every backend.
@@ -224,6 +254,7 @@ async def revoke_role(
         return False
     await session.execute(delete(RoleAssignment).where(RoleAssignment.id == existing))
     await session.flush()
+    await tokens.bump_permission_generation(redis, user_id=user.id)
     return True
 
 

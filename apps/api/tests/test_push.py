@@ -93,6 +93,25 @@ def _subscribe_body(endpoint: str) -> dict:  # type: ignore[type-arg]
     }
 
 
+@pytest.fixture(autouse=True)
+def _fake_public_dns(monkeypatch):  # type: ignore[no-untyped-def]
+    """M2: `push_service.subscribe` now resolves the endpoint's hostname
+    (SSRF/rebinding guard, src/core/net.py::assert_public_hostname).
+    `push.example.com` is this file's placeholder host throughout and is
+    not a real, resolvable domain — autouse so every test in this file
+    stays offline-safe by default; a test that needs a *different*
+    resolution result overrides this with its own monkeypatch after the
+    fixture runs (see test_subscribe_accepts_real_push_service_endpoints
+    and test_subscribe_rejects_hostname_that_resolves_to_a_private_address
+    below)."""
+    from src.core import net
+
+    async def _fake_resolve(host: str, port: int) -> list[str]:  # type: ignore[no-untyped-def]
+        return ["8.8.8.8"]
+
+    monkeypatch.setattr(net, "resolve_addresses", _fake_resolve)
+
+
 async def test_subscribe_creates_and_upserts_on_repeat_endpoint(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]
@@ -176,6 +195,10 @@ async def test_subscribe_rejects_non_public_endpoints(
 async def test_subscribe_accepts_real_push_service_endpoints(
     client, tenant_session_factory, crypto, endpoint
 ) -> None:  # type: ignore[no-untyped-def]
+    # DNS resolution (M2) is faked to a public address by the autouse
+    # _fake_public_dns fixture above — this test would otherwise depend
+    # on live DNS for four real vendor hostnames, and "a test that needs
+    # a resolver is a test that fails on a train" (test_sso.py).
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
     resp = await client.post(
@@ -184,6 +207,42 @@ async def test_subscribe_accepts_real_push_service_endpoints(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 201, resp.text
+
+
+async def test_subscribe_rejects_hostname_that_resolves_to_a_private_address(
+    client, tenant_session_factory, crypto, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """M2: `_validate_push_endpoint` only catches IP literals and known
+    reserved suffixes syntactically — a public-looking hostname an
+    attacker controls (DNS rebinding) can still resolve to
+    169.254.169.254 or an internal address. The worker later POSTs to
+    whatever this accepts (services/push.py::send_push_sync), so an
+    unresolved hostname reaching that point is a blind SSRF."""
+    from src.core import net
+
+    async def _fake_resolve(host: str, port: int) -> list[str]:  # type: ignore[no-untyped-def]
+        assert host == "rebind.attacker.example"
+        return ["169.254.169.254"]
+
+    monkeypatch.setattr(net, "resolve_addresses", _fake_resolve)
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    token = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id)
+    endpoint = "https://rebind.attacker.example/push"
+    resp = await client.post(
+        "/api/v1/push-subscriptions",
+        json=_subscribe_body(endpoint),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400, resp.text
+    async with tenant_session_factory(tenant_id) as s:
+        count = (
+            await s.execute(
+                sa.text("SELECT count(*) FROM push_subscriptions WHERE endpoint = :e"),
+                {"e": endpoint},
+            )
+        ).scalar_one()
+    assert count == 0
 
 
 async def test_unsubscribe_ignores_another_users_subscription(

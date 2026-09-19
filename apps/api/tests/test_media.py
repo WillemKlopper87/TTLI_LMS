@@ -587,6 +587,46 @@ async def test_enrolled_learner_can_play_and_the_manifest_carries_the_token(
             assert f"access_token={token}" in line
 
 
+async def test_playback_watermark_uses_the_configured_client_ip_helper(
+    client, tenant_session_factory, crypto, sample_video, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """L7: the anti-piracy watermark used its own `_client_ip`, reading
+    `request.client.host` directly instead of `core.net.client_ip` (the
+    one helper that honours `X-Forwarded-For` behind the BFF, per
+    settings.trust_x_forwarded_for). Every request into this API arrives
+    through the BFF (main.py's TRUST_X_FORWARDED_FOR docstring), so the
+    watermark always baked in the BFF's own address, never the viewer's —
+    defeating the leak-tracing purpose (REQ-LEAD-05) it exists for."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+    lesson_id = await _seeded_lesson_id(tenant_session_factory, tenant_id, position=1)
+    await _attach_video(client, author_token, lesson_id, video_asset_id)
+
+    buyer_token, _ = await _enrol_via_eft(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, price_id=price_id
+    )
+
+    settings.trust_x_forwarded_for = True
+    try:
+        playback_resp = await client.get(
+            f"/api/v1/media/{video_asset_id}/playback",
+            headers={
+                "Authorization": f"Bearer {buyer_token}",
+                "X-Forwarded-For": "203.0.113.7",
+            },
+        )
+    finally:
+        settings.trust_x_forwarded_for = False
+    assert playback_resp.status_code == 200
+    assert "203.0.113.7" in playback_resp.json()["watermark"]["text"]
+
+
 async def test_captions_upload_gated_and_served_through_signed_playback_token(
     client, tenant_session_factory, crypto, sample_video
 ) -> None:  # type: ignore[no-untyped-def]
@@ -668,6 +708,129 @@ async def test_hls_route_rejects_an_invalid_token(client) -> None:  # type: igno
         f"/api/v1/media/{uuid.uuid4()}/hls/master.m3u8?access_token=not-a-real-token"
     )
     assert resp.status_code == 403
+
+
+async def test_video_upload_refuses_a_non_video_declared_content_type(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """M4: `get_original_file` serves `asset.source_content_type`
+    straight back *inline* — real progressive playback needs that, so
+    forcing `Content-Disposition: attachment` (the fix an arbitrary-file
+    download would use, e.g. `assessment.py::download_assignment_
+    submission`) would break the `<video>` tag that plays this URL.
+    ffprobe validates the actual bytes, not the claim, so real video
+    bytes uploaded with a declared `Content-Type: text/html` would
+    otherwise sail through untouched — including past `as_is` finalize
+    — and be served back as `text/html` verbatim. The fix has to be at
+    the other end: refuse to ever store a non-video declared type."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_bytes = await asyncio.to_thread(sample_video.read_bytes)
+
+    upload = await client.post(
+        "/api/v1/video-assets",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={"file": ("evil.html", video_bytes, "text/html")},
+    )
+    assert upload.status_code == 400, upload.text
+
+
+async def test_progressive_original_is_served_with_nosniff(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """The legitimate path: a real video/mp4 upload is still served
+    inline (playback must keep working), with `X-Content-Type-Options:
+    nosniff` added as defense-in-depth regardless."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_bytes = await asyncio.to_thread(sample_video.read_bytes)
+
+    upload = await client.post(
+        "/api/v1/video-assets",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={"file": ("lesson.mp4", video_bytes, "video/mp4")},
+    )
+    assert upload.status_code == 201, upload.text
+    video_asset_id = upload.json()["id"]
+
+    as_is = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/finalize",
+        headers={"Authorization": f"Bearer {author_token}"},
+        json={"mode": "as_is"},
+    )
+    assert as_is.status_code == 200, as_is.text
+    assert as_is.json()["delivery_mode"] == "progressive"
+
+    playback_resp = await client.get(
+        f"/api/v1/media/{video_asset_id}/playback",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert playback_resp.status_code == 200, playback_resp.text
+    original_url = playback_resp.json()["playlist_url"]
+
+    original = await client.get(f"/api/v1/{original_url}")
+    assert original.status_code == 200
+    assert original.headers["content-type"] == "video/mp4"
+    assert original.headers.get("x-content-type-options") == "nosniff"
+
+
+async def test_captions_upload_is_virus_scanned(
+    client, tenant_session_factory, crypto, sample_video, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """L6: every other upload in this router (video, audio) scans fail-
+    closed via antivirus.scan before storing — captions only checked the
+    `WEBVTT` prefix, the one inconsistent upload path.
+
+    `antivirus.scan` itself is monkeypatched here rather than uploading a
+    real EICAR payload: this ClamAV build's EICAR heuristic only fires
+    when the scanned stream *is* the signature (confirmed directly —
+    prefixing it with the mandatory `WEBVTT` header, or appending
+    anything after it, makes it read as clean), which a caption file can
+    never satisfy alongside its own required prefix. `antivirus.scan`'s
+    real detection is already proven against a genuine EICAR stream by
+    test_antivirus.py; what this test exists to prove is only that
+    `upload_captions` calls it and honours a `clean=False` result,
+    exactly like `test_upload_rejects_infected_video`/its audio
+    equivalent already prove for their own routes."""
+    from src.services import antivirus
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+
+    # Applied only now — the video upload above (which this same content
+    # author must complete first) has its own real, unfaked scan call.
+    async def _fake_infected(data: bytes, *, settings: object) -> antivirus.ScanResult:
+        return antivirus.ScanResult(clean=False, signature="Eicar-Test-Signature")
+
+    monkeypatch.setattr(antivirus, "scan", _fake_infected)
+
+    malicious = await client.post(
+        f"/api/v1/video-assets/{video_asset_id}/captions",
+        headers={"Authorization": f"Bearer {author_token}"},
+        files={
+            "file": (
+                "captions.vtt",
+                b"WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nHello.",
+                "text/vtt",
+            )
+        },
+    )
+    assert malicious.status_code == 400, malicious.text
+
+    after = await client.get(
+        f"/api/v1/video-assets/{video_asset_id}",
+        headers={"Authorization": f"Bearer {author_token}"},
+    )
+    assert after.json()["has_captions"] is False
 
 
 def test_rewrite_manifest_handles_ext_x_map_and_plain_lines() -> None:

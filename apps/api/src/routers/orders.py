@@ -48,6 +48,7 @@ from src.core.deps import (
 )
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.object_keys import build_object_key
+from src.core.uploads import read_upload_within_limit
 from src.models.commerce import Order, OrderItem, Payment
 from src.schemas.commerce import (
     CardCheckoutResponse,
@@ -255,7 +256,8 @@ async def checkout_po(
     — unlike EFT proof, which can only exist after a bank transfer, a
     purchase order document exists from the moment it's raised."""
     order = await _get_own_order(session, principal, order_id)
-    data = await file.read()
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.max_document_upload_bytes)
 
     # Same fail-closed virus-scanning rule as EFT proof (REQ-BYPASS-08) —
     # a PO document is exactly the kind of upload it protects against.
@@ -318,7 +320,8 @@ async def upload_payment_proof(
     if payment is None:
         raise AppError("No payment awaiting proof for this order.")
 
-    data = await file.read()
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.max_document_upload_bytes)
 
     # Virus scanning before the file is readable by anyone (04 §3,
     # REQ-BYPASS-08) — scanned before it ever reaches storage, and both an

@@ -233,12 +233,19 @@ async def sso_callback(
     )
 
     permissions = await identity.permissions_for(session, user.id)
+    perm_generation = await tokens.permission_generation(redis, user_id=user.id)
     access_token = issue_access_token(
         secret=settings.secret_key,
         user_id=user.id,
         tenant_id=tenant.id,
         permissions=permissions,
         minutes=settings.access_token_minutes,
+        perm_generation=perm_generation,
+        # L9: SSO-provisioned users are never guests in practice (JIT-
+        # created with no is_guest=True path above), so this is always
+        # None here today — wired for consistency with the other two
+        # issuance sites rather than leaving a silent exception.
+        guest_expires_at=user.guest_expires_at if user.is_guest else None,
     )
     issued = await tokens.issue_family(
         session,

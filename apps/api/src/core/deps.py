@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated
 
 import jwt
@@ -212,6 +213,28 @@ async def get_principal(
     # would otherwise create.
     revoked_at = await tokens.access_tokens_revoked_at(redis, user_id=user_id)
     if tokens.is_access_token_revoked(int(claims["iat"]), revoked_at):
+        raise Unauthenticated("Authentication required.")
+
+    # M6: a role revocation (services/tenant_users.py::revoke_role) bumps
+    # this counter instead of the cutoff above — an exact-integer
+    # comparison, not a whole-second one, so it does not share that
+    # mechanism's same-second collision with a refresh performed right
+    # after the revoke (see revoke_role's own docstring). Missing claim
+    # (a token minted before this feature existed) reads as generation
+    # 0, matching a never-bumped user's own default.
+    current_generation = await tokens.permission_generation(redis, user_id=user_id)
+    if int(claims.get("pgen", 0)) < current_generation:
+        raise Unauthenticated("Authentication required.")
+
+    # L9: stamped at issue time from the guest's guest_expires_at
+    # (core/security.issue_access_token) — an access token minted just
+    # before that window closed otherwise kept working for up to its own
+    # full lifetime afterwards, since neither the jti-denylist nor the
+    # revocation-cutoff checks above have any reason to fire for it.
+    # Absent claim (no `gexp`) means either a non-guest or a token minted
+    # before this feature existed — never treated as expired.
+    guest_exp = claims.get("gexp")
+    if guest_exp is not None and int(guest_exp) <= int(datetime.now(UTC).timestamp()):
         raise Unauthenticated("Authentication required.")
 
     token_tenant = uuid.UUID(claims["tid"])
