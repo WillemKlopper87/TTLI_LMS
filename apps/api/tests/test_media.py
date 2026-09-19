@@ -465,9 +465,7 @@ async def test_video_asset_list_supports_limit_offset_and_reports_a_true_total(
     )
     headers = {"Authorization": f"Bearer {author_token}"}
 
-    one_page = await client.get(
-        "/api/v1/video-assets", params={"limit": 1}, headers=headers
-    )
+    one_page = await client.get("/api/v1/video-assets", params={"limit": 1}, headers=headers)
     assert one_page.status_code == 200, one_page.text
     body = one_page.json()
     total = body["total"]

@@ -134,16 +134,10 @@ async def list_users(
         )
         base = base.where(has_role)
 
-    total = (
-        await session.execute(select(func.count()).select_from(base.subquery()))
-    ).scalar_one()
+    total = (await session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
     users = (
-        (
-            await session.execute(
-                base.order_by(User.created_at.desc()).limit(limit).offset(offset)
-            )
-        )
+        (await session.execute(base.order_by(User.created_at.desc()).limit(limit).offset(offset)))
         .scalars()
         .all()
     )

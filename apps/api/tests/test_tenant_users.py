@@ -496,9 +496,7 @@ async def test_users_list_supports_limit_offset_and_reports_a_true_total(  # typ
     )
     headers = {"Authorization": f"Bearer {boss}"}
 
-    before = await client.get(
-        "/api/v1/tenant/users", params={"limit": 1}, headers=headers
-    )
+    before = await client.get("/api/v1/tenant/users", params={"limit": 1}, headers=headers)
     assert before.status_code == 200, before.text
     total_before = before.json()["total"]
 
@@ -511,9 +509,7 @@ async def test_users_list_supports_limit_offset_and_reports_a_true_total(  # typ
             s.add(RoleAssignment(tenant_id=tenant_id, user_id=user.id, role_code="content_author"))
             target_ids.add(str(user.id))
 
-    one_page = await client.get(
-        "/api/v1/tenant/users", params={"limit": 1}, headers=headers
-    )
+    one_page = await client.get("/api/v1/tenant/users", params={"limit": 1}, headers=headers)
     assert one_page.status_code == 200, one_page.text
     body = one_page.json()
     assert body["total"] == total_before + 3
