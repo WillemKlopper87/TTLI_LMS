@@ -359,6 +359,32 @@ def upgrade() -> None:
     )
 
     # Enable RLS and create policies for tenant isolation
+    # tenant_id indexes and user FKs the models declare (index=True /
+    # ForeignKey) — `alembic check` flagged the migration as missing them.
+    for table in (
+        "assessment_subjects",
+        "assessment_template_questions",
+        "assessment_invitations",
+        "assessment_subject_results",
+    ):
+        op.create_index(f"ix_{table}_tenant_id", table, ["tenant_id"])
+    op.create_foreign_key(
+        "fk_assessment_responses_user_id_users",
+        "assessment_responses",
+        "users",
+        ["user_id"],
+        ["id"],
+        ondelete="RESTRICT",
+    )
+    op.create_foreign_key(
+        "fk_assessment_subject_results_administered_by_user_id_users",
+        "assessment_subject_results",
+        "users",
+        ["administered_by_user_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+
     for table in TENANT_SCOPED:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
