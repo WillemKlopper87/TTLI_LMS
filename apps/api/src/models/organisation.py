@@ -7,7 +7,7 @@ Extends with §4.1 (partner portal design, 2026-09-11):
   - kind enum ('standard', 'partner', 'client') for partner org types —
     'standard' is the default for every ordinary organisation; a org
     only becomes 'partner' when services/partner.py::activate_partner
-    promotes it (see migration 0047's docstring for why the default is
+    promotes it (see migration 0054's docstring for why the default is
     not 'partner')
   - parent_organisation_id for client orgs linked to their partner parent
 """
@@ -25,7 +25,7 @@ from src.models.base import Base, TimestampMixin, pk
 
 RELATIONSHIP_VALUES = ("member", "manager", "admin")
 
-# Matches migration 0047's `organisation_kind` Postgres enum type exactly
+# Matches migration 0054's `organisation_kind` Postgres enum type exactly
 # — create_type=False because the migration already created it. Mapping
 # this as a plain String let every insert through SQLAlchemy fail with
 # DatatypeMismatchError ("kind" is organisation_kind, not varchar).

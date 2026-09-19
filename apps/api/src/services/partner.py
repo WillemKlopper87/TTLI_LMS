@@ -229,21 +229,25 @@ async def get_admin_partner_organisation(
     a client-supplied organisation id.
     """
     return (
-        await session.execute(
-            select(Organisation)
-            .join(
-                OrganisationMember,
-                OrganisationMember.organisation_id == Organisation.id,
-            )
-            .where(
-                Organisation.tenant_id == tenant_id,
-                Organisation.kind == "partner",
-                OrganisationMember.tenant_id == tenant_id,
-                OrganisationMember.user_id == user_id,
-                OrganisationMember.relationship == "admin",
+        (
+            await session.execute(
+                select(Organisation)
+                .join(
+                    OrganisationMember,
+                    OrganisationMember.organisation_id == Organisation.id,
+                )
+                .where(
+                    Organisation.tenant_id == tenant_id,
+                    Organisation.kind == "partner",
+                    OrganisationMember.tenant_id == tenant_id,
+                    OrganisationMember.user_id == user_id,
+                    OrganisationMember.relationship == "admin",
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
 
 async def create_client_organisation(

@@ -1,7 +1,7 @@
 """Partner portal models and relationships (§4 of 2026-09-11-partner-portal-design.md).
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0054
+Revises: 0053
 
 §4.1 Client organisations under a partner:
   - Add parent_organisation_id (self-referential, nullable FK to organisations)
@@ -33,8 +33,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision: str = "0047"
-down_revision: str | None = "0046"
+revision: str = "0054"
+down_revision: str | None = "0053"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -110,7 +110,9 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_assessment_licences_tenant_id", "assessment_licences", ["tenant_id"])
-    op.create_index("ix_assessment_licences_organisation_id", "assessment_licences", ["organisation_id"])
+    op.create_index(
+        "ix_assessment_licences_organisation_id", "assessment_licences", ["organisation_id"]
+    )
     op.create_index("ix_assessment_licences_template_id", "assessment_licences", ["template_id"])
 
     # RLS for assessment_licences
