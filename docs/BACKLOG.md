@@ -51,8 +51,8 @@ F13 to F17.
 |---|---|---|
 | **F1** | Four authenticated Playwright specs were green by never entering the API-backed required loop. | **DONE — #29 / CI #178.** |
 | **F2** | Tenant-domain resolution cache was not invalidated on domain mutation. | **DONE — #29 / CI #178.** |
-| **F3** | Gradebook N+1 around quiz lookup and attempts. | **OPEN.** |
-| **F4** | Learner dashboard N+1 around quiz lookup and attempts remaining. | **OPEN.** |
+| **F3** | Gradebook N+1 around quiz lookup and attempts. | **DONE 2026-09-19.** `build_for_enrolment` batches quiz/assignment lookups and their latest-attempt/submission lookups into four queries total regardless of block count (was `1 + 2N`). Query-count regression test compares a 2-block vs 12-block course. |
+| **F4** | Learner dashboard N+1 around quiz lookup and attempts remaining. | **DONE 2026-09-19.** `get_dashboard` batches quiz lookups and a grouped attempts-used count across all upcoming quiz blocks into two queries total regardless of block count (was `2N`). Query-count regression test compares a 1-block vs 6-block available lesson. |
 | **F5** | Campaign send loops contacts and enqueues inside the request transaction. | **OPEN.** |
 | **F6** | Admin lists/exports lack consistent pagination/ceilings. | **OPEN.** |
 | **F7** | `infra/docker-compose.prod.yml` is stale relative to the single-VM production topology. | **OPEN.** |
@@ -81,7 +81,7 @@ Do this after the production gate, and profile before optimising.
 
 | Area | Items | Status |
 |---|---|---|
-| Data access/performance | F3, F4, F5, F6; slow-query capture + `EXPLAIN (ANALYZE, BUFFERS)` before indexes. | **OPEN.** |
+| Data access/performance | F3, F4 done 2026-09-19. F5, F6 remain; slow-query capture + `EXPLAIN (ANALYZE, BUFFERS)` before indexes. | **OPEN.** |
 | Storefront delivery | F18 caching/revalidation and `loading.tsx` coverage. | **OPEN.** |
 | Frontend contract safety | Incremental typed facade over `packages/api-client`, highest-risk pages first. | **OPEN.** |
 | Shared components / decomposition | O8/O14; split large mixed-responsibility pages/services after characterisation tests. | **OPEN.** |
