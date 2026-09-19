@@ -25,6 +25,25 @@ class Licence(Base, TimestampMixin):
     """
 
     __tablename__ = "licences"
+    __table_args__ = (
+        # At most one active licence per licensee per course / path. Partial
+        # unique indexes (migration 0055) — declared here so `alembic check`
+        # sees them as intended rather than as drift.
+        Index(
+            "uq_licences_org_course_active",
+            "organisation_id",
+            "course_id",
+            unique=True,
+            postgresql_where=text("status = 'active' AND course_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_licences_org_path_active",
+            "organisation_id",
+            "learning_path_id",
+            unique=True,
+            postgresql_where=text("status = 'active' AND learning_path_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
