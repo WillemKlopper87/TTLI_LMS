@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    String,
     Text,
     UniqueConstraint,
     text,
@@ -113,7 +114,9 @@ class LearningPathStep(Base, TimestampMixin):
     assessment_template_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True
     )
-    evaluation_role: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'pre' or 'post'
+    evaluation_role: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )  # 'pre' or 'post'
     completion_rules: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'")
     )
