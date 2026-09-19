@@ -25,6 +25,7 @@ from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, Stor
 from src.core.errors import AppError, Forbidden, NotFound, ServiceUnavailable
 from src.core.ids import uuid7
 from src.core.object_keys import build_object_key
+from src.core.uploads import read_upload_within_limit
 from src.models.assessment import (
     Assignment,
     AssignmentSubmission,
@@ -955,7 +956,8 @@ async def submit_assignment(
         user_id=principal.user_id,
         assignment_id=assignment_uuid,
     )
-    data = await file.read()
+    # M3: bounded read, not a bare file.read() — see core/uploads.py.
+    data = await read_upload_within_limit(file, max_bytes=settings.max_document_upload_bytes)
 
     # Same fail-closed rule as every other upload in this app
     # (REQ-BYPASS-08) — scanned before storage ever sees the bytes.

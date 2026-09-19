@@ -129,6 +129,17 @@ class PayfastProvider:
     ) -> CheckoutRedirect:
         if not self._merchant_id or not self._merchant_key:
             raise PaymentProviderUnavailable("Card checkout is not configured for this deployment.")
+        if not self._passphrase:
+            # M8: verify_signature/_signature_string silently drop the
+            # passphrase from the signed string when it's empty, so an
+            # account configured without one reduces the ITN signature
+            # to a plain, keyless MD5 over attacker-controlled fields —
+            # a merchant configured without a passphrase is
+            # misconfigured, not enabled, the same treatment a missing
+            # merchant_id/merchant_key already gets above.
+            raise PaymentProviderUnavailable(
+                "Card checkout requires a Payfast passphrase to be configured."
+            )
 
         fields: dict[str, str] = {}
         for key in _CHECKOUT_FIELD_ORDER:

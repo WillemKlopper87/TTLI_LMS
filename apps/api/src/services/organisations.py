@@ -126,18 +126,36 @@ async def list_members(
 
 
 async def _pool_entitlements(
-    session: AsyncSession, *, organisation_id: uuid.UUID, course_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    organisation_id: uuid.UUID,
+    course_id: uuid.UUID,
+    lock: bool = False,
 ) -> list[Entitlement]:
     """Every pool entitlement (user_id NULL) this org has bought for this
     course, across every order that ever purchased seats for it — each
     one traceable back to the order that funded it (02 §4.7:
-    source_order_id is "never null in production data")."""
+    source_order_id is "never null in production data").
+
+    `lock=True` (M7) is `assign_seat`'s actual guard against two
+    concurrent assignments over-granting the same pool — the same
+    `with_for_update()` idiom `orders.py::_fulfil_order` and
+    `refunds.py::process_refund` already use for their own identically-
+    shaped check-then-act race, applied here to the rows the check
+    reads capacity from. A second caller's own `lock=True` read blocks
+    until the first commits, and — under READ COMMITTED — then sees
+    that commit's new assigned-seat row when it re-runs its own assigned
+    count, so the recheck is what actually closes the race, not this
+    lock by itself. Never used by `_seat_totals`'s read-only display
+    path, which must not block behind an in-flight assignment."""
     stmt = select(Entitlement).where(
         Entitlement.organisation_id == organisation_id,
         Entitlement.target_id == course_id,
         Entitlement.kind == "course",
         Entitlement.user_id.is_(None),
     )
+    if lock:
+        stmt = stmt.with_for_update()
     return list((await session.execute(stmt)).scalars().all())
 
 
@@ -182,7 +200,9 @@ async def assign_seat(
     services/guest_access.py::grant uses), a real entitlement, and a
     real enrolment, exactly as an individual purchase would, just
     without a second order."""
-    pool = await _pool_entitlements(session, organisation_id=organisation_id, course_id=course_id)
+    pool = await _pool_entitlements(
+        session, organisation_id=organisation_id, course_id=course_id, lock=True
+    )
     purchased = sum((e.quantity or 0) for e in pool)
     assigned_stmt = select(Entitlement.id).where(
         Entitlement.organisation_id == organisation_id,

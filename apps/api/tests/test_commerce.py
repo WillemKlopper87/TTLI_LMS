@@ -680,3 +680,40 @@ async def test_infected_payment_proof_is_refused_and_order_does_not_advance(
         f"/api/v1/orders/{order['id']}", headers={"Authorization": f"Bearer {buyer_token}"}
     )
     assert order_after.json()["status"] == "eft_pending_proof"
+
+
+async def test_payment_proof_refuses_a_file_over_the_configured_limit(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """M3: `checkout_po`/payment-proof/assignment-submission all read the
+    whole request body into memory via a bare `await file.read()`
+    before any size check ever ran — any caller with an order (this
+    route needs no special permission beyond owning it) could POST an
+    arbitrarily large body. A small configured limit, exceeded by a
+    genuinely oversized upload sent over the real ASGI transport (not a
+    mocked size check), proves the actual streaming guard is wired in,
+    not just that the setting exists."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    buyer_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+
+    order = await _create_order(client, buyer_token, price_id)
+    order_id = order["id"]
+    checkout = await client.post(
+        f"/api/v1/orders/{order_id}/checkout/eft",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert checkout.status_code == 200
+
+    settings.max_document_upload_bytes = 1024
+    try:
+        oversized = await client.post(
+            f"/api/v1/orders/{order_id}/payment-proof",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            files={"file": ("proof.pdf", b"%PDF-" + b"0" * 2048, "application/pdf")},
+        )
+    finally:
+        settings.max_document_upload_bytes = 10_000_000
+    assert oversized.status_code == 413, oversized.text

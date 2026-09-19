@@ -138,15 +138,23 @@ async def _issue_session(
     tenant: TenantDep,
     user: User,
     settings: SettingsDep,
+    redis: RedisDep,
     device_fingerprint: str | None,
 ) -> TokenResponse:
     permissions = await identity.permissions_for(session, user.id)
+    # M6: stamps the permission generation this set of permissions was
+    # read at, so a role revoked after this token is minted (`services/
+    # tenant_users.py::revoke_role`) is caught by `core/deps.get_
+    # principal` immediately rather than only at this token's own expiry.
+    perm_generation = await tokens.permission_generation(redis, user_id=user.id)
     access_token = issue_access_token(
         secret=settings.secret_key,
         user_id=user.id,
         tenant_id=tenant.id,
         permissions=permissions,
         minutes=settings.access_token_minutes,
+        perm_generation=perm_generation,
+        guest_expires_at=user.guest_expires_at if user.is_guest else None,
     )
     issued = await tokens.issue_family(
         session,
@@ -223,6 +231,7 @@ async def login(
         tenant=tenant,
         user=user,
         settings=settings,
+        redis=redis,
         device_fingerprint=request.headers.get("x-device-fingerprint"),
     )
 
@@ -276,6 +285,7 @@ async def consume_magic_link(
     session: AuditedSessionDep,
     settings: SettingsDep,
     tenant: TenantDep,
+    redis: RedisDep,
 ) -> TokenResponse | JSONResponse:
     user = await identity.consume_magic_link(session, raw_token=body.token)
     if user is None:
@@ -299,6 +309,7 @@ async def consume_magic_link(
         tenant=tenant,
         user=user,
         settings=settings,
+        redis=redis,
         device_fingerprint=request.headers.get("x-device-fingerprint"),
     )
 
@@ -384,6 +395,7 @@ async def mfa_verify(
         tenant=tenant,
         user=user,
         settings=settings,
+        redis=redis,
         device_fingerprint=request.headers.get("x-device-fingerprint"),
     )
 
@@ -395,6 +407,7 @@ async def refresh(
     session: AuditedSessionDep,
     settings: SettingsDep,
     tenant: TenantDep,
+    redis: RedisDep,
 ) -> TokenResponse:
     try:
         user_id, issued = await tokens.rotate(
@@ -453,12 +466,17 @@ async def refresh(
         user_agent=request.headers.get("user-agent"),
     )
     permissions = await identity.permissions_for(session, user_id)
+    perm_generation = await tokens.permission_generation(redis, user_id=user_id)
     access_token = issue_access_token(
         secret=settings.secret_key,
         user_id=user_id,
         tenant_id=tenant.id,
         permissions=permissions,
         minutes=settings.access_token_minutes,
+        perm_generation=perm_generation,
+        # L9: `user` above was just re-loaded fresh for this refresh, so
+        # this reflects the current guest_expires_at, not a stale one.
+        guest_expires_at=user.guest_expires_at if user.is_guest else None,
     )
     return TokenResponse(
         access_token=access_token,

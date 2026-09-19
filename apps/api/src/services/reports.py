@@ -33,7 +33,7 @@ from src.core.deps import Principal
 from src.core.errors import NotFound
 from src.models.assessment import QuizAttempt
 from src.models.commerce import Entitlement
-from src.models.course import Course, Lesson, Module
+from src.models.course import Course, CourseTenantAssignment, Lesson, Module
 from src.models.learning import Enrolment, LessonCompletion
 from src.models.tenant import Tenant
 from src.models.user import User
@@ -192,6 +192,23 @@ async def get_progress_report(
 ) -> ProgressReport:
     course = await session.get(Course, course_id)
     if course is None:
+        raise NotFound("No such course.")
+    # L11: `courses` is global (`catalogue._assert_course_sellable`'s own
+    # docstring), so fetching by id alone leaked any course's *title* to
+    # an org manager/admin regardless of whether their tenant was ever
+    # granted it — the same boundary the purchase path already draws via
+    # `course_tenant_assignments`. 404, not a distinct error: an
+    # unassigned course should look exactly like a nonexistent one to a
+    # tenant that has no claim on it either way.
+    assigned = (
+        await session.execute(
+            select(CourseTenantAssignment.id).where(
+                CourseTenantAssignment.tenant_id == tenant_id,
+                CourseTenantAssignment.course_id == course_id,
+            )
+        )
+    ).first()
+    if assigned is None:
         raise NotFound("No such course.")
 
     # Every seat this organisation has assigned (not revoked) for this

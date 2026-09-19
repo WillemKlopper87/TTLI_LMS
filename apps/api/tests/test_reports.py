@@ -16,11 +16,14 @@ import pytest
 import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from src.core.db import dispose_engine, init_engine
+from src.core.deps import Principal
+from src.core.errors import NotFound
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
 from src.models.rbac import RoleAssignment
 from src.services import identity
+from src.services import reports as reports_service
 
 pytestmark = pytest.mark.integration
 
@@ -688,3 +691,65 @@ async def test_at_risk_counts_a_seat_assigned_a_fortnight_ago_and_never_opened(
     assert body["average_progress"] == 0
     assert body["learners"][0]["status"] == "not_started"
     assert body["learners"][0]["last_active_at"] is None
+
+
+async def _author_unassigned_course(client, token: str) -> str:  # type: ignore[no-untyped-def]
+    """A real, published `courses` row with no `course_tenant_assignments`
+    row at all — `courses` is global, so this course exists and has a
+    real title, but no tenant (including the one that authored it) has
+    been granted it. Mirrors test_catalogue.py's identical
+    `_author_course(..., assign=False)` for the same reason: proving a
+    cross-tenant guard needs a course that is real but unassigned, not a
+    course_id that simply doesn't exist."""
+    auth = {"Authorization": f"Bearer {token}"}
+    course = await client.post(
+        "/api/v1/courses",
+        json={"title": f"Unassigned Report Test Course {uuid.uuid4().hex[:8]}"},
+        headers=auth,
+    )
+    assert course.status_code == 201, course.text
+    course_id = course.json()["id"]
+    module = await client.post(
+        f"/api/v1/courses/{course_id}/modules", json={"title": "Module 1"}, headers=auth
+    )
+    assert module.status_code == 201, module.text
+    lesson = await client.post(
+        f"/api/v1/modules/{module.json()['id']}/lessons",
+        json={"title": "Lesson 1"},
+        headers=auth,
+    )
+    assert lesson.status_code == 201, lesson.text
+    published = await client.post(f"/api/v1/courses/{course_id}/publish", headers=auth)
+    assert published.status_code == 200, published.text
+    return str(course_id)
+
+
+async def test_progress_report_refuses_a_course_not_assigned_to_this_tenant(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """L11: `get_progress_report` fetched the course by id alone
+    (`session.get(Course, course_id)`, no tenant-assignment check) before
+    doing anything else — so any org manager/admin could learn the
+    *title* of any course in the whole global `courses` table, including
+    one never assigned to their tenant, just by naming its uuid.
+    `catalogue._assert_course_sellable` already draws exactly this
+    boundary for the purchase path (test_catalogue.py's
+    `test_cannot_sell_a_course_not_assigned_to_this_tenant`); the report
+    path must draw the same one."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    admin_token, _ = await _login(client, tenant_session_factory, crypto, tenant_id=tenant_id, role="admin")
+    unassigned_course_id = await _author_unassigned_course(client, admin_token)
+    org_id = await _create_organisation(client, admin_token, f"Report Leak Test {uuid.uuid4().hex[:8]}")
+
+    async with tenant_session_factory(tenant_id) as s:
+        with pytest.raises(NotFound):
+            await reports_service.get_progress_report(
+                s,
+                crypto,
+                tenant_id=tenant_id,
+                principal=Principal(
+                    user_id=uuid.uuid4(), tenant_id=tenant_id, permissions=frozenset()
+                ),
+                organisation_id=uuid.UUID(org_id),
+                course_id=uuid.UUID(unassigned_course_id),
+            )

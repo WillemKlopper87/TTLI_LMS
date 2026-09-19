@@ -190,7 +190,13 @@ async def create_magic_link(
     """
     user = await find_by_email(session, crypto, email)
     if user is None or user.status != "active" or user.deleted_at is not None:
-        await verify_password_async("timing-equalisation-only", _DUMMY_HASH)
+        # M5: no dummy Argon2 call here. The real-account branch below
+        # never runs one either (a token insert is cheap), so a dummy
+        # verify in only this branch made a non-existent account answer
+        # slower than a real one — the opposite of timing equalisation,
+        # and a clean existence oracle for the one endpoint whose point
+        # is not disclosing that. Matching the real branch's actual cost
+        # (none) is what equalises timing; adding cost here does not.
         return None
 
     raw = new_token()
@@ -236,7 +242,7 @@ async def create_password_reset(
     must not let the two cases differ in response or timing."""
     user = await find_by_email(session, crypto, email)
     if user is None or user.status != "active" or user.deleted_at is not None:
-        await verify_password_async("timing-equalisation-only", _DUMMY_HASH)
+        # M5: see create_magic_link's identical comment above.
         return None
 
     raw = new_token()

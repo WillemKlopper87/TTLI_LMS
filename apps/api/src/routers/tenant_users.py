@@ -222,6 +222,7 @@ async def revoke_role(
     role_code: str,
     principal: PrincipalDep,
     session: AuditedSessionDep,
+    redis: RedisDep,
 ) -> None:
     principal.require(MANAGE_ROLES)
     _guard_not_self(principal, user_id)
@@ -230,7 +231,7 @@ async def revoke_role(
     if user is None:
         raise NotFound("No such user.")
     if await people.revoke_role(
-        session, tenant_id=principal.tenant_id, user=user, role_code=role_code
+        session, tenant_id=principal.tenant_id, user=user, role_code=role_code, redis=redis
     ):
         await _record_role(session, principal, user.id, role_code, granted=False)
 

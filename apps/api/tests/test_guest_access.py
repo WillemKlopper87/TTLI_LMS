@@ -5,6 +5,7 @@ test_rls.py go around the ORM.
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -237,3 +238,61 @@ async def test_expired_guest_cannot_refresh(
 
     resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert resp.status_code == 401
+
+
+async def test_expired_guest_cannot_use_an_already_issued_access_token(
+    client, tenant_session_factory, crypto, settings
+) -> None:  # type: ignore[no-untyped-def]
+    """L9: expiry was only ever checked at the two points a guest crosses
+    a boundary (consuming a magic link, rotating a refresh token) — an
+    access token minted just before `guest_expires_at` kept working for
+    up to its own full lifetime (`access_token_minutes`) after the guest
+    window closed, with no check in `core/deps.get_principal` at all.
+
+    The fix stamps the access token with the guest's `guest_expires_at`
+    at issue time and has `get_principal` compare it to wall-clock
+    `now()` — the same shape a JWT's own `exp` claim already uses, and
+    deliberately not a live re-read of the database (unlike `/auth/
+    refresh`'s check, which piggybacks on a DB round-trip refresh needs
+    anyway): `get_principal` runs on every authenticated request in the
+    app, and adding a database read to it is a materially bigger,
+    riskier change than this finding's severity justifies. That
+    difference is exactly why this test uses a real, short sleep to let
+    wall-clock time pass the value already baked into the token — a
+    raw-SQL edit afterwards (`test_expired_guest_cannot_refresh`'s own
+    trick) wouldn't reach a claim that was already minted."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, is_guest=True, guest_days=1
+        )
+        # Near-future, not already past: consume_magic_link itself refuses
+        # a guest whose window has already closed, so this has to still be
+        # open at consume time and close shortly after.
+        await s.execute(
+            sa.text("UPDATE users SET guest_expires_at = :soon WHERE email_blind_index = :idx"),
+            {"soon": datetime.now(UTC) + timedelta(seconds=2), "idx": crypto.blind_index(email)},
+        )
+        raw = await identity.create_magic_link(
+            s, crypto, tenant_id=tenant_id, email=email, minutes=settings.magic_link_minutes
+        )
+        assert raw is not None
+
+    consumed = await client.post("/api/v1/auth/magic-link/consume", json={"token": raw})
+    assert consumed.status_code == 200
+    access_token = consumed.json()["access_token"]
+
+    # The access token's signature is still valid and it has not expired
+    # on its own schedule — only the guest window closing makes it dead.
+    before = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert before.status_code == 200
+
+    await asyncio.sleep(2.5)
+
+    after = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert after.status_code == 401

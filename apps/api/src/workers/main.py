@@ -21,9 +21,15 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from sqlalchemy import select, text
 
-from src.core.config import get_settings
-from src.core.db import dispose_engine, get_sessionmaker, init_engine, set_tenant
-from src.core.logging import configure_logging, get_logger
+from src.core.config import check_production_safety, get_settings
+from src.core.db import (
+    assert_app_role_cannot_bypass_rls,
+    dispose_engine,
+    get_sessionmaker,
+    init_engine,
+    set_tenant,
+)
+from src.core.logging import configure_logging, get_logger, init_sentry
 from src.core.metrics import start_metrics_server, stop_metrics_server
 from src.core.observability import WORKER_METRICS_PORT, sample_operational_metrics
 from src.models.audit import AuditAction
@@ -295,7 +301,29 @@ async def transcode_video_job(ctx: dict[str, Any], *, video_asset_id: str) -> No
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(level=settings.log_level, pretty=settings.environment == "local")
-    init_engine(settings)
+
+    # M1: this worker opens the same database and does the same field-
+    # encryption/PII work the API does, but until now only `main.py`'s
+    # lifespan refused to boot on an unsafe production config (DEBUG on,
+    # a TLS-less/localhost DATABASE_URL, break-glass enabled, missing
+    # Sentry, ...). On any deployment path other than
+    # `docker-compose.prod.yml`'s `${VAR:?}` guards this process could
+    # come up unsafe and silently — checked first, before anything below
+    # touches the database, mirroring main.py's own ordering.
+    problems = check_production_safety(settings)
+    if problems:
+        for problem in problems:
+            log.error("production_safety_violation", problem=problem)
+        raise RuntimeError(
+            f"Refusing to start worker in production with {len(problems)} unsafe settings: "
+            + "; ".join(problems)
+        )
+
+    init_sentry(settings)
+    engine = init_engine(settings)
+    # L2, same as main.py's lifespan: refuse to run maintenance jobs and
+    # field-encryption/PII work over a DB role RLS doesn't actually bind.
+    await assert_app_role_cannot_bypass_rls(engine)
     start_metrics_server(WORKER_METRICS_PORT)
     ctx["metrics_sampler"] = asyncio.create_task(
         sample_operational_metrics(), name="operational-metrics"

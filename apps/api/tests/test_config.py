@@ -21,6 +21,13 @@ def _settings(**overrides: object) -> Settings:
         "break_glass_admin_enabled": False,
         "storage_backend": "s3",
         "s3_access_key": "AKIAREAL",
+        # Pinned rather than left to fall back to whatever the developer's
+        # own local .env happens to hold — Settings reads that file for any
+        # field a test doesn't override, so a fixture meant to represent
+        # "a correct production config" must not accidentally inherit real
+        # local-dev values for the fields check_production_safety examines.
+        "s3_secret_key": "REALSECRETNOTDEV",
+        "s3_endpoint_url": "https://s3.af-south-1.amazonaws.com",
         "sentry_dsn": "https://key@sentry.io/1",
         "app_db_password": "K9mP2xQ7vN4wZ8bR",
         "redis_url": "redis://u:p@redis.internal:6379/0",
@@ -67,6 +74,116 @@ def test_localhost_database_in_production_is_refused() -> None:
 def test_development_storage_credentials_are_refused() -> None:
     problems = check_production_safety(_settings(s3_access_key="ttli_dev"))
     assert any("development credential" in p for p in problems)
+
+
+def test_the_current_dev_garage_key_is_refused() -> None:
+    """L3: the denylist still checked the pre-migration MinIO-era values
+    (`ttli_dev`/`minioadmin`) — after the MinIO→Garage migration
+    (infra/docker-compose.yml), the actual dev key published in
+    `.env.example` is this one, and it passed the check untouched."""
+    problems = check_production_safety(_settings(s3_access_key="GKb9c32ff7b3db35e902fd29f7"))
+    assert any("development credential" in p for p in problems)
+
+
+def test_the_current_dev_garage_secret_is_refused() -> None:
+    """L3: s3_secret_key was never checked at all — only the access key
+    half of the same published dev credential pair."""
+    problems = check_production_safety(
+        _settings(
+            s3_secret_key="43e555c82c4dd74d5d783f61510d2badd718f9937d9e4c326c25628527d5280c"
+        )
+    )
+    assert any("development credential" in p for p in problems)
+
+
+def test_a_localhost_s3_endpoint_is_refused_for_a_non_local_backend() -> None:
+    """L3: a deployment that inherited the repo's published dev Garage
+    endpoint (or any localhost S3 endpoint) alongside a real storage
+    backend selection passed the gate untouched."""
+    problems = check_production_safety(
+        _settings(s3_endpoint_url="http://localhost:9140")
+    )
+    assert any("S3_ENDPOINT_URL" in p for p in problems)
+
+
+def test_a_weak_but_long_secret_key_is_refused() -> None:
+    """L4: SECRET_KEY was only length-checked — a known example/test
+    value that happens to be >=32 characters (this project's own test
+    fixture default, conftest.py) passed the gate and would let anyone
+    who has read this repo forge a valid JWT."""
+    problems = check_production_safety(
+        _settings(secret_key="test-secret-key-at-least-32-characters-long")
+    )
+    assert any("SECRET_KEY" in p for p in problems)
+
+
+def test_a_malformed_field_encryption_key_is_refused() -> None:
+    """L4: field_encryption_key/blind_index_key were only checked for
+    presence, never validated as decodable base64 of the length
+    CryptoBox actually requires (32 bytes exactly) — a malformed value
+    passed boot cleanly and only broke, as a 500, on the first request
+    that touched PII."""
+    problems = check_production_safety(_settings(field_encryption_key="not-valid-base64!!"))
+    assert any("FIELD_ENCRYPTION_KEY" in p for p in problems)
+
+
+def test_a_short_field_encryption_key_is_refused() -> None:
+    short = base64.b64encode(b"A" * 16).decode()
+    problems = check_production_safety(_settings(field_encryption_key=short))
+    assert any("FIELD_ENCRYPTION_KEY" in p for p in problems)
+
+
+def test_a_malformed_blind_index_key_is_refused() -> None:
+    problems = check_production_safety(_settings(blind_index_key="not-valid-base64!!"))
+    assert any("BLIND_INDEX_KEY" in p for p in problems)
+
+
+def test_staging_gets_the_same_crypto_and_debug_checks_as_production() -> None:
+    """L5: check_production_safety returned [] for every non-production
+    environment, including staging — which, unlike local/dev, can hold
+    real customer data. Debug/weak-key/DB-TLS checks must still apply
+    there; the production-only checks (BREAK_GLASS, SENTRY_DSN, RLS-
+    adjacent dev-credential denylists) are not asserted here — only that
+    staging is no longer a complete pass-through."""
+    problems = check_production_safety(_settings(environment="staging", debug=True))
+    assert any("DEBUG is enabled" in p for p in problems)
+
+    problems = check_production_safety(
+        _settings(environment="staging", secret_key="test-secret-key-at-least-32-characters-long")
+    )
+    assert any("SECRET_KEY" in p for p in problems)
+
+    problems = check_production_safety(
+        _settings(
+            environment="staging",
+            database_url="postgresql+asyncpg://u:p@localhost:5432/ttli",
+        )
+    )
+    assert any("localhost" in p for p in problems)
+
+
+def test_staging_with_a_correct_config_still_passes() -> None:
+    assert check_production_safety(_settings(environment="staging")) == []
+
+
+def test_local_and_dev_remain_fully_unchecked() -> None:
+    """L5 narrows the gap for staging specifically — local/dev (where a
+    real secret is never expected) must stay exempt."""
+    s = _settings(environment="local", debug=True, secret_key="short", field_encryption_key="!!")
+    assert check_production_safety(s) == []
+
+
+def test_the_break_glass_admin_default_email_can_actually_log_in() -> None:
+    """L12: `.local` is an IANA special-use domain (mDNS, RFC 6762) that
+    `EmailStr` (`schemas/auth.py::LoginRequest`) refuses outright —
+    `admin@ttli.local` could never authenticate through POST /auth/login
+    regardless of the password, making the break-glass account unusable
+    through the normal endpoint it exists to unlock access via."""
+    from pydantic import TypeAdapter
+    from src.schemas.auth import LoginRequest
+
+    email = Settings.model_fields["break_glass_admin_email"].default
+    TypeAdapter(LoginRequest).validate_python({"email": email, "password": "x"})
 
 
 def test_every_problem_is_reported_at_once() -> None:

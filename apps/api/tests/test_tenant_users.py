@@ -292,6 +292,70 @@ async def test_suspending_a_user_kills_their_sessions_immediately(  # type: igno
     assert relogin.status_code == 401
 
 
+async def test_revoking_a_role_kills_the_users_current_access_token_immediately(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """M6: revoking a role only ever edited `role_assignments` —
+    permissions are baked into the access token's `perms` claim at issue
+    time (`core/deps.get_principal` reads the claim, never the
+    database), so a user whose `finance` role was just pulled kept every
+    permission it granted for up to `access_token_minutes` regardless.
+    The fix (a permission-generation counter, not suspension's cutoff-
+    timestamp denylist — see revoke_role's own docstring for why) must
+    kill the token that existed before the revoke immediately, while
+    still letting an immediately-following refresh succeed and reflect
+    the change — the latter half already pinned by
+    test_role_revocation_is_reflected_on_the_next_refresh; this test
+    adds the former, which that one doesn't cover."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    admin_headers = {"Authorization": f"Bearer {boss}"}
+
+    email = _unique_email()
+    async with tenant_session_factory(tenant_id) as s:
+        target = await identity.create_user(
+            s, crypto, tenant_id=tenant_id, email=email, password=PASSWORD
+        )
+        target_id = target.id
+        s.add(RoleAssignment(tenant_id=tenant_id, user_id=target_id, role_code="finance"))
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    access_token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
+    learner_headers = {"Authorization": f"Bearer {access_token}"}
+
+    before = await client.get("/api/v1/auth/me", headers=learner_headers)
+    assert before.status_code == 200
+    assert "payment:approve" in before.json()["permissions"]
+
+    revoke = await client.delete(
+        f"/api/v1/tenant/users/{target_id}/roles/finance", headers=admin_headers
+    )
+    assert revoke.status_code == 204, revoke.text
+
+    # The access token's signature is still valid and it has not expired
+    # — only the role revocation makes it dead now, exactly the property
+    # test_suspending_a_user_kills_their_sessions_immediately pins for
+    # suspension.
+    dead_access = await client.get("/api/v1/auth/me", headers=learner_headers)
+    assert dead_access.status_code == 401
+
+    # Unlike suspension: the refresh token is still good, and the token
+    # it mints reflects the role change — proving this is a forced
+    # re-mint, not a forced logout.
+    refreshed = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert refreshed.status_code == 200, refreshed.text
+    new_access_token = refreshed.json()["access_token"]
+    after = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {new_access_token}"}
+    )
+    assert after.status_code == 200
+    assert "payment:approve" not in after.json()["permissions"]
+
+
 async def test_a_suspension_landing_in_the_same_second_as_login_still_revokes(
     settings,
 ) -> None:  # type: ignore[no-untyped-def]
@@ -326,6 +390,34 @@ async def test_a_suspension_landing_in_the_same_second_as_login_still_revokes(
         await tokens.clear_access_token_revocation(redis, user_id=user_id)
         assert await tokens.access_tokens_revoked_at(redis, user_id=user_id) is None
         assert tokens.is_access_token_revoked(revoked_at, None) is False
+    finally:
+        await dispose_redis()
+
+
+async def test_permission_generation_starts_at_zero_and_bumps_are_exact(
+    settings,
+) -> None:  # type: ignore[no-untyped-def]
+    """M6's primitive: unlike the suspension cutoff, this is an exact
+    counter comparison, not a whole-second timestamp one — a token
+    stamped with generation N is caught by a bump to N+1 regardless of
+    how much (or little) wall-clock time separates minting the token
+    from the bump, which is exactly the property revoke_role needs and
+    the suspension mechanism cannot offer (see its own docstring)."""
+    if not _redis_reachable(settings.redis_url):
+        pytest.skip("no Redis on the configured REDIS_URL")
+    redis = init_redis(settings)
+    try:
+        user_id = uuid.uuid4()
+        # A user nothing has ever bumped reads as generation 0 — an old
+        # token minted before this feature existed, with no `pgen` claim
+        # at all, must keep working rather than being refused outright.
+        assert await tokens.permission_generation(redis, user_id=user_id) == 0
+
+        await tokens.bump_permission_generation(redis, user_id=user_id)
+        assert await tokens.permission_generation(redis, user_id=user_id) == 1
+
+        await tokens.bump_permission_generation(redis, user_id=user_id)
+        assert await tokens.permission_generation(redis, user_id=user_id) == 2
     finally:
         await dispose_redis()
 

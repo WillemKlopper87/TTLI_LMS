@@ -27,14 +27,17 @@ from __future__ import annotations
 
 import json
 import uuid
+from urllib.parse import urlsplit
 
 from pywebpush import WebPushException, webpush
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings
+from src.core.errors import AppError
 from src.core.ids import uuid7
 from src.core.logging import get_logger
+from src.core.net import assert_public_hostname
 from src.core.queue import get_queue
 from src.models.push import PushSubscription
 
@@ -110,7 +113,21 @@ async def subscribe(
     and payloads are encrypted to the subscriber's own p256dh/auth keys,
     so a caller who somehow held A's endpoint could at most *stop* A's
     notifications on that device, never read them. RLS keeps the lookup
-    inside the caller's tenant."""
+    inside the caller's tenant.
+
+    `schemas/push.py::_validate_push_endpoint` already refused an IP
+    literal or a known-reserved suffix, but that is a syntactic check
+    only — a public-looking hostname an attacker controls can still
+    resolve to a private/link-local address (DNS rebinding), and the
+    worker later POSTs to whatever this accepts (`send_push_sync`).
+    Resolve and re-check here, at the one place every subscribe request
+    passes through regardless of caller."""
+    host = (urlsplit(endpoint).hostname or "").rstrip(".")
+    try:
+        await assert_public_hostname(host, 443)
+    except ValueError as exc:
+        raise AppError(str(exc)) from exc
+
     existing = (
         await session.execute(select(PushSubscription).where(PushSubscription.endpoint == endpoint))
     ).scalar_one_or_none()

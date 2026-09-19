@@ -288,6 +288,66 @@ async def test_seat_assignment_refused_once_pool_is_exhausted(
     assert "seats" in (results[1]["reason"] or "").lower()
 
 
+async def test_concurrent_seat_assignments_against_a_one_seat_pool_grant_exactly_one(
+    client, tenant_session_factory, crypto
+) -> None:  # type: ignore[no-untyped-def]
+    """M7: `assign_seat` counts assigned-vs-purchased and only then
+    grants — with no row lock, unlike `_fulfil_order`/`process_refund`'s
+    identical-shaped race (see their own `with_for_update()` comments,
+    and test_commerce.py's `test_concurrent_eft_approvals_fulfil_
+    exactly_once` for the same test shape applied to that race). Two
+    separate `POST /seats/invite` requests — not two emails in one
+    request, which share a transaction and can't race with themselves —
+    for two different employees, both racing a genuine one-seat pool.
+    Exactly one may succeed."""
+    import asyncio
+
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    price_id = await _demo_price_id(tenant_session_factory, tenant_id)
+    course_id = await _demo_course_id(tenant_session_factory)
+    admin_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role=None
+    )
+    finance_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="finance"
+    )
+    org_id = await _create_organisation(client, admin_token, "Race Condition Ltd")
+    await _buy_seats_via_po(
+        client, admin_token, finance_token, organisation_id=org_id, price_id=price_id, quantity=1
+    )
+
+    first, second = await asyncio.gather(
+        client.post(
+            f"/api/v1/organisations/{org_id}/seats/invite",
+            json={"course_id": course_id, "emails": [_unique_email()]},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        ),
+        client.post(
+            f"/api/v1/organisations/{org_id}/seats/invite",
+            json={"course_id": course_id, "emails": [_unique_email()]},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        ),
+    )
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    oks = [first.json()["items"][0]["ok"], second.json()["items"][0]["ok"]]
+    assert sorted(oks) == [False, True], (
+        f"a one-seat pool granted {oks.count(True)} seats to two concurrent requests"
+    )
+
+    async with tenant_session_factory(tenant_id) as s:
+        assigned = (
+            await s.execute(
+                sa.text(
+                    "SELECT count(*) FROM entitlements WHERE organisation_id = :o "
+                    "AND target_id = :c AND user_id IS NOT NULL AND revoked_at IS NULL"
+                ),
+                {"o": org_id, "c": course_id},
+            )
+        ).scalar_one()
+    assert assigned == 1
+
+
 async def test_csv_import_assigns_seats(client, tenant_session_factory, crypto) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     price_id = await _demo_price_id(tenant_session_factory, tenant_id)
