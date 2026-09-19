@@ -35,7 +35,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base import Base, TimestampMixin, pk
 from src.models.course import ContentState
 
-# Matches migration 0047's `learning_path_step_kind` Postgres enum type
+# Matches migration 0049's `learning_path_step_kind` Postgres enum type
 # exactly — create_type=False because the migration already created it;
 # a model-side create_type=True would try to create it again and fail.
 STEP_KIND_VALUES = ("course", "workshop", "assessment", "one_on_one", "document")
@@ -65,7 +65,7 @@ class LearningPath(Base, TimestampMixin):
 
 
 class LearningPathStep(Base, TimestampMixin):
-    """Typed step in a learning path (0047). Replaces learning_path_courses
+    """Typed step in a learning path (0049). Replaces learning_path_courses
     with a `kind` enum: course, workshop, assessment, one_on_one, or document.
     Every existing learning_path_courses row is migrated as kind='course'.
     Existing learner path UI keeps working unchanged because course steps
@@ -75,7 +75,7 @@ class LearningPathStep(Base, TimestampMixin):
     __table_args__ = (
         # Deferrable: reorder_path_courses updates a whole permutation of
         # positions in one flush, which transiently collides row-by-row
-        # under a plain unique index. See migration 0047's own comment.
+        # under a plain unique index. See migration 0049's own comment.
         UniqueConstraint(
             "learning_path_id",
             "position",

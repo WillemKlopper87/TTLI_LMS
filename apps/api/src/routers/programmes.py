@@ -1,4 +1,4 @@
-"""Programmes (entry paths) — API endpoints (0047).
+"""Programmes (entry paths) — API endpoints (0049).
 
 POST /learning-paths/{id}/steps — create a typed step on a path
 POST /cohorts — create a cohort for an organisation

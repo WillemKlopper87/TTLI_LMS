@@ -1712,6 +1712,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/learning-paths/{learning_path_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a learning path's typed steps
+         * @description List a learning path's typed steps in position order.
+         *
+         *     Requires course:edit — the same permission required to add a step,
+         *     since this is the authoring view, not a learner-facing listing.
+         */
+        get: operations["list_steps_api_v1_learning_paths__learning_path_id__steps_get"];
+        put?: never;
+        /**
+         * Create a typed step on a learning path
+         * @description Create a typed step (course, workshop, assessment, one_on_one, document)
+         *     on a learning path.
+         *
+         *     Requires course:edit permission.
+         */
+        post: operations["create_step_api_v1_learning_paths__learning_path_id__steps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cohorts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List cohorts
+         * @description List cohorts for the authenticated tenant, optionally filtered by
+         *     organisation or learning path.
+         *
+         *     Requires cohort:run (sees every cohort in the tenant), or admin
+         *     membership of the specific organisation_id filtered for (sees only
+         *     that organisation's cohorts) — "org:admin" was never a real
+         *     permission code; the codebase's actual org-admin check is
+         *     OrganisationMember.relationship == "admin" on the org in question,
+         *     same pattern used for the assessment-platform instances list.
+         */
+        get: operations["list_cohorts_api_v1_cohorts_get"];
+        put?: never;
+        /**
+         * Create a cohort (programme run)
+         * @description Create a cohort (scheduled run of a learning path or course) for
+         *     an organisation with participants.
+         *
+         *     Pre-creates CohortStep rows for every path step and adds participants
+         *     as CohortMember rows.
+         *
+         *     Requires cohort:run permission.
+         */
+        post: operations["create_cohort_api_v1_cohorts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/facilitators": {
         parameters: {
             query?: never;
@@ -12959,6 +13027,149 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PathProgressResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_steps_api_v1_learning_paths__learning_path_id__steps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_step_api_v1_learning_paths__learning_path_id__steps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cohorts_api_v1_cohorts_get: {
+        parameters: {
+            query?: {
+                organisation_id?: string | null;
+                learning_path_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cohort_api_v1_cohorts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

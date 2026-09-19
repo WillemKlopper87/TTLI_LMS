@@ -1,4 +1,4 @@
-"""Programmes (entry paths) — service operations (0047).
+"""Programmes (entry paths) — service operations (0049).
 
 Core operations: creating typed steps on paths, creating cohorts for
 organisations with participants, and listing cohorts.

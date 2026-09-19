@@ -1,7 +1,7 @@
 """Programmes (entry paths) — typed steps and cohorts (first slice).
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0049
+Revises: 0048
 
 Part 1 of the programmes feature (docs/superpowers/specs/2026-09-11-programmes-design.md §7):
 one week for typed steps and the cohorts table.
@@ -40,8 +40,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision: str = "0047"
-down_revision: str | None = "0046"
+revision: str = "0049"
+down_revision: str | None = "0048"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -125,7 +125,9 @@ def upgrade() -> None:
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
-    op.create_index("ix_learning_path_steps_learning_path_id", "learning_path_steps", ["learning_path_id"])
+    op.create_index(
+        "ix_learning_path_steps_learning_path_id", "learning_path_steps", ["learning_path_id"]
+    )
     # A plain unique index checks each row as it's written, so the classic
     # position-swap update (two rows exchanging positions in one flush)
     # always collides on whichever row's UPDATE lands first — pre-existing

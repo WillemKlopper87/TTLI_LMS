@@ -1,4 +1,4 @@
-"""Programmes (entry paths) — runs, steps, and participants (0047).
+"""Programmes (entry paths) — runs, steps, and participants (0049).
 
 A programme is a scheduled instantiation of a learning path for an organisation
 with participants. Each cohort is a run that owns a set of cohort_steps (the
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base, TimestampMixin, pk
 
-# Matching migration 0047's Postgres enum types exactly — create_type=False
+# Matching migration 0049's Postgres enum types exactly — create_type=False
 # because the migration already created them.
 COHORT_STATUS_VALUES = ("planned", "active", "completed", "cancelled")
 CohortStatus = Enum(*COHORT_STATUS_VALUES, name="cohort_status", create_type=False)
@@ -96,9 +96,7 @@ class CohortStep(Base, TimestampMixin):
         nullable=False,
     )
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[str] = mapped_column(
-        CohortStepStatus, nullable=False, server_default="pending"
-    )
+    status: Mapped[str] = mapped_column(CohortStepStatus, nullable=False, server_default="pending")
     workshop_session_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("workshop_sessions.id", ondelete="SET NULL"),

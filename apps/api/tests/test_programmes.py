@@ -1,4 +1,4 @@
-"""Tests for programmes (entry paths) feature (0047).
+"""Tests for programmes (entry paths) feature (0049).
 
 Covers: migration correctness, RLS isolation, cohort creation with participants.
 """
@@ -194,9 +194,9 @@ async def test_cohort_creation_with_participants(tenant_session_factory):
             await session.execute(sa.select(CohortStep).where(CohortStep.cohort_id == cohort_id))
         ).scalars()
         steps_list = list(cohort_steps)
-        assert len(steps_list) == len(
-            step_ids
-        ), "Should have created cohort_steps for each path step"
+        assert len(steps_list) == len(step_ids), (
+            "Should have created cohort_steps for each path step"
+        )
 
         # Verify cohort_members were created
         members = (
