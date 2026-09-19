@@ -12,8 +12,8 @@ tokens and respondent metadata. Responses are anonymous or identified answers.
 All tables carry tenant_id for RLS isolation. Pre/post pairing reuses the
 `surveys` pattern (same CHECK and partial unique indexes).
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0048
+Revises: 0047
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision: str = "0047"
-down_revision: str | None = "0046"
+revision: str = "0048"
+down_revision: str | None = "0047"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -92,7 +92,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.UniqueConstraint("tenant_id", "slug", "version", name="uq_templates_tenant_slug_version"),
+        sa.UniqueConstraint(
+            "tenant_id", "slug", "version", name="uq_templates_tenant_slug_version"
+        ),
     )
     op.create_index("ix_assessment_templates_tenant_id", "assessment_templates", ["tenant_id"])
 
@@ -161,7 +163,9 @@ def upgrade() -> None:
         sa.Column("levels_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("opens_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("closes_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("question_snapshot", pg.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
+        sa.Column(
+            "question_snapshot", pg.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+        ),
         sa.Column("created_by", pg.UUID(as_uuid=True), nullable=True),
         sa.Column(
             "created_at",
@@ -194,7 +198,9 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_assessment_instances_tenant_id", "assessment_instances", ["tenant_id"])
-    op.create_index("ix_assessment_instances_organisation_id", "assessment_instances", ["organisation_id"])
+    op.create_index(
+        "ix_assessment_instances_organisation_id", "assessment_instances", ["organisation_id"]
+    )
     op.create_index("ix_assessment_instances_template_id", "assessment_instances", ["template_id"])
 
     # assessment_subjects: multi_rater, individual, external_instrument
@@ -309,7 +315,9 @@ def upgrade() -> None:
             "(user_id IS NULL) <> (respondent_reference IS NULL)",
             name="ck_assessment_responses_one_subject",
         ),
-        sa.UniqueConstraint("instance_id", "invitation_id", name="uq_responses_instance_invitation"),
+        sa.UniqueConstraint(
+            "instance_id", "invitation_id", name="uq_responses_instance_invitation"
+        ),
     )
     op.create_index("ix_assessment_responses_tenant_id", "assessment_responses", ["tenant_id"])
     op.create_index("ix_assessment_responses_instance_id", "assessment_responses", ["instance_id"])

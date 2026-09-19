@@ -72,7 +72,7 @@ async def _create_organisation(tenant_session_factory, tenant_id: uuid.UUID) -> 
 async def test_migration_creates_assessment_tables(
     tenant_session_factory,  # type: ignore
 ) -> None:
-    """Verify migration 0047 creates the assessment tables with RLS."""
+    """Verify migration 0048 creates the assessment tables with RLS."""
     demo_id = await _demo_tenant_id(tenant_session_factory)
     async with tenant_session_factory(demo_id) as s:
         # Verify tables exist
