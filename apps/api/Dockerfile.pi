@@ -1,0 +1,40 @@
+# Raspberry Pi 3B+ POC/UAT variant of ./Dockerfile. Two differences only:
+#
+# 1. No digest pin on the base image. The real Dockerfile pins
+#    python:3.12-slim by digest for supply-chain reasons (report M7) —
+#    right for a production build, irrelevant for a throwaway POC box,
+#    and a needless risk here: if that particular pinned digest was
+#    resolved from a single-platform manifest rather than the multi-arch
+#    list, a Pi's arm64 Docker would refuse to run it (or silently pull
+#    under slow QEMU emulation) with a confusing error. The mutable tag
+#    always resolves to the right platform.
+# 2. `scripts/` is copied into the image. The real Dockerfile doesn't —
+#    nothing in the production/single-VM path runs the seed scripts
+#    inside the API container — but deploy-pi.sh uses
+#    `docker compose exec api python scripts/seed_e2e_accounts.py` to
+#    seed UAT logins, which needs them present.
+#
+# Keep this in sync with ./Dockerfile's runtime stage by hand — it is not
+# generated. See scripts/deploy-pi.sh for how this fits together.
+FROM python:3.12-slim AS runtime
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 10001 app
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY src ./src
+COPY scripts ./scripts
+
+USER app
+
+EXPOSE 8010
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8010"]

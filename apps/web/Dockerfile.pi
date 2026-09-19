@@ -1,0 +1,38 @@
+# Raspberry Pi 3B+ POC/UAT variant of ./Dockerfile — same three-stage
+# standalone build, with the digest pin dropped (see apps/api/
+# Dockerfile.pi's comment for why: a production supply-chain control
+# that's a needless arm64-manifest risk on a throwaway POC box) and the
+# Trivy-remediation apt step dropped (it exists to satisfy a production
+# security scan this box is never subject to; keeping it just adds a
+# slow apt-get on Pi hardware for no benefit here).
+#
+# Build context is still the REPO ROOT (see the real Dockerfile's own
+# comment on why: apps/web depends on ../../packages/api-client).
+# Keep this in sync with ./Dockerfile by hand — it is not generated.
+FROM node:24-slim AS deps
+WORKDIR /repo
+COPY packages/api-client/package.json packages/api-client/package-lock.json ./packages/api-client/
+RUN cd packages/api-client && npm ci
+COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
+RUN cd apps/web && npm ci
+
+FROM node:24-slim AS build
+WORKDIR /repo
+COPY --from=deps /repo/packages/api-client/node_modules ./packages/api-client/node_modules
+COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
+COPY packages/api-client ./packages/api-client
+COPY apps/web ./apps/web
+ENV BUILD_STANDALONE=1
+RUN cd apps/web && npm run build
+
+FROM node:24-slim AS runtime
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+RUN useradd --create-home --uid 10001 app
+WORKDIR /app
+ENV NODE_ENV=production PORT=3010 HOSTNAME=0.0.0.0
+COPY --from=build /repo/apps/web/.next/standalone ./
+COPY --from=build /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /repo/apps/web/public ./apps/web/public
+USER app
+EXPOSE 3010
+CMD ["node", "apps/web/server.js"]
