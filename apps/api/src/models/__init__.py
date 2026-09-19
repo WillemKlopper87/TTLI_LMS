@@ -5,6 +5,12 @@ Every model must be imported here. Alembic's autogenerate compares against
 is how `alembic check` starts passing while the schema quietly drifts.
 """
 
+from src.models.analyst import (
+    AssessmentEngagement,
+    Report,
+    ReportAttachment,
+    ReportStatus,
+)
 from src.models.article import Article
 from src.models.assessment import (
     Assignment,
@@ -18,6 +24,15 @@ from src.models.assessment import (
     SurveyQuestion,
     SurveyResponse,
     SurveyResponseMode,
+)
+from src.models.assessment_template import (
+    AssessmentInstance,
+    AssessmentInvitation,
+    AssessmentResponse,
+    AssessmentSubject,
+    AssessmentSubjectResult,
+    AssessmentTemplate,
+    AssessmentTemplateQuestion,
 )
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
@@ -78,7 +93,7 @@ from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.learning_path import (
     LearningPath,
-    LearningPathCourse,
+    LearningPathStep,
     LearningPathTenantAssignment,
     PathEnrolment,
 )
@@ -118,6 +133,14 @@ __all__ = [
     "AccessLevel",
     "Activity",
     "Article",
+    "AssessmentEngagement",
+    "AssessmentInstance",
+    "AssessmentInvitation",
+    "AssessmentResponse",
+    "AssessmentSubject",
+    "AssessmentSubjectResult",
+    "AssessmentTemplate",
+    "AssessmentTemplateQuestion",
     "Assignment",
     "AssignmentSubmission",
     "AttendanceRecord",
@@ -158,7 +181,7 @@ __all__ = [
     "InvoiceNumberCounter",
     "Lead",
     "LearningPath",
-    "LearningPathCourse",
+    "LearningPathStep",
     "LearningPathTenantAssignment",
     "LedgerEntry",
     "Lesson",
@@ -193,6 +216,9 @@ __all__ = [
     "Recommendation",
     "RefreshToken",
     "Refund",
+    "Report",
+    "ReportAttachment",
+    "ReportStatus",
     "Role",
     "RoleAssignment",
     "RolePermission",

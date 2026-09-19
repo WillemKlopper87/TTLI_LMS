@@ -22,8 +22,9 @@ from src.core.db import dispose_engine, init_engine
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
+from src.models.audit import AuditAction
 from src.models.rbac import RoleAssignment
-from src.services import identity
+from src.services import audit, identity
 
 pytestmark = pytest.mark.integration
 
@@ -160,18 +161,35 @@ async def test_keyset_pagination_never_repeats_or_skips(  # type: ignore[no-unty
     """The reason this endpoint is keyset- rather than offset-paginated:
     walking a growing table by OFFSET repeats or drops rows the moment
     anything is written mid-walk. Two consecutive pages must be
-    disjoint and continuous."""
+    disjoint and continuous.
+
+    F19: this used to rely on "a dev database has far more than five
+    audit rows" — true only by accident of whatever a shared, never-
+    reset local Postgres container had accumulated from earlier runs.
+    Against a freshly reset test database (as every pytest process now
+    gets) that's false, and the test failed for a reason that had
+    nothing to do with pagination. Seed rows explicitly instead.
+    """
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin = await _login(
         client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
     )
     headers = {"Authorization": f"Bearer {admin}"}
 
+    async with tenant_session_factory(tenant_id) as session:
+        for _ in range(10):
+            await audit.record(
+                session,
+                tenant_id=tenant_id,
+                action=AuditAction.LOGIN_SUCCEEDED,
+                entity_type="pagination-seed",
+            )
+
     first = await client.get("/api/v1/audit-events?limit=5", headers=headers)
     assert first.status_code == 200
     body = first.json()
     assert len(body["items"]) == 5
-    assert body["next_cursor"], "a dev database has far more than five audit rows"
+    assert body["next_cursor"], "the seeded rows above should leave more than one page"
 
     second = await client.get(
         f"/api/v1/audit-events?limit=5&cursor={body['next_cursor']}", headers=headers

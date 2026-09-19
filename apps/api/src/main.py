@@ -33,9 +33,11 @@ from src.core.observability import API_METRICS_PORT, sample_operational_metrics
 from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.routers import (
+    analyst,
     analytics,
     articles,
     assessment,
+    assessment_platform,
     audit,
     auth,
     campaigns,
@@ -59,6 +61,7 @@ from src.routers import (
     platform,
     podcasts,
     privacy,
+    programmes,
     push,
     recommendations,
     sso,
@@ -177,12 +180,15 @@ def create_app() -> FastAPI:
     app.include_router(courses.router, prefix="/api/v1")
     app.include_router(course_wizard.router, prefix="/api/v1")
     app.include_router(learning_paths.router, prefix="/api/v1")
+    app.include_router(programmes.router, prefix="/api/v1")
     app.include_router(workshops.router, prefix="/api/v1")
     app.include_router(deals.router, prefix="/api/v1")
     app.include_router(campaigns.router, prefix="/api/v1")
     app.include_router(learning.router, prefix="/api/v1")
     app.include_router(media.router, prefix="/api/v1")
     app.include_router(assessment.router, prefix="/api/v1")
+    app.include_router(analyst.router, prefix="/api/v1")
+    app.include_router(assessment_platform.router, prefix="/api/v1")
     app.include_router(credentials.router, prefix="/api/v1")
     app.include_router(podcasts.router, prefix="/api/v1")
     app.include_router(articles.router, prefix="/api/v1")

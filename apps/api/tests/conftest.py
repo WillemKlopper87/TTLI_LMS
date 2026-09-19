@@ -151,7 +151,7 @@ _test_db_provisioned = False
 
 
 def _ensure_test_database(settings: Settings) -> None:
-    """Create + migrate the isolated test database, once per session.
+    """Create + migrate the isolated test database, once per pytest process.
 
     The maintenance connection is the sync (owner) URL pointed at the
     `postgres` database; extensions mirror infra/postgres-init/
@@ -161,6 +161,20 @@ def _ensure_test_database(settings: Settings) -> None:
     `alembic upgrade head` works on an empty database. Migration 0001's
     role creation is idempotent, so the cluster-wide `app_user` existing
     already (the dev database created it) is fine.
+
+    F19: `tenant_session_factory`'s context manager commits its
+    transaction on a clean exit (only an exception rolls it back), same
+    as a real request would. That's correct for tests that write in one
+    block and read back in another within the same run — but against a
+    developer's long-lived local Postgres container, it also means every
+    row a previous `pytest` invocation committed is still there on the
+    next one. CI never saw this because its Postgres service container
+    starts empty every job; only repeated local runs accumulated state.
+    The fix is the same one used manually throughout this session's own
+    verification passes: drop and recreate the test database at the
+    start of every pytest process, not just create-if-missing. Set
+    `KEEP_TEST_DB=1` to skip the reset for a faster local iteration loop
+    when you know the schema and seed data haven't drifted.
     """
     global _test_db_provisioned
     if _test_db_provisioned:
@@ -176,6 +190,19 @@ def _ensure_test_database(settings: Settings) -> None:
         exists = conn.execute(
             sa.text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": _TEST_DB}
         ).scalar()
+        if exists and os.environ.get("KEEP_TEST_DB") != "1":
+            # Terminate other backends first — DROP DATABASE fails while
+            # any connection (a leftover from a killed previous run, an
+            # open psql session) still holds it.
+            conn.execute(
+                sa.text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :n AND pid <> pg_backend_pid()"
+                ),
+                {"n": _TEST_DB},
+            )
+            conn.execute(sa.text(f'DROP DATABASE "{_TEST_DB}"'))
+            exists = False
         if not exists:
             conn.execute(sa.text(f'CREATE DATABASE "{_TEST_DB}"'))
     admin.dispose()
