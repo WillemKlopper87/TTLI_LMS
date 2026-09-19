@@ -3272,6 +3272,277 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/engagements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List engagements (admin-only)
+         * @description List all engagements for the tenant, newest first.
+         *
+         *     Requires assessment:run permission — the same gate assignment and
+         *     revocation already use.
+         */
+        get: operations["list_engagements_api_v1_assessments_engagements_get"];
+        put?: never;
+        /**
+         * Assign an analyst to an assessment instance (admin-only)
+         * @description Admin assigns an analyst to an assessment instance with a time window.
+         *
+         *     The partial unique index ensures only one active engagement per analyst/instance.
+         *     If an engagement already exists, this will fail with a unique constraint violation.
+         */
+        post: operations["assign_engagement_api_v1_assessments_engagements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/engagements/{engagement_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke an engagement (admin-only)
+         * @description Admin revokes an engagement, immediately terminating the analyst's access.
+         */
+        post: operations["revoke_engagement_api_v1_assessments_engagements__engagement_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List reports
+         * @description List reports for the tenant, newest first.
+         *
+         *     Reviewers (report:review) and admins (assessment:run) see every
+         *     report in the tenant; anyone with only report:submit sees just
+         *     their own — the same author-vs-reviewer split get_report enforces.
+         */
+        get: operations["list_reports_api_v1_reports_get"];
+        put?: never;
+        /**
+         * Create a draft report on an assessment
+         * @description Analyst creates a draft report for an engagement.
+         *
+         *     One open draft per engagement is enforced. Returns 409 if a draft already exists.
+         */
+        post: operations["create_report_api_v1_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch a report by ID, with its attachments
+         * @description Fetch a report for reading.
+         *
+         *     Analyst can read their own reports; reviewers/admins can read any report
+         *     in the tenant.
+         */
+        get: operations["get_report_api_v1_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a report's summary
+         * @description Analyst sets a report's summary. Author-only; only while the
+         *     report is draft or returned — the summary/attachment gate submit
+         *     and resubmit already require.
+         */
+        patch: operations["update_report_summary_api_v1_reports__report_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an attachment to a report
+         * @description Analyst attaches a PDF/PPTX to a report. Author-only, and only
+         *     while the report is draft or returned (enforced by the service layer,
+         *     the same states update_report_summary allows edits in).
+         *
+         *     Same fail-closed sequence as every other upload in this app
+         *     (REQ-BYPASS-08): scanned before storage ever sees the bytes.
+         */
+        post: operations["upload_report_attachment_api_v1_reports__report_id__attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a draft report for review
+         * @description Analyst submits a draft report for review.
+         *
+         *     Requires at least one clean-scanned attachment or non-empty summary.
+         *     Author-only action.
+         */
+        post: operations["submit_report_api_v1_reports__report_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a report to the analyst for revision
+         * @description Reviewer returns a submitted report to the analyst.
+         *
+         *     Analyst can then resubmit as a new version. Requires a decision_note.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["return_report_api_v1_reports__report_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/resubmit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resubmit a returned report as a new version
+         * @description Analyst resubmits a returned report as a new version.
+         *
+         *     Previous attachments are kept. Version is incremented.
+         *     Author-only action. Same submission requirements as initial submit.
+         */
+        post: operations["resubmit_report_api_v1_reports__report_id__resubmit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a report (makes it immutable)
+         * @description Reviewer accepts a submitted report.
+         *
+         *     Report becomes immutable. Attachments become the release package.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["accept_report_api_v1_reports__report_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw a report (terminal)
+         * @description Analyst withdraws a draft or returned report.
+         *
+         *     Withdrawal is terminal; no further editing. Author-only action.
+         */
+        post: operations["withdraw_report_api_v1_reports__report_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/{report_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release an accepted report to the organisation
+         * @description Reviewer releases an accepted report to the organisation.
+         *
+         *     Released reports become visible to organisation admins in the "Assessments" tab.
+         *     Reviewer-only action (report:review permission).
+         */
+        post: operations["release_report_api_v1_reports__report_id__release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assessment-platform/templates": {
         parameters: {
             query?: never;
@@ -4753,6 +5024,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AcceptReportRequest
+         * @description Reviewer accepts a report (makes it immutable).
+         */
+        AcceptReportRequest: Record<string, never>;
         /** ActivityResponse */
         ActivityResponse: {
             /** Id */
@@ -4917,6 +5193,34 @@ export interface components {
         ArticlesPageResponse: {
             /** Items */
             items: components["schemas"]["ArticleResponse"][];
+        };
+        /**
+         * AssignEngagementRequest
+         * @description Admin assigns an analyst to an assessment instance.
+         */
+        AssignEngagementRequest: {
+            /**
+             * Analyst User Id
+             * Format: uuid
+             */
+            analyst_user_id: string;
+            /**
+             * Instance Id
+             * Format: uuid
+             */
+            instance_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Purpose */
+            purpose: string;
         };
         /** AssignSeatsRequest */
         AssignSeatsRequest: {
@@ -5336,6 +5640,11 @@ export interface components {
         };
         /** Body_upload_podcast_audio_api_v1_podcasts__episode_id__audio_post */
         Body_upload_podcast_audio_api_v1_podcasts__episode_id__audio_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_report_attachment_api_v1_reports__report_id__attachments_post */
+        Body_upload_report_attachment_api_v1_reports__report_id__attachments_post: {
             /** File */
             file: string;
         };
@@ -5836,6 +6145,19 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * CreateReportRequest
+         * @description Analyst creates a draft report.
+         */
+        CreateReportRequest: {
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Title */
+            title: string;
+        };
         /** CreateSegmentRequest */
         CreateSegmentRequest: {
             /** Name */
@@ -6084,6 +6406,51 @@ export interface components {
             amount: string;
             /** Currency */
             currency: string;
+        };
+        /**
+         * EngagementView
+         * @description An analyst's engagement on an assessment instance.
+         */
+        EngagementView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Analyst User Id
+             * Format: uuid
+             */
+            analyst_user_id: string;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * EngagementsPageResponse
+         * @description A list of engagements.
+         */
+        EngagementsPageResponse: {
+            /** Items */
+            items: components["schemas"]["EngagementView"][];
         };
         /**
          * EnrolmentCredentialsResponse
@@ -8479,6 +8846,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * ReleaseReportRequest
+         * @description Reviewer releases an accepted report to the organisation.
+         */
+        ReleaseReportRequest: Record<string, never>;
         /** RenewRequest */
         RenewRequest: {
             /** Currency */
@@ -8503,10 +8875,161 @@ export interface components {
             /** Ordered Ids */
             ordered_ids: string[];
         };
+        /**
+         * ReportAttachmentView
+         * @description Metadata for a report attachment.
+         */
+        ReportAttachmentView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+            /** Scanned At */
+            scanned_at?: string | null;
+            /** Scan Result */
+            scan_result?: string | null;
+        };
+        /**
+         * ReportView
+         * @description A report at any stage in its lifecycle.
+         */
+        ReportView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            author_user_id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /** Version */
+            version: number;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ReportWithAttachmentsView
+         * @description A report with its attachments.
+         */
+        ReportWithAttachmentsView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Instance Id */
+            instance_id: string | null;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            author_user_id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary?: string | null;
+            /** Version */
+            version: number;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Attachments */
+            attachments?: components["schemas"]["ReportAttachmentView"][];
+        };
+        /**
+         * ReportsPageResponse
+         * @description A list of reports.
+         */
+        ReportsPageResponse: {
+            /** Items */
+            items: components["schemas"]["ReportView"][];
+        };
         /** RescheduleBookingRequest */
         RescheduleBookingRequest: {
             /** Target Session Id */
             target_session_id: string;
+        };
+        /**
+         * ResubmitReportRequest
+         * @description Analyst resubmits a returned report as a new version.
+         */
+        ResubmitReportRequest: Record<string, never>;
+        /**
+         * ReturnReportRequest
+         * @description Reviewer returns a report to the analyst.
+         */
+        ReturnReportRequest: {
+            /** Decision Note */
+            decision_note: string;
         };
         /**
          * RevenuePoint
@@ -8563,6 +9086,11 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * RevokeEngagementRequest
+         * @description Admin revokes an engagement.
+         */
+        RevokeEngagementRequest: Record<string, never>;
         /** RoleChangeRequest */
         RoleChangeRequest: {
             /** Role Code */
@@ -8859,6 +9387,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * SubmitReportRequest
+         * @description Analyst submits a draft report for review.
+         */
+        SubmitReportRequest: Record<string, never>;
         /** SubscribeRequest */
         SubscribeRequest: {
             /** Plan Id */
@@ -9460,6 +9993,14 @@ export interface components {
             /** Manager Visibility */
             manager_visibility: string;
         };
+        /**
+         * UpdateReportSummaryRequest
+         * @description Analyst sets a report's summary. Author-only, draft/returned only.
+         */
+        UpdateReportSummaryRequest: {
+            /** Summary */
+            summary: string;
+        };
         /** UpdateVideoSettingsRequest */
         UpdateVideoSettingsRequest: {
             /** Rungs */
@@ -9636,6 +10177,11 @@ export interface components {
             /** Opacity */
             opacity: number;
         };
+        /**
+         * WithdrawReportRequest
+         * @description Analyst withdraws a draft or returned report.
+         */
+        WithdrawReportRequest: Record<string, never>;
         /** WorkshopResponse */
         WorkshopResponse: {
             /** Id */
@@ -16095,6 +16641,458 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engagements_api_v1_assessments_engagements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementsPageResponse"];
+                };
+            };
+        };
+    };
+    assign_engagement_api_v1_assessments_engagements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignEngagementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_engagement_api_v1_assessments_engagements__engagement_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeEngagementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_api_v1_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsPageResponse"];
+                };
+            };
+        };
+    };
+    create_report_api_v1_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_api_v1_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWithAttachmentsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_report_summary_api_v1_reports__report_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReportSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_report_attachment_api_v1_reports__report_id__attachments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_report_attachment_api_v1_reports__report_id__attachments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportAttachmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_report_api_v1_reports__report_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    return_report_api_v1_reports__report_id__return_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resubmit_report_api_v1_reports__report_id__resubmit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResubmitReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_report_api_v1_reports__report_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_report_api_v1_reports__report_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_report_api_v1_reports__report_id__release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportView"];
                 };
             };
             /** @description Validation Error */

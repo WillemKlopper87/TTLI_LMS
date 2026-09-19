@@ -109,6 +109,18 @@ class AuditAction:
     PRIVACY_USER_ERASED = "privacy.user_erased"
     PRIVACY_LEGAL_HOLD_SET = "privacy.legal_hold.set"
     PRIVACY_LEGAL_HOLD_CLEARED = "privacy.legal_hold.cleared"
+    # BACKLOG L5 — analyst workspace. Every analyst read of assessment data
+    # is audited with the row count for traceability and policy compliance.
+    ANALYST_DATA_READ = "analyst.data_read"
+    # BACKLOG L5 — every report state-machine transition, not just reads,
+    # since a report's status changes carry the same review/release
+    # decisions certificate revocation and payment approval already log.
+    REPORT_SUBMITTED = "report.submitted"
+    REPORT_RETURNED = "report.returned"
+    REPORT_RESUBMITTED = "report.resubmitted"
+    REPORT_ACCEPTED = "report.accepted"
+    REPORT_WITHDRAWN = "report.withdrawn"
+    REPORT_RELEASED = "report.released"
 
 
 __all__ = ["AuditAction", "AuditEvent", "text"]

@@ -1,6 +1,6 @@
-"""`cohort:run` — the permission POST/GET /cohorts (0047) actually checks.
+"""`cohort:run` — the permission POST/GET /cohorts (0049) actually checks.
 
-0047 built the programmes routers and services against `cohort:run`
+0049 built the programmes routers and services against `cohort:run`
 throughout, but never registered it as a real permission — no row in
 `permissions`, no grant in `role_permissions`. Every caller, including
 the break-glass super_admin account, would 403 on every cohort
