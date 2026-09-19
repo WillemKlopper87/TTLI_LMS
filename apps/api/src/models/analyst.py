@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import (
     DateTime,
@@ -36,7 +36,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base import Base, TimestampMixin, pk
 
 
-class ReportStatus(str, Enum):
+class ReportStatus(StrEnum):
     """Report lifecycle states.
 
     draft: Initial state, analyst is writing and can attach files.
@@ -146,7 +146,7 @@ class Report(Base, TimestampMixin):
         # values_callable: without it, SQLAlchemy's Enum type binds a
         # Python enum member's *name* ("DRAFT") to Postgres, not its
         # *value* ("draft") — but the report_status DB type's labels are
-        # the lowercase values (see migration 0047), so every insert and
+        # the lowercase values (see migration 0051), so every insert and
         # every status filter failed with "invalid input value for enum".
         SQLEnum(
             ReportStatus,

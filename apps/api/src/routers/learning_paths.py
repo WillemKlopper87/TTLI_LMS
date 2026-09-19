@@ -15,7 +15,7 @@ from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, Stor
 from src.core.errors import NotFound
 from src.models.audit import AuditAction
 from src.models.course import Course
-from src.models.learning_path import LearningPath, LearningPathCourse
+from src.models.learning_path import LearningPath, LearningPathStep
 from src.schemas.courses import PublicPrice
 from src.schemas.learning_paths import (
     AddPathCourseRequest,
@@ -67,7 +67,7 @@ def _path_response(path: LearningPath) -> LearningPathResponse:
     )
 
 
-def _course_row(member: LearningPathCourse, course: Course) -> PathCourseRow:
+def _course_row(member: LearningPathStep, course: Course) -> PathCourseRow:
     return PathCourseRow(
         course_id=str(course.id),
         title=course.title,

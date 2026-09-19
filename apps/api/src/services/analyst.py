@@ -317,8 +317,7 @@ async def submit_report(
 
     if report.status != ReportStatus.DRAFT:
         raise InvalidReportTransition(
-            f"Cannot submit from {report.status.value} status. "
-            f"Submit is only allowed from draft."
+            f"Cannot submit from {report.status.value} status. Submit is only allowed from draft."
         )
 
     # Check: at least one clean attachment or non-empty summary
@@ -595,9 +594,7 @@ async def update_report_summary(
         raise ReportNotFound("Report not found or you are not the author.")
 
     if report.status not in (ReportStatus.DRAFT, ReportStatus.RETURNED):
-        raise ReportImmutable(
-            f"Cannot edit a report in {report.status.value} status."
-        )
+        raise ReportImmutable(f"Cannot edit a report in {report.status.value} status.")
 
     report.summary = summary
     await session.flush()
@@ -629,9 +626,7 @@ async def add_report_attachment(
         raise ReportNotFound("Report not found or you are not the author.")
 
     if report.status not in (ReportStatus.DRAFT, ReportStatus.RETURNED):
-        raise ReportImmutable(
-            f"Cannot attach a file to a report in {report.status.value} status."
-        )
+        raise ReportImmutable(f"Cannot attach a file to a report in {report.status.value} status.")
 
     attachment = ReportAttachment(
         tenant_id=tenant_id,

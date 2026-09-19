@@ -1,7 +1,7 @@
 """Analyst workspace: engagement and report state machine (BACKLOG L5).
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: 0051
+Revises: 0050
 
 The analyst workspace enables in-house staff and contracted analysts to work on
 assessment results within the platform. Engagements grant analysts time-windowed
@@ -32,8 +32,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0047"
-down_revision: str | None = "0046"
+revision: str = "0051"
+down_revision: str | None = "0050"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -44,7 +44,11 @@ TENANT_SCOPED = ("assessment_engagements", "reports", "report_attachments")
 def upgrade() -> None:
     # Create enum for report status
     report_status_enum = postgresql.ENUM(
-        "draft", "submitted", "returned", "accepted", "withdrawn",
+        "draft",
+        "submitted",
+        "returned",
+        "accepted",
+        "withdrawn",
         name="report_status",
         create_type=False,
     )
@@ -168,7 +172,9 @@ def upgrade() -> None:
         sa.Column("filename", sa.Text(), nullable=False),
         sa.Column("content_type", sa.String(255), nullable=False),
         sa.Column("size_bytes", sa.Integer(), nullable=False),
-        sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         # Virus-scanned before the file is readable (same fail-closed rule as
         # assignment uploads in 0013).
         sa.Column("scanned_at", sa.DateTime(timezone=True), nullable=True),

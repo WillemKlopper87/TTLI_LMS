@@ -25,6 +25,15 @@ from src.models.assessment import (
     SurveyResponse,
     SurveyResponseMode,
 )
+from src.models.assessment_template import (
+    AssessmentInstance,
+    AssessmentInvitation,
+    AssessmentResponse,
+    AssessmentSubject,
+    AssessmentSubjectResult,
+    AssessmentTemplate,
+    AssessmentTemplateQuestion,
+)
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
@@ -84,7 +93,7 @@ from src.models.lead import Lead
 from src.models.learning import Enrolment, LessonCompletion, LessonState
 from src.models.learning_path import (
     LearningPath,
-    LearningPathCourse,
+    LearningPathStep,
     LearningPathTenantAssignment,
     PathEnrolment,
 )
@@ -125,6 +134,13 @@ __all__ = [
     "Activity",
     "Article",
     "AssessmentEngagement",
+    "AssessmentInstance",
+    "AssessmentInvitation",
+    "AssessmentResponse",
+    "AssessmentSubject",
+    "AssessmentSubjectResult",
+    "AssessmentTemplate",
+    "AssessmentTemplateQuestion",
     "Assignment",
     "AssignmentSubmission",
     "AttendanceRecord",
@@ -165,7 +181,7 @@ __all__ = [
     "InvoiceNumberCounter",
     "Lead",
     "LearningPath",
-    "LearningPathCourse",
+    "LearningPathStep",
     "LearningPathTenantAssignment",
     "LedgerEntry",
     "Lesson",

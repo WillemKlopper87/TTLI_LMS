@@ -1096,14 +1096,18 @@ class TestReportAuditTrail:
             )
 
             events = (
-                await s.execute(
-                    sa.select(AuditEvent.action).where(
-                        AuditEvent.tenant_id == tenant_id,
-                        AuditEvent.entity_type == "report",
-                        AuditEvent.entity_id == report.id,
+                (
+                    await s.execute(
+                        sa.select(AuditEvent.action).where(
+                            AuditEvent.tenant_id == tenant_id,
+                            AuditEvent.entity_type == "report",
+                            AuditEvent.entity_id == report.id,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             assert set(events) == {
                 AuditAction.REPORT_SUBMITTED,
@@ -1115,31 +1119,43 @@ class TestReportAuditTrail:
 
 
 class TestAnalystReviewerRoles:
-    """0049's dedicated analyst/reviewer roles grant exactly the split
+    """0053's dedicated analyst/reviewer roles grant exactly the split
     permissions the spec describes, without needing full admin."""
 
     async def test_analyst_role_grants_exactly_analyse_and_submit(
-        self, tenant_session_factory  # type: ignore[no-untyped-def]
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
     ) -> None:
         async with tenant_session_factory(None) as s:
             perms = (
-                await s.execute(
-                    sa.text(
-                        "SELECT permission_code FROM role_permissions WHERE role_code = 'analyst'"
+                (
+                    await s.execute(
+                        sa.text(
+                            "SELECT permission_code FROM role_permissions "
+                            "WHERE role_code = 'analyst'"
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         assert set(perms) == {"assessment:analyse", "report:submit"}
 
     async def test_reviewer_role_grants_exactly_report_review(
-        self, tenant_session_factory  # type: ignore[no-untyped-def]
+        self,
+        tenant_session_factory,  # type: ignore[no-untyped-def]
     ) -> None:
         async with tenant_session_factory(None) as s:
             perms = (
-                await s.execute(
-                    sa.text(
-                        "SELECT permission_code FROM role_permissions WHERE role_code = 'reviewer'"
+                (
+                    await s.execute(
+                        sa.text(
+                            "SELECT permission_code FROM role_permissions "
+                            "WHERE role_code = 'reviewer'"
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         assert set(perms) == {"report:review"}
