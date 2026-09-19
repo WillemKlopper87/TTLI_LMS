@@ -109,6 +109,10 @@ class AuditAction:
     PRIVACY_USER_ERASED = "privacy.user_erased"
     PRIVACY_LEGAL_HOLD_SET = "privacy.legal_hold.set"
     PRIVACY_LEGAL_HOLD_CLEARED = "privacy.legal_hold.cleared"
+    # Facilitator licensing (2026-09-11 spec)
+    LICENCE_CREATED = "licence.created"
+    SEAT_GRANT_ISSUED = "licence.seat_grant.issued"
+    SEAT_GRANT_REVOKED = "licence.seat_grant.revoked"
     # BACKLOG L5 — analyst workspace. Every analyst read of assessment data
     # is audited with the row count for traceability and policy compliance.
     ANALYST_DATA_READ = "analyst.data_read"

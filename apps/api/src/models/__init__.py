@@ -97,6 +97,7 @@ from src.models.learning_path import (
     LearningPathTenantAssignment,
     PathEnrolment,
 )
+from src.models.licence import Licence, LicenceSeatGrant
 from src.models.media import AudioAsset, TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.partner import AssessmentLicence, PartnerProfile
@@ -194,6 +195,8 @@ __all__ = [
     "LessonBlock",
     "LessonCompletion",
     "LessonState",
+    "Licence",
+    "LicenceSeatGrant",
     "MagicLink",
     "ManagerVisibility",
     "MeetingLink",

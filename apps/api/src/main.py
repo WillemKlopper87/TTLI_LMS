@@ -53,6 +53,7 @@ from src.routers import (
     leads,
     learning,
     learning_paths,
+    licence,
     media,
     operations,
     orders,
@@ -174,6 +175,7 @@ def create_app() -> FastAPI:
     app.include_router(orders.router, prefix="/api/v1")
     app.include_router(webhooks.router, prefix="/api/v1")
     app.include_router(organisations.router, prefix="/api/v1")
+    app.include_router(licence.router, prefix="/api/v1")
     app.include_router(partner.router, prefix="/api/v1")
     app.include_router(subscriptions.router, prefix="/api/v1")
     app.include_router(catalogue.router, prefix="/api/v1")

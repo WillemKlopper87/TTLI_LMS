@@ -746,6 +746,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/licences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List licences for an organisation
+         * @description List all licences for an organisation.
+         *
+         *     Query parameter: organisation_id (UUID of the licensee organisation).
+         */
+        get: operations["list_licences_api_v1_licences_get"];
+        put?: never;
+        /**
+         * Create a new licence
+         * @description Create a licence granting a course or learning path to a licensee organisation.
+         */
+        post: operations["create_licence_api_v1_licences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/licences/{licence_id}/grant-seat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant a seat under a licence to a learner
+         * @description Grant a seat under a licence to a learner.
+         *
+         *     The learner can then enrol in courses/paths licensed under this licence.
+         */
+        post: operations["grant_seat_api_v1_licences__licence_id__grant_seat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/licences/seat-grants/{grant_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke a seat grant
+         * @description Revoke a seat grant, immediately withdrawing the learner's access
+         *     to the licensed course/path and freeing the seat for reassignment.
+         */
+        post: operations["revoke_seat_api_v1_licences_seat_grants__grant_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisations/{organisation_id}/licences/seat-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List seat grants for a licensee organisation
+         * @description List all seat grants for a licensee organisation.
+         *
+         *     Returns grants under all licences belonging to the organisation.
+         *     Includes revoked grants if include_revoked=true.
+         */
+        get: operations["list_seat_grants_api_v1_organisations__organisation_id__licences_seat_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/partner/profiles": {
         parameters: {
             query?: never;
@@ -6327,6 +6419,52 @@ export interface components {
             /** Bio */
             bio?: string | null;
         };
+        /**
+         * CreateLicenceRequest
+         * @description Request to create a new licence.
+         */
+        CreateLicenceRequest: {
+            /**
+             * Organisation Id
+             * @description UUID of the licensee organisation
+             */
+            organisation_id: string;
+            /**
+             * Course Id
+             * @description UUID of the course (XOR with learning_path_id)
+             */
+            course_id?: string | null;
+            /**
+             * Learning Path Id
+             * @description UUID of the learning path (XOR with course_id)
+             */
+            learning_path_id?: string | null;
+            /**
+             * Seats Purchased
+             * @description Number of seats purchased
+             */
+            seats_purchased: number;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Price Per Seat Cents */
+            price_per_seat_cents?: number | null;
+            /** Currency */
+            currency?: string | null;
+            /** Royalty Pct */
+            royalty_pct?: number | null;
+            /** Order Id */
+            order_id?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
         /** CreateNoteRequest */
         CreateNoteRequest: {
             /** Body */
@@ -6770,6 +6908,28 @@ export interface components {
             graded_count: number;
             /** Ungraded Count */
             ungraded_count: number;
+        };
+        /**
+         * GrantSeatRequest
+         * @description Request to grant a seat under a licence to a learner.
+         *
+         *     No client-supplied entitlement_id: grant_seat always derives a real
+         *     Entitlement itself from the licence, the same way a course purchase
+         *     or corporate seat assignment does — accepting one from the caller
+         *     would let a client link a seat grant to an entitlement it has no
+         *     provenance for.
+         */
+        GrantSeatRequest: {
+            /**
+             * Licence Id
+             * @description UUID of the licence
+             */
+            licence_id: string;
+            /**
+             * Learner User Id
+             * @description UUID of the learner
+             */
+            learner_user_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -7342,6 +7502,44 @@ export interface components {
             /** Items */
             items: components["schemas"]["LessonResponse"][];
         };
+        /**
+         * LicenceResponse
+         * @description Response representing a licence.
+         */
+        LicenceResponse: {
+            /** Id */
+            id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Course Id */
+            course_id: string | null;
+            /** Learning Path Id */
+            learning_path_id: string | null;
+            /** Status */
+            status: string;
+            /** Seats Purchased */
+            seats_purchased: number;
+            /** Seats Used */
+            seats_used: number;
+            /** Starts At */
+            starts_at: string;
+            /** Ends At */
+            ends_at: string;
+            /** Price Per Seat Cents */
+            price_per_seat_cents: number | null;
+            /** Currency */
+            currency: string | null;
+            /** Royalty Pct */
+            royalty_pct: number | null;
+            /** Order Id */
+            order_id: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
         /** LinkedInShareResponse */
         LinkedInShareResponse: {
             /** Share Url */
@@ -7352,6 +7550,22 @@ export interface components {
             credential_id: string;
             /** Credential Url */
             credential_url: string;
+        };
+        /**
+         * ListLicencesResponse
+         * @description Response containing a list of licences.
+         */
+        ListLicencesResponse: {
+            /** Items */
+            items: components["schemas"]["LicenceResponse"][];
+        };
+        /**
+         * ListSeatGrantsResponse
+         * @description Response containing seat grants for a licensee.
+         */
+        ListSeatGrantsResponse: {
+            /** Items */
+            items: components["schemas"]["SeatGrantResponse"][];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -9403,6 +9617,24 @@ export interface components {
             ok: boolean;
             /** Reason */
             reason: string | null;
+        };
+        /**
+         * SeatGrantResponse
+         * @description Response representing a seat grant.
+         */
+        SeatGrantResponse: {
+            /** Id */
+            id: string;
+            /** Licence Id */
+            licence_id: string;
+            /** Learner User Id */
+            learner_user_id: string;
+            /** Entitlement Id */
+            entitlement_id: string | null;
+            /** Granted At */
+            granted_at: string;
+            /** Revoked At */
+            revoked_at: string | null;
         };
         /** SeatSummariesResponse */
         SeatSummariesResponse: {
@@ -11774,6 +12006,167 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_licences_api_v1_licences_get: {
+        parameters: {
+            query: {
+                organisation_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListLicencesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_licence_api_v1_licences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLicenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LicenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_seat_api_v1_licences__licence_id__grant_seat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                licence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantSeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeatGrantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_seat_api_v1_licences_seat_grants__grant_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_seat_grants_api_v1_organisations__organisation_id__licences_seat_grants_get: {
+        parameters: {
+            query?: {
+                include_revoked?: boolean;
+            };
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListSeatGrantsResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

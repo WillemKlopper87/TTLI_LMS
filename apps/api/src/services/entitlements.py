@@ -31,7 +31,12 @@ async def grant(
     *,
     tenant_id: uuid.UUID,
     user_id: uuid.UUID | None,
-    source_order_id: uuid.UUID,
+    # Nullable at the model level (commerce.py's own Entitlement.
+    # source_order_id) — a licence-funded grant (services/licence.py::
+    # grant_seat) has no order at all when the licence itself wasn't
+    # sold through checkout, unlike every other caller here which always
+    # has a real order.
+    source_order_id: uuid.UUID | None,
     kind: str,
     target_id: uuid.UUID,
     quantity: int | None = None,
