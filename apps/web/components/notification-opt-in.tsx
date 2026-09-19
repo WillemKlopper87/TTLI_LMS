@@ -9,12 +9,29 @@
  * VAPID key — GET /push/vapid-public-key's configured:false), already
  * subscribed, or dismissed once this session, all render null.
  */
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 import { useSession } from "@/lib/session-context";
 
 const DISMISSED_KEY = "ttli-push-prompt-dismissed";
+
+// F17a (BACKLOG.md): excluded from checkout (any depth — /checkout/
+// return, /checkout/cancel included, matching "excluded from checkout"
+// broadly rather than only the exact path) and from the lesson player.
+// The player is /learn/<enrolment id> exactly — matched by shape (no
+// further path segment) and by excluding the other single-segment
+// /learn/* routes that aren't the player (/learn/sessions), rather than
+// checking against a UUID pattern that would silently stop matching if
+// enrolment ids ever changed shape. A deeper path under one enrolment
+// id, like its /transcript, is a different screen, not the player.
+function isExcludedRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (pathname === "/checkout" || pathname.startsWith("/checkout/")) return true;
+  const learnMatch = /^\/learn\/([^/]+)$/.exec(pathname);
+  return learnMatch !== null && learnMatch[1] !== "sessions" && learnMatch[1] !== "paths";
+}
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -26,12 +43,14 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 
 export function NotificationOptIn() {
   const { accessToken, status } = useSession();
+  const pathname = usePathname();
   const [visible, setVisible] = useState(false);
   const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isExcludedRoute(pathname)) return;
     if (status !== "authenticated" || !accessToken) return;
     if (sessionStorage.getItem(DISMISSED_KEY)) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -54,7 +73,7 @@ export function NotificationOptIn() {
     return () => {
       cancelled = true;
     };
-  }, [status, accessToken]);
+  }, [status, accessToken, pathname]);
 
   async function enable() {
     if (!vapidPublicKey || !accessToken) return;

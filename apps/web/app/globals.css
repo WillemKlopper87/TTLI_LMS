@@ -401,6 +401,57 @@ a {
   font-weight: 600;
 }
 
+/* F17b (BACKLOG.md): the hamburger toggle only exists to collapse the
+   nav on a phone — hidden entirely above the same 760px breakpoint the
+   collapse itself uses, so it never competes with the always-visible
+   nav on a normal-width screen. */
+/* F17e: the quiet secondary group (Subscription / Invoices / Admin) beside
+   the avatar — deliberately smaller and muted next to `.site-nav`. */
+.account-nav {
+  display: flex;
+  gap: 0.9rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.account-nav a {
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+
+.account-nav a:hover {
+  color: var(--ink);
+}
+
+.account-nav a:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.account-nav .on {
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  padding: 0.4rem;
+  cursor: pointer;
+}
+
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .site-footer {
   border-top: 1px solid var(--rule);
   padding: 1.1rem clamp(1rem, 3vw, 2rem);
@@ -431,24 +482,44 @@ a {
   color: var(--ink);
 }
 
-/* The prototype simply hides the nav under 760px. A real site still has to
-   be navigable on a phone, so instead of vanishing it drops onto its own
-   row and scrolls sideways — same visual language, nothing lost. */
+/* F17b (BACKLOG.md): the prototype's original fix for a phone-width
+   header was to keep every nav item visible but drop them onto their
+   own horizontally-scrolling row — still an overflowing header, just
+   overflowing sideways instead of wrapping badly. A public visitor's
+   first read of a nav is "what are my options", which a scroll strip
+   hides half of by default; a real collapse (hidden until the toggle
+   button opens it, same aria-expanded/aria-controls pattern the admin
+   shell's own mobile menu already established) shows all of them, one
+   at a time, without needing horizontal scrolling to find the rest. */
 @media (max-width: 760px) {
   .site-head {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
   }
-  .site-nav {
-    order: 3;
-    flex-basis: 100%;
-    gap: 1rem;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: thin;
+  .brand-mark {
+    order: 1;
+  }
+  .nav-toggle {
+    order: 2;
+    display: inline-flex;
+    margin-left: auto;
   }
   .head-actions {
-    margin-left: auto;
+    order: 3;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .site-nav {
+    order: 4;
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--rule);
+  }
+  .site-nav--open {
+    display: flex;
   }
 }
 
@@ -1459,6 +1530,45 @@ label.field b,
   align-content: start;
 }
 
+/* F17c (BACKLOG.md): under 900px `.cat` is a single column, so the full
+   facet sidebar used to sit ahead of the results. Collapse it behind a
+   Filters toggle there; above 900px the toggle is removed from layout
+   entirely (display: none also keeps it out of the two-column grid) and
+   the facets are always shown. */
+.facets-toggle {
+  justify-self: start;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.facets-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (min-width: 900px) {
+  .facets-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .cat {
+    gap: 1rem;
+  }
+  .facets {
+    display: none;
+  }
+  .facets--open {
+    display: grid;
+  }
+}
+
 .facet h4 {
   font-size: 0.6875rem;
   font-family: var(--mono);
@@ -2402,6 +2512,25 @@ button.lrow:not(.lrow--lock):hover {
   padding-top: 0.25rem;
 }
 
+/* F17d (BACKLOG.md): "Previous lesson" and "Next lesson 🔒" (the
+   locked-state label, the widest of the three) together can exceed a
+   phone-width `.underplayer` — `.btn`'s own `white-space: nowrap` means
+   neither can shrink, so as an unwrapped `space-between` row the
+   right-hand button ran partly past the visible edge. Stacking full
+   width below the same phone breakpoint `.skin-switch` already uses
+   keeps both buttons entirely inside the content column regardless of
+   label length. */
+@media (max-width: 560px) {
+  .foot-nav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .foot-nav .btn {
+    width: 100%;
+  }
+}
+
 /* ============ 9 quiz ============ */
 
 .quizwrap {
@@ -2970,5 +3099,43 @@ table.data tbody tr:last-child td {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ============ route loading (F18) ============ */
+
+.route-loading {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: 3rem clamp(1rem, 3vw, 2rem);
+}
+
+.route-loading__label {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.route-loading__bar {
+  height: 0.5rem;
+  margin-top: 0.9rem;
+  max-width: 24rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--rule), var(--surface-2), var(--rule));
+  background-size: 200% 100%;
+  animation: route-loading-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes route-loading-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading__bar {
+    animation: none;
   }
 }

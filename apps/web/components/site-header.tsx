@@ -7,8 +7,8 @@
  *
  *   signed out   brand · public nav · [Sign in] [Try a free lesson]
  *   guest        brand · public nav · [Guest tag] [avatar] [Sign out]
- *   learner      brand · learner nav (My learning …) · [avatar] [Sign out]
- *   staff        learner nav + an "Admin" item pointing at the admin shell
+ *   learner      brand · learner nav (My learning …) · [Account links] [avatar] [Sign out]
+ *   staff        the same, with "Admin" added to the Account links
  *
  * Tenant identity comes from the root layout (which already fetches
  * GET /tenant/theme server-side): TTLI renders its own mark and strapline,
@@ -57,10 +57,14 @@ const LEARNER_NAV: NavItem[] = [
   { label: "Learning paths", href: "/paths" },
   { label: "Workshops", href: "/learn/sessions" },
   { label: "Achievements", href: "/learn#completed" },
-  // Neither had any nav entry before this pass — invoices had no link
-  // anywhere in the app, and subscription was reachable only via the
-  // catalogue's own "subscribe" button (Subscriptions component), never
-  // as a place to come back and manage an existing one.
+];
+
+// F17e (BACKLOG.md): billing used to sit in the same flat row as the
+// learning journey. Invoices had no link anywhere in the app and the
+// subscription was reachable only via the catalogue's "subscribe" button,
+// so both are linked — but as a quieter "Account" group beside the avatar
+// rather than competing with "My learning" for the primary row.
+const ACCOUNT_NAV: NavItem[] = [
   { label: "Subscription", href: "/account/subscription" },
   { label: "Invoices", href: "/account/invoices" },
 ];
@@ -134,6 +138,18 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [search, setSearch] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
+  // A route change is a completed navigation — leaving the mobile menu
+  // open across it would mean the link the visitor just tapped stays
+  // covered by its own menu on the page it led to. Reset during render
+  // (React's documented pattern for state that depends on a prop
+  // change) rather than in an effect, which would otherwise render once
+  // with the stale open menu before a second render closes it.
+  const [pathnameAtOpen, setPathnameAtOpen] = useState(pathname);
+  if (pathname !== pathnameAtOpen) {
+    setPathnameAtOpen(pathname);
+    setNavOpen(false);
+  }
 
   useEffect(() => {
     if (status !== "authenticated" || !accessToken) {
@@ -178,12 +194,17 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
 
   // Guests are still on the public journey (catalogue → course → buy); a
   // learner or staff member gets the learner journey, staff also get Admin.
-  const items: NavItem[] = !signedIn || isGuest
-    ? PUBLIC_NAV
-    : isStaff
-      ? [...LEARNER_NAV, { label: "Admin", href: "/admin" }]
-      : LEARNER_NAV;
+  const items: NavItem[] = !signedIn || isGuest ? PUBLIC_NAV : LEARNER_NAV;
   const onIndex = currentIndex(items, pathname, search);
+  // Signed-in, non-guest accounts get the quiet secondary group; Admin is
+  // offered here (never in the main row) to staff only.
+  const accountItems: NavItem[] =
+    !signedIn || isGuest
+      ? []
+      : isStaff
+        ? [...ACCOUNT_NAV, { label: "Admin", href: "/admin" }]
+        : ACCOUNT_NAV;
+  const onAccountIndex = currentIndex(accountItems, pathname, search);
 
   const firstParty = isFirstPartyTenant(tenantName);
   const brandLabel = firstParty ? "TTLI" : (tenantName ?? "TTLI");
@@ -207,7 +228,38 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
         </span>
       </Link>
 
-      <nav className="site-nav" aria-label="Main">
+      <button
+        type="button"
+        className="nav-toggle"
+        onClick={() => setNavOpen((open) => !open)}
+        aria-expanded={navOpen}
+        aria-controls="site-nav"
+        aria-label={navOpen ? "Close menu" : "Open menu"}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          {navOpen ? (
+            <path
+              d="M4 4l12 12M16 4L4 16"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          ) : (
+            <path
+              d="M3 5h14M3 10h14M3 15h14"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          )}
+        </svg>
+      </button>
+
+      <nav
+        id="site-nav"
+        className={navOpen ? "site-nav site-nav--open" : "site-nav"}
+        aria-label="Main"
+      >
         {status === "loading"
           ? null
           : items.map((item, index) => {
@@ -226,6 +278,23 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
       </nav>
 
       <div className="head-actions">
+        {status !== "loading" && accountItems.length > 0 ? (
+          <nav className="account-nav" aria-label="Account">
+            {accountItems.map((item, index) => {
+              const on = index === onAccountIndex;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={on ? "on" : undefined}
+                  aria-current={on ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        ) : null}
         {status === "loading" ? null : !signedIn ? (
           <>
             <Link href="/login" className="btn btn--quiet">

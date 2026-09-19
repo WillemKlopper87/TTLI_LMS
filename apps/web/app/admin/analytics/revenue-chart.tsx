@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 
+import { formatMoney } from "@/lib/format";
+
 /**
  * Net revenue over time — the one thing the analytics dashboard could
  * not show, because every other figure it serves is a single aggregate
@@ -268,7 +270,7 @@ export default function RevenueChart({ points, currencies, granularity }: Props)
                     marginRight: 4,
                   }}
                 />
-                {s.currency} {s.values[hover].toLocaleString("en-ZA")}
+                {formatMoney(s.values[hover], s.currency)}
               </span>
             ))}
           </>
@@ -329,7 +331,7 @@ export default function RevenueChart({ points, currencies, granularity }: Props)
                   <td>{p.label}</td>
                   {series.map((s) => (
                     <td key={s.currency} style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {s.values[i].toLocaleString("en-ZA")}
+                      {formatMoney(s.values[i], s.currency)}
                     </td>
                   ))}
                 </tr>

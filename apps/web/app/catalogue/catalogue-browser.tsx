@@ -106,6 +106,7 @@ export function CatalogueBrowser({ courses, initialTopic, initialLevel }: Catalo
   }));
   const [sort, setSort] = useState<SortKey>("relevant");
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   function toggle(key: FacetKey, value: string) {
     setVisible(PAGE_SIZE);
@@ -166,9 +167,23 @@ export function CatalogueBrowser({ courses, initialTopic, initialLevel }: Catalo
   const total = results.length;
   const anySelected = facets.some(({ key }) => selected[key].length > 0);
 
+  const activeCount = facets.reduce((n, { key }) => n + selected[key].length, 0);
+
   return (
     <div className="cat">
-      <div className="facets">
+      {/* F17c: under 900px `.cat` is one column, so the whole sidebar used
+          to sit above the results. The toggle (hidden on desktop by CSS)
+          collapses it; the facets stay in the DOM either way. */}
+      <button
+        type="button"
+        className="facets-toggle"
+        aria-expanded={filtersOpen}
+        aria-controls="catalogue-facets"
+        onClick={() => setFiltersOpen((open) => !open)}
+      >
+        {activeCount > 0 ? `Filters (${activeCount} active)` : "Filters"}
+      </button>
+      <div id="catalogue-facets" className={filtersOpen ? "facets facets--open" : "facets"}>
         {facets.map(({ key, title, options }) => (
           <div className="facet" key={key}>
             <h4 id={`facet-${key}`}>{title}</h4>

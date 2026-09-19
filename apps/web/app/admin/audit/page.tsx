@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatTimestamp } from "@/lib/format";
 
 import { useAdmin } from "../admin-context";
 
@@ -179,7 +180,7 @@ export default function AuditLog() {
             {rows.map((row) => (
               <tr key={row.id}>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  {new Date(row.created_at).toLocaleString("en-ZA")}
+                  {formatTimestamp(row.created_at)}
                 </td>
                 <td className="mono" style={{ fontSize: "0.6875rem" }}>
                   {row.action}

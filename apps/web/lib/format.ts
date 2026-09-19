@@ -29,17 +29,36 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * `R2,450` when the amount is whole, `R2,450.75` when it is not.
  * Amounts arrive from the API as decimal strings.
  */
-export function formatMoney(amount: string | number | null | undefined, currency = "ZAR"): string {
+export function formatMoney(
+  amount: string | number | null | undefined,
+  currency = "ZAR",
+  options: { exact?: boolean } = {},
+): string {
   if (amount === null || amount === undefined || amount === "") return "";
   const value = typeof amount === "number" ? amount : Number(amount);
   if (!Number.isFinite(value)) return "";
-  const fractionDigits = Number.isInteger(value) ? 0 : 2;
+  // `exact` is for invoices and finance tables, where "R12,450" next to
+  // "R12,450.50" in one column reads as a rounding error.
+  const fractionDigits = options.exact || !Number.isInteger(value) ? 2 : 0;
   const body = value.toLocaleString(GROUPING_LOCALE, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
   const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()];
   return symbol ? `${symbol}${body}` : `${currency} ${body}`;
+}
+
+/** Per-currency totals as one line: "R12,450 · $99.50", "—" when empty. */
+export function formatMoneyList(rows: Array<{ currency: string; amount: string | number }>): string {
+  if (rows.length === 0) return "—";
+  return rows.map((row) => formatMoney(row.amount, row.currency)).join(" · ");
+}
+
+/** Counts (views, users, ...) grouped the same way money is, so a page
+ * never mixes "12,450" and "12 450" — and never the browser's locale. */
+export function formatNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(GROUPING_LOCALE);
 }
 
 /** "4h 20m", "3h", "45m" — `null` when there is nothing to say. */
@@ -134,6 +153,30 @@ export function formatDateTime(iso: string | null | undefined): string {
   return d.toLocaleString("en-ZA", {
     day: "2-digit",
     month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** "14:05" — a time of day alone, for booking slots. */
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Date and time with the year — for audit and activity rows, where
+ * "which year" matters and `formatDateTime`'s year-less shape is
+ * ambiguous. */
+export function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });

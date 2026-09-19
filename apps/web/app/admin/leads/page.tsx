@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
+import { formatDate } from "@/lib/format";
 
 interface LeadSummary {
   lead_id: string;
@@ -132,7 +133,7 @@ export default function LeadsScreen() {
                   </td>
                   <td className="mono">{lead.score}</td>
                   <td className="mono" style={{ fontSize: "0.75rem", color: "var(--faint)" }}>
-                    {new Date(lead.created_at).toLocaleDateString()}
+                    {formatDate(lead.created_at)}
                   </td>
                 </tr>
               ))}

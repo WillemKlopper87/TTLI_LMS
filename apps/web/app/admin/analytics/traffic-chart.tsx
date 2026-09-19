@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 
+import { formatNumber } from "@/lib/format";
+
 /**
  * Pageviews over time — the trend the site-traffic panel was missing.
  * Same hand-rolled SVG approach and mark specs as revenue-chart.tsx (one
@@ -147,7 +149,7 @@ export default function TrafficChart({
             fill="var(--ink-2)"
             style={{ fontVariantNumeric: "tabular-nums" }}
           >
-            {peak.toLocaleString("en-ZA")}
+            {formatNumber(peak)}
           </text>
         ) : null}
 
@@ -184,7 +186,7 @@ export default function TrafficChart({
           <>
             <strong>{points[hover].label}</strong>
             <span style={{ marginLeft: "0.75rem" }}>
-              {points[hover].views.toLocaleString("en-ZA")} pageview
+              {formatNumber(points[hover].views)} pageview
               {points[hover].views === 1 ? "" : "s"}
             </span>
           </>

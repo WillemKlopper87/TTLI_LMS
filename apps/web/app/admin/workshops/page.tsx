@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatTimestamp } from "@/lib/format";
 
 import { useAdmin } from "../admin-context";
 
@@ -914,7 +915,7 @@ export default function WorkshopsScreen() {
                   {(sessions ?? []).map((s) => (
                     <tr key={s.id}>
                       <td className="mono" style={{ fontSize: "0.75rem" }}>
-                        {new Date(s.starts_at).toLocaleString()}
+                        {formatTimestamp(s.starts_at)}
                       </td>
                       <td className="mono">{s.capacity}</td>
                       <td className="mono">{s.registered}</td>

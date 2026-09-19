@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatTimestamp } from "@/lib/format";
 
 interface Deal {
   id: string;
@@ -416,7 +417,7 @@ export default function DealsScreen() {
                 <ul className="mt-2 flex flex-col gap-1">
                   {detail.activities.map((a) => (
                     <li key={a.id} className="mono" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                      {new Date(a.created_at).toLocaleString()} — {a.kind.replace(/_/g, " ")}
+                      {formatTimestamp(a.created_at)} — {a.kind.replace(/_/g, " ")}
                     </li>
                   ))}
                 </ul>

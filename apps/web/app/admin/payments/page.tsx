@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatDate, formatMoney } from "@/lib/format";
 
 interface PendingPayment {
   payment_id: string;
@@ -290,17 +291,10 @@ export default function PaymentsScreen() {
                       {invoice.number}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {new Date(invoice.issued_at).toLocaleDateString("en-ZA", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatDate(invoice.issued_at)}
                     </td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {invoice.currency === "ZAR" ? "R" : `${invoice.currency} `}
-                      {Number(invoice.grand_total).toLocaleString("en-ZA", {
-                        minimumFractionDigits: 2,
-                      })}
+                      {formatMoney(invoice.grand_total, invoice.currency, { exact: true })}
                     </td>
                     <td>
                       <button

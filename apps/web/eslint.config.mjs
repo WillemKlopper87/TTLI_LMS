@@ -22,6 +22,25 @@ const config = [
       "react-hooks/set-state-in-effect": "warn",
     },
   },
+  {
+    // F13 (BACKLOG.md): dates, money and counts render through
+    // lib/format.ts so a page never picks its own locale (or worse, the
+    // browser's). lib/ is exempt because that is where the one allowed
+    // call lives.
+    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name=/^(toLocaleString|toLocaleDateString|toLocaleTimeString)$/]",
+          message:
+            "Use formatMoney/formatNumber/formatDate/formatTimestamp from @/lib/format instead of a raw toLocale* call.",
+        },
+      ],
+    },
+  },
 ];
 
 export default config;

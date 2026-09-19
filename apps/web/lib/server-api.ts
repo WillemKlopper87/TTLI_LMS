@@ -11,6 +11,30 @@ import { browserThemeAssetUrl } from "./theme-assets";
 
 export const API_URL = process.env.API_URL ?? "http://localhost:8010";
 
+/**
+ * F18 (BACKLOG.md): anonymous storefront reads used to be `no-store`, so
+ * every page view cost a live API call. They now revalidate on this window.
+ * Sixty seconds bounds how long an edit (a new course, a rebrand) can take
+ * to appear, which is what "without stale data" has to mean when nothing
+ * can push an invalidation from the API into this cache.
+ *
+ * Tenancy is the reason this is not just a one-line flip. The tenant is the
+ * request's Host, sent as an X-Tenant-Host *header*, but Next's data cache
+ * is keyed by the fetch URL — so the URL has to carry the tenant too, or
+ * two tenants asking for `/public/courses` would share one cache entry.
+ * `tenantScoped` adds it as a `_tenant` query parameter the API ignores.
+ * The pages themselves stay dynamic (they read `headers()`, and their HTML
+ * depends on the Host), so only this data layer is cached, never a route
+ * shared across tenants.
+ */
+export const REVALIDATE_SECONDS = 60;
+
+function tenantScoped(url: string, host: string): string {
+  const scoped = new URL(url);
+  scoped.searchParams.set("_tenant", host);
+  return scoped.toString();
+}
+
 export interface Theme {
   tenant_slug: string;
   tenant_name: string;
@@ -27,7 +51,8 @@ export async function getTheme(): Promise<Theme | null> {
     const client = createApiClient(API_URL);
     const { data, response } = await client.GET("/api/v1/tenant/theme", {
       headers: { "X-Tenant-Host": host },
-      cache: "no-store",
+      params: { query: { _tenant: host } } as never,
+      next: { revalidate: REVALIDATE_SECONDS },
     });
     if (!response.ok || !data) return null;
     const theme = data as Theme;
@@ -58,9 +83,9 @@ export async function getTheme(): Promise<Theme | null> {
 async function publicGet<T>(path: string): Promise<T | null> {
   try {
     const host = (await headers()).get("host") ?? "localhost";
-    const resp = await fetch(`${API_URL}/api/v1${path}`, {
+    const resp = await fetch(tenantScoped(`${API_URL}/api/v1${path}`, host), {
       headers: { "X-Tenant-Host": host },
-      cache: "no-store",
+      next: { revalidate: REVALIDATE_SECONDS },
     });
     if (!resp.ok) return null;
     return (await resp.json()) as T;

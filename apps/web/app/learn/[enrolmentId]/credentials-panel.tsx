@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatDate } from "@/lib/format";
 
 interface CertificateInfo {
   id: string;
@@ -174,7 +175,7 @@ export function CredentialsPanel({ enrolmentId, pathEnrolmentId }: CredentialsPa
           </div>
           <p style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
             {data.certificate.certificate_number} &middot; issued{" "}
-            {new Date(data.certificate.issued_at).toLocaleDateString()}
+            {formatDate(data.certificate.issued_at)}
           </p>
           {data.certificate.revoked_reason ? (
             <p style={{ fontSize: "0.8125rem", color: "var(--stop)" }}>

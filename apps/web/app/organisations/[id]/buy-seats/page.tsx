@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
+import { formatMoney } from "@/lib/format";
 
 interface PriceSummary {
   id: string;
@@ -153,7 +154,7 @@ export default function BuySeatsPage() {
           Purchase order details
         </h1>
         <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-          Order total: {order.currency} {Number(order.grand_total).toLocaleString()}
+          Order total: {formatMoney(order.grand_total, order.currency, { exact: true })}
         </p>
 
         <label className="field mt-6">
@@ -216,7 +217,7 @@ export default function BuySeatsPage() {
               {products.flatMap((product) =>
                 product.prices.map((price) => (
                   <option key={price.id} value={price.id}>
-                    {product.name} — {price.currency} {Number(price.unit_amount).toLocaleString()}
+                    {product.name} — {formatMoney(price.unit_amount, price.currency)}
                   </option>
                 )),
               )}

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
 import { useRequireAuth } from "@/lib/session-context";
+import { formatDate } from "@/lib/format";
 
 interface TranscriptLesson {
   module_title: string;
@@ -93,13 +94,13 @@ export default function TranscriptPage() {
           </div>
           <div>
             <dt style={{ color: "var(--faint)" }}>Enrolled</dt>
-            <dd>{new Date(transcript.enrolled_at).toLocaleDateString()}</dd>
+            <dd>{formatDate(transcript.enrolled_at)}</dd>
           </div>
           <div>
             <dt style={{ color: "var(--faint)" }}>Course completed</dt>
             <dd>
               {transcript.completed_at
-                ? new Date(transcript.completed_at).toLocaleDateString()
+                ? formatDate(transcript.completed_at)
                 : "In progress"}
             </dd>
           </div>
@@ -134,7 +135,7 @@ export default function TranscriptPage() {
                     <td>{lesson.module_title}</td>
                     <td>{lesson.title}</td>
                     <td>
-                      {lesson.completed_at ? new Date(lesson.completed_at).toLocaleDateString() : ""}
+                      {lesson.completed_at ? formatDate(lesson.completed_at) : ""}
                     </td>
                   </tr>
                 ))

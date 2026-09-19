@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { authedFetch } from "@/lib/authed-fetch";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
+import { formatDate, formatMoney } from "@/lib/format";
 
 interface SubscriptionResponse {
   id: string;
@@ -80,7 +81,7 @@ function EftPanel({ orderId }: { orderId: string }) {
     <div className="card mt-3 p-4">
       <b style={{ fontSize: "0.8125rem" }}>Pay by EFT</b>
       <p className="mt-1" style={{ fontSize: "0.8125rem" }}>
-        {eft.currency} {Number(eft.amount).toLocaleString()} — ref {eft.payment_reference}
+        {formatMoney(eft.amount, eft.currency, { exact: true })} — ref {eft.payment_reference}
       </p>
       <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
         {eft.bank_name} · {eft.account_name} · {eft.account_number} · {eft.branch_code}
@@ -229,7 +230,7 @@ export default function SubscriptionAccountPage() {
           {subscription.current_period_end ? (
             <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
               {subscription.cancel_at_period_end ? "Access ends" : "Renews"}{" "}
-              {new Date(subscription.current_period_end).toLocaleDateString()}
+              {formatDate(subscription.current_period_end)}
             </p>
           ) : null}
           {subscription.pending_plan_id ? (
