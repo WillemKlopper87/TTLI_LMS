@@ -746,6 +746,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/partner/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a partner profile for an organisation
+         * @description Create a new partner profile.
+         *
+         *     Initial status is 'invited'. Activation requires MFA, operator agreement,
+         *     and (for health professionals) registration number.
+         *
+         *     Requires the caller to be an admin member of the target organisation.
+         */
+        post: operations["create_partner_profile_api_v1_partner_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/by-organisation/{organisation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch the partner profile for an organisation, if one exists
+         * @description Look up an organisation's partner profile.
+         *
+         *     Returns null rather than 404 when no profile exists yet — the UI's
+         *     create-vs-manage decision hinges on "does one exist", not on this
+         *     being an error state.
+         *
+         *     Requires the caller to be an admin member of the organisation — a
+         *     partner profile holds encrypted registration/bio data that must not
+         *     be readable by an arbitrary authenticated tenant user.
+         */
+        get: operations["get_partner_profile_for_organisation_api_v1_partner_profiles_by_organisation__organisation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/activation-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check activation status of a partner profile
+         * @description Check whether a partner profile can be activated.
+         *
+         *     Returns:
+         *         - can_activate: True if all gates are met
+         *         - missing_gates: List of gates that are not yet cleared
+         *
+         *     Requires the caller to be an admin member of the profile's organisation.
+         */
+        get: operations["check_activation_status_api_v1_partner_profiles__profile_id__activation_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/accept-agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept the operator agreement for a partner profile
+         * @description Accept the operator agreement (activation gate 1) and, for health
+         *     professionals, record a registration number (gate 3). Requires the
+         *     caller to be an admin member of the profile's organisation.
+         */
+        post: operations["accept_operator_agreement_api_v1_partner_profiles__profile_id__accept_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/profiles/{profile_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate a partner profile
+         * @description Activate a partner profile if all gates are cleared.
+         *
+         *     Raises AppError if any gate is not met.
+         */
+        post: operations["activate_profile_api_v1_partner_profiles__profile_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a client organisation under the authenticated partner
+         * @description Create a new client organisation under a partner.
+         *
+         *     The partner organisation is resolved from the caller's own admin
+         *     membership — a caller who does not administer any partner organisation
+         *     cannot create client organisations. Future versions will support
+         *     explicit parent selection among multiple partners.
+         */
+        post: operations["create_client_org_api_v1_partner_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/subscription-plans": {
         parameters: {
             query?: never;
@@ -5025,10 +5173,37 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AcceptOperatorAgreementRequest
+         * @description Request to accept the operator agreement (activation gate 1), and
+         *     record a registration number for health professionals (gate 3).
+         */
+        AcceptOperatorAgreementRequest: {
+            /**
+             * Operator Agreement Ref
+             * @description Version/identifier of the agreement accepted
+             */
+            operator_agreement_ref: string;
+            /**
+             * Registration Number
+             * @description Professional registration number (required if professional_body was set)
+             */
+            registration_number?: string | null;
+        };
+        /**
          * AcceptReportRequest
          * @description Reviewer accepts a report (makes it immutable).
          */
         AcceptReportRequest: Record<string, never>;
+        /**
+         * ActivationStatusResponse
+         * @description Response indicating whether a partner can be activated and why.
+         */
+        ActivationStatusResponse: {
+            /** Can Activate */
+            can_activate: boolean;
+            /** Missing Gates */
+            missing_gates?: string[];
+        };
         /** ActivityResponse */
         ActivityResponse: {
             /** Id */
@@ -5873,6 +6048,23 @@ export interface components {
             badge: boolean;
         };
         /**
+         * ClientOrgResponse
+         * @description Response containing created client organisation.
+         */
+        ClientOrgResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Parent Organisation Id */
+            parent_organisation_id?: string | null;
+        };
+        /**
          * CoachingFacilitatorResponse
          * @description The deliberately small facilitator profile learners may see.
          *
@@ -6101,6 +6293,17 @@ export interface components {
             template_id: string;
             /** Segment Id */
             segment_id: string;
+        };
+        /**
+         * CreateClientOrgRequest
+         * @description Request to create a client organisation under a partner.
+         */
+        CreateClientOrgRequest: {
+            /**
+             * Name
+             * @description Client organisation name
+             */
+            name: string;
         };
         /** CreateDealRequest */
         CreateDealRequest: {
@@ -7566,6 +7769,66 @@ export interface components {
             did_not_convert: number;
             /** Total Users */
             total_users: number;
+        };
+        /**
+         * PartnerProfileCreateRequest
+         * @description Request to create a partner profile.
+         */
+        PartnerProfileCreateRequest: {
+            /**
+             * Organisation Id
+             * Format: uuid
+             * @description Organisation ID for the partner
+             */
+            organisation_id: string;
+            /**
+             * Display Name
+             * @description Display name
+             */
+            display_name: string;
+            /**
+             * Bio
+             * @description Partner bio/description
+             */
+            bio?: string | null;
+            /**
+             * Logo Object Key
+             * @description S3 object key for partner logo
+             */
+            logo_object_key?: string | null;
+            /**
+             * Professional Body
+             * @description Professional body for health professionals
+             */
+            professional_body?: string | null;
+        };
+        /**
+         * PartnerProfileResponse
+         * @description Response containing partner profile data.
+         */
+        PartnerProfileResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Organisation Id
+             * Format: uuid
+             */
+            organisation_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Bio */
+            bio?: string | null;
+            /** Logo Object Key */
+            logo_object_key?: string | null;
+            /** Professional Body */
+            professional_body?: string | null;
+            /** Status */
+            status: string;
+            /** Operator Agreement Accepted At */
+            operator_agreement_accepted_at?: string | null;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
@@ -11511,6 +11774,198 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_partner_profile_api_v1_partner_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_partner_profile_for_organisation_api_v1_partner_profiles_by_organisation__organisation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organisation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_activation_status_api_v1_partner_profiles__profile_id__activation_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivationStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_operator_agreement_api_v1_partner_profiles__profile_id__accept_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptOperatorAgreementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_profile_api_v1_partner_profiles__profile_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_client_org_api_v1_partner_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateClientOrgRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientOrgResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

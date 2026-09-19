@@ -99,6 +99,7 @@ from src.models.learning_path import (
 )
 from src.models.media import AudioAsset, TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
+from src.models.partner import AssessmentLicence, PartnerProfile
 from src.models.podcast import PodcastEpisode
 from src.models.programme import Cohort, CohortMember, CohortStep
 from src.models.push import PushSubscription
@@ -137,6 +138,7 @@ __all__ = [
     "AssessmentEngagement",
     "AssessmentInstance",
     "AssessmentInvitation",
+    "AssessmentLicence",
     "AssessmentResponse",
     "AssessmentSubject",
     "AssessmentSubjectResult",
@@ -203,6 +205,7 @@ __all__ = [
     "OrderItem",
     "Organisation",
     "OrganisationMember",
+    "PartnerProfile",
     "PasswordReset",
     "PathEnrolment",
     "Payment",
