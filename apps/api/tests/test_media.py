@@ -447,6 +447,78 @@ async def test_list_video_assets_returns_uploaded_assets(
     assert item["has_captions"] is False
 
 
+async def test_video_asset_list_supports_limit_offset_and_reports_a_true_total(
+    client, tenant_session_factory, crypto, sample_video
+) -> None:  # type: ignore[no-untyped-def]
+    """F6 (BACKLOG.md): this used to fetch every video asset on the whole
+    platform in one unbounded query with no limit/offset/total at all —
+    the worst row-count exposure surveyed under F6, since (unlike a
+    tenant-scoped list) it has no natural ceiling short of every upload
+    ever made. `GET /leads` already established the limit+offset+total
+    shape this now matches."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    author_token, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="content_author"
+    )
+    video_asset_id = await _upload_and_wait_ready(
+        client, author_token, sample_video, tenant_session_factory
+    )
+    headers = {"Authorization": f"Bearer {author_token}"}
+
+    one_page = await client.get(
+        "/api/v1/video-assets", params={"limit": 1}, headers=headers
+    )
+    assert one_page.status_code == 200, one_page.text
+    body = one_page.json()
+    total = body["total"]
+    assert total >= 1
+    assert len(body["items"]) == 1
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+
+    # Walking every page at the endpoint's own max page size finds the
+    # asset this test just uploaded exactly once, wherever it sorts —
+    # this suite's shared platform can hold assets seeded with plain
+    # random ids as well as uuid7s, so "the newest upload is always
+    # page one" is not a safe assumption to test against, only that
+    # paging all the way through reaches it. A single `limit=total`
+    # request would be simpler, but total can genuinely exceed this
+    # endpoint's own `le=200` ceiling over a full suite run — the same
+    # ceiling a real caller has to page past rather than ever request
+    # past in one call.
+    max_page_size = 200
+    all_ids: list[str] = []
+    offset = 0
+    while offset < total:
+        page = await client.get(
+            "/api/v1/video-assets",
+            params={"limit": max_page_size, "offset": offset},
+            headers=headers,
+        )
+        assert page.status_code == 200, page.text
+        page_items = page.json()["items"]
+        assert len(page_items) > 0  # a true total must not lie about there being more
+        all_ids.extend(item["id"] for item in page_items)
+        offset += max_page_size
+    assert all_ids.count(video_asset_id) == 1
+
+    # The last page is never empty, and an offset past the end is not an
+    # error — it is simply nothing left to show, with `total` still true.
+    last_page = await client.get(
+        "/api/v1/video-assets", params={"limit": 1, "offset": total - 1}, headers=headers
+    )
+    assert last_page.status_code == 200
+    assert len(last_page.json()["items"]) == 1
+    assert last_page.json()["total"] == total
+
+    past_the_end = await client.get(
+        "/api/v1/video-assets", params={"limit": 1, "offset": total}, headers=headers
+    )
+    assert past_the_end.status_code == 200
+    assert past_the_end.json()["items"] == []
+    assert past_the_end.json()["total"] == total
+
+
 async def test_video_asset_list_requires_course_edit_permission(
     client, tenant_session_factory, crypto
 ) -> None:  # type: ignore[no-untyped-def]

@@ -46,6 +46,7 @@ export default function People() {
   const canManageRoles = me.permissions.includes("tenant:manage");
 
   const [users, setUsers] = useState<TenantUser[] | null>(null);
+  const [usersTotal, setUsersTotal] = useState<number | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [includeLearners, setIncludeLearners] = useState(false);
   const [query, setQuery] = useState("");
@@ -70,15 +71,21 @@ export default function People() {
 
   const load = useCallback(async () => {
     try {
+      // limit=200 is this endpoint's own ceiling (same as GET /leads) —
+      // requesting it explicitly, rather than the API's smaller default,
+      // keeps this screen close to its old "just show everyone" shape.
+      // Past 200, `total` says so below instead of silently hiding the rest.
       const [u, r] = await Promise.all([
-        authed(`/tenant/users?include_learners=${includeLearners}`),
+        authed(`/tenant/users?include_learners=${includeLearners}&limit=200`),
         authed("/tenant/roles"),
       ]);
       if (!u.ok || !r.ok) {
         setError("The people list could not be loaded.");
         return;
       }
-      setUsers(((await u.json()) as { items: TenantUser[] }).items);
+      const usersBody = (await u.json()) as { items: TenantUser[]; total: number };
+      setUsers(usersBody.items);
+      setUsersTotal(usersBody.total);
       setRoles(((await r.json()) as { roles: Role[] }).roles);
       setError(null);
     } catch {
@@ -145,6 +152,13 @@ export default function People() {
           Include learners
         </label>
       </div>
+
+      {usersTotal !== null && users !== null && usersTotal > users.length ? (
+        <p className="mt-1" style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+          Showing the most recent {users.length} of {usersTotal}. Narrow with search below, or
+          uncheck &quot;Include learners&quot; to see fewer.
+        </p>
+      ) : null}
 
       {error ? (
         <div className="callout callout--warn mt-3" role="status">

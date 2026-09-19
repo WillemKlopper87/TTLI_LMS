@@ -38,6 +38,9 @@ class TenantUserRow(BaseModel):
 
 class TenantUsersResponse(BaseModel):
     items: list[TenantUserRow]
+    total: int
+    limit: int
+    offset: int
 
 
 class InviteUserRequest(BaseModel):

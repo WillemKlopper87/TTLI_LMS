@@ -130,23 +130,53 @@ def _video_asset_response(
     "/video-assets", response_model=VideoAssetsPageResponse, summary="List uploaded video assets"
 )
 async def list_video_assets(
-    principal: PrincipalDep, session: SessionDep
+    principal: PrincipalDep,
+    session: SessionDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> VideoAssetsPageResponse:
     """H-12: unfiltered, this handed every tenant's video library —
     bespoke courses included — to any `course:edit` holder on the
     platform. `course_id` is nullable (advisory-until-attached, same as
     every other block-attached resource), so an unbound asset stays
     visible to any authorised caller; a bound one is gated by its
-    course's own boundary."""
+    course's own boundary.
+
+    F6 (BACKLOG.md): `VideoAsset` carries no `tenant_id` of its own —
+    `course_id` is the only thing `filter_authorable` has to resolve
+    visibility from — so which ids are visible can only be known after
+    looking at every asset's `course_id`. What no longer happens
+    platform-wide is materialising every asset's full row (renditions,
+    estimated_sizes and the rest) just to answer one page of a list: the
+    id/course_id scan below reads two narrow columns to find `total` and
+    this page's ids, and only those ids' full rows are then fetched.
+    """
     principal.require("course:edit")
-    stmt = select(VideoAsset).order_by(VideoAsset.id.desc())
-    assets = (await session.execute(stmt)).scalars().all()
-    course_ids_by_asset = {a.id: ([a.course_id] if a.course_id else []) for a in assets}
+    id_scan = (
+        await session.execute(
+            select(VideoAsset.id, VideoAsset.course_id).order_by(VideoAsset.id.desc())
+        )
+    ).all()
+    course_ids_by_asset = {row.id: ([row.course_id] if row.course_id else []) for row in id_scan}
     visible = await courses_service.filter_authorable(
         session, tenant_id=principal.tenant_id, course_ids_by_item=course_ids_by_asset
     )
+    # `id_scan` is already ordered newest-first; filtering it (not the
+    # `visible` set, which has no order) keeps that order for paging.
+    visible_ids_in_order = [row.id for row in id_scan if row.id in visible]
+    total = len(visible_ids_in_order)
+    page_ids = visible_ids_in_order[offset : offset + limit]
+
+    assets_by_id: dict[uuid.UUID, VideoAsset] = {}
+    if page_ids:
+        rows = await session.execute(select(VideoAsset).where(VideoAsset.id.in_(page_ids)))
+        assets_by_id = {a.id: a for a in rows.scalars().all()}
+
     return VideoAssetsPageResponse(
-        items=[_video_asset_response(a) for a in assets if a.id in visible]
+        items=[_video_asset_response(assets_by_id[i]) for i in page_ids if i in assets_by_id],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

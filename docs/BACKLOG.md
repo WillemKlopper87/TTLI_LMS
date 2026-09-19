@@ -54,7 +54,7 @@ F13 to F17.
 | **F3** | Gradebook N+1 around quiz lookup and attempts. | **DONE 2026-09-19.** `build_for_enrolment` batches quiz/assignment lookups and their latest-attempt/submission lookups into four queries total regardless of block count (was `1 + 2N`). Query-count regression test compares a 2-block vs 12-block course. |
 | **F4** | Learner dashboard N+1 around quiz lookup and attempts remaining. | **DONE 2026-09-19.** `get_dashboard` batches quiz lookups and a grouped attempts-used count across all upcoming quiz blocks into two queries total regardless of block count (was `2N`). Query-count regression test compares a 1-block vs 6-block available lesson. |
 | **F5** | Campaign send loops contacts and enqueues inside the request transaction. | **DONE 2026-09-19.** `POST /campaigns/{id}/send` now only validates and flips the campaign to `sending` (also the re-send guard), then enqueues `send_campaign_job`; the per-contact consent/suppression check and real SMTP call run in that worker job, off the request path. `SendCampaignResponse` now reports `status` only — final counts live on `GET /campaigns/{id}`'s stats once the job has run. |
-| **F6** | Admin lists/exports lack consistent pagination/ceilings. | **OPEN.** |
+| **F6** | Admin lists/exports lack consistent pagination/ceilings. | **IN PROGRESS 2026-09-19.** Surveyed across every router. Two highest-value gaps closed: `GET /tenant/users` (was a silent 200/2000-row cap with no `limit`/`offset`/`total`, and filtered role-holders in Python after an arbitrary most-recent-N slice — a staff member outside that slice was invisible, not just unpaginated) and `GET /video-assets` (was a fully unbounded, platform-wide, unscoped query materialising every video's full row). Both now match `GET /leads`'s `limit`/`offset`/`total` shape. Remaining, lower row-count risk, not yet done: `/assignment-submissions/pending` and `/quiz-answers/ungraded` (unbounded grading queues), the at-risk-learners list in course analytics (one call site opts out of its own `ATTENTION_LIMIT` cap), and organisation-scoped member/seat lists (bounded by purchased seats, lowest priority). |
 | **F7** | `infra/docker-compose.prod.yml` is stale relative to the single-VM production topology. | **OPEN.** |
 | **F8** | Compose resource/log-rotation limits are incomplete. | **OPEN.** |
 | **F9** | Worker had no active healthcheck; updater could accept a running-but-broken worker. | **DONE IN CODE — #25 / CI #189 / `7a4e2bf`; T10 rollback rehearsal evidence still open.** |
@@ -81,7 +81,7 @@ Do this after the production gate, and profile before optimising.
 
 | Area | Items | Status |
 |---|---|---|
-| Data access/performance | F3, F4 done 2026-09-19. F5, F6 remain; slow-query capture + `EXPLAIN (ANALYZE, BUFFERS)` before indexes. | **OPEN.** |
+| Data access/performance | F3, F4, F5 done 2026-09-19. F6 in progress (two of six surveyed gaps closed); slow-query capture + `EXPLAIN (ANALYZE, BUFFERS)` before indexes. | **OPEN.** |
 | Storefront delivery | F18 caching/revalidation and `loading.tsx` coverage. | **OPEN.** |
 | Frontend contract safety | Incremental typed facade over `packages/api-client`, highest-risk pages first. | **OPEN.** |
 | Shared components / decomposition | O8/O14; split large mixed-responsibility pages/services after characterisation tests. | **OPEN.** |

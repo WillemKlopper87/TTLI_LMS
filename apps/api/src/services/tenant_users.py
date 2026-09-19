@@ -35,7 +35,7 @@ import uuid
 from datetime import UTC, datetime
 
 from redis.asyncio import Redis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.crypto import CryptoBox
@@ -106,54 +106,78 @@ async def list_users(
     *,
     tenant_id: uuid.UUID,
     include_learners: bool = False,
-    limit: int = 200,
-) -> list[TenantUserRow]:
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[TenantUserRow], int]:
     """Staff first. A tenant's learner list runs to thousands and belongs
     on a reporting screen with its own filters; this one exists to answer
     "who can do things here", so it returns role-holders unless the
-    caller explicitly asks for everyone."""
+    caller explicitly asks for everyone.
+
+    F6 (BACKLOG.md): the role filter used to be applied in Python after
+    fetching a flat, arbitrarily-sized slice of the tenant's *most
+    recently created* users (2000 of them) — so a staff member who
+    wasn't among those 2000 was silently invisible to "who can do things
+    here", not just unpaginated. Pushing the filter into the query
+    itself (an `EXISTS` against `role_assignments`) fixes both: `total`
+    and the page are now computed over every actual role-holder, and
+    `limit`/`offset` give a caller a real way to reach the rest, the
+    same shape `GET /leads` already established.
+    """
+    base = select(User).where(User.tenant_id == tenant_id)
+    if not include_learners:
+        has_role = exists(
+            select(RoleAssignment.user_id).where(
+                RoleAssignment.tenant_id == tenant_id,
+                RoleAssignment.user_id == User.id,
+            )
+        )
+        base = base.where(has_role)
+
+    total = (
+        await session.execute(select(func.count()).select_from(base.subquery()))
+    ).scalar_one()
+
     users = (
         (
             await session.execute(
-                select(User)
-                .where(User.tenant_id == tenant_id)
-                .order_by(User.created_at.desc())
-                .limit(limit if include_learners else 2000)
+                base.order_by(User.created_at.desc()).limit(limit).offset(offset)
             )
         )
         .scalars()
         .all()
     )
-    assignments = (
-        await session.execute(
-            select(RoleAssignment.user_id, RoleAssignment.role_code).where(
-                RoleAssignment.tenant_id == tenant_id
-            )
-        )
-    ).all()
-    roles_by_user: dict[uuid.UUID, list[str]] = {}
-    for user_id, role_code in assignments:
-        roles_by_user.setdefault(user_id, []).append(role_code)
 
-    rows: list[TenantUserRow] = []
-    for user in users:
-        roles = sorted(roles_by_user.get(user.id, []))
-        if not include_learners and not roles:
-            continue
-        rows.append(
-            TenantUserRow(
-                id=user.id,
-                email=_email(crypto, user),
-                full_name=_name(crypto, user),
-                status=user.status,
-                is_guest=user.is_guest,
-                roles=roles,
-                created_at=user.created_at,
+    # Roles for just this page, not the whole tenant — reading every
+    # role_assignments row on every request was itself unbounded work a
+    # paginated endpoint shouldn't still be doing.
+    user_ids = [user.id for user in users]
+    roles_by_user: dict[uuid.UUID, list[str]] = {}
+    if user_ids:
+        assignments = (
+            await session.execute(
+                select(RoleAssignment.user_id, RoleAssignment.role_code).where(
+                    RoleAssignment.tenant_id == tenant_id,
+                    RoleAssignment.user_id.in_(user_ids),
+                )
             )
+        ).all()
+        for user_id, role_code in assignments:
+            roles_by_user.setdefault(user_id, []).append(role_code)
+
+    rows = [
+        TenantUserRow(
+            id=user.id,
+            email=_email(crypto, user),
+            full_name=_name(crypto, user),
+            status=user.status,
+            is_guest=user.is_guest,
+            roles=sorted(roles_by_user.get(user.id, [])),
+            created_at=user.created_at,
         )
-        if len(rows) >= limit:
-            break
-    return rows
+        for user in users
+    ]
+    return rows, int(total)
 
 
 def _email(crypto: CryptoBox, user: User) -> str:

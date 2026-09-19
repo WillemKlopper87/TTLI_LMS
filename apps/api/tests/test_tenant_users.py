@@ -481,6 +481,93 @@ async def test_branding_refuses_a_colour_nobody_can_read(  # type: ignore[no-unt
     assert body["details"]["contrast"] < 4.5
     assert "4.5" in body["message"]
 
+
+async def test_users_list_supports_limit_offset_and_reports_a_true_total(  # type: ignore[no-untyped-def]
+    client, tenant_session_factory, crypto
+) -> None:
+    """F6 (BACKLOG.md): the endpoint used to hard-cap at 200 (2000 for
+    `include_learners`) with no `limit`/`offset`/`total` at all — a
+    tenant past that size had no way to even learn more rows existed,
+    let alone page to them. `GET /leads` already established the
+    limit+offset+total shape this now matches."""
+    tenant_id = await _demo_tenant_id(tenant_session_factory)
+    boss, _ = await _login(
+        client, tenant_session_factory, crypto, tenant_id=tenant_id, role="super_admin"
+    )
+    headers = {"Authorization": f"Bearer {boss}"}
+
+    before = await client.get(
+        "/api/v1/tenant/users", params={"limit": 1}, headers=headers
+    )
+    assert before.status_code == 200, before.text
+    total_before = before.json()["total"]
+
+    target_ids: set[str] = set()
+    async with tenant_session_factory(tenant_id) as s:
+        for _ in range(3):
+            user = await identity.create_user(
+                s, crypto, tenant_id=tenant_id, email=_unique_email(), password=PASSWORD
+            )
+            s.add(RoleAssignment(tenant_id=tenant_id, user_id=user.id, role_code="content_author"))
+            target_ids.add(str(user.id))
+
+    one_page = await client.get(
+        "/api/v1/tenant/users", params={"limit": 1}, headers=headers
+    )
+    assert one_page.status_code == 200, one_page.text
+    body = one_page.json()
+    assert body["total"] == total_before + 3
+    assert len(body["items"]) == 1
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+
+    # Walking every page at the endpoint's own max page size finds all
+    # three new staff exactly once each — proving the SQL-level filter
+    # (not the old fetch-2000-then-filter-in-Python approach) actually
+    # reaches every role-holder, not just whichever happened to be among
+    # the most recently created. A single request for `limit=total`
+    # would be simpler, but this suite's shared demo tenant accumulates
+    # role-holders across every other test file in a full run and can
+    # genuinely exceed this endpoint's own `le=200` ceiling — the same
+    # ceiling a real caller has to page past, which is exactly what this
+    # walk exercises.
+    max_page_size = 200
+    all_ids: list[str] = []
+    offset = 0
+    while offset < body["total"]:
+        page = await client.get(
+            "/api/v1/tenant/users",
+            params={"limit": max_page_size, "offset": offset},
+            headers=headers,
+        )
+        assert page.status_code == 200, page.text
+        page_items = page.json()["items"]
+        assert len(page_items) > 0  # a true total must not lie about there being more
+        all_ids.extend(row["id"] for row in page_items)
+        offset += max_page_size
+    assert target_ids.issubset(set(all_ids))
+    assert len(all_ids) == len(set(all_ids))  # no duplicate rows across pages
+
+    # The last page is never empty, and an offset past the end is not an
+    # error — it is simply nothing left to show, with `total` still true.
+    last_page = await client.get(
+        "/api/v1/tenant/users",
+        params={"limit": 1, "offset": body["total"] - 1},
+        headers=headers,
+    )
+    assert last_page.status_code == 200
+    assert len(last_page.json()["items"]) == 1
+    assert last_page.json()["total"] == body["total"]
+
+    past_the_end = await client.get(
+        "/api/v1/tenant/users",
+        params={"limit": 1, "offset": body["total"]},
+        headers=headers,
+    )
+    assert past_the_end.status_code == 200
+    assert past_the_end.json()["items"] == []
+    assert past_the_end.json()["total"] == body["total"]
+
     malformed = await client.patch(
         "/api/v1/tenant/branding", json={"primary_color": "red"}, headers=headers
     )

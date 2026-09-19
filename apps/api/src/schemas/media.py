@@ -25,6 +25,9 @@ class VideoAssetResponse(BaseModel):
 
 class VideoAssetsPageResponse(BaseModel):
     items: list[VideoAssetResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class AudioAssetResponse(BaseModel):

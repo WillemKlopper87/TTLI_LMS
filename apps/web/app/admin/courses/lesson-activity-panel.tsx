@@ -229,7 +229,11 @@ export function LessonActivityPanel({
       const resp = await authedFetch("/api/bff/assignments");
       if (resp.ok) setAssignments((await resp.json()).items);
     } else {
-      const resp = await authedFetch("/api/bff/video-assets");
+      // limit=200 is this endpoint's own ceiling (F6, BACKLOG.md) — asking
+      // for it explicitly keeps this "attach an existing video" picker
+      // close to its old unbounded shape rather than the API's smaller
+      // default.
+      const resp = await authedFetch("/api/bff/video-assets?limit=200");
       if (resp.ok) setVideos((await resp.json()).items);
     }
   }
