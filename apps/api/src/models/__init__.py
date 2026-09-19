@@ -94,6 +94,7 @@ from src.models.learning_path import (
 from src.models.media import AudioAsset, TranscodeJob, VideoAsset, VideoHeartbeat, VideoProgress
 from src.models.organisation import Organisation, OrganisationMember
 from src.models.podcast import PodcastEpisode
+from src.models.programme import Cohort, CohortMember, CohortStep
 from src.models.push import PushSubscription
 from src.models.rbac import Permission, Role, RoleAssignment, RolePermission
 from src.models.recommendation import Recommendation
@@ -150,6 +151,9 @@ __all__ = [
     "CampaignStatus",
     "Certificate",
     "CertificateTemplate",
+    "Cohort",
+    "CohortMember",
+    "CohortStep",
     "ConsentRecord",
     "Contact",
     "Course",
