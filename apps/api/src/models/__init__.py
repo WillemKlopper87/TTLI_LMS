@@ -19,6 +19,15 @@ from src.models.assessment import (
     SurveyResponse,
     SurveyResponseMode,
 )
+from src.models.assessment_template import (
+    AssessmentInstance,
+    AssessmentInvitation,
+    AssessmentResponse,
+    AssessmentSubject,
+    AssessmentSubjectResult,
+    AssessmentTemplate,
+    AssessmentTemplateQuestion,
+)
 from src.models.audit import AuditAction, AuditEvent
 from src.models.auth import MagicLink, MfaRecoveryCode, PasswordReset, RefreshToken
 from src.models.base import Base, SoftDeleteMixin, TenantMixin, TimestampMixin
@@ -118,6 +127,13 @@ __all__ = [
     "AccessLevel",
     "Activity",
     "Article",
+    "AssessmentInstance",
+    "AssessmentInvitation",
+    "AssessmentResponse",
+    "AssessmentSubject",
+    "AssessmentSubjectResult",
+    "AssessmentTemplate",
+    "AssessmentTemplateQuestion",
     "Assignment",
     "AssignmentSubmission",
     "AttendanceRecord",

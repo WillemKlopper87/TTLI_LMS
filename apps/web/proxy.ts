@@ -75,7 +75,15 @@ export function proxy(request: NextRequest) {
     `frame-src https://open.spotify.com`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
-    `form-action 'self'`,
+    // Card checkout is a real hidden-form POST straight to Payfast
+    // (app/checkout/page.tsx) — Payfast requires this exact browser
+    // form-submit shape, not a fetch or a 3xx redirect. Both their
+    // sandbox and production hosts are listed unconditionally: this
+    // middleware has no visibility into the API's PAYFAST_SANDBOX
+    // setting, and both are fixed, known payment-gateway domains, never
+    // user input, so allowing both doesn't broaden what an attacker
+    // could redirect a form to.
+    `form-action 'self' https://www.payfast.co.za https://sandbox.payfast.co.za`,
     ...(isProd ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
 

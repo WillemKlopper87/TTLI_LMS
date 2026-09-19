@@ -3204,6 +3204,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessment-platform/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Templates
+         * @description List all assessment templates for the tenant.
+         *
+         *     Requires assessment:author or assessment:analyse permission.
+         */
+        get: operations["list_templates_api_v1_assessment_platform_templates_get"];
+        put?: never;
+        /**
+         * Create Template
+         * @description Create a new assessment template in draft status.
+         *
+         *     Requires assessment:author permission.
+         */
+        post: operations["create_template_api_v1_assessment_platform_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessment-platform/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Instances
+         * @description List assessment instances accessible to the caller.
+         *
+         *     Requires assessment:run permission (sees every instance in the tenant),
+         *     or admin membership of the specific organisation_id filtered for (sees
+         *     only that organisation's instances) — an org admin's own "Assessments"
+         *     tab, per the design spec's dual-access rule for this endpoint.
+         */
+        get: operations["list_instances_api_v1_assessment_platform_instances_get"];
+        put?: never;
+        /**
+         * Create Instance
+         * @description Create a new assessment instance for an organisation.
+         *
+         *     Starts in draft status. Admin must populate questions and set window before opening.
+         *     Requires assessment:run permission.
+         */
+        post: operations["create_instance_api_v1_assessment_platform_instances_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enrolments/{enrolment_id}/credentials": {
         parameters: {
             query?: never;
@@ -6117,6 +6177,58 @@ export interface components {
             /** Duration Seconds */
             duration_seconds?: number | null;
         };
+        /**
+         * InstanceCreateRequest
+         * @description Create a new assessment instance.
+         */
+        InstanceCreateRequest: {
+            /** Template Id */
+            template_id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Evaluation Role
+             * @default standalone
+             */
+            evaluation_role: string;
+            /** Pair Id */
+            pair_id?: string | null;
+            /**
+             * Levels Enabled
+             * @default false
+             */
+            levels_enabled: boolean;
+        };
+        /**
+         * InstanceResponse
+         * @description Assessment instance response.
+         */
+        InstanceResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Template Id */
+            template_id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Evaluation Role */
+            evaluation_role: string;
+        };
+        /**
+         * InstancesPageResponse
+         * @description List of instances.
+         */
+        InstancesPageResponse: {
+            /** Items */
+            items: components["schemas"]["InstanceResponse"][];
+        };
         /** InviteUserRequest */
         InviteUserRequest: {
             /**
@@ -9005,21 +9117,42 @@ export interface components {
             /** Completed At */
             completed_at: string | null;
         };
-        /** TemplateResponse */
-        TemplateResponse: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Subject */
-            subject: string;
-            /** Body Text */
-            body_text: string;
+        /**
+         * TemplateCreateRequest
+         * @description Create a new assessment template.
+         */
+        TemplateCreateRequest: {
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Kind */
+            kind: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Response Mode
+             * @default identified
+             */
+            response_mode: string;
+            /**
+             * Minimum Group Size
+             * @default 5
+             */
+            minimum_group_size: number;
         };
         /** TemplatesPage */
         TemplatesPage: {
             /** Items */
-            items: components["schemas"]["TemplateResponse"][];
+            items: components["schemas"]["src__schemas__campaigns__TemplateResponse"][];
+        };
+        /**
+         * TemplatesPageResponse
+         * @description List of templates.
+         */
+        TemplatesPageResponse: {
+            /** Items */
+            items: components["schemas"]["src__routers__assessment_platform__TemplateResponse"][];
         };
         /** TenantAssignmentCreateRequest */
         TenantAssignmentCreateRequest: {
@@ -9462,6 +9595,39 @@ export interface components {
             zoom_configured: boolean;
             /** Meet Configured */
             meet_configured: boolean;
+        };
+        /**
+         * TemplateResponse
+         * @description Assessment template response.
+         */
+        src__routers__assessment_platform__TemplateResponse: {
+            /** Id */
+            id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Kind */
+            kind: string;
+            /** Response Mode */
+            response_mode: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /** TemplateResponse */
+        src__schemas__campaigns__TemplateResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Subject */
+            subject: string;
+            /** Body Text */
+            body_text: string;
         };
     };
     responses: never;
@@ -13869,7 +14035,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TemplateResponse"];
+                    "application/json": components["schemas"]["src__schemas__campaigns__TemplateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15718,6 +15884,123 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_assessment_platform_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplatesPageResponse"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_assessment_platform_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["src__routers__assessment_platform__TemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_instances_api_v1_assessment_platform_instances_get: {
+        parameters: {
+            query?: {
+                organisation_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstancesPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_instance_api_v1_assessment_platform_instances_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstanceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceResponse"];
                 };
             };
             /** @description Validation Error */

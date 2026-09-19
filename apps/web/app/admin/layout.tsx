@@ -42,6 +42,7 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Podcasts", href: "/admin/podcasts" },
   { label: "Articles", href: "/admin/articles" },
   { label: "Recommendations", href: "/admin/recommendations" },
+  { label: "Assessments", href: "/admin/assessments" },
   { label: "Grading", href: "/admin/grading", permission: "quiz:grade" },
   { label: "Surveys", href: "/admin/surveys" },
   { label: "Question bank", href: "/admin/question-bank" },
