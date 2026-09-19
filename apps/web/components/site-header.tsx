@@ -134,6 +134,18 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [search, setSearch] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
+  // A route change is a completed navigation — leaving the mobile menu
+  // open across it would mean the link the visitor just tapped stays
+  // covered by its own menu on the page it led to. Reset during render
+  // (React's documented pattern for state that depends on a prop
+  // change) rather than in an effect, which would otherwise render once
+  // with the stale open menu before a second render closes it.
+  const [pathnameAtOpen, setPathnameAtOpen] = useState(pathname);
+  if (pathname !== pathnameAtOpen) {
+    setPathnameAtOpen(pathname);
+    setNavOpen(false);
+  }
 
   useEffect(() => {
     if (status !== "authenticated" || !accessToken) {
@@ -207,7 +219,38 @@ export function SiteHeader({ tenantName, logoUrl }: SiteHeaderProps) {
         </span>
       </Link>
 
-      <nav className="site-nav" aria-label="Main">
+      <button
+        type="button"
+        className="nav-toggle"
+        onClick={() => setNavOpen((open) => !open)}
+        aria-expanded={navOpen}
+        aria-controls="site-nav"
+        aria-label={navOpen ? "Close menu" : "Open menu"}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          {navOpen ? (
+            <path
+              d="M4 4l12 12M16 4L4 16"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          ) : (
+            <path
+              d="M3 5h14M3 10h14M3 15h14"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          )}
+        </svg>
+      </button>
+
+      <nav
+        id="site-nav"
+        className={navOpen ? "site-nav site-nav--open" : "site-nav"}
+        aria-label="Main"
+      >
         {status === "loading"
           ? null
           : items.map((item, index) => {

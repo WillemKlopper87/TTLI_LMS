@@ -67,6 +67,52 @@ for (const page_ of PUBLIC_PAGES) {
   });
 }
 
+// F17b (BACKLOG.md): the header used to keep every nav item visible at
+// phone width by dropping them onto their own horizontally-scrolling
+// row, which both overflowed the header's own width and never reached
+// full axe-clean at that width. `wcag2aa`'s 1.4.10 (reflow) content is
+// exactly what a permanently-overflowing row risks. Every public page
+// gets the same axe pass PUBLIC_PAGES already runs at desktop width —
+// a header defect could as easily hide in one page's specific content
+// as another's.
+test.describe("mobile viewport (375px)", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("the collapsed nav toggle opens the menu without any page overflow", async ({ page }) => {
+    await page.goto("/catalogue");
+    const toggle = page.getByRole("button", { name: "Open menu" });
+    await expect(toggle).toBeVisible();
+    const nav = page.locator("header nav").first();
+    await expect(nav).toBeHidden();
+
+    await toggle.click();
+    await expect(page.getByRole("button", { name: "Close menu" })).toBeVisible();
+    await expect(nav).toBeVisible();
+    await expect(nav.getByRole("link")).not.toHaveCount(0);
+
+    // The actual F17b symptom: the header's own content pushing the
+    // document wider than the viewport, forcing horizontal scroll.
+    const overflowsHorizontally = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflowsHorizontally).toBe(false);
+  });
+
+  for (const page_ of PUBLIC_PAGES) {
+    test(`${page_.name} has no WCAG A/AA violations at mobile width`, async ({ page }) => {
+      await page.goto(page_.path);
+      const results = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+        .analyze();
+      const summary = results.violations.map(
+        (v) =>
+          `${v.id}: ${v.help} -> ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
+      );
+      expect(summary, `mobile axe violations on ${page_.path}`).toEqual([]);
+    });
+  }
+});
+
 test("the header exposes the primary navigation", async ({ page }) => {
   await page.goto("/");
   const nav = page.locator("header nav").first();

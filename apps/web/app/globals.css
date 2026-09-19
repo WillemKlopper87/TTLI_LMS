@@ -401,6 +401,27 @@ a {
   font-weight: 600;
 }
 
+/* F17b (BACKLOG.md): the hamburger toggle only exists to collapse the
+   nav on a phone — hidden entirely above the same 760px breakpoint the
+   collapse itself uses, so it never competes with the always-visible
+   nav on a normal-width screen. */
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  padding: 0.4rem;
+  cursor: pointer;
+}
+
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .site-footer {
   border-top: 1px solid var(--rule);
   padding: 1.1rem clamp(1rem, 3vw, 2rem);
@@ -431,24 +452,42 @@ a {
   color: var(--ink);
 }
 
-/* The prototype simply hides the nav under 760px. A real site still has to
-   be navigable on a phone, so instead of vanishing it drops onto its own
-   row and scrolls sideways — same visual language, nothing lost. */
+/* F17b (BACKLOG.md): the prototype's original fix for a phone-width
+   header was to keep every nav item visible but drop them onto their
+   own horizontally-scrolling row — still an overflowing header, just
+   overflowing sideways instead of wrapping badly. A public visitor's
+   first read of a nav is "what are my options", which a scroll strip
+   hides half of by default; a real collapse (hidden until the toggle
+   button opens it, same aria-expanded/aria-controls pattern the admin
+   shell's own mobile menu already established) shows all of them, one
+   at a time, without needing horizontal scrolling to find the rest. */
 @media (max-width: 760px) {
   .site-head {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
   }
-  .site-nav {
-    order: 3;
-    flex-basis: 100%;
-    gap: 1rem;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: thin;
+  .brand-mark {
+    order: 1;
+  }
+  .nav-toggle {
+    order: 2;
+    display: inline-flex;
+    margin-left: auto;
   }
   .head-actions {
-    margin-left: auto;
+    order: 3;
+  }
+  .site-nav {
+    order: 4;
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--rule);
+  }
+  .site-nav--open {
+    display: flex;
   }
 }
 
@@ -2400,6 +2439,25 @@ button.lrow:not(.lrow--lock):hover {
   gap: 1rem;
   align-items: center;
   padding-top: 0.25rem;
+}
+
+/* F17d (BACKLOG.md): "Previous lesson" and "Next lesson 🔒" (the
+   locked-state label, the widest of the three) together can exceed a
+   phone-width `.underplayer` — `.btn`'s own `white-space: nowrap` means
+   neither can shrink, so as an unwrapped `space-between` row the
+   right-hand button ran partly past the visible edge. Stacking full
+   width below the same phone breakpoint `.skin-switch` already uses
+   keeps both buttons entirely inside the content column regardless of
+   label length. */
+@media (max-width: 560px) {
+  .foot-nav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .foot-nav .btn {
+    width: 100%;
+  }
 }
 
 /* ============ 9 quiz ============ */
