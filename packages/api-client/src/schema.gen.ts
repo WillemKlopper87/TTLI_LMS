@@ -2230,7 +2230,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send Campaign */
+        /**
+         * Send Campaign
+         * @description F5 (BACKLOG.md): validates and flips the campaign to "sending",
+         *     then enqueues the real send — bounded, off the request path, the
+         *     same shape `POST /video-assets`'s upload endpoint already
+         *     established for handing the slow part to the worker.
+         */
         post: operations["send_campaign_api_v1_campaigns__campaign_id__send_post"];
         delete?: never;
         options?: never;
@@ -2438,6 +2444,15 @@ export interface paths {
          *     every other block-attached resource), so an unbound asset stays
          *     visible to any authorised caller; a bound one is gated by its
          *     course's own boundary.
+         *
+         *     F6 (BACKLOG.md): `VideoAsset` carries no `tenant_id` of its own —
+         *     `course_id` is the only thing `filter_authorable` has to resolve
+         *     visibility from — so which ids are visible can only be known after
+         *     looking at every asset's `course_id`. What no longer happens
+         *     platform-wide is materialising every asset's full row (renditions,
+         *     estimated_sizes and the rest) just to answer one page of a list: the
+         *     id/course_id scan below reads two narrow columns to find `total` and
+         *     this page's ids, and only those ids' full rows are then fetched.
          */
         get: operations["list_video_assets_api_v1_video_assets_get"];
         put?: never;
@@ -8488,12 +8503,8 @@ export interface components {
         };
         /** SendCampaignResponse */
         SendCampaignResponse: {
-            /** Sent */
-            sent: number;
-            /** Suppressed */
-            suppressed: number;
-            /** Excluded No Consent */
-            excluded_no_consent: number;
+            /** Status */
+            status: string;
         };
         /** ServiceStatus */
         ServiceStatus: {
@@ -9083,6 +9094,12 @@ export interface components {
         TenantUsersResponse: {
             /** Items */
             items: components["schemas"]["TenantUserRow"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** ThemeResponse */
         ThemeResponse: {
@@ -9391,6 +9408,12 @@ export interface components {
         VideoAssetsPageResponse: {
             /** Items */
             items: components["schemas"]["VideoAssetResponse"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** VideoDefaultsRequest */
         VideoDefaultsRequest: {
@@ -14288,7 +14311,10 @@ export interface operations {
     };
     list_video_assets_api_v1_video_assets_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14302,6 +14328,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VideoAssetsPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17995,6 +18030,8 @@ export interface operations {
         parameters: {
             query?: {
                 include_learners?: boolean;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;

@@ -137,22 +137,29 @@ def _status(*, completed_at: datetime | None, started_at: datetime | None, compl
     return "not_started"
 
 
-async def _attempts_remaining(session: AsyncSession, *, enrolment_id: uuid.UUID, quiz: Quiz) -> int:
-    """The same arithmetic `services/quiz.py::start_attempt` enforces —
-    invalidated attempts don't count against the limit there either, so
-    they must not count here or the dashboard would under-report."""
-    used = (
-        await session.execute(
-            select(func.count())
-            .select_from(QuizAttempt)
-            .where(
-                QuizAttempt.enrolment_id == enrolment_id,
-                QuizAttempt.quiz_id == quiz.id,
-                QuizAttempt.invalidated_at.is_(None),
-            )
+async def _attempts_used_by_pair(
+    session: AsyncSession, *, pairs: set[tuple[uuid.UUID, uuid.UUID]]
+) -> dict[tuple[uuid.UUID, uuid.UUID], int]:
+    """F4 (BACKLOG.md): one grouped count for every (enrolment, quiz) pair
+    that needs an attempts-remaining figure, instead of one count query
+    per upcoming quiz block. The same arithmetic
+    `services/quiz.py::start_attempt` enforces — invalidated attempts
+    don't count against the limit there either, so they must not count
+    here or the dashboard would under-report."""
+    if not pairs:
+        return {}
+    enrolment_ids = {enrolment_id for enrolment_id, _quiz_id in pairs}
+    quiz_ids = {quiz_id for _enrolment_id, quiz_id in pairs}
+    rows = await session.execute(
+        select(QuizAttempt.enrolment_id, QuizAttempt.quiz_id, func.count())
+        .where(
+            QuizAttempt.enrolment_id.in_(enrolment_ids),
+            QuizAttempt.quiz_id.in_(quiz_ids),
+            QuizAttempt.invalidated_at.is_(None),
         )
-    ).scalar_one()
-    return max(0, quiz.max_attempts - int(used))
+        .group_by(QuizAttempt.enrolment_id, QuizAttempt.quiz_id)
+    )
+    return {(row[0], row[1]): int(row[2]) for row in rows.all()}
 
 
 async def _upcoming_workshops(
@@ -205,8 +212,13 @@ async def get_dashboard(
     now = datetime.now(UTC)
 
     cards: list[EnrolmentCard] = []
-    assessments: list[UpcomingItem] = []
     certificates = 0
+
+    # F4 (BACKLOG.md): pending quiz mentions are collected here and turned
+    # into `assessments` only after the loop, once every quiz and its
+    # attempts-remaining figure can be fetched in one batch each — rather
+    # than one `session.get` and one count query per upcoming quiz block.
+    pending_quiz_mentions: list[tuple[uuid.UUID, uuid.UUID, str, uuid.UUID]] = []
 
     for row in await enrolment_service.list_own_enrolments(
         session, tenant_id=tenant_id, user_id=user_id
@@ -267,22 +279,38 @@ async def get_dashboard(
             for block in lesson_row.blocks:
                 if block.quiz_id is None:
                     continue
-                quiz = await session.get(Quiz, block.quiz_id)
-                if quiz is None:  # pragma: no cover - FK guarantees this
-                    continue
-                assessments.append(
-                    UpcomingItem(
-                        kind=KIND_ASSESSMENT,
-                        title=quiz.title,
-                        subtitle=progress.course.title,
-                        enrolment_id=row.enrolment_id,
-                        lesson_id=lesson_row.lesson_id,
-                        quiz_id=quiz.id,
-                        attempts_remaining=await _attempts_remaining(
-                            session, enrolment_id=row.enrolment_id, quiz=quiz
-                        ),
-                    )
+                pending_quiz_mentions.append(
+                    (row.enrolment_id, lesson_row.lesson_id, progress.course.title, block.quiz_id)
                 )
+
+    quiz_ids = {quiz_id for _e, _l, _t, quiz_id in pending_quiz_mentions}
+    quizzes_by_id: dict[uuid.UUID, Quiz] = {}
+    if quiz_ids:
+        rows = await session.execute(select(Quiz).where(Quiz.id.in_(quiz_ids)))
+        quizzes_by_id = {quiz.id: quiz for quiz in rows.scalars().all()}
+
+    attempts_used = await _attempts_used_by_pair(
+        session,
+        pairs={(enrolment_id, quiz_id) for enrolment_id, _l, _t, quiz_id in pending_quiz_mentions},
+    )
+
+    assessments: list[UpcomingItem] = []
+    for enrolment_id, lesson_id, course_title, quiz_id in pending_quiz_mentions:
+        quiz = quizzes_by_id.get(quiz_id)
+        if quiz is None:  # pragma: no cover - FK guarantees this
+            continue
+        used = attempts_used.get((enrolment_id, quiz_id), 0)
+        assessments.append(
+            UpcomingItem(
+                kind=KIND_ASSESSMENT,
+                title=quiz.title,
+                subtitle=course_title,
+                enrolment_id=enrolment_id,
+                lesson_id=lesson_id,
+                quiz_id=quiz.id,
+                attempts_remaining=max(0, quiz.max_attempts - used),
+            )
+        )
 
     upcoming = (
         await _upcoming_workshops(session, tenant_id=tenant_id, user_id=user_id, now=now)

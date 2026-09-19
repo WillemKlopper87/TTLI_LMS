@@ -206,29 +206,71 @@ async def build_for_enrolment(
         .all()
     )
 
+    # F3 (BACKLOG.md): this used to be `session.get` + a latest-attempt/
+    # submission query *per block*, so a course with N graded blocks cost
+    # `1 + 2N` round trips. Every block's quiz/assignment and its latest
+    # attempt/submission is fetched here in four queries total, however
+    # many graded blocks the course has.
+    quiz_ids = {block.quiz_id for block in blocks if block.quiz_id is not None}
+    assignment_ids = {block.assignment_id for block in blocks if block.assignment_id is not None}
+
+    quizzes_by_id: dict[uuid.UUID, Quiz] = {}
+    if quiz_ids:
+        quiz_rows = await session.execute(select(Quiz).where(Quiz.id.in_(quiz_ids)))
+        quizzes_by_id = {quiz.id: quiz for quiz in quiz_rows.scalars().all()}
+
+    assignments_by_id: dict[uuid.UUID, Assignment] = {}
+    if assignment_ids:
+        assignment_rows = await session.execute(
+            select(Assignment).where(Assignment.id.in_(assignment_ids))
+        )
+        assignments_by_id = {
+            assignment.id: assignment for assignment in assignment_rows.scalars().all()
+        }
+
+    # `DISTINCT ON (quiz_id)` ordered by attempt_number desc picks exactly
+    # the latest qualifying attempt per quiz in one query, mirroring what
+    # the old per-block `ORDER BY ... DESC LIMIT 1` did one quiz at a time.
+    latest_attempt_by_quiz: dict[uuid.UUID, QuizAttempt] = {}
+    if quiz_ids:
+        attempt_rows = await session.execute(
+            select(QuizAttempt)
+            .distinct(QuizAttempt.quiz_id)
+            .where(
+                QuizAttempt.enrolment_id == enrolment_id,
+                QuizAttempt.quiz_id.in_(quiz_ids),
+                QuizAttempt.invalidated_at.is_(None),
+                QuizAttempt.submitted_at.isnot(None),
+            )
+            .order_by(QuizAttempt.quiz_id, QuizAttempt.attempt_number.desc())
+        )
+        latest_attempt_by_quiz = {
+            attempt.quiz_id: attempt for attempt in attempt_rows.scalars().all()
+        }
+
+    latest_submission_by_assignment: dict[uuid.UUID, AssignmentSubmission] = {}
+    if assignment_ids:
+        submission_rows = await session.execute(
+            select(AssignmentSubmission)
+            .distinct(AssignmentSubmission.assignment_id)
+            .where(
+                AssignmentSubmission.enrolment_id == enrolment_id,
+                AssignmentSubmission.assignment_id.in_(assignment_ids),
+            )
+            .order_by(AssignmentSubmission.assignment_id, AssignmentSubmission.version.desc())
+        )
+        latest_submission_by_assignment = {
+            submission.assignment_id: submission for submission in submission_rows.scalars().all()
+        }
+
     items: list[AchievementItem] = []
 
     for block in blocks:
         if block.quiz_id is not None:
-            quiz = await session.get(Quiz, block.quiz_id)
+            quiz = quizzes_by_id.get(block.quiz_id)
             if quiz is None:
                 continue
-            attempt = (
-                (
-                    await session.execute(
-                        select(QuizAttempt)
-                        .where(
-                            QuizAttempt.enrolment_id == enrolment_id,
-                            QuizAttempt.quiz_id == quiz.id,
-                            QuizAttempt.invalidated_at.is_(None),
-                            QuizAttempt.submitted_at.isnot(None),
-                        )
-                        .order_by(QuizAttempt.attempt_number.desc())
-                    )
-                )
-                .scalars()
-                .first()
-            )
+            attempt = latest_attempt_by_quiz.get(quiz.id)
             items.append(
                 AchievementItem(
                     kind="quiz",
@@ -244,23 +286,10 @@ async def build_for_enrolment(
                 )
             )
         elif block.assignment_id is not None:
-            assignment = await session.get(Assignment, block.assignment_id)
+            assignment = assignments_by_id.get(block.assignment_id)
             if assignment is None:
                 continue
-            submission = (
-                (
-                    await session.execute(
-                        select(AssignmentSubmission)
-                        .where(
-                            AssignmentSubmission.enrolment_id == enrolment_id,
-                            AssignmentSubmission.assignment_id == assignment.id,
-                        )
-                        .order_by(AssignmentSubmission.version.desc())
-                    )
-                )
-                .scalars()
-                .first()
-            )
+            submission = latest_submission_by_assignment.get(assignment.id)
             items.append(
                 AchievementItem(
                     kind="assignment",

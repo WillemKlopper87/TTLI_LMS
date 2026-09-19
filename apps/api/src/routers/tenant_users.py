@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from src.core.deps import (
     AuditedSessionDep,
@@ -72,16 +72,19 @@ async def list_users(
     session: SessionDep,
     crypto: CryptoDep,
     include_learners: bool = False,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> TenantUsersResponse:
     principal.require(INVITE)
-    return TenantUsersResponse(
-        items=await people.list_users(
-            session,
-            crypto,
-            tenant_id=principal.tenant_id,
-            include_learners=include_learners,
-        )
+    items, total = await people.list_users(
+        session,
+        crypto,
+        tenant_id=principal.tenant_id,
+        include_learners=include_learners,
+        limit=limit,
+        offset=offset,
     )
+    return TenantUsersResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post(
@@ -163,8 +166,11 @@ async def invite_user(
         after={"invited": email, "roles": body.roles},
     )
 
-    rows = await people.list_users(
-        session, crypto, tenant_id=principal.tenant_id, include_learners=True
+    # The just-invited account is always the most recently created, so it
+    # is always page one's first row regardless of how many other users
+    # this tenant has — no need to read back more than that.
+    rows, _total = await people.list_users(
+        session, crypto, tenant_id=principal.tenant_id, include_learners=True, limit=1
     )
     for row in rows:
         if row.id == user.id:
