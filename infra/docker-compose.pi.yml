@@ -1,0 +1,192 @@
+# Raspberry Pi 3B+ (1GB RAM, quad-core Cortex-A53) POC/UAT/MVP profile.
+# Not a production shape and not docker-compose.single-vm.yml's shape —
+# this drops everything that doesn't fit in 1GB or isn't needed to click
+# through the app: no ClamAV (its virus-definition set alone wants
+# 800MB-1.2GB resident — see scripts/deploy-pi.sh's own printed warning),
+# no Garage/S3 (STORAGE_BACKEND=local instead), no Postfix relay (Mailpit
+# catches outbound mail locally, same as infra/docker-compose.yml's dev
+# stack), no Prometheus/Grafana/Loki/Alloy, no Caddy/TLS (plain HTTP,
+# LAN-only). See scripts/deploy-pi.sh for the orchestration around this
+# file — swap setup, secret generation, migration, seeding.
+#
+# mem_limit on every service: a 1GB board has no room for one runaway
+# container to starve the rest, and Postgres itself is tuned down from
+# its image default (which assumes a real server) via the command below.
+# Budgeted total is ~870MB across every container, deliberately leaving
+# headroom for the host OS — still tight, which is why deploy-pi.sh
+# insists on swap as a safety net, not an optimisation.
+name: ttli-pi
+
+x-api-env: &api-env
+  ENVIRONMENT: local
+  DEBUG: "false"
+  DATABASE_URL: postgresql+asyncpg://app_user:${APP_DB_PASSWORD:?set in .env.pi}@postgres:5432/ttli
+  DATABASE_URL_SYNC: postgresql+psycopg2://ttli:${POSTGRES_SUPERUSER_PASSWORD:?set in .env.pi}@postgres:5432/ttli
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set in .env.pi}
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY:?set in .env.pi}
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?set in .env.pi}
+  BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?set in .env.pi}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3010}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8010}
+  STORAGE_BACKEND: local
+  STORAGE_LOCAL_ROOT: var/storage
+  # No ClamAV in this profile (see the file header) — every upload
+  # endpoint (video/audio/captions, PO document, payment proof,
+  # assignment submission) fails closed with 503 as a result, since
+  # services/antivirus.py's scan is never optional. Point this at a
+  # scanner on another host if upload flows matter for your UAT pass:
+  # CLAMAV_HOST=<that host's LAN IP> in .env.pi. Left pointed at a
+  # nonexistent host by default so the 503 is immediate, not a hang.
+  CLAMAV_HOST: ${CLAMAV_HOST:-clamav-not-run-in-this-profile}
+  CLAMAV_PORT: "3310"
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  EMAIL_FROM: no-reply@ttli.local
+  LOG_LEVEL: INFO
+  BREAK_GLASS_ADMIN_ENABLED: "true"
+  BREAK_GLASS_ADMIN_EMAIL: ${BREAK_GLASS_ADMIN_EMAIL:-admin@ttli.example}
+  BREAK_GLASS_ADMIN_PASSWORD: ${BREAK_GLASS_ADMIN_PASSWORD:?set in .env.pi}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    mem_limit: 220m
+    environment:
+      POSTGRES_USER: ttli
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set in .env.pi}
+      POSTGRES_DB: ttli
+    # Tuned down from the image's own defaults, which assume a real
+    # server — a Pi 3B+ has neither the RAM nor the need for them.
+    # max_connections=20 is comfortably above what one API + one worker
+    # + occasional psql session ever opens at once.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=24MB
+      - -c
+      - max_connections=20
+      - -c
+      - effective_cache_size=96MB
+      - -c
+      - work_mem=4MB
+    volumes:
+      - ttli-pi-postgres:/var/lib/postgresql
+      # citext/pg_trgm/pgcrypto — the baseline migration's CREATE TABLE
+      # statements assume these exist (citext columns, e.g.) and only run
+      # after this container's own first-boot init, never re-run on a
+      # migration. Same script infra/docker-compose.yml's dev stack mounts.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttli -d ttli"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    mem_limit: 48m
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  # Local SMTP catcher — magic-link/password-reset/guest-access/EFT
+  # emails land here instead of nowhere, viewable at :8025. Same image
+  # infra/docker-compose.yml's dev stack already uses.
+  mailpit:
+    image: axllent/mailpit:v1.31.0
+    mem_limit: 48m
+    ports:
+      - "8025:8025"
+    restart: unless-stopped
+
+  # One-shot: alembic upgrade head, then exits. Same shape as
+  # docker-compose.single-vm.yml's migrate service.
+  migrate:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.pi
+    image: ttli-api-pi:latest
+    environment: *api-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ttli-api-pi:latest
+    mem_limit: 220m
+    environment: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "8010:8010"
+    volumes:
+      - ttli-pi-storage:/app/var/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # Optional — email delivery, push notifications, video transcoding,
+  # and the maintenance sweeps all live here. Off by default
+  # (`--profile worker` in deploy-pi.sh) because ffmpeg transcoding is
+  # genuinely CPU-bound and four weak Cortex-A53 cores will crawl on
+  # anything but the shortest test clips; a MVP click-through of
+  # catalogue/enrolment/quiz flows doesn't need it. Turn it on if your
+  # UAT pass needs magic-link emails or push notifications to actually
+  # send, or accept that they queue in Redis and are visible there
+  # instead (arq's own retry means nothing is lost by starting it late).
+  worker:
+    image: ttli-api-pi:latest
+    mem_limit: 180m
+    environment:
+      <<: *api-env
+      PYTHONIOENCODING: utf-8
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ttli-pi-storage:/app/var/storage
+    command: ["arq", "src.workers.main.WorkerSettings"]
+    restart: unless-stopped
+    profiles: ["worker"]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile.pi
+    image: ttli-web-pi:latest
+    mem_limit: 220m
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:8010
+    depends_on:
+      - api
+    ports:
+      - "3010:3010"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3010/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  ttli-pi-postgres:
+  ttli-pi-storage:

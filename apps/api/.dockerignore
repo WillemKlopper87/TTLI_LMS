@@ -7,6 +7,10 @@
 var/
 tests/
 scripts/
+# Un-ignored for Dockerfile.pi only (scripts/deploy-pi.sh runs the seed
+# scripts inside the container) — the real Dockerfile never references
+# this path, so re-including it here has no effect on that build.
+!scripts/*.py
 openapi.json
 __pycache__/
 *.pyc
