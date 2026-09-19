@@ -17,7 +17,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,14 +61,22 @@ class AssessmentLicence(Base, TimestampMixin):
     # Deferred cross-feature FK to assessment_templates.id (assessment platform spec).
     # No database constraint yet; will be added post-Sprint-1 integration.
     template_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    runs_purchased: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    runs_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default=text("'active'")
+    )
+    runs_purchased: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    runs_used: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # requires_ttli_review: if true, practitioner's report must pass TTLI owner inbox
     # before release to client. TTLI can relax per partner once trusted.
-    requires_ttli_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    requires_ttli_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
     price_per_run_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     order_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
@@ -110,7 +128,9 @@ class PartnerProfile(Base, TimestampMixin):
         PGUUID(as_uuid=True), nullable=True
     )
     # Status: invited | onboarding | active | suspended
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="invited")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="invited", server_default=text("'invited'")
+    )
 
 
 __all__ = ["AssessmentLicence", "PartnerProfile"]

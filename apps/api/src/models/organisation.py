@@ -55,7 +55,9 @@ class Organisation(Base, TimestampMixin):
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 'standard' (default), 'partner', 'client' (partner portal, migration
     # 0054) or 'licensee' (facilitator licensing, migration 0055).
-    kind: Mapped[str] = mapped_column(OrganisationKind, nullable=False, default="standard")
+    kind: Mapped[str] = mapped_column(
+        OrganisationKind, nullable=False, default="standard", server_default=text("'standard'")
+    )
     # Client organisations link to their partner parent (partner portal §4.1).
     parent_organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
