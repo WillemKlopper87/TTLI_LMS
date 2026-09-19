@@ -37,6 +37,7 @@ const WORKING_SECTIONS: { label: string; href: string; permission?: string }[] =
   { label: "Workshops", href: "/admin/workshops" },
   { label: "Courses", href: "/admin/courses" },
   { label: "Learning paths", href: "/admin/paths" },
+  { label: "Cohorts", href: "/admin/cohorts", permission: "cohort:run" },
   { label: "Catalogue", href: "/admin/catalogue" },
   { label: "Podcasts", href: "/admin/podcasts" },
   { label: "Articles", href: "/admin/articles" },

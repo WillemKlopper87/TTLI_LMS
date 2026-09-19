@@ -59,6 +59,28 @@ interface PathTenantAssignmentRow {
   is_bespoke: boolean;
 }
 
+interface StepRow {
+  id: string;
+  learning_path_id: string;
+  kind: string;
+  title: string;
+  position: number;
+  phase_label: string | null;
+  optional: boolean;
+  course_id: string | null;
+  workshop_id: string | null;
+  assessment_template_id: string | null;
+  evaluation_role: string | null;
+}
+
+const STEP_KIND_LABEL: Record<string, string> = {
+  course: "Course",
+  workshop: "Workshop",
+  assessment: "Assessment",
+  one_on_one: "One-on-one",
+  document: "Document",
+};
+
 export default function EditLearningPathPage() {
   const params = useParams<{ pathId: string }>();
   const pathId = params.pathId;
@@ -73,6 +95,7 @@ export default function EditLearningPathPage() {
   const [certificates, setCertificates] = useState<CertificateTemplate[] | null>(null);
   const [product, setProduct] = useState<ProductItem | null>(null);
   const [assignments, setAssignments] = useState<PathTenantAssignmentRow[] | null>(null);
+  const [steps, setSteps] = useState<StepRow[] | null>(null);
 
   const [addCourseId, setAddCourseId] = useState("");
   const [priceAmount, setPriceAmount] = useState("");
@@ -83,17 +106,30 @@ export default function EditLearningPathPage() {
   const dragRef = useRef<string | null>(null);
   const canManageProducts = me.permissions.includes("product:manage");
 
+  // Step creation form state
+  const [stepKind, setStepKind] = useState("");
+  const [stepTitle, setStepTitle] = useState("");
+  const [stepPosition, setStepPosition] = useState("");
+  const [stepPhaseLabel, setStepPhaseLabel] = useState("");
+  const [stepOptional, setStepOptional] = useState(false);
+  const [stepCourseId, setStepCourseId] = useState("");
+  const [stepWorkshopId, setStepWorkshopId] = useState("");
+  const [stepAssessmentTemplateId, setStepAssessmentTemplateId] = useState("");
+  const [stepEvaluationRole, setStepEvaluationRole] = useState("");
+
   async function loadAll() {
-    const [pathResp, membersResp, readinessResp, assignmentsResp] = await Promise.all([
+    const [pathResp, membersResp, readinessResp, assignmentsResp, stepsResp] = await Promise.all([
       getJson<LearningPathItem>(`/api/bff/learning-paths/${pathId}`),
       getJson<{ items: PathCourseRow[] }>(`/api/bff/learning-paths/${pathId}/courses`),
       getJson<PathReadiness>(`/api/bff/learning-paths/${pathId}/readiness`),
       getJson<{ items: PathTenantAssignmentRow[] }>("/api/bff/tenant-path-assignments"),
+      getJson<StepRow[]>(`/api/bff/learning-paths/${pathId}/steps`),
     ]);
     setPath(pathResp);
     setMembers(membersResp?.items ?? []);
     setReadiness(readinessResp);
     setAssignments(assignmentsResp?.items ?? []);
+    setSteps(stepsResp ?? []);
     if (canManageProducts) {
       const products = await getJson<{ items: ProductItem[] }>("/api/bff/catalogue/products");
       setProduct((products?.items ?? []).find((p) => p.learning_path_id === pathId) ?? null);
@@ -300,6 +336,40 @@ export default function EditLearningPathPage() {
     setNotice("Assigned to your tenant.");
   }
 
+  async function addStep() {
+    if (!stepKind || !stepTitle || !stepPosition) return;
+    setBusy(true);
+    setError(null);
+    const body: Record<string, unknown> = {
+      kind: stepKind,
+      title: stepTitle.trim(),
+      position: parseInt(stepPosition, 10),
+    };
+    if (stepPhaseLabel) body.phase_label = stepPhaseLabel;
+    if (stepOptional) body.optional = true;
+    if (stepCourseId) body.course_id = stepCourseId;
+    if (stepWorkshopId) body.workshop_id = stepWorkshopId;
+    if (stepAssessmentTemplateId) body.assessment_template_id = stepAssessmentTemplateId;
+    if (stepEvaluationRole) body.evaluation_role = stepEvaluationRole;
+    const resp = await sendJson(`/api/bff/learning-paths/${pathId}/steps`, "POST", body);
+    setBusy(false);
+    if (!resp.ok) {
+      setError(await readError(resp, "The step could not be added."));
+      return;
+    }
+    setStepKind("");
+    setStepTitle("");
+    setStepPosition("");
+    setStepPhaseLabel("");
+    setStepOptional(false);
+    setStepCourseId("");
+    setStepWorkshopId("");
+    setStepAssessmentTemplateId("");
+    setStepEvaluationRole("");
+    setNotice("Step added.");
+    await loadAll();
+  }
+
   if (path === null) {
     return (
       <div className="dash">
@@ -445,6 +515,193 @@ export default function EditLearningPathPage() {
               Add
             </button>
           </div>
+        ) : null}
+      </div>
+
+      <div className="card p-4 mt-4">
+        <b>Steps</b>
+        <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+          Add typed steps (courses, workshops, assessments) to structure this path.
+        </p>
+
+        {steps !== null && steps.length > 0 ? (
+          <div className="tablewrap mt-3">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Phase</th>
+                  <th scope="col">Optional</th>
+                </tr>
+              </thead>
+              <tbody>
+                {steps.map((step) => (
+                  <tr key={step.id}>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.position}
+                    </td>
+                    <td>
+                      <span className="tag tag--mute">
+                        {STEP_KIND_LABEL[step.kind] ?? step.kind}
+                      </span>
+                    </td>
+                    <td>{step.title}</td>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.phase_label ?? "—"}
+                    </td>
+                    <td style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
+                      {step.optional ? "Yes" : "No"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {steps !== null && steps.length === 0 ? (
+          <p className="mt-2" style={{ fontSize: "0.8125rem", color: "var(--faint)" }}>
+            No steps yet.
+          </p>
+        ) : null}
+
+        {canEdit ? (
+          <form
+            className="mt-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addStep();
+            }}
+          >
+            <div className="flex flex-col gap-3">
+              <label className="field">
+                <span>Kind</span>
+                <select
+                  className="input"
+                  value={stepKind}
+                  onChange={(e) => setStepKind(e.target.value)}
+                  required
+                >
+                  <option value="">Select a kind…</option>
+                  <option value="course">Course</option>
+                  <option value="workshop">Workshop</option>
+                  <option value="assessment">Assessment</option>
+                  <option value="one_on_one">One-on-One</option>
+                  <option value="document">Document</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Title</span>
+                <input
+                  className="input"
+                  value={stepTitle}
+                  onChange={(e) => setStepTitle(e.target.value)}
+                  placeholder="e.g. Module 1: Introduction"
+                  required
+                />
+              </label>
+
+              <label className="field">
+                <span>Position</span>
+                <input
+                  className="input"
+                  type="number"
+                  value={stepPosition}
+                  onChange={(e) => setStepPosition(e.target.value)}
+                  placeholder="e.g. 1"
+                  required
+                />
+              </label>
+
+              <label className="field">
+                <span>Phase Label (optional)</span>
+                <input
+                  className="input"
+                  value={stepPhaseLabel}
+                  onChange={(e) => setStepPhaseLabel(e.target.value)}
+                  placeholder="e.g. Foundations"
+                />
+              </label>
+
+              <label className="field flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={stepOptional}
+                  onChange={(e) => setStepOptional(e.target.checked)}
+                />
+                <span>Optional</span>
+              </label>
+
+              {stepKind === "course" && (
+                <label className="field">
+                  <span>Course ID</span>
+                  <input
+                    className="input"
+                    value={stepCourseId}
+                    onChange={(e) => setStepCourseId(e.target.value)}
+                    placeholder="Course UUID"
+                    required
+                  />
+                </label>
+              )}
+
+              {stepKind === "workshop" && (
+                <label className="field">
+                  <span>Workshop ID</span>
+                  <input
+                    className="input"
+                    value={stepWorkshopId}
+                    onChange={(e) => setStepWorkshopId(e.target.value)}
+                    placeholder="Workshop UUID"
+                    required
+                  />
+                </label>
+              )}
+
+              {stepKind === "assessment" && (
+                <>
+                  <label className="field">
+                    <span>Assessment Template ID</span>
+                    <input
+                      className="input"
+                      value={stepAssessmentTemplateId}
+                      onChange={(e) => setStepAssessmentTemplateId(e.target.value)}
+                      placeholder="Assessment template UUID"
+                      required
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Evaluation Role (optional)</span>
+                    <input
+                      className="input"
+                      value={stepEvaluationRole}
+                      onChange={(e) => setStepEvaluationRole(e.target.value)}
+                      placeholder="e.g. peer, instructor"
+                    />
+                  </label>
+                </>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={
+                  !stepKind ||
+                  !stepTitle ||
+                  !stepPosition ||
+                  (stepKind === "course" && !stepCourseId) ||
+                  (stepKind === "workshop" && !stepWorkshopId) ||
+                  (stepKind === "assessment" && !stepAssessmentTemplateId) ||
+                  busy
+                }
+              >
+                {busy ? "Adding…" : "Add step"}
+              </button>
+            </div>
+          </form>
         ) : null}
       </div>
 

@@ -32,7 +32,7 @@ from src.models.credential import CertificateTemplate
 from src.models.learning import Enrolment
 from src.models.learning_path import (
     LearningPath,
-    LearningPathCourse,
+    LearningPathStep,
     LearningPathTenantAssignment,
     PathEnrolment,
 )
@@ -234,13 +234,16 @@ async def clear_certificate_template(
 
 async def list_path_courses(
     session: AsyncSession, *, learning_path_id: uuid.UUID, tenant_id: uuid.UUID
-) -> list[tuple[LearningPathCourse, Course]]:
+) -> list[tuple[LearningPathStep, Course]]:
     await assert_path_authorable(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     stmt = (
-        select(LearningPathCourse, Course)
-        .join(Course, Course.id == LearningPathCourse.course_id)
-        .where(LearningPathCourse.learning_path_id == learning_path_id)
-        .order_by(LearningPathCourse.position)
+        select(LearningPathStep, Course)
+        .join(Course, Course.id == LearningPathStep.course_id)
+        .where(
+            LearningPathStep.learning_path_id == learning_path_id,
+            LearningPathStep.kind == "course",
+        )
+        .order_by(LearningPathStep.position)
     )
     return list((await session.execute(stmt)).tuples().all())
 
@@ -251,7 +254,7 @@ async def add_course_to_path(
     learning_path_id: uuid.UUID,
     tenant_id: uuid.UUID,
     course_id: uuid.UUID,
-) -> LearningPathCourse:
+) -> LearningPathStep:
     path = await get_learning_path(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
     # The course being bundled in must be one this tenant can actually
     # see too -- otherwise a path built to include it would surface
@@ -275,9 +278,10 @@ async def add_course_to_path(
         raise NotFound("No such course.")
     existing = (
         await session.execute(
-            select(LearningPathCourse.id).where(
-                LearningPathCourse.learning_path_id == learning_path_id,
-                LearningPathCourse.course_id == course_id,
+            select(LearningPathStep.id).where(
+                LearningPathStep.learning_path_id == learning_path_id,
+                LearningPathStep.course_id == course_id,
+                LearningPathStep.kind == "course",
             )
         )
     ).scalar_one_or_none()
@@ -291,14 +295,26 @@ async def add_course_to_path(
     # research/p5-review-findings.md.
     max_position = (
         await session.execute(
-            select(func.max(LearningPathCourse.position)).where(
-                LearningPathCourse.learning_path_id == learning_path_id
+            select(func.max(LearningPathStep.position)).where(
+                LearningPathStep.learning_path_id == learning_path_id,
+                LearningPathStep.kind == "course",
             )
         )
     ).scalar_one()
     position = 0 if max_position is None else max_position + 1
-    member = LearningPathCourse(
-        id=uuid7(), learning_path_id=learning_path_id, course_id=course_id, position=position
+    member = LearningPathStep(
+        id=uuid7(),
+        learning_path_id=learning_path_id,
+        course_id=course_id,
+        position=position,
+        kind="course",
+        # title is NOT NULL on learning_path_steps — a non-course step
+        # needs its own title, but a course step's display title has
+        # always come from the joined Course row (list_path_courses
+        # returns (LearningPathStep, Course) tuples), so mirroring the
+        # course's own title here is a sensible default, not new data
+        # the caller has to supply.
+        title=course.title,
     )
     session.add(member)
     await session.flush()
@@ -324,9 +340,10 @@ async def remove_course_from_path(
         )
     member = (
         await session.execute(
-            select(LearningPathCourse).where(
-                LearningPathCourse.learning_path_id == learning_path_id,
-                LearningPathCourse.course_id == course_id,
+            select(LearningPathStep).where(
+                LearningPathStep.learning_path_id == learning_path_id,
+                LearningPathStep.course_id == course_id,
+                LearningPathStep.kind == "course",
             )
         )
     ).scalar_one_or_none()
@@ -350,14 +367,22 @@ async def reorder_path_courses(
     learning_path_id: uuid.UUID,
     tenant_id: uuid.UUID,
     ordered_course_ids: list[uuid.UUID],
-) -> list[tuple[LearningPathCourse, Course]]:
+) -> list[tuple[LearningPathStep, Course]]:
     """The whole permutation in one transaction — same reasoning
     `course_wizard.py::reorder_modules` gives for not doing this as
     sequential per-item PATCHes: completion order is `position`, not
     insertion order, so a race here is learner-facing correctness, not
     cosmetics."""
     rows = await list_path_courses(session, learning_path_id=learning_path_id, tenant_id=tenant_id)
-    _check_permutation([member.course_id for member, _ in rows], ordered_course_ids)
+    # list_path_courses only ever returns kind="course" steps, so course_id
+    # is always set here — LearningPathStep's column type is nullable
+    # because other kinds (workshop, assessment, ...) don't set it.
+    course_ids: list[uuid.UUID] = []
+    for member, _ in rows:
+        if member.course_id is None:
+            raise AppError(f"Course step {member.id} has no course_id")
+        course_ids.append(member.course_id)
+    _check_permutation(course_ids, ordered_course_ids)
     by_course_id = {member.course_id: member for member, _ in rows}
     for index, course_id in enumerate(ordered_course_ids):
         by_course_id[course_id].position = index
@@ -568,16 +593,19 @@ async def course_counts_for_paths(
     if not path_ids:
         return {}
     stmt = (
-        select(LearningPathCourse.learning_path_id, func.count())
-        .where(LearningPathCourse.learning_path_id.in_(path_ids))
-        .group_by(LearningPathCourse.learning_path_id)
+        select(LearningPathStep.learning_path_id, func.count())
+        .where(
+            LearningPathStep.learning_path_id.in_(path_ids),
+            LearningPathStep.kind == "course",
+        )
+        .group_by(LearningPathStep.learning_path_id)
     )
     return dict((await session.execute(stmt)).tuples().all())
 
 
 async def get_public_path(
     session: AsyncSession, *, tenant_id: uuid.UUID, learning_path_id: uuid.UUID
-) -> tuple[LearningPath, list[tuple[LearningPathCourse, Course]]]:
+) -> tuple[LearningPath, list[tuple[LearningPathStep, Course]]]:
     path = await _visible_path(session, tenant_id=tenant_id, learning_path_id=learning_path_id)
     members = await list_path_courses(session, learning_path_id=path.id, tenant_id=tenant_id)
     return path, members
@@ -654,13 +682,14 @@ async def list_own_path_enrolments(
     if not rows:
         return []
     counts_stmt = (
-        select(LearningPathCourse.learning_path_id, func.count())
+        select(LearningPathStep.learning_path_id, func.count())
         .where(
-            LearningPathCourse.learning_path_id.in_(
+            LearningPathStep.learning_path_id.in_(
                 [path_enrolment.learning_path_id for path_enrolment, _ in rows]
-            )
+            ),
+            LearningPathStep.kind == "course",
         )
-        .group_by(LearningPathCourse.learning_path_id)
+        .group_by(LearningPathStep.learning_path_id)
     )
     counts = dict((await session.execute(counts_stmt)).tuples().all())
     return [
@@ -852,11 +881,12 @@ async def find_path_enrolments_for_course_completion(
     stmt = (
         select(PathEnrolment)
         .join(
-            LearningPathCourse,
-            LearningPathCourse.learning_path_id == PathEnrolment.learning_path_id,
+            LearningPathStep,
+            LearningPathStep.learning_path_id == PathEnrolment.learning_path_id,
         )
         .where(
-            LearningPathCourse.course_id == course_id,
+            LearningPathStep.course_id == course_id,
+            LearningPathStep.kind == "course",
             PathEnrolment.tenant_id == tenant_id,
             PathEnrolment.user_id == user_id,
             PathEnrolment.completed_at.is_(None),
