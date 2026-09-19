@@ -19,6 +19,7 @@ from src.core.queue import dispose_queue, init_queue
 from src.core.redis import dispose_redis, init_redis
 from src.main import create_app
 from src.models.rbac import RoleAssignment
+from src.services import campaigns as campaigns_service
 from src.services import consent as consent_service
 from src.services import identity
 from src.services import leads as leads_service
@@ -132,6 +133,20 @@ async def _capture_lead_with_consent(
     return email, capture.contact_id
 
 
+async def _run_campaign_send_job(
+    tenant_session_factory, crypto, settings, *, tenant_id, campaign_id
+):  # type: ignore[no-untyped-def]
+    """F5: the request only enqueues; this runs the worker-side send loop
+    directly (`campaigns_service.execute_campaign_send`), the same way
+    `tests/test_media.py::_upload_and_wait_ready` runs the transcode
+    pipeline inline rather than requiring a live arq worker in the test
+    process."""
+    async with tenant_session_factory(tenant_id) as s:
+        return await campaigns_service.execute_campaign_send(
+            s, crypto, settings, tenant_id=tenant_id, campaign_id=uuid.UUID(campaign_id)
+        )
+
+
 async def _setup_campaign(
     client, admin_token: str, *, segment_criteria: dict[str, str]
 ) -> tuple[str, str]:  # type: ignore[no-untyped-def]
@@ -165,7 +180,7 @@ async def _setup_campaign(
 
 
 async def test_send_excludes_non_matching_leads_and_those_without_consent(
-    client, tenant_session_factory, crypto
+    client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token = await _login(
@@ -205,13 +220,31 @@ async def test_send_excludes_non_matching_leads_and_those_without_consent(
         f"/api/v1/campaigns/{campaign_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert result.status_code == 200, result.text
-    body = result.json()
+    assert result.json() == {"status": "sending"}
+
+    # F5: the request only enqueues — nothing has actually sent yet. A
+    # second send attempt against a campaign already flipped to
+    # "sending" is refused just like an already-fully-sent one, so a
+    # slow or retried request can't queue the same campaign twice.
+    mid_flight = await client.get(
+        f"/api/v1/campaigns/{campaign_id}", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert mid_flight.json()["campaign"]["status"] == "sending"
+    assert mid_flight.json()["sent"] == 0
+    double_send = await client.post(
+        f"/api/v1/campaigns/{campaign_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert double_send.status_code == 400
+
+    job_result = await _run_campaign_send_job(
+        tenant_session_factory, crypto, settings, tenant_id=tenant_id, campaign_id=campaign_id
+    )
     # Only the qualified + consented lead is sent to — the "new" stage
     # lead never matched the segment, and the qualified-but-unconsented
     # one was excluded before ever touching the send path.
-    assert body["sent"] == 1
-    assert body["suppressed"] == 0
-    assert body["excluded_no_consent"] == 1
+    assert job_result.sent == 1
+    assert job_result.suppressed == 0
+    assert job_result.excluded_no_consent == 1
 
     stats = await client.get(
         f"/api/v1/campaigns/{campaign_id}", headers={"Authorization": f"Bearer {admin_token}"}
@@ -228,7 +261,7 @@ async def test_send_excludes_non_matching_leads_and_those_without_consent(
 
 
 async def test_suppressed_contact_is_skipped_and_shows_in_stats(
-    client, tenant_session_factory, crypto
+    client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token = await _login(
@@ -259,8 +292,13 @@ async def test_suppressed_contact_is_skipped_and_shows_in_stats(
         f"/api/v1/campaigns/{campaign_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
     )
     assert result.status_code == 200, result.text
-    assert result.json()["sent"] == 0
-    assert result.json()["suppressed"] == 1
+    assert result.json() == {"status": "sending"}
+
+    job_result = await _run_campaign_send_job(
+        tenant_session_factory, crypto, settings, tenant_id=tenant_id, campaign_id=campaign_id
+    )
+    assert job_result.sent == 0
+    assert job_result.suppressed == 1
 
     stats = await client.get(
         f"/api/v1/campaigns/{campaign_id}", headers={"Authorization": f"Bearer {admin_token}"}
@@ -269,7 +307,7 @@ async def test_suppressed_contact_is_skipped_and_shows_in_stats(
 
 
 async def test_unsubscribe_link_suppresses_future_sends(
-    client, tenant_session_factory, crypto
+    client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token = await _login(
@@ -290,7 +328,11 @@ async def test_unsubscribe_link_suppresses_future_sends(
     first_send = await client.post(
         f"/api/v1/campaigns/{campaign_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
     )
-    assert first_send.json()["sent"] == 1
+    assert first_send.json() == {"status": "sending"}
+    first_result = await _run_campaign_send_job(
+        tenant_session_factory, crypto, settings, tenant_id=tenant_id, campaign_id=campaign_id
+    )
+    assert first_result.sent == 1
 
     async with tenant_session_factory(tenant_id) as s:
         email_send_id = (
@@ -333,12 +375,16 @@ async def test_unsubscribe_link_suppresses_future_sends(
     second_send = await client.post(
         f"/api/v1/campaigns/{campaign2_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
     )
-    assert second_send.json()["sent"] == 0
-    assert second_send.json()["excluded_no_consent"] == 1
+    assert second_send.json() == {"status": "sending"}
+    second_result = await _run_campaign_send_job(
+        tenant_session_factory, crypto, settings, tenant_id=tenant_id, campaign_id=campaign2_id
+    )
+    assert second_result.sent == 0
+    assert second_result.excluded_no_consent == 1
 
 
 async def test_bounce_webhook_suppresses_future_sends(
-    client, tenant_session_factory, crypto
+    client, tenant_session_factory, crypto, settings
 ) -> None:  # type: ignore[no-untyped-def]
     tenant_id = await _demo_tenant_id(tenant_session_factory)
     admin_token = await _login(
@@ -358,6 +404,9 @@ async def test_bounce_webhook_suppresses_future_sends(
     )
     await client.post(
         f"/api/v1/campaigns/{campaign_id}/send", headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    await _run_campaign_send_job(
+        tenant_session_factory, crypto, settings, tenant_id=tenant_id, campaign_id=campaign_id
     )
 
     async with tenant_session_factory(tenant_id) as s:

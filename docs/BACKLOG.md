@@ -53,7 +53,7 @@ F13 to F17.
 | **F2** | Tenant-domain resolution cache was not invalidated on domain mutation. | **DONE — #29 / CI #178.** |
 | **F3** | Gradebook N+1 around quiz lookup and attempts. | **DONE 2026-09-19.** `build_for_enrolment` batches quiz/assignment lookups and their latest-attempt/submission lookups into four queries total regardless of block count (was `1 + 2N`). Query-count regression test compares a 2-block vs 12-block course. |
 | **F4** | Learner dashboard N+1 around quiz lookup and attempts remaining. | **DONE 2026-09-19.** `get_dashboard` batches quiz lookups and a grouped attempts-used count across all upcoming quiz blocks into two queries total regardless of block count (was `2N`). Query-count regression test compares a 1-block vs 6-block available lesson. |
-| **F5** | Campaign send loops contacts and enqueues inside the request transaction. | **OPEN.** |
+| **F5** | Campaign send loops contacts and enqueues inside the request transaction. | **DONE 2026-09-19.** `POST /campaigns/{id}/send` now only validates and flips the campaign to `sending` (also the re-send guard), then enqueues `send_campaign_job`; the per-contact consent/suppression check and real SMTP call run in that worker job, off the request path. `SendCampaignResponse` now reports `status` only — final counts live on `GET /campaigns/{id}`'s stats once the job has run. |
 | **F6** | Admin lists/exports lack consistent pagination/ceilings. | **OPEN.** |
 | **F7** | `infra/docker-compose.prod.yml` is stale relative to the single-VM production topology. | **OPEN.** |
 | **F8** | Compose resource/log-rotation limits are incomplete. | **OPEN.** |

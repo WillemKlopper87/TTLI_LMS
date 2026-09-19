@@ -22,6 +22,7 @@ from arq.cron import cron
 from sqlalchemy import select, text
 
 from src.core.config import get_settings
+from src.core.crypto import CryptoBox
 from src.core.db import dispose_engine, get_sessionmaker, init_engine, set_tenant
 from src.core.logging import configure_logging, get_logger
 from src.core.metrics import start_metrics_server, stop_metrics_server
@@ -31,6 +32,7 @@ from src.models.push import PushSubscription
 from src.models.rbac import RoleAssignment, RolePermission
 from src.models.user import User
 from src.services import audit
+from src.services import campaigns as campaigns_service
 from src.services import push as push_service
 from src.services.email import send_sync
 from src.services.media.pipeline import transcode_video_asset
@@ -292,6 +294,44 @@ async def transcode_video_job(ctx: dict[str, Any], *, video_asset_id: str) -> No
     log.info("transcode_job_finished", video_asset_id=video_asset_id)
 
 
+@instrument_job
+async def send_campaign_job(ctx: dict[str, Any], *, tenant_id: str, campaign_id: str) -> None:
+    """The real send loop for F5 (BACKLOG.md) — `POST /campaigns/{id}/
+    send` only validates and flips the campaign to "sending" before
+    enqueueing this; every contact's consent/suppression check and the
+    real SMTP call itself (`services/campaigns.py::execute_campaign_send`)
+    now runs here, off the request path entirely, the same shape
+    `send_email_job`/`transcode_video_job` already established for other
+    slow, blocking-I/O work.
+
+    `max_tries=1` (below): a crash mid-send has already mailed whichever
+    contacts it reached before failing — the same real-SMTP-side-effect-
+    before-DB-commit shape the original in-request loop always had. A
+    blind arq retry would re-walk the whole segment and re-send to
+    everyone already reached, which is strictly worse than leaving a
+    partially-sent campaign in "sending" for a human to check via
+    `GET /campaigns/{id}`'s stats and decide whether to resend."""
+    settings = get_settings()
+    crypto = CryptoBox(settings.encryption_key_bytes(), settings.blind_index_key_bytes())
+    factory = get_sessionmaker()
+    async with factory() as session, session.begin():
+        await set_tenant(session, uuid.UUID(tenant_id))
+        result = await campaigns_service.execute_campaign_send(
+            session,
+            crypto,
+            settings,
+            tenant_id=uuid.UUID(tenant_id),
+            campaign_id=uuid.UUID(campaign_id),
+        )
+    log.info(
+        "campaign_send_finished",
+        campaign_id=campaign_id,
+        sent=result.sent,
+        suppressed=result.suppressed,
+        excluded_no_consent=result.excluded_no_consent,
+    )
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
     configure_logging(level=settings.log_level, pretty=settings.environment == "local")
@@ -322,6 +362,9 @@ class WorkerSettings:
         downgrade_expired_guests,
         func(send_email_job, max_tries=5),
         func(send_push_job, max_tries=5),
+        # See send_campaign_job's own docstring for why a retry would be
+        # worse than leaving a partial send for a human to see.
+        func(send_campaign_job, max_tries=1),
         # max_tries=1: a failed transcode already leaves video_assets/
         # transcode_jobs in a clean 'failed' state with the real error
         # (pipeline.py's except clause) — a bare retry would just re-run
@@ -386,6 +429,7 @@ __all__ = [
     "prune_idempotency_keys",
     "purge_expired_auth",
     "revoke_lapsed_subscriptions",
+    "send_campaign_job",
     "send_eft_ageing_alerts",
     "send_email_job",
     "send_push_job",

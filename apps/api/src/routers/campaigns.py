@@ -13,8 +13,9 @@ import uuid
 
 from fastapi import APIRouter, status
 
-from src.core.deps import CryptoDep, PrincipalDep, SessionDep, SettingsDep, TenantDep
+from src.core.deps import PrincipalDep, SessionDep, TenantDep
 from src.core.errors import NotFound
+from src.core.queue import get_queue
 from src.models.crm import Campaign
 from src.schemas.campaigns import (
     CampaignResponse,
@@ -147,25 +148,22 @@ async def get_campaign(
 
 @router.post("/campaigns/{campaign_id}/send", response_model=SendCampaignResponse)
 async def send_campaign(
-    campaign_id: str,
-    principal: PrincipalDep,
-    session: SessionDep,
-    crypto: CryptoDep,
-    settings: SettingsDep,
+    campaign_id: str, principal: PrincipalDep, session: SessionDep
 ) -> SendCampaignResponse:
+    """F5 (BACKLOG.md): validates and flips the campaign to "sending",
+    then enqueues the real send — bounded, off the request path, the
+    same shape `POST /video-assets`'s upload endpoint already
+    established for handing the slow part to the worker."""
     principal.require("campaign:manage")
-    result = await campaigns_service.send_campaign(
-        session,
-        crypto,
-        settings,
-        tenant_id=principal.tenant_id,
-        campaign_id=_parse_uuid(campaign_id),
+    campaign = await campaigns_service.send_campaign(
+        session, tenant_id=principal.tenant_id, campaign_id=_parse_uuid(campaign_id)
     )
-    return SendCampaignResponse(
-        sent=result.sent,
-        suppressed=result.suppressed,
-        excluded_no_consent=result.excluded_no_consent,
+    await get_queue().enqueue_job(
+        campaigns_service.SEND_CAMPAIGN_JOB,
+        tenant_id=str(principal.tenant_id),
+        campaign_id=str(campaign.id),
     )
+    return SendCampaignResponse(status=campaign.status)
 
 
 @router.post("/email-events/bounce", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

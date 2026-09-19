@@ -57,9 +57,11 @@ class CampaignsPage(BaseModel):
 
 
 class SendCampaignResponse(BaseModel):
-    sent: int
-    suppressed: int
-    excluded_no_consent: int
+    #: F5 (BACKLOG.md): the request only enqueues the send — "sending",
+    #: never final counts, since the actual send now happens in a
+    #: background job. `GET /campaigns/{id}` is where sent/suppressed/
+    #: excluded counts live once the job has run.
+    status: str
 
 
 class CampaignStatsResponse(BaseModel):

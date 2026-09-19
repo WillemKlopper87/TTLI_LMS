@@ -168,7 +168,44 @@ class SendResult:
     excluded_no_consent: int
 
 
+SEND_CAMPAIGN_JOB = "send_campaign_job"
+
+
 async def send_campaign(
+    session: AsyncSession, *, tenant_id: uuid.UUID, campaign_id: uuid.UUID
+) -> Campaign:
+    """F5 (BACKLOG.md): the request only validates and flips the campaign
+    to "sending" — the send loop over every matching contact, each a real
+    SMTP call, used to run right here, holding the request's DB
+    transaction open and blocking the caller for as long as the whole
+    segment took to mail. `execute_campaign_send` is the worker-side
+    twin that now does that work, invoked by `send_campaign_job` off the
+    request path entirely (`services/media/pipeline.py`'s transcode job
+    already established the same "validate + flip state here, do the
+    slow part in the worker" split for video processing).
+
+    Flipping to "sending" here, in the same transaction as the
+    validation, also doubles as the re-send guard: a second call against
+    a campaign already mid-send (not just one already fully sent) is
+    refused exactly like a re-send of a finished campaign, so a slow or
+    retried request can't queue the same campaign twice.
+    """
+    campaign = await session.get(Campaign, campaign_id)
+    if campaign is None or campaign.tenant_id != tenant_id:
+        raise NotFound("No such campaign.")
+    if campaign.status != "draft":
+        raise CampaignError("This campaign has already been sent.")
+
+    template = await session.get(EmailTemplate, campaign.template_id)
+    if template is None:  # pragma: no cover - FK guarantees this
+        raise NotFound("No such template.")
+
+    campaign.status = "sending"
+    await session.flush()
+    return campaign
+
+
+async def execute_campaign_send(
     session: AsyncSession,
     crypto: CryptoBox,
     settings: Settings,
@@ -176,11 +213,14 @@ async def send_campaign(
     tenant_id: uuid.UUID,
     campaign_id: uuid.UUID,
 ) -> SendResult:
+    """The actual send loop (F5) — moved off the request path into
+    `send_campaign_job`. Runs against a campaign `send_campaign` already
+    flipped to "sending" in its own request-scoped transaction; this
+    reads it fresh in the job's own session rather than trusting a
+    passed-in row that a separate transaction produced."""
     campaign = await session.get(Campaign, campaign_id)
     if campaign is None or campaign.tenant_id != tenant_id:
         raise NotFound("No such campaign.")
-    if campaign.status != "draft":
-        raise CampaignError("This campaign has already been sent.")
 
     template = await session.get(EmailTemplate, campaign.template_id)
     if template is None:  # pragma: no cover - FK guarantees this
@@ -343,12 +383,14 @@ async def record_bounce(
 
 
 __all__ = [
+    "SEND_CAMPAIGN_JOB",
     "CampaignError",
     "CampaignStats",
     "SendResult",
     "create_campaign",
     "create_segment",
     "create_template",
+    "execute_campaign_send",
     "get_campaign_stats",
     "list_campaigns",
     "list_segments",
