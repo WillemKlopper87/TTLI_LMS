@@ -1498,6 +1498,45 @@ label.field b,
   align-content: start;
 }
 
+/* F17c (BACKLOG.md): under 900px `.cat` is a single column, so the full
+   facet sidebar used to sit ahead of the results. Collapse it behind a
+   Filters toggle there; above 900px the toggle is removed from layout
+   entirely (display: none also keeps it out of the two-column grid) and
+   the facets are always shown. */
+.facets-toggle {
+  justify-self: start;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.facets-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (min-width: 900px) {
+  .facets-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .cat {
+    gap: 1rem;
+  }
+  .facets {
+    display: none;
+  }
+  .facets--open {
+    display: grid;
+  }
+}
+
 .facet h4 {
   font-size: 0.6875rem;
   font-family: var(--mono);
