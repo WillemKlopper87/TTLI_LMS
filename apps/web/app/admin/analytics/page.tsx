@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatDate, formatMoneyList, formatNumber } from "@/lib/format";
 
 import RevenueChart, { type RevenuePoint } from "./revenue-chart";
 import TrafficChart, { type TrafficPoint } from "./traffic-chart";
@@ -128,28 +129,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   po: "Purchase order",
 };
 
-function formatMoney(money: Money[]): string {
-  if (money.length === 0) return "—";
-  return money
-    .map((m) => {
-      const amount = Number(m.amount);
-      const symbol = m.currency === "ZAR" ? "R" : `${m.currency} `;
-      return `${symbol}${amount.toLocaleString("en-ZA", {
-        minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
-        maximumFractionDigits: 2,
-      })}`;
-    })
-    .join(" · ");
-}
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-ZA", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 /** A share bar — the prototype's `.bar`, one row per slice. */
 function ShareRow({
   label,
@@ -173,7 +152,7 @@ function ShareRow({
         <i style={{ width: `${pct}%` }} />
       </span>
       <span className="m mono">
-        {value.toLocaleString("en-ZA")} · {pct}%
+        {formatNumber(value)} · {pct}%
       </span>
     </div>
   );
@@ -258,7 +237,7 @@ export default function AnalyticsScreen() {
           <h1 className="serif">Payment &amp; revenue analytics</h1>
           {revenue ? (
             <p style={{ fontSize: ".8125rem", color: "var(--muted)", marginTop: ".2rem" }}>
-              {formatDay(revenue.period.from)} — {formatDay(revenue.period.to)}
+              {formatDate(revenue.period.from)} — {formatDate(revenue.period.to)}
             </p>
           ) : null}
         </div>
@@ -293,19 +272,19 @@ export default function AnalyticsScreen() {
           <dl className="stats">
             <div className="stat">
               <dt>Actual revenue</dt>
-              <dd>{formatMoney(revenue.actual_revenue)}</dd>
+              <dd>{formatMoneyList(revenue.actual_revenue)}</dd>
             </div>
             <div className="stat">
               <dt>Payments received</dt>
-              <dd>{formatMoney(revenue.payments_received)}</dd>
+              <dd>{formatMoneyList(revenue.payments_received)}</dd>
             </div>
             <div className="stat">
               <dt>Refunds issued</dt>
-              <dd>{formatMoney(revenue.refunds_issued)}</dd>
+              <dd>{formatMoneyList(revenue.refunds_issued)}</dd>
             </div>
             <div className="stat">
               <dt>Predicted (pipeline)</dt>
-              <dd>{formatMoney(revenue.predicted_revenue.total)}</dd>
+              <dd>{formatMoneyList(revenue.predicted_revenue.total)}</dd>
             </div>
           </dl>
 
@@ -388,7 +367,7 @@ export default function AnalyticsScreen() {
                     return (
                       <tr key={row.provider}>
                         <td>{PROVIDER_LABELS[row.provider] ?? row.provider}</td>
-                        <td className="mono">{row.payment_count.toLocaleString("en-ZA")}</td>
+                        <td className="mono">{formatNumber(row.payment_count)}</td>
                         <td>
                           <span className="bar minibar" style={{ display: "inline-block", width: 90 }}>
                             <i style={{ width: `${pct}%` }} />
@@ -397,7 +376,7 @@ export default function AnalyticsScreen() {
                             {pct}%
                           </span>
                         </td>
-                        <td className="mono">{formatMoney(row.amount)}</td>
+                        <td className="mono">{formatMoneyList(row.amount)}</td>
                       </tr>
                     );
                   })}
@@ -427,7 +406,7 @@ export default function AnalyticsScreen() {
             }}
           >
             <h2 className="serif" style={{ fontSize: "1.125rem" }}>
-              Registrations · {registrations.total_registered.toLocaleString("en-ZA")}
+              Registrations · {formatNumber(registrations.total_registered)}
             </h2>
             <button type="button" className="btn btn--quiet" onClick={() => download("registrations")}>
               Export CSV
@@ -452,7 +431,7 @@ export default function AnalyticsScreen() {
                   return (
                     <tr key={row.package_label}>
                       <td>{row.package_label}</td>
-                      <td className="mono">{row.user_count.toLocaleString("en-ZA")}</td>
+                      <td className="mono">{formatNumber(row.user_count)}</td>
                       <td>
                         <span className="bar minibar" style={{ display: "inline-block", width: 90 }}>
                           <i style={{ width: `${pct}%` }} />
@@ -477,7 +456,7 @@ export default function AnalyticsScreen() {
                 {registrations.by_organisation.map((row) => (
                   <div className="rowitem" key={row.organisation_id ?? row.organisation_name}>
                     <span className="t">{row.organisation_name}</span>
-                    <span className="m mono">{row.user_count.toLocaleString("en-ZA")} users</span>
+                    <span className="m mono">{formatNumber(row.user_count)} users</span>
                   </div>
                 ))}
               </div>
@@ -494,19 +473,19 @@ export default function AnalyticsScreen() {
           <dl className="stats">
             <div className="stat">
               <dt>Episode views</dt>
-              <dd>{podcasts.episode_views.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(podcasts.episode_views)}</dd>
             </div>
             <div className="stat">
               <dt>Plays started</dt>
-              <dd>{podcasts.plays_started.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(podcasts.plays_started)}</dd>
             </div>
             <div className="stat">
               <dt>Plays completed</dt>
-              <dd>{podcasts.plays_completed.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(podcasts.plays_completed)}</dd>
             </div>
             <div className="stat">
               <dt>CTA clicks</dt>
-              <dd>{podcasts.cta_clicks.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(podcasts.cta_clicks)}</dd>
             </div>
           </dl>
 
@@ -534,7 +513,7 @@ export default function AnalyticsScreen() {
                   <div className="rowitem" key={row.episode_id}>
                     <span className="t">{row.title}</span>
                     <span className="m mono">
-                      {row.course_clicks.toLocaleString("en-ZA")} course click
+                      {formatNumber(row.course_clicks)} course click
                       {row.course_clicks === 1 ? "" : "s"}
                     </span>
                   </div>
@@ -566,30 +545,30 @@ export default function AnalyticsScreen() {
           <dl className="stats">
             <div className="stat">
               <dt>Last 24 hours</dt>
-              <dd>{traffic.last_24h_views.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(traffic.last_24h_views)}</dd>
             </div>
             <div className="stat">
               <dt>Last 7 days</dt>
-              <dd>{traffic.last_7d_views.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(traffic.last_7d_views)}</dd>
             </div>
             <div className="stat">
               <dt>Last 30 days</dt>
-              <dd>{traffic.last_30d_views.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(traffic.last_30d_views)}</dd>
             </div>
             <div className="stat">
               <dt>All time</dt>
-              <dd>{traffic.all_time_views.toLocaleString("en-ZA")}</dd>
+              <dd>{formatNumber(traffic.all_time_views)}</dd>
             </div>
           </dl>
 
           <div style={{ marginTop: "1.25rem" }}>
             <h3 className="serif" style={{ fontSize: "1rem", marginBottom: ".1rem" }}>
-              {traffic.total_views.toLocaleString("en-ZA")} pageview
+              {formatNumber(traffic.total_views)} pageview
               {traffic.total_views === 1 ? "" : "s"} in the selected timeframe
             </h3>
             <p style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: ".6rem" }}>
               {trafficDelta(traffic.total_views, traffic.previous_total_views)} vs the previous{" "}
-              period ({traffic.previous_total_views.toLocaleString("en-ZA")} before)
+              period ({formatNumber(traffic.previous_total_views)} before)
             </p>
             <TrafficChart points={traffic.points} granularity={traffic.granularity} />
           </div>
@@ -609,7 +588,7 @@ export default function AnalyticsScreen() {
                       {row.path}
                     </span>
                     <span className="m mono">
-                      {row.views.toLocaleString("en-ZA")}
+                      {formatNumber(row.views)}
                       {traffic.total_views > 0
                         ? ` · ${Math.round((row.views / traffic.total_views) * 100)}%`
                         : null}

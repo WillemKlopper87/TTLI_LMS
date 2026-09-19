@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
 import { useRequireAuth } from "@/lib/session-context";
+import { formatDate, formatMoney } from "@/lib/format";
 
 /**
  * A buyer's own invoices (backlog P6, feature-matrix gap #34).
@@ -39,12 +40,6 @@ interface Invoice {
   tax_total: string;
   grand_total: string;
   items: InvoiceItem[];
-}
-
-function money(currency: string, amount: string): string {
-  const value = Number(amount);
-  const symbol = currency === "ZAR" ? "R" : `${currency} `;
-  return `${symbol}${value.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`;
 }
 
 export default function MyInvoices() {
@@ -114,20 +109,16 @@ export default function MyInvoices() {
                       {invoice.number}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {new Date(invoice.issued_at).toLocaleDateString("en-ZA", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatDate(invoice.issued_at)}
                     </td>
                     <td>
                       <span className="tag">{invoice.status}</span>
                     </td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {money(invoice.currency, invoice.tax_total)}
+                      {formatMoney(invoice.tax_total, invoice.currency, { exact: true })}
                     </td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {money(invoice.currency, invoice.grand_total)}
+                      {formatMoney(invoice.grand_total, invoice.currency, { exact: true })}
                     </td>
                     <td>
                       <button

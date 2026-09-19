@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatTime } from "@/lib/format";
 import { useRequireAuth } from "@/lib/session-context";
 
 interface Workshop {
@@ -269,10 +269,7 @@ export default function BookOneOnOnePage() {
                           disabled={booking === slot.starts_at}
                           onClick={() => bookSlot(slot.starts_at)}
                         >
-                          {new Date(slot.starts_at).toLocaleTimeString("en-ZA", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatTime(slot.starts_at)}
                         </button>
                       ))}
                     </div>

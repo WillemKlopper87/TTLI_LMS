@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { authedDownload } from "@/lib/authed-download";
 import { authedFetch } from "@/lib/authed-fetch";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatTimestamp } from "@/lib/format";
 import { getAccessToken } from "@/lib/session";
 import { useRequireAuth } from "@/lib/session-context";
 
@@ -252,7 +252,7 @@ export default function LearnSessionsPage() {
                   <option value="">Choose a session…</option>
                   {otherSessions.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {new Date(s.starts_at).toLocaleString()} ({s.registered}/{s.capacity} booked)
+                      {formatTimestamp(s.starts_at)} ({s.registered}/{s.capacity} booked)
                     </option>
                   ))}
                 </select>

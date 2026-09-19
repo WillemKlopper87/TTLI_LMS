@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { authedFetch } from "@/lib/authed-fetch";
+import { formatMoney, formatMoneyList, formatTimestamp } from "@/lib/format";
 
 import { useAdmin } from "./admin-context";
 
@@ -82,13 +83,6 @@ interface Overview {
   }[];
 }
 
-function money(rows: Money[]): string {
-  if (rows.length === 0) return "—";
-  return rows
-    .map((r) => `${r.currency} ${Number(r.amount).toLocaleString("en-ZA")}`)
-    .join(" · ");
-}
-
 function waited(hours: number): string {
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
@@ -157,7 +151,7 @@ export default function AdminOverview() {
           <h1>Operations</h1>
           <p className="mt-1" style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
             {data
-              ? `Month to date, as at ${new Date(data.generated_at).toLocaleString("en-ZA")}`
+              ? `Month to date, as at ${formatTimestamp(data.generated_at)}`
               : "Month to date"}
           </p>
         </div>
@@ -186,7 +180,7 @@ export default function AdminOverview() {
           <dl className="stats mt-3">
             <div className="stat">
               <dt>Revenue MTD</dt>
-              <dd style={{ fontSize: "1.05rem" }}>{money(kpis.revenue_mtd)}</dd>
+              <dd style={{ fontSize: "1.05rem" }}>{formatMoneyList(kpis.revenue_mtd)}</dd>
             </div>
             <div className="stat">
               <dt>Active learners</dt>
@@ -246,7 +240,7 @@ export default function AdminOverview() {
                       {row.order_number}
                     </span>
                     <span className="m">
-                      {row.currency} {row.grand_total.toLocaleString("en-ZA")}
+                      {formatMoney(row.grand_total, row.currency, { exact: true })}
                     </span>
                     <span className="tag">{row.status.replace(/_/g, " ")}</span>
                     <span className="m">waiting {waited(row.hours_waiting)}</span>
