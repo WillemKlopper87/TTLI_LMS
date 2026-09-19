@@ -26,7 +26,7 @@ accepts a named residual risk.
 | **F2** | Tenant-domain cache invalidation | **DONE 2026-09-15 via #29.** Domain writes now use `cache-delete → commit → cache-delete`, with regression coverage for hit/miss eviction and hostname normalization. | A domain add/remove is authoritative immediately; TTLs are fallback bounds only. |
 | **T9 / O2** | Backups + restore rehearsal | **OPEN — operator evidence.** Backup/restore tooling exists; no code change can substitute for a real off-VM crypt destination, accountable owner and production-shaped restore drill. | Archive lands off-host; isolated restore succeeds; measured RPO/RTO recorded and within targets. |
 | **F9 / T10** | Worker health, deployment integrity and rollback proof | **CODE DONE 2026-09-15 via #25; operator evidence remains.** CI #189 passed all five protected gates and #25 merged as `7a4e2bf`. Worker health now uses `arq --check` with a 30 s sentinel refresh; a failed worker rollout rolls API+worker back together; normal and rollback-state release manifests are written and the encrypted backup path persists them off-host. Remaining T10 gate: forced broken-worker rollback rehearsal on a production-shaped host with before/after evidence and known-good recovery. | Stalled worker fails deployment; every release emits evidence; failed worker release rolls API+worker back together and known-good canary passes. |
-| **T11 / O1** | Minimum viable observability | **IN PROGRESS — #30.** Sentry error capture is already shipped. #30 owns aggregate API/worker/DB/queue/storage metrics, internal collection, alerting, searchable structured logs and an operator dashboard. | Required signals are collected without tenant/user-cardinality leakage; alerts are actionable; logs survive container restart and are searchable by request/job correlation id. |
+| **T11 / O1** | Minimum viable observability | **DONE 2026-09-16 via #34.** Prometheus (API/worker/DB/queue/storage metrics, low-cardinality by design) + Grafana (one provisioned operator dashboard, internal-only) + Loki/Alloy (structured logs shipped off-container, surviving `rolling-update.sh`'s recreate, queryable by request/job correlation id) + 6 alert rules, 4 from `docs/06_OPERATIONS.md` §5.2's own thresholds. `promtool check config`/`check rules` runs in CI. Issue #30 closed. | Required signals are collected without tenant/user-cardinality leakage; alerts are actionable; logs survive container restart and are searchable by request/job correlation id. |
 | **T12 / O3** | POPIA operational lifecycle | **IN PROGRESS — #26 refreshed after #25.** Current code tranche provides access/export, anonymising erasure, legal hold and consent withdrawal. Export JSON is now an ephemeral five-minute Redis capability deleted on first download, so it does not leave an indefinite decrypted object in storage. The export is still explicitly non-exhaustive: workshops, survey responses and CRM contact history remain support-handled residual categories. Retention policy/enforcement, admin workflow, Information Officer responsibility and remaining legal/owner decisions stay open. | Data-subject lifecycle is tested end to end; retained financial/accreditation records are de-identified rather than incorrectly deleted; export coverage/residual process is explicit; owner/legal decisions are recorded. |
 | **T13 / P11** | Phase 6 readiness decision | **GATED.** Do not start the AI vertical slice before T9–T12 are closed or explicitly accepted and data-residency/budget/kill-switch decisions are signed. | Readiness decision recorded; tenant kill switches and budget enforcement exist before any LLM call path. |
 
@@ -64,7 +64,7 @@ F13 to F17.
 | **F13** | Date/money formatting is inconsistent across several pages. | **OPEN.** |
 | **F17** | Screenshot-pass UX defects: push prompt placement, mobile header/catalogue/player and learner IA. | **OPEN.** |
 | **F18** | Anonymous storefront pages are force-dynamic/no-store and lack route loading states. | **OPEN.** |
-| **F19** | Local `ttli_test` state can accumulate across runs. | **OPEN.** |
+| **F19** | Local `ttli_test` state can accumulate across runs. | **DONE — #39.** `_ensure_test_database` drops and recreates `<db>_test` at the start of every pytest process (`KEEP_TEST_DB=1` opts out for faster local iteration). |
 | **F20** | Thin test areas plus broad exception handling in tenant-user role/suspension paths. | **OPEN.** |
 | **F21** | Migration round-trip exercises only the newest migration. | **OPEN.** |
 | **F22** | Trivy is installed from a mutable apt channel rather than a checksum-pinned release. | **OPEN.** |
@@ -86,7 +86,7 @@ Do this after the production gate, and profile before optimising.
 | Frontend contract safety | Incremental typed facade over `packages/api-client`, highest-risk pages first. | **OPEN.** |
 | Shared components / decomposition | O8/O14; split large mixed-responsibility pages/services after characterisation tests. | **OPEN.** |
 | UX | F17a–e. | **OPEN.** |
-| Test/CI hygiene | F7, F8, F10, F11, F12, F19, F20, F21, F22; media lifecycle and BFF edge coverage. | **OPEN.** |
+| Test/CI hygiene | F7, F8, F10, F11, F12, F20, F21, F22; media lifecycle and BFF edge coverage. (F19 done — #39.) | **OPEN.** |
 
 ---
 
