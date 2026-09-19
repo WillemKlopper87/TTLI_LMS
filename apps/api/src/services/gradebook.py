@@ -216,20 +216,24 @@ async def build_for_enrolment(
 
     quizzes_by_id: dict[uuid.UUID, Quiz] = {}
     if quiz_ids:
-        rows = await session.execute(select(Quiz).where(Quiz.id.in_(quiz_ids)))
-        quizzes_by_id = {quiz.id: quiz for quiz in rows.scalars().all()}
+        quiz_rows = await session.execute(select(Quiz).where(Quiz.id.in_(quiz_ids)))
+        quizzes_by_id = {quiz.id: quiz for quiz in quiz_rows.scalars().all()}
 
     assignments_by_id: dict[uuid.UUID, Assignment] = {}
     if assignment_ids:
-        rows = await session.execute(select(Assignment).where(Assignment.id.in_(assignment_ids)))
-        assignments_by_id = {assignment.id: assignment for assignment in rows.scalars().all()}
+        assignment_rows = await session.execute(
+            select(Assignment).where(Assignment.id.in_(assignment_ids))
+        )
+        assignments_by_id = {
+            assignment.id: assignment for assignment in assignment_rows.scalars().all()
+        }
 
     # `DISTINCT ON (quiz_id)` ordered by attempt_number desc picks exactly
     # the latest qualifying attempt per quiz in one query, mirroring what
     # the old per-block `ORDER BY ... DESC LIMIT 1` did one quiz at a time.
     latest_attempt_by_quiz: dict[uuid.UUID, QuizAttempt] = {}
     if quiz_ids:
-        rows = await session.execute(
+        attempt_rows = await session.execute(
             select(QuizAttempt)
             .distinct(QuizAttempt.quiz_id)
             .where(
@@ -240,11 +244,13 @@ async def build_for_enrolment(
             )
             .order_by(QuizAttempt.quiz_id, QuizAttempt.attempt_number.desc())
         )
-        latest_attempt_by_quiz = {attempt.quiz_id: attempt for attempt in rows.scalars().all()}
+        latest_attempt_by_quiz = {
+            attempt.quiz_id: attempt for attempt in attempt_rows.scalars().all()
+        }
 
     latest_submission_by_assignment: dict[uuid.UUID, AssignmentSubmission] = {}
     if assignment_ids:
-        rows = await session.execute(
+        submission_rows = await session.execute(
             select(AssignmentSubmission)
             .distinct(AssignmentSubmission.assignment_id)
             .where(
@@ -254,7 +260,7 @@ async def build_for_enrolment(
             .order_by(AssignmentSubmission.assignment_id, AssignmentSubmission.version.desc())
         )
         latest_submission_by_assignment = {
-            submission.assignment_id: submission for submission in rows.scalars().all()
+            submission.assignment_id: submission for submission in submission_rows.scalars().all()
         }
 
     items: list[AchievementItem] = []
