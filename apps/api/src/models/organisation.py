@@ -48,7 +48,9 @@ class Organisation(Base, TimestampMixin):
     billing_address_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     # §4.1: kind enum for partner organisations ('partner' or 'client')
-    kind: Mapped[str] = mapped_column(OrganisationKind, nullable=False, default="standard")
+    kind: Mapped[str] = mapped_column(
+        OrganisationKind, nullable=False, default="standard", server_default=text("'standard'")
+    )
     # §4.1: parent_organisation_id for client orgs to link to their partner
     parent_organisation_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),

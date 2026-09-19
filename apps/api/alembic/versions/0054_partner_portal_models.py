@@ -142,7 +142,6 @@ def upgrade() -> None:
             pg.UUID(as_uuid=True),
             sa.ForeignKey("organisations.id", ondelete="CASCADE"),
             nullable=False,
-            unique=True,
         ),
         sa.Column("display_name", sa.Text(), nullable=False),
         sa.Column("bio", sa.Text(), nullable=True),
@@ -166,7 +165,10 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_partner_profiles_tenant_id", "partner_profiles", ["tenant_id"])
-    op.create_index("ix_partner_profiles_organisation_id", "partner_profiles", ["organisation_id"])
+    # One profile per organisation: a unique index (the model declares index+unique).
+    op.create_index(
+        "ix_partner_profiles_organisation_id", "partner_profiles", ["organisation_id"], unique=True
+    )
 
     # RLS for partner_profiles
     op.execute("ALTER TABLE partner_profiles ENABLE ROW LEVEL SECURITY")
