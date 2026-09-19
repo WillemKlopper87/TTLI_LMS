@@ -11,7 +11,7 @@
  * check instead — jsdom does not evaluate media queries, so a
  * component test here can only prove the ARIA/JS half.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -24,7 +24,10 @@ const { usePathname, useRouter } = vi.hoisted(() => ({
 const { useSession } = vi.hoisted(() => ({ useSession: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ usePathname, useRouter }));
+const { authedFetch } = vi.hoisted(() => ({ authedFetch: vi.fn() }));
+
 vi.mock("@/lib/session-context", () => ({ useSession }));
+vi.mock("@/lib/authed-fetch", () => ({ authedFetch }));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -95,5 +98,64 @@ describe("SiteHeader mobile nav toggle", () => {
       "aria-expanded",
       "false",
     );
+  });
+});
+
+// F17e (BACKLOG.md): a signed-in learner's header was one flat row of 7-8
+// equal-weight links mixing "what I'm learning" with billing and (for
+// staff) Admin. The learning journey stays the primary nav; account and
+// admin destinations move to their own labelled group.
+async function renderSignedIn(permissions: string[]) {
+  usePathname.mockReturnValue("/learn");
+  useRouter.mockReturnValue({ push: vi.fn() });
+  useSession.mockReturnValue({ accessToken: "t", status: "authenticated", logout: vi.fn() });
+  authedFetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ email: "thandi.nkosi@example.com", permissions }),
+  });
+  render(<SiteHeader tenantName="Acme Institute" logoUrl={null} />);
+  await screen.findByRole("navigation", { name: "Account" });
+}
+
+describe("SiteHeader learner navigation", () => {
+  it("keeps only learning destinations in the main nav", async () => {
+    await renderSignedIn(["course:view", "lesson:complete"]);
+
+    const main = within(screen.getByRole("navigation", { name: "Main" }));
+    for (const label of ["My learning", "Catalogue", "Learning paths", "Workshops", "Achievements"]) {
+      expect(main.getByRole("link", { name: label })).toBeInTheDocument();
+    }
+    expect(main.queryByRole("link", { name: "Subscription" })).not.toBeInTheDocument();
+    expect(main.queryByRole("link", { name: "Invoices" })).not.toBeInTheDocument();
+  });
+
+  it("puts subscription and invoices in a separate Account group", async () => {
+    await renderSignedIn(["course:view", "lesson:complete"]);
+
+    const account = within(screen.getByRole("navigation", { name: "Account" }));
+    expect(account.getByRole("link", { name: "Subscription" })).toHaveAttribute(
+      "href",
+      "/account/subscription",
+    );
+    expect(account.getByRole("link", { name: "Invoices" })).toHaveAttribute(
+      "href",
+      "/account/invoices",
+    );
+    expect(account.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+  });
+
+  it("offers Admin only to staff, and only in the Account group", async () => {
+    await renderSignedIn(["course:view", "lesson:complete", "analytics:view"]);
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Account" })).getByRole("link", {
+        name: "Admin",
+      }),
+    ).toHaveAttribute("href", "/admin");
+    expect(
+      within(screen.getByRole("navigation", { name: "Main" })).queryByRole("link", {
+        name: "Admin",
+      }),
+    ).not.toBeInTheDocument();
   });
 });
